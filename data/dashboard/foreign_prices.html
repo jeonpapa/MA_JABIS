@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>해외 약가 추적 — MA AI Dossier</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+  :root {
+    --bg: #f0f2f5;
+    --surface: #ffffff;
+    --border: #e2e8f0;
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --danger: #dc2626;
+    --success: #16a34a;
+    --text: #1e293b;
+    --muted: #64748b;
+    --radius: 10px;
+    --shadow: 0 1px 4px rgba(0,0,0,.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif; font-size: 14px; }
+
+  /* ── header ── */
+  header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 12px; }
+  header h1 { font-size: 18px; font-weight: 700; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  header a.back { text-decoration: none; color: var(--primary); font-size: 13px; margin-left: auto; }
+
+  /* ── search area ── */
+  .search-wrap { background: var(--surface); border-bottom: 1px solid var(--border); padding: 20px 24px; }
+  .search-row { display: flex; gap: 8px; max-width: 720px; }
+  .search-row input { flex: 1; border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; font-size: 15px; outline: none; transition: border-color .15s; }
+  .search-row input:focus { border-color: var(--primary); }
+  .search-row button { border: none; border-radius: 8px; padding: 10px 18px; font-size: 14px; cursor: pointer; font-weight: 600; white-space: nowrap; }
+  .btn-cache  { background: var(--surface); border: 1px solid var(--border) !important; color: var(--text); }
+  .btn-cache:hover  { background: #f8fafc; }
+  .btn-live   { background: var(--primary); color: #fff; }
+  .btn-live:hover   { background: var(--primary-hover); }
+  .search-hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
+
+  /* ── country selector (live mode) ── */
+  .country-picker { margin-top: 14px; display: none; }
+  .country-picker.visible { display: block; }
+  .cp-label { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 8px; }
+  .cp-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .cp-chip input { display: none; }
+  .cp-chip label { display: flex; align-items: center; gap: 5px; padding: 5px 12px; border: 1px solid var(--border); border-radius: 20px; cursor: pointer; font-size: 13px; user-select: none; transition: background .12s, border-color .12s; }
+  .cp-chip input:checked + label { background: #eff6ff; border-color: var(--primary); color: var(--primary); font-weight: 600; }
+  .btn-run { margin-top: 12px; background: var(--primary); color: #fff; border: none; border-radius: 8px; padding: 9px 20px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .btn-run:disabled { opacity: .5; cursor: default; }
+  .live-warn { margin-top: 8px; color: #b45309; font-size: 12px; }
+
+  /* ── progress ── */
+  #progress { display: none; padding: 14px 24px; background: #fffbeb; border-bottom: 1px solid #fde68a; }
+  .prog-text { font-size: 13px; color: #92400e; }
+  .prog-bar-wrap { margin-top: 6px; background: #fde68a; border-radius: 4px; height: 6px; overflow: hidden; }
+  .prog-bar { height: 100%; background: #d97706; width: 0%; transition: width .4s; }
+
+  /* ── main ── */
+  main { padding: 24px; max-width: 1280px; }
+
+  /* ── summary cards ── */
+  .summary-title { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 12px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 28px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); }
+  .card .country-flag { font-size: 22px; margin-bottom: 6px; }
+  .card .country-name { font-size: 11px; font-weight: 700; color: var(--muted); }
+  .card .product { font-size: 13px; font-weight: 600; margin-top: 4px; line-height: 1.3; }
+  .card .local-price { font-size: 13px; color: var(--muted); margin-top: 6px; }
+  .card .krw-price { font-size: 18px; font-weight: 700; color: var(--primary); margin-top: 2px; }
+  .card .krw-label { font-size: 10px; color: var(--muted); }
+  .card .no-data { font-size: 13px; color: #cbd5e1; margin-top: 8px; }
+  .card.has-data { border-left: 3px solid var(--primary); }
+  .card.no-result { border-left: 3px solid #e2e8f0; opacity: .7; }
+
+  /* ── chart ── */
+  .chart-section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 28px; box-shadow: var(--shadow); }
+  .chart-section h2 { font-size: 15px; font-weight: 700; margin-bottom: 16px; }
+  #priceChart { width: 100%; height: 340px; }
+
+  /* ── detail table ── */
+  .detail-section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); }
+  .detail-section h2 { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .detail-meta { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead tr { background: #f8fafc; }
+  th { text-align: left; padding: 9px 12px; font-weight: 600; color: var(--muted); border-bottom: 2px solid var(--border); white-space: nowrap; }
+  td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #f8fafc; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .tag { display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .tag-country { background: #eff6ff; color: var(--primary); }
+  .source-link { color: var(--primary); text-decoration: none; font-size: 12px; }
+  .source-link:hover { text-decoration: underline; }
+  .dosage-pill { background: #f1f5f9; color: var(--muted); padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+
+  /* ── empty / error state ── */
+  #emptyState { display: none; text-align: center; padding: 60px 0; color: var(--muted); }
+  #emptyState .icon { font-size: 40px; margin-bottom: 12px; }
+  #errorBanner { display: none; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px 16px; margin: 16px 24px; color: var(--danger); font-size: 13px; }
+
+  /* ── searched-at badge ── */
+  .searched-at { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  /* ── skeleton (loading) ── */
+  .skeleton { background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%); background-size: 200% 100%; animation: shimmer 1.2s infinite; border-radius: 4px; }
+  @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+</style>
+</head>
+<body>
+
+<header>
+  <span style="font-size:22px">🌍</span>
+  <div>
+    <h1>해외 약가 추적</h1>
+    <div class="sub">JP · IT · FR · CH · UK · DE — 현지 약가 및 KRW 조정가 비교</div>
+  </div>
+  <a class="back" href="price_history.html">← 국내 가격변동이력</a>
+</header>
+
+<div class="search-wrap">
+  <div class="search-row">
+    <input id="searchInput" type="text" placeholder="영문 제품명 또는 성분명 (예: Keytruda, pembrolizumab)"
+           autocomplete="off" />
+    <button class="btn-cache" onclick="doCache()">캐시 조회</button>
+    <button class="btn-live" onclick="toggleLivePanel()">실시간 검색 ▾</button>
+  </div>
+  <div class="search-hint">
+    영문 제품명(Keytruda) 또는 INN 성분명(pembrolizumab)으로 검색하세요.
+    &nbsp;|&nbsp; <strong>캐시 조회</strong>: DB에 저장된 이전 결과 즉시 반환
+    &nbsp;|&nbsp; <strong>실시간 검색</strong>: 각 국가 사이트 스크래핑 (국가당 30초~2분 소요)
+  </div>
+
+  <!-- 국가 선택 (실시간 모드) -->
+  <div class="country-picker" id="countryPicker">
+    <div class="cp-label">조회할 국가 선택</div>
+    <div class="cp-chips" id="countryChips"></div>
+    <button class="btn-run" id="btnRun" onclick="doLive()">검색 시작</button>
+    <div class="live-warn">⚠️ 실시간 검색은 국가 수에 따라 2~10분 소요됩니다. 검색 완료 전까지 브라우저 탭을 유지하세요.</div>
+  </div>
+</div>
+
+<div id="progress">
+  <div class="prog-text" id="progText">검색 중…</div>
+  <div class="prog-bar-wrap"><div class="prog-bar" id="progBar"></div></div>
+</div>
+
+<div id="errorBanner"></div>
+
+<main id="main" style="display:none">
+
+  <!-- 요약 카드 -->
+  <div class="summary-title" id="summaryTitle"></div>
+  <div class="cards" id="cards"></div>
+
+  <!-- 조정가 비교 차트 -->
+  <div class="chart-section" id="chartSection" style="display:none">
+    <h2>국가별 KRW 조정가 비교</h2>
+    <div id="priceChart"></div>
+  </div>
+
+  <!-- 상세 테이블 -->
+  <div class="detail-section" id="detailSection" style="display:none">
+    <h2>상세 약가 데이터</h2>
+    <div class="detail-meta" id="detailMeta"></div>
+    <div class="table-wrap">
+      <table id="detailTable">
+        <thead>
+          <tr>
+            <th>국가</th>
+            <th>제품명</th>
+            <th>성분명</th>
+            <th>함량 / 제형</th>
+            <th>포장단위</th>
+            <th style="text-align:right">현지 약가</th>
+            <th style="text-align:right">적용 환율</th>
+            <th style="text-align:right">KRW 조정가</th>
+            <th>자료원</th>
+            <th>검색 일시</th>
+          </tr>
+        </thead>
+        <tbody id="detailBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 빈 상태 -->
+  <div id="emptyState">
+    <div class="icon">🔍</div>
+    <div>검색 결과가 없습니다.</div>
+    <div style="font-size:12px;margin-top:6px">영문 제품명이나 성분명을 확인하고 실시간 검색을 시도해 보세요.</div>
+  </div>
+</main>
+
+<script>
+// ── 상수 ──────────────────────────────────────────────────────────────────────
+const API = 'http://127.0.0.1:5001';
+
+const COUNTRIES = {
+  JP: { flag: '🇯🇵', label: '일본', currency: 'JPY' },
+  IT: { flag: '🇮🇹', label: '이탈리아', currency: 'EUR' },
+  FR: { flag: '🇫🇷', label: '프랑스', currency: 'EUR' },
+  CH: { flag: '🇨🇭', label: '스위스', currency: 'CHF' },
+  UK: { flag: '🇬🇧', label: '영국', currency: 'GBP' },
+  DE: { flag: '🇩🇪', label: '독일', currency: 'EUR' },
+};
+
+const BAR_COLORS = {
+  JP: '#3b82f6', IT: '#10b981', FR: '#f59e0b',
+  CH: '#8b5cf6', UK: '#ef4444', DE: '#6366f1',
+};
+
+let chart = null;
+let livePanelOpen = false;
+
+// ── 국가 선택 칩 초기화 ────────────────────────────────────────────────────
+(function initChips() {
+  const wrap = document.getElementById('countryChips');
+  Object.entries(COUNTRIES).forEach(([code, info]) => {
+    const div = document.createElement('div');
+    div.className = 'cp-chip';
+    div.innerHTML = `
+      <input type="checkbox" id="cc_${code}" value="${code}" checked>
+      <label for="cc_${code}">${info.flag} ${info.label}</label>`;
+    wrap.appendChild(div);
+  });
+})();
+
+// ── 실시간 패널 토글 ──────────────────────────────────────────────────────
+function toggleLivePanel() {
+  livePanelOpen = !livePanelOpen;
+  document.getElementById('countryPicker').classList.toggle('visible', livePanelOpen);
+}
+
+// ── 선택된 국가 목록 ──────────────────────────────────────────────────────
+function getSelectedCountries() {
+  return [...document.querySelectorAll('#countryChips input:checked')].map(el => el.value);
+}
+
+// ── 공통 유틸리티 ─────────────────────────────────────────────────────────
+function fmtKRW(v) {
+  if (v == null) return '—';
+  return Number(v).toLocaleString('ko-KR') + ' 원';
+}
+function fmtLocal(v, cur) {
+  if (v == null) return '—';
+  const sym = { JPY: '¥', EUR: '€', GBP: '£', CHF: 'CHF ', USD: '$' };
+  const s = sym[cur] || (cur + ' ');
+  return s + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtDate(iso) {
+  if (!iso) return '—';
+  return iso.slice(0, 16).replace('T', ' ');
+}
+function fmtRate(r) {
+  if (r == null) return '—';
+  return Number(r).toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// ── 에러 배너 ─────────────────────────────────────────────────────────────
+function showError(msg) {
+  const el = document.getElementById('errorBanner');
+  el.textContent = '오류: ' + msg;
+  el.style.display = 'block';
+}
+function clearError() {
+  document.getElementById('errorBanner').style.display = 'none';
+}
+
+// ── 진행 표시 ─────────────────────────────────────────────────────────────
+function showProgress(msg, pct) {
+  document.getElementById('progress').style.display = 'block';
+  document.getElementById('progText').textContent = msg;
+  document.getElementById('progBar').style.width = (pct || 0) + '%';
+}
+function hideProgress() {
+  document.getElementById('progress').style.display = 'none';
+}
+
+// ── 결과 렌더링 ────────────────────────────────────────────────────────────
+function renderResults(query, data, mode) {
+  clearError();
+  const main    = document.getElementById('main');
+  const cards   = document.getElementById('cards');
+  const detBody = document.getElementById('detailBody');
+  const empty   = document.getElementById('emptyState');
+
+  main.style.display = 'block';
+  cards.innerHTML  = '';
+  detBody.innerHTML = '';
+
+  // data = { JP: [...], IT: [...], ... } — 일부 국가는 빈 배열이거나 누락
+  const allCountryCodes = Object.keys(COUNTRIES);
+  let totalItems = 0;
+  const chartData = []; // { code, label, krw }
+
+  allCountryCodes.forEach(code => {
+    const rows = data[code] || [];
+    const info = COUNTRIES[code];
+
+    /* ── 요약 카드 ── */
+    const card = document.createElement('div');
+    if (rows.length > 0) {
+      // 조정가가 있는 행 우선, 없으면 첫 행
+      const best = rows.find(r => r.adjusted_price_krw) || rows[0];
+      card.className = 'card has-data';
+      const dosage = [best.dosage_strength, best.dosage_form].filter(Boolean).join(' / ');
+      card.innerHTML = `
+        <div class="country-flag">${info.flag}</div>
+        <div class="country-name">${info.label} (${code})</div>
+        <div class="product">${best.product_name || '—'}</div>
+        ${dosage ? `<div class="dosage-pill" style="margin-top:6px">${dosage}</div>` : ''}
+        <div class="local-price">${fmtLocal(best.local_price, best.currency)}</div>
+        ${best.adjusted_price_krw
+          ? `<div class="krw-price">${fmtKRW(best.adjusted_price_krw)}</div><div class="krw-label">KRW 조정가 (HIRA 방식)</div>`
+          : '<div class="krw-price" style="color:var(--muted)">조정가 산출 불가</div>'}
+        ${rows.length > 1 ? `<div class="searched-at" style="margin-top:4px">${rows.length}개 품목</div>` : ''}
+        <div class="searched-at">${fmtDate(best.searched_at)}</div>`;
+
+      if (best.adjusted_price_krw) {
+        chartData.push({ code, label: `${info.flag} ${info.label}`, krw: best.adjusted_price_krw });
+      }
+      totalItems += rows.length;
+    } else {
+      card.className = 'card no-result';
+      card.innerHTML = `
+        <div class="country-flag" style="opacity:.4">${info.flag}</div>
+        <div class="country-name">${info.label} (${code})</div>
+        <div class="no-data">결과 없음</div>`;
+    }
+    cards.appendChild(card);
+
+    /* ── 상세 테이블 rows ── */
+    rows.forEach(r => {
+      const tr = document.createElement('tr');
+      const dosage = [r.dosage_strength, r.dosage_form].filter(Boolean).join(' / ');
+      const rateRange = (r.exchange_rate_from && r.exchange_rate_to)
+        ? `<br><span style="font-size:10px;color:var(--muted)">(${r.exchange_rate_from}~${r.exchange_rate_to})</span>` : '';
+      tr.innerHTML = `
+        <td><span class="tag tag-country">${info.flag} ${code}</span></td>
+        <td>${r.product_name || '—'}</td>
+        <td style="color:var(--muted)">${r.ingredient || '—'}</td>
+        <td>${dosage ? `<span class="dosage-pill">${dosage}</span>` : '—'}</td>
+        <td>${r.package_unit || '—'}</td>
+        <td class="num">${fmtLocal(r.local_price, r.currency)}</td>
+        <td class="num">${fmtRate(r.exchange_rate)}${rateRange}</td>
+        <td class="num" style="font-weight:600;color:var(--primary)">${fmtKRW(r.adjusted_price_krw)}</td>
+        <td>${r.source_url
+          ? `<a class="source-link" href="${r.source_url}" target="_blank">${r.source_label || r.source_url.split('/')[2] || '링크'}</a>`
+          : (r.source_label || '—')}</td>
+        <td style="white-space:nowrap;color:var(--muted)">${fmtDate(r.searched_at)}</td>`;
+      detBody.appendChild(tr);
+    });
+  });
+
+  /* ── 빈 상태 ── */
+  empty.style.display = (totalItems === 0) ? 'block' : 'none';
+
+  /* ── 요약 타이틀 ── */
+  document.getElementById('summaryTitle').textContent =
+    `"${query}" 해외 약가 — ${totalItems}건 (${mode === 'live' ? '실시간 검색' : '캐시 조회'})`;
+
+  /* ── 차트 섹션 ── */
+  const chartSection  = document.getElementById('chartSection');
+  const detailSection = document.getElementById('detailSection');
+  if (chartData.length > 0) {
+    chartSection.style.display = 'block';
+    renderChart(chartData);
+  } else {
+    chartSection.style.display = 'none';
+  }
+
+  /* ── 상세 섹션 ── */
+  if (totalItems > 0) {
+    detailSection.style.display = 'block';
+    document.getElementById('detailMeta').textContent =
+      `총 ${totalItems}개 품목 · 조정가는 HIRA 기준(공장도가→부가세→유통마진 적용) KRW 환산 금액입니다.`;
+  } else {
+    detailSection.style.display = 'none';
+  }
+}
+
+// ── ECharts 차트 ───────────────────────────────────────────────────────────
+function renderChart(chartData) {
+  if (!chart) {
+    chart = echarts.init(document.getElementById('priceChart'));
+  }
+  const labels = chartData.map(d => d.label);
+  const values = chartData.map(d => d.krw);
+  const colors = chartData.map(d => BAR_COLORS[d.code] || '#94a3b8');
+
+  chart.setOption({
+    tooltip: {
+      trigger: 'axis',
+      formatter: params => {
+        const p = params[0];
+        return `${p.name}<br/><b>${Number(p.value).toLocaleString('ko-KR')} 원</b>`;
+      }
+    },
+    grid: { left: 60, right: 30, top: 20, bottom: 60 },
+    xAxis: {
+      type: 'category',
+      data: labels,
+      axisLabel: { fontSize: 13 },
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: {
+        formatter: v => (v >= 10000 ? (v / 10000).toFixed(0) + '만' : v.toLocaleString()),
+        fontSize: 12,
+      },
+      name: '원 (KRW)',
+      nameTextStyle: { color: '#94a3b8', fontSize: 11 },
+    },
+    series: [{
+      type: 'bar',
+      data: values.map((v, i) => ({ value: v, itemStyle: { color: colors[i], borderRadius: [4,4,0,0] } })),
+      label: {
+        show: true,
+        position: 'top',
+        formatter: p => Number(p.value).toLocaleString('ko-KR') + '원',
+        fontSize: 11,
+        color: '#475569',
+      },
+      barMaxWidth: 60,
+    }],
+  }, true);
+}
+
+window.addEventListener('resize', () => { if (chart) chart.resize(); });
+
+// ── 캐시 조회 ─────────────────────────────────────────────────────────────
+async function doCache() {
+  const q = document.getElementById('searchInput').value.trim();
+  if (!q) { alert('검색어를 입력하세요.'); return; }
+  clearError();
+  hideProgress();
+  showProgress('캐시 조회 중…', 30);
+
+  try {
+    const res = await fetch(`${API}/api/foreign/cached?q=${encodeURIComponent(q)}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    hideProgress();
+    renderResults(q, json.results || {}, 'cache');
+  } catch (e) {
+    hideProgress();
+    showError(e.message);
+  }
+}
+
+// ── 실시간 검색 ────────────────────────────────────────────────────────────
+async function doLive() {
+  const q = document.getElementById('searchInput').value.trim();
+  if (!q) { alert('검색어를 입력하세요.'); return; }
+  const selected = getSelectedCountries();
+  if (selected.length === 0) { alert('최소 1개 국가를 선택하세요.'); return; }
+
+  clearError();
+  document.getElementById('main').style.display = 'none';
+  document.getElementById('btnRun').disabled = true;
+
+  let elapsed = 0;
+  showProgress(`${selected.join(', ')} 실시간 검색 중… (0초 경과)`, 5);
+  const timer = setInterval(() => {
+    elapsed++;
+    const pct = Math.min(5 + elapsed * (90 / (selected.length * 90)), 90);
+    showProgress(`${selected.join(', ')} 실시간 검색 중… (${elapsed}초 경과)`, pct);
+  }, 1000);
+
+  try {
+    const res = await fetch(`${API}/api/foreign/search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: q, countries: selected, use_cache: false }),
+      // 실시간 스크래핑 타임아웃 10분
+      signal: AbortSignal.timeout(600_000),
+    });
+    clearInterval(timer);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+    const json = await res.json();
+    hideProgress();
+    document.getElementById('btnRun').disabled = false;
+    renderResults(q, json.results || {}, 'live');
+  } catch (e) {
+    clearInterval(timer);
+    hideProgress();
+    document.getElementById('btnRun').disabled = false;
+    if (e.name === 'TimeoutError') {
+      showError('요청 시간 초과 (10분). 국가 수를 줄이거나 캐시 조회를 이용하세요.');
+    } else {
+      showError(e.message);
+    }
+  }
+}
+
+// ── 엔터키 ────────────────────────────────────────────────────────────────
+document.getElementById('searchInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    if (livePanelOpen) doLive(); else doCache();
+  }
+});
+
+// ── URL 파라미터로 자동 검색 ──────────────────────────────────────────────
+(function autoSearch() {
+  const params = new URLSearchParams(location.search);
+  const q = params.get('q');
+  if (q) {
+    document.getElementById('searchInput').value = q;
+    doCache();
+  }
+})();
+</script>
+</body>
+</html>

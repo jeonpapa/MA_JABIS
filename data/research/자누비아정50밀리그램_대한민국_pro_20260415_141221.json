@@ -1,0 +1,30 @@
+{
+  "query": "[조사 대상]\n- 약제명: 자누비아정50밀리그램 (브랜드: 자누비아정50밀리그램)\n- 성분명: 시타글립틴인산염수화물\n- 약가 변동 시점: 2023.09.05\n- 변동률: -30.07%\n- 국가: 대한민국\n- 윈도우: 2023.03 ~ 2024.03 (이 범위 밖 사실 인용 금지)\n\n[반드시 아래 룰 원문을 그대로 준수할 것]\n# MarketIntelligenceAgent 규칙 (v2 — 컴팩트·강제)\n\n> **이 파일은 에이전트 프롬프트에 원문 그대로 주입됩니다.**\n> 규칙을 수정하면 즉시 반영됩니다. 하드코딩 금지 — 룰은 여기서만 관리.\n\n---\n\n## 0. 최상위 원칙 (MUST / MUST NOT)\n\n- **MUST**: 변동 시점(change_date) **±6개월 윈도우** 내의 사실만 근거로 사용.\n- **MUST**: 한국 약가 사후관리 **4대 기전 중 하나**로 분류.\n- **MUST**: 모든 수치·주장에 URL 출처를 명시.\n- **MUST NOT**: 윈도우 밖 연도의 시장동향·매출·임상 결과 서술. (예: 2018.02 건 조사에 2024년 얘기 → 즉시 퀄리티 미달)\n- **MUST NOT**: 근거 없는 단정. 불확실 시 반드시 `\"추정: ...\"` 접두.\n- **MUST NOT**: 4대 기전 중 하나로 연결되지 않는 순수 임상·매출 서술.\n\n---\n\n## 1. 한국 약가 사후관리 4대 기전\n\n| id | 라벨 | 트리거 | 통상 인하폭 |\n|---|---|---|---|\n| `indication_expansion` | 적응증 확대 | 급여 적응증 추가 → 환자군 증가 → 공단 재협상 | 5~30% |\n| `patent_expiration` | 특허 만료 | 제네릭·바이오시밀러 등재 → 오리지널 자동 인하 | 오리지널 59.5% (첫 제네릭) / 70% (바이오시밀러) |\n| `volume_price` | 사용량-연동 | 예상 사용량(보장금액) 초과 → 차기 협상기 인하·환급 | 변동률 다양 |\n| `actual_transaction` | 실거래가 연동 | HIRA 실거래가 조사 결과 상한금액 하향 | 1~5% (소폭) |\n\n### 변동률 → 기전 힌트\n- `|δ| > 20%` → 적응증 확대 또는 특허 만료 우선 검토\n- `|δ| ≤ 5%` → 실거래가 연동 우선 검토\n- 중간 → 사용량-연동 또는 적응증 확대\n\n---\n\n## 2. 시점 윈도우 (절대 규칙)\n\n- 기본 윈도우: **change_date ± 6개월**\n- 예외: 특허 만료의 경우, 윈도우를 ±12개월까지 허용 (제네릭 등재 예고 보도 감안)\n- 윈도우 외부 사실은 `references`에 포함 금지. `reason`에도 서술 금지.\n- 윈도우 내 근거가 하나도 없으면:\n  - `mechanism = \"unknown\"`, `confidence = \"low\"`\n  - `reason = \"추정: ...\"` 접두 + 어느 기전이 가장 정합적인지만 서술\n  - **윈도우 외 사실로 공란을 채우지 말 것**\n\n---\n\n## 3. 우선 매체 (tier별 가중치)\n\n| Tier | 가중치 | 매체 (도메인) |\n|---|---|---|\n| A | 2.7~3.0 | 데일리팜(dailypharm.com), 약업신문(yakup.com), 메디파나뉴스(medipana.com), 히트뉴스(hitnews.co.kr) |\n| C (공식) | 3.0 | 보건복지부(mohw.go.kr), 건강보험심사평가원(hira.or.kr), 법제처 국가법령정보센터(law.go.kr) |\n| B | 2.1~2.4 | 청년의사(docdocdoc.co.kr), 메디칼타임즈(medicaltimes.com), 뉴스더보이스(newsthevoice.com), 팜뉴스(pharmnews.com), 메디게이트뉴스(medigatenews.com) |\n| 기타 | 0.5 | 분류되지 않은 일반 미디어 |\n\n- 동일 내용이면 상위 tier 우선 채택.\n- 공식 고시(mohw.go.kr, law.go.kr)는 최고 가중치 — 반드시 포함 검토.\n\n---\n\n## 4. 출력 JSON 스키마 (고정)\n\n```json\n{\n  \"mechanism\": \"indication_expansion | patent_expiration | volume_price | actual_transaction | unknown\",\n  \"mechanism_label\": \"적응증 확대 | 특허 만료 | 사용량-연동 약가인하 | 실거래가 연동 약가인하 | 미분류\",\n  \"reason\": \"3~5문장 한국어. 윈도우 내 사실만. 불확실 시 '추정:' 접두.\",\n  \"evidence_summary\": \"윈도우 내 최상위 tier 출처의 핵심 내용 1~2문장 (매체명·일자 포함)\",\n  \"confidence\": \"high | medium | low\",\n  \"window\": {\"from\": \"YYYY.MM\", \"to\": \"YYYY.MM\"},\n  \"references\": [\n    {\"title\": \"...\", \"url\": \"...\", \"media\": \"...\", \"weight\": 0.0, \"published_at\": \"YYYY.MM.DD\"}\n  ],\n  \"notes\": \"복합 기전 가능성 등. 없으면 빈 문자열.\"\n}\n```\n\n**references의 모든 항목은 `window.from ≤ published_at ≤ window.to`를 만족해야 합니다.**\n에이전트는 응답 후 이 조건을 자동 검증하며, 위반 항목은 제거됩니다.\n\n---\n\n## 5. 검증 체크리스트 (에이전트 자가 점검)\n\n응답 생성 직후 스스로 다음을 확인:\n1. [ ] `mechanism`이 4대 기전 ID 중 하나 (또는 `unknown`)인가?\n2. [ ] 모든 `references[i].published_at`이 윈도우 내인가?\n3. [ ] `reason` 본문에 윈도우 외 연도가 언급되지 않았는가?\n4. [ ] 근거 없는 단정이 없는가? (있으면 \"추정:\" 접두)\n5. [ ] 공식 고시(mohw/hira/law.go.kr) 확인을 시도했는가?\n\n하나라도 실패 → 재작성. 재작성 후에도 실패 → `confidence = \"low\"`, `mechanism = \"unknown\"` 반환.\n\n---\n\n## 6. 절대 금지\n\n- 하드코딩된 프롬프트로 이 룰을 복제·변형하여 사용 (룰은 이 .md 원문만 단일 진실 공급원)\n- 윈도우 외 사실 인용\n- 기전 미분류 시 억지로 하나 배정 (반드시 `unknown`)\n- OpenAI/Perplexity 실패 시 빈 결과 (규칙 기반 fallback 필수)\n\n\n[답변 구조 한국어 500자 이내]\n[기전 판정] / [핵심 근거 (윈도우 내, 매체·일자)] / [보완 설명] / [출처 URL]\n",
+  "mode": "pro",
+  "model": "sonar-pro",
+  "answer": "```json\n{\n  \"mechanism\": \"volume_price\",\n  \"mechanism_label\": \"사용량-연동 약가인하\",\n  \"reason\": \"2023.09.05 자누비아정50mg 약가인하(-30.07%)는 사용량-약가연동(PVA)에 따른 조치로 확인됨. 데일리팜 보도에 따르면 9월 5일 PVA 134품목 약가인하가 시행되었으며, 자누비아정50mg(562→393원) 포함. 변동률이 크지만 PVA 집단 인하와 정확히 일치.\",\n  \"evidence_summary\": \"데일리팜(2023.09경): 9월 5일 재평가 7676품목+PVA 134품목 약가인하, 자누비아정50mg(562→393원) 포함.\",\n  \"confidence\": \"high\",\n  \"window\": {\"from\": \"2023.03\", \"to\": \"2024.03\"},\n  \"references\": [\n    {\"title\": \"헷갈리는 9월 약가조정...일자별 인하품목 총정리\", \"url\": \"https://dailypharm.com/user/news/24974\", \"media\": \"dailypharm.com\", \"weight\": 3.0, \"published_at\": \"2023.09.05\"}\n  ],\n  \"notes\": \"\"\n}\n```\n\n[기전 판정] volume_price / [데일리팜 2023.09: 9/5 PVA 134품목 인하, 자누비아50mg 562→393원] / [변동률 -30% 맞음, PVA 기전 명확] / [https://dailypharm.com/user/news/24974]",
+  "citations": [
+    "https://dailypharm.com/user/news/24974",
+    "https://dailypharm.com/user/news/24974?view_mode=pc",
+    "https://www.medicaltimes.com/Mobile/News/NewsView.html?ID=1146152",
+    "https://dailypharm.com/user/news/201382",
+    "https://medigatenews.com/news/1173960118"
+  ],
+  "usage": {
+    "completion_tokens": 394,
+    "prompt_tokens": 1799,
+    "total_tokens": 2193,
+    "completion_tokens_details": null,
+    "prompt_tokens_details": null,
+    "search_context_size": "low",
+    "cost": {
+      "input_tokens_cost": 0.0054,
+      "output_tokens_cost": 0.00591,
+      "request_cost": 0.006,
+      "total_cost": 0.01731
+    }
+  },
+  "drug_name": "자누비아정50밀리그램",
+  "country": "대한민국",
+  "created_at": "2026-04-15T14:12:21.257108Z"
+}

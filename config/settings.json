@@ -1,0 +1,50 @@
+{
+  "domestic_agent": {
+    "hira_board_url": "https://www.hira.or.kr/bbsDummyKR.do?pgmid=HIRAA030014050000",
+    "download_dir": "data/domestic/downloads",
+    "processed_dir": "data/domestic/processed",
+    "schedule": {
+      "day": 1,
+      "hour": 9,
+      "minute": 0
+    },
+    "filter": {
+      "enabled": false,
+      "watch_list": []
+    },
+    "track_all_drugs": true,
+    "excel": {
+      "sheet_index": 0,
+      "header_row": 0,
+      "columns": {
+        "insurance_code": "보험코드",
+        "product_name_kr": "한글제품명",
+        "product_name_en": "영문제품명",
+        "company": "업체명",
+        "ingredient": "성분명(일반명)",
+        "dosage_strength": "함량",
+        "dosage_form": "제형",
+        "package_unit": "포장단위",
+        "max_price": "상한금액",
+        "coverage_start": "급여개시일",
+        "remark": "비고"
+      }
+    }
+  },
+  "foreign_agent": {
+    "enabled": false,
+    "hana_bank_url": "https://www.hanabank.com/cms/rate/wpbfxm3100i.do",
+    "exchange_rate_period_months": 3,
+    "reference_countries": []
+  },
+  "dashboard": {
+    "output_dir": "data/dashboard",
+    "main_file": "index.md",
+    "domestic_file": "domestic_prices.md",
+    "foreign_file": "foreign_prices.md"
+  },
+  "logging": {
+    "dir": "logs",
+    "level": "INFO"
+  }
+}

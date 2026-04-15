@@ -1,0 +1,40 @@
+{
+  "mechanism": "indication_expansion",
+  "mechanism_label": "적응증 확대",
+  "reason": "키트루다(펨브롤리주맙)의 2022.03 약가 25.61% 인하는 비소세포폐암 1차 치료제 급여 확대에 따른 공단 재협상 결과. 기존 급여 대비 환자군 증가로 예상청구액 1762억원 발생, MSD와 약가 주당 210만7642원으로 합의. 변동폭이 크므로 적응증 확대 기전과 부합.",
+  "evidence_summary": "헬스조선 2022.03.14 보도: 키트루다 폐암 1차 치료제 급여 확대, 약가 25.6% 인하 합의로 5년 협상 종료.",
+  "confidence": "high",
+  "window": {
+    "from": "2021.09",
+    "to": "2022.09",
+    "months": 6
+  },
+  "references": [
+    {
+      "title": "[뜨는 약] 면역항암제 '키트루다' 5년 만에 '1차 치료 급여'",
+      "url": "https://m.health.chosun.com/svc/news_view.html?contid=2022031401630",
+      "media": "헬스조선",
+      "weight": 2.1,
+      "published_at": "2022.03.14"
+    }
+  ],
+  "notes": "특허 만료 관련 윈도우 내 보도 없음. 협상 과정에서 MSD 타 품목 약가 인하 트레이드 오프 동원. · [enforce] published_at 누락/불량 3건 제거",
+  "_source": "perplexity-sonar-pro",
+  "analysis_meta": {
+    "source": "perplexity-sonar-pro",
+    "total_articles": 1,
+    "tier_a_count": 0,
+    "tier_b_count": 0,
+    "tier_c_count": 0,
+    "detected_mechanisms": [
+      "적응증 확대"
+    ],
+    "top_media": [
+      {
+        "media": "헬스조선",
+        "weight": 2.1
+      }
+    ]
+  },
+  "cached": false
+}

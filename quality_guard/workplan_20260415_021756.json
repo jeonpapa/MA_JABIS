@@ -1,0 +1,24 @@
+{
+  "request_summary": "UK MIMS 스크레이퍼에서 dosage_strength가 빈 값으로 오는 경우 파싱 로직 보완 요청",
+  "rule_conflicts": [],
+  "affected_files": [
+    "agents/scrapers/uk_mims.py"
+  ],
+  "risk_level": "medium",
+  "work_order": [
+    {
+      "step": 1,
+      "target": "agents/scrapers/uk_mims.py",
+      "task": "dosage_strength 파싱 로직 보완"
+    },
+    {
+      "step": 2,
+      "target": "QualityGuardAgent",
+      "task": "변경 후 dosage_strength 필드 검증"
+    }
+  ],
+  "validation_check": "Keytruda 가격으로 최종 검증",
+  "notes": "",
+  "timestamp": "2026-04-15T02:17:56.334555",
+  "original_request": "UK MIMS 스크레이퍼에서 dosage_strength가 빈 값으로 오는 경우가 있어. 파싱 로직을 보완해줘."
+}

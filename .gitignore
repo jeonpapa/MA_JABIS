@@ -1,0 +1,15 @@
+# 자격증명 (절대 커밋 금지)
+config/foreign_credentials.json
+config/.env
+
+# DB 파일
+data/db/*.db
+
+# 로그
+logs/*.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store

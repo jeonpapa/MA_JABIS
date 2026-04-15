@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:www.hira.or.kr)",
+      "Bash(pkill -f \"python3 scheduler.py\")",
+      "Bash(python3 scheduler.py)",
+      "Bash(echo \"PID: $!\")",
+      "Bash(python3 -m agents.backfill_agent)",
+      "Bash(echo \"백필 PID: $!\")",
+      "Bash(pkill -f \"agents.backfill_agent\")",
+      "Bash(python3 -c ':*)",
+      "Bash(python3 -)",
+      "WebFetch(domain:www.mhlw.go.jp)"
+    ]
+  }
+}

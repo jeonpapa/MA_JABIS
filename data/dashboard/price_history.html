@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>국내 약가 변동 이력 — MA AI Dossier</title>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+  <style>
+    :root {
+      --bg: #f0f2f5;
+      --card: #ffffff;
+      --primary: #1a56db;
+      --primary-light: #e8f0fe;
+      --danger: #e02424;
+      --danger-light: #fde8e8;
+      --success: #057a55;
+      --success-light: #def7ec;
+      --text: #111827;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --shadow: 0 1px 4px rgba(0,0,0,.08);
+      --radius: 10px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: var(--shadow);
+    }
+    header .logo {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--primary);
+    }
+    header .subtitle {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    /* ── Main Layout ── */
+    main { max-width: 1280px; margin: 0 auto; padding: 28px 24px; }
+
+    /* ── Search Bar ── */
+    .search-wrap {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .search-wrap input {
+      flex: 1;
+      padding: 12px 18px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 15px;
+      outline: none;
+      transition: border-color .2s;
+    }
+    .search-wrap input:focus { border-color: var(--primary); }
+    .search-wrap button {
+      padding: 12px 28px;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .2s;
+    }
+    .search-wrap button:hover { background: #1648c5; }
+    .search-wrap button:disabled { background: #93aedf; cursor: not-allowed; }
+
+    /* ── Dosage Filter ── */
+    #filter-wrap {
+      display: none;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+    }
+    #filter-wrap.active { display: flex; }
+    #filter-wrap .filter-label {
+      font-size: 12px;
+      color: var(--muted);
+      align-self: center;
+      font-weight: 600;
+      letter-spacing: .03em;
+    }
+    .filter-btn {
+      padding: 6px 14px;
+      border: 1.5px solid var(--border);
+      border-radius: 20px;
+      background: var(--card);
+      font-size: 13px;
+      cursor: pointer;
+      transition: all .15s;
+      font-weight: 500;
+    }
+    .filter-btn:hover { border-color: var(--primary); color: var(--primary); }
+    .filter-btn.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+    }
+
+    /* ── Summary Cards ── */
+    #summary-wrap {
+      display: none;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+    #summary-wrap.active { display: grid; }
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      box-shadow: var(--shadow);
+    }
+    .card .card-label { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; margin-bottom: 6px; }
+    .card .card-value { font-size: 22px; font-weight: 700; color: var(--text); }
+    .card .card-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    /* ── Table ── */
+    .table-wrap {
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      margin-bottom: 28px;
+    }
+    .table-title {
+      padding: 16px 20px 12px;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .table-title .badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: var(--primary-light);
+      color: var(--primary);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th {
+      background: #f8fafc;
+      padding: 10px 14px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--muted);
+      text-align: left;
+      letter-spacing: .04em;
+      white-space: nowrap;
+      border-bottom: 1px solid var(--border);
+    }
+    td {
+      padding: 11px 14px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr.first-row td { background: #fffbeb; }
+    tr:hover td { background: #f9fafb; }
+
+    .delta-up   { color: var(--danger);  font-weight: 700; }
+    .delta-down { color: var(--success); font-weight: 700; }
+    .delta-none { color: var(--muted); font-style: italic; font-size: 12px; }
+
+    .tag-first {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 8px;
+      background: #fef3c7;
+      color: #92400e;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+    .reason-btn {
+      padding: 4px 10px;
+      font-size: 12px;
+      border: 1px solid var(--primary);
+      color: var(--primary);
+      background: transparent;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all .15s;
+      white-space: nowrap;
+    }
+    .reason-btn:hover { background: var(--primary); color: #fff; }
+    .reason-cell { max-width: 320px; }
+    .reason-text { font-size: 12px; line-height: 1.6; color: var(--text); }
+    .mechanism-tag {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 8px;
+      margin-bottom: 5px;
+      background: #e0e7ff;
+      color: #3730a3;
+    }
+    .reason-evidence {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 4px;
+      font-style: italic;
+    }
+    .reason-refs { margin-top: 6px; }
+    .reason-ref-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 4px;
+      margin-bottom: 3px;
+    }
+    .reason-ref-weight {
+      flex-shrink: 0;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: #f3f4f6;
+      color: var(--muted);
+    }
+    .reason-refs a {
+      font-size: 11px;
+      color: var(--primary);
+      text-decoration: none;
+      line-height: 1.4;
+    }
+    .reason-refs a:hover { text-decoration: underline; }
+    .reason-meta {
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 5px;
+      border-top: 1px solid var(--border);
+      padding-top: 4px;
+    }
+    .confidence-badge {
+      display: inline-block;
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 6px;
+      font-weight: 600;
+      margin-left: 4px;
+    }
+    .conf-high   { background: var(--success-light); color: var(--success); }
+    .conf-medium { background: #fff3cd; color: #856404; }
+    .conf-low    { background: var(--danger-light);  color: var(--danger); }
+
+    /* ── Waterfall Chart ── */
+    #chart-wrap {
+      display: none;
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 20px;
+      margin-bottom: 28px;
+    }
+    #chart-wrap.active { display: block; }
+    .chart-title {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .chart-sub {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+    #waterfall-chart { width: 100%; height: 320px; }
+    .chart-tabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+    .chart-tab {
+      padding: 5px 14px;
+      border: 1.5px solid var(--border);
+      border-radius: 16px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .chart-tab.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+      font-weight: 600;
+    }
+
+    /* ── State messages ── */
+    #state-msg {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--muted);
+    }
+    #state-msg .icon { font-size: 40px; margin-bottom: 12px; }
+    #state-msg .msg  { font-size: 15px; }
+    #state-msg .sub  { font-size: 13px; margin-top: 6px; }
+    .spinner {
+      display: inline-block;
+      width: 20px; height: 20px;
+      border: 3px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">MA AI Dossier</div>
+  <div class="subtitle">국내 약가 변동 이력 대쉬보드</div>
+  <a href="foreign_prices.html" style="margin-left:auto;text-decoration:none;color:#1a56db;font-size:13px;font-weight:600">🌍 해외 약가 추적 →</a>
+</header>
+
+<main>
+
+  <!-- 검색 -->
+  <div class="search-wrap">
+    <input id="search-input" type="text"
+           placeholder="제품명 또는 주성분명을 입력하세요 (예: 키트루다, 펨브롤리주맙)"
+           autocomplete="off" />
+    <button id="search-btn" onclick="doSearch()">검색</button>
+  </div>
+
+  <!-- 제형 필터 -->
+  <div id="filter-wrap">
+    <span class="filter-label">제형 필터</span>
+  </div>
+
+  <!-- 요약 카드 -->
+  <div id="summary-wrap">
+    <div class="card">
+      <div class="card-label">최초 등재</div>
+      <div class="card-value" id="s-first-date">—</div>
+      <div class="card-sub" id="s-first-price"></div>
+    </div>
+    <div class="card">
+      <div class="card-label">현재 상한금액</div>
+      <div class="card-value" id="s-current-price">—</div>
+      <div class="card-sub" id="s-company"></div>
+    </div>
+    <div class="card">
+      <div class="card-label">최초 대비 변동률</div>
+      <div class="card-value" id="s-total-delta">—</div>
+      <div class="card-sub" id="s-delta-sub"></div>
+    </div>
+    <div class="card">
+      <div class="card-label">가격 변동 횟수</div>
+      <div class="card-value" id="s-change-count">—</div>
+      <div class="card-sub">등재 이후 조정 건수</div>
+    </div>
+  </div>
+
+  <!-- 차트 -->
+  <div id="chart-wrap">
+    <div class="chart-title" id="chart-title">가격 변동 추이</div>
+    <div class="chart-sub">최초 등재 이후 상한금액 워터폴 차트 (단위: 원)</div>
+    <div class="chart-tabs" id="chart-tabs"></div>
+    <div id="waterfall-chart"></div>
+  </div>
+
+  <!-- 상태 메시지 -->
+  <div id="state-msg">
+    <div class="icon">💊</div>
+    <div class="msg">제품명 또는 주성분명으로 검색하세요</div>
+    <div class="sub">예: 키트루다, 펨브롤리주맙, 엔허투, 옵디보</div>
+  </div>
+
+  <!-- 변동 이력 테이블 -->
+  <div id="table-wrap" class="table-wrap" style="display:none;">
+    <div class="table-title">
+      가격 변동 이력
+      <span class="badge" id="tbl-badge"></span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>등재 / 변동 시점</th>
+          <th>제품명</th>
+          <th>주성분</th>
+          <th>업체명</th>
+          <th>상한금액 (원)</th>
+          <th>변동률</th>
+          <th>변동 사유 (예상)</th>
+        </tr>
+      </thead>
+      <tbody id="tbl-body"></tbody>
+    </table>
+  </div>
+
+</main>
+
+<script>
+const API = 'http://127.0.0.1:5001';
+let allProducts = [];       // 전체 product 목록
+let activeCode  = null;     // 현재 선택된 insurance_code
+let chart       = null;     // ECharts 인스턴스
+
+// ── Enter 키 검색 ──────────────────────────────────────────────
+document.getElementById('search-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doSearch();
+});
+
+// ── 검색 실행 ──────────────────────────────────────────────────
+async function doSearch() {
+  const q = document.getElementById('search-input').value.trim();
+  if (!q) return;
+
+  const btn = document.getElementById('search-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>검색 중…';
+  setState('loading', `"${q}" 검색 중…`);
+  hideAll();
+
+  try {
+    const res  = await fetch(`${API}/api/domestic/price-changes?q=${encodeURIComponent(q)}`);
+    const data = await res.json();
+
+    if (!data.products || data.products.length === 0) {
+      setState('empty', `"${q}" 검색 결과가 없습니다.`, '다른 제품명 또는 주성분명으로 검색해 보세요.');
+      return;
+    }
+
+    allProducts = data.products;
+    buildFilters(data.dosage_forms, data.products);
+
+    // 첫 번째 제품 선택
+    selectProduct(allProducts[0].insurance_code);
+
+  } catch (err) {
+    setState('error', '서버 연결 실패', `Flask 서버(포트 5001)가 실행 중인지 확인하세요. ${err.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '검색';
+  }
+}
+
+// ── 제형 필터 생성 ──────────────────────────────────────────────
+function buildFilters(dosageForms, products) {
+  const wrap = document.getElementById('filter-wrap');
+  wrap.innerHTML = '<span class="filter-label">제형 필터</span>';
+
+  if (!dosageForms || dosageForms.length <= 1) {
+    wrap.classList.remove('active');
+    return;
+  }
+
+  // "전체" 버튼
+  const allBtn = makeFilterBtn('전체', null, products);
+  allBtn.classList.add('active');
+  wrap.appendChild(allBtn);
+
+  dosageForms.forEach(df => {
+    wrap.appendChild(makeFilterBtn(df, df, products));
+  });
+  wrap.classList.add('active');
+}
+
+function makeFilterBtn(label, dosageForm, products) {
+  const btn = document.createElement('button');
+  btn.className = 'filter-btn';
+  btn.textContent = label;
+  btn.onclick = () => {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    const filtered = dosageForm
+      ? products.filter(p => p.dosage_form === dosageForm)
+      : products;
+
+    if (filtered.length > 0) selectProduct(filtered[0].insurance_code);
+  };
+  return btn;
+}
+
+// ── 제품 선택 → 테이블 + 차트 렌더 ────────────────────────────
+function selectProduct(code) {
+  activeCode = code;
+  const product = allProducts.find(p => p.insurance_code === code);
+  if (!product) return;
+
+  document.getElementById('state-msg').style.display = 'none';
+  renderSummary(product);
+  renderTable(product);
+  renderChartTabs(allProducts, code);
+  renderChart(product);
+}
+
+// ── 요약 카드 ──────────────────────────────────────────────────
+function renderSummary(p) {
+  const wrap = document.getElementById('summary-wrap');
+  const first  = p.price_history[0];
+  const last   = p.price_history[p.price_history.length - 1];
+  const changes = p.price_history.filter(h => !h.is_first);
+  const totalDelta = ((last.price - first.price) / first.price * 100).toFixed(1);
+
+  document.getElementById('s-first-date').textContent  = first.date;
+  document.getElementById('s-first-price').textContent = `최초 등재가: ${fmtPrice(first.price)}원`;
+  document.getElementById('s-current-price').textContent = fmtPrice(last.price) + '원';
+  document.getElementById('s-company').textContent     = p.company;
+
+  const deltaEl = document.getElementById('s-total-delta');
+  deltaEl.textContent = `${totalDelta > 0 ? '+' : ''}${totalDelta}%`;
+  deltaEl.className   = 'card-value ' + (totalDelta > 0 ? 'delta-up' : totalDelta < 0 ? 'delta-down' : '');
+  document.getElementById('s-delta-sub').textContent = `${first.price > 0 ? fmtPrice(Math.abs(last.price - first.price)) + '원 변동' : ''}`;
+  document.getElementById('s-change-count').textContent = changes.length + '회';
+
+  wrap.classList.add('active');
+}
+
+// ── 변동 이력 테이블 ────────────────────────────────────────────
+function renderTable(p) {
+  const tbody = document.getElementById('tbl-body');
+  const tblWrap = document.getElementById('table-wrap');
+  tbody.innerHTML = '';
+
+  // 제품명에서 영문 성분명 추정 (없으면 빈 문자열 — agent가 fallback 처리)
+  const ingEn = guessIngredientEn(p.ingredient);
+  const drugEn = guessDrugEn(p.brand_name);
+
+  let rowCount = 0;
+  p.price_history.forEach(h => {
+    const tr = document.createElement('tr');
+    if (h.is_first) tr.className = 'first-row';
+
+    // 변동률 표시
+    let deltaHtml;
+    if (h.is_first) {
+      deltaHtml = '<span class="delta-none">최초 등재</span>';
+    } else if (h.delta_pct === null) {
+      deltaHtml = '<span class="delta-none">—</span>';
+    } else if (h.delta_pct > 0) {
+      deltaHtml = `<span class="delta-up">▲ +${h.delta_pct.toFixed(2)}%</span>`;
+    } else {
+      deltaHtml = `<span class="delta-down">▼ ${h.delta_pct.toFixed(2)}%</span>`;
+    }
+
+    // 제품명 (첫 행에만 풀 표시)
+    const prodCell = h.is_first
+      ? `${escHtml(p.brand_name)}<span class="tag-first">최초 등재</span>`
+      : `<span style="color:var(--muted);font-size:12px;">—</span>`;
+
+    const rowId = `reason-${p.insurance_code}-${rowCount}`;
+
+    let reasonCell;
+    if (h.is_first) {
+      reasonCell = `<span class="delta-none">최초 등재</span>`;
+    } else {
+      const deltaPct = h.delta_pct !== null ? h.delta_pct : 0;
+      reasonCell = `
+        <div id="${rowId}-wrap">
+          <button class="reason-btn"
+            onclick="fetchReason('${rowId}',
+              '${escAttr(p.brand_name)}','${escAttr(drugEn)}',
+              '${h.date}',
+              '${escAttr(p.ingredient)}','${escAttr(ingEn)}',
+              ${deltaPct})">
+            사유 조회
+          </button>
+        </div>`;
+    }
+
+    tr.innerHTML = `
+      <td>${escHtml(h.date)}</td>
+      <td>${prodCell}</td>
+      <td style="font-size:12px;color:var(--muted);">${escHtml(p.ingredient || '—')}</td>
+      <td style="font-size:12px;">${escHtml(p.company)}</td>
+      <td style="font-weight:600;text-align:right;">${fmtPrice(h.price)}</td>
+      <td>${deltaHtml}</td>
+      <td class="reason-cell">${reasonCell}</td>
+    `;
+    tbody.appendChild(tr);
+    rowCount++;
+  });
+
+  document.getElementById('tbl-badge').textContent = `${p.price_history.length}건`;
+  tblWrap.style.display = '';
+}
+
+// ── 사유 조회 (MarketIntelligenceAgent) ───────────────────────
+async function fetchReason(rowId, drug, drugEn, date, ingredient, ingredientEn, deltaPct) {
+  const wrap = document.getElementById(`${rowId}-wrap`);
+  if (!wrap) return;
+  wrap.innerHTML = `
+    <span class="spinner"></span>
+    <span style="font-size:12px;color:var(--muted);">
+      PubMed·HIRA·MA 전문지 검색 중… (20~40초 소요)
+    </span>`;
+
+  try {
+    const params = new URLSearchParams({
+      drug, drug_en: drugEn,
+      date,
+      ingredient, ingredient_en: ingredientEn,
+      delta_pct: deltaPct,
+    });
+    const res  = await fetch(`${API}/api/domestic/change-reason?${params}`);
+    const data = await res.json();
+
+    const confClass = { high: 'conf-high', medium: 'conf-medium', low: 'conf-low' }[data.confidence] || 'conf-low';
+    const confLabel = { high: '높음', medium: '보통', low: '낮음' }[data.confidence] || '낮음';
+
+    // 기전 태그
+    const mechHtml = data.mechanism_label
+      ? `<div class="mechanism-tag">⚙ ${escHtml(data.mechanism_label)}</div>`
+      : '';
+
+    // 핵심 근거 (evidence_summary)
+    const evidHtml = data.evidence_summary && data.evidence_summary !== '수동 검토 필요'
+      ? `<div class="reason-evidence">📄 ${escHtml(data.evidence_summary)}</div>`
+      : '';
+
+    // 레퍼런스 (가중치 표시)
+    let refsHtml = '';
+    if (data.references && data.references.length > 0) {
+      const refItems = data.references.slice(0, 4).map(r => {
+        const w     = r.weight ? r.weight.toFixed(1) : '?';
+        const jname = r.journal ? r.journal.substring(0, 22) : '기타';
+        const title = r.title ? r.title.substring(0, 50) : '(제목 없음)';
+        return `
+          <div class="reason-ref-item">
+            <span class="reason-ref-weight" title="${escAttr(r.journal || '')}">W${w}</span>
+            <a href="${escAttr(r.url)}" target="_blank" rel="noopener"
+               title="${escAttr(r.journal || '')}">
+              ${escHtml(title)}${r.title && r.title.length > 50 ? '…' : ''}
+            </a>
+          </div>`;
+      }).join('');
+      refsHtml = `<div class="reason-refs">${refItems}</div>`;
+    }
+
+    // 분석 메타 정보
+    const meta = data.analysis_meta;
+    const metaHtml = meta ? `
+      <div class="reason-meta">
+        수집 문헌: PubMed ${meta.pubmed_count}건 · KR규제 ${meta.kr_count}건 · MA저널 ${meta.ma_journal_count}건
+        ${data.cached ? '· <b>캐시</b>' : ''}
+        ${data.notes ? `<br>ℹ ${escHtml(data.notes)}` : ''}
+      </div>` : '';
+
+    wrap.innerHTML = `
+      ${mechHtml}
+      <div class="reason-text">
+        ${escHtml(data.reason || '분석 결과 없음')}
+        <span class="confidence-badge ${confClass}">신뢰도 ${confLabel}</span>
+      </div>
+      ${evidHtml}
+      ${refsHtml}
+      ${metaHtml}
+    `;
+  } catch (err) {
+    wrap.innerHTML = `<span style="font-size:12px;color:var(--danger);">조회 실패: ${err.message}</span>`;
+  }
+}
+
+// ── 영문명 추정 헬퍼 ──────────────────────────────────────────
+const _KR_EN_MAP = {
+  '펨브롤리주맙': 'pembrolizumab',
+  '니볼루맙': 'nivolumab',
+  '트라스투주맙': 'trastuzumab',
+  '베바시주맙': 'bevacizumab',
+  '리툭시맙': 'rituximab',
+  '아테졸리주맙': 'atezolizumab',
+  '두르발루맙': 'durvalumab',
+  '이필리무맙': 'ipilimumab',
+  '세툭시맙': 'cetuximab',
+  '파니투무맙': 'panitumumab',
+  '트라스투주맙데룩스테칸': 'trastuzumab deruxtecan',
+  '오시머티닙': 'osimertinib',
+  '이브루티닙': 'ibrutinib',
+  '팔보시클립': 'palbociclib',
+  '리보시클립': 'ribociclib',
+  '아베마시클립': 'abemaciclib',
+  '아팔루타마이드': 'apalutamide',
+  '엔잘루타마이드': 'enzalutamide',
+};
+
+const _BRAND_EN_MAP = {
+  '키트루다': 'Keytruda',
+  '옵디보': 'Opdivo',
+  '허셉틴': 'Herceptin',
+  '아바스틴': 'Avastin',
+  '맙테라': 'MabThera',
+  '텍센트릭': 'Tecentriq',
+  '임핀지': 'Imfinzi',
+  '여보이': 'Yervoy',
+  '엔허투': 'Enhertu',
+  '타그리소': 'Tagrisso',
+};
+
+function guessIngredientEn(ingKo) {
+  if (!ingKo) return '';
+  const base = ingKo.split(',')[0].trim();
+  return _KR_EN_MAP[base] || '';
+}
+
+function guessDrugEn(brandKo) {
+  if (!brandKo) return '';
+  // 브랜드명에서 한글 제품명 추출 (주 suffix 제거)
+  const clean = brandKo.replace(/주$|정$|캡슐$|액$|주사$/,'').trim();
+  return _BRAND_EN_MAP[clean] || _BRAND_EN_MAP[brandKo] || '';
+}
+
+// ── 차트 탭 (복수 제품일 때) ────────────────────────────────────
+function renderChartTabs(products, activeCodeVal) {
+  const tabs = document.getElementById('chart-tabs');
+  tabs.innerHTML = '';
+  if (products.length <= 1) return;
+
+  products.forEach(p => {
+    const btn = document.createElement('button');
+    btn.className = 'chart-tab' + (p.insurance_code === activeCodeVal ? ' active' : '');
+    btn.textContent = p.dosage_form || p.brand_name;
+    btn.onclick = () => {
+      document.querySelectorAll('.chart-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderChart(p);
+    };
+    tabs.appendChild(btn);
+  });
+}
+
+// ── 워터폴 차트 ────────────────────────────────────────────────
+function renderChart(p) {
+  const wrap = document.getElementById('chart-wrap');
+  wrap.classList.add('active');
+  document.getElementById('chart-title').textContent =
+    `${p.brand_name}  (${p.dosage_form || p.ingredient})  가격 변동 추이`;
+
+  if (!chart) {
+    chart = echarts.init(document.getElementById('waterfall-chart'));
+  }
+
+  const history = p.price_history;
+  const dates   = history.map(h => h.date.substring(0, 7));  // YYYY.MM
+  const n       = history.length;
+
+  // 워터폴 데이터 계산
+  // bar[i] = [base(transparent), delta] — ECharts stack trick
+  const baseData  = [];   // 투명 베이스
+  const upData    = [];   // 인상 (양수 delta)
+  const downData  = [];   // 인하 (음수 delta)
+  const startData = [];   // 최초 등재 막대
+
+  let running = 0;
+  history.forEach((h, i) => {
+    if (h.is_first) {
+      startData.push(h.price);
+      baseData.push(0);
+      upData.push(0);
+      downData.push(0);
+      running = h.price;
+    } else {
+      const delta = h.price - running;
+      startData.push(0);
+      baseData.push(Math.min(running, h.price));
+      if (delta >= 0) {
+        upData.push(Math.abs(delta));
+        downData.push(0);
+      } else {
+        upData.push(0);
+        downData.push(Math.abs(delta));
+      }
+      running = h.price;
+    }
+  });
+
+  const option = {
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: params => {
+        const idx = params[0].dataIndex;
+        const h   = history[idx];
+        const dStr = h.is_first ? '최초 등재' :
+          (h.delta_pct !== null ? `${h.delta_pct > 0 ? '▲ +' : '▼ '}${h.delta_pct.toFixed(2)}%` : '—');
+        return `<b>${dates[idx]}</b><br/>
+                상한금액: <b>${fmtPrice(h.price)}원</b><br/>
+                변동: <b>${dStr}</b>`;
+      },
+    },
+    grid: { left: 80, right: 20, top: 20, bottom: 60 },
+    xAxis: {
+      type: 'category',
+      data: dates,
+      axisLabel: { rotate: 30, fontSize: 11 },
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: {
+        formatter: v => v >= 1000000 ? (v/1000000).toFixed(1) + 'M' :
+                        v >= 1000    ? (v/1000).toFixed(0)    + 'K' : v,
+        fontSize: 11,
+      },
+    },
+    series: [
+      {
+        name: '최초 등재',
+        type: 'bar',
+        stack: 'waterfall',
+        data: startData,
+        itemStyle: { color: '#f59e0b' },
+        barMaxWidth: 50,
+      },
+      {
+        name: '유지 구간',
+        type: 'bar',
+        stack: 'waterfall',
+        data: baseData,
+        itemStyle: { color: 'transparent', borderColor: 'transparent' },
+        emphasis: { itemStyle: { color: 'transparent' } },
+        tooltip: { show: false },
+        barMaxWidth: 50,
+      },
+      {
+        name: '인상',
+        type: 'bar',
+        stack: 'waterfall',
+        data: upData,
+        itemStyle: { color: '#ef4444' },
+        barMaxWidth: 50,
+      },
+      {
+        name: '인하',
+        type: 'bar',
+        stack: 'waterfall',
+        data: downData,
+        itemStyle: { color: '#10b981' },
+        barMaxWidth: 50,
+      },
+    ],
+    legend: {
+      data: ['최초 등재', '인상', '인하'],
+      bottom: 0,
+      itemWidth: 12,
+      itemHeight: 12,
+      textStyle: { fontSize: 12 },
+    },
+  };
+
+  chart.setOption(option, true);
+  window.addEventListener('resize', () => chart && chart.resize());
+}
+
+// ── 상태 메시지 ─────────────────────────────────────────────────
+function setState(type, msg, sub) {
+  const el = document.getElementById('state-msg');
+  const icons = { loading: '⏳', empty: '🔍', error: '⚠️', info: '💊' };
+  el.innerHTML = `
+    <div class="icon">${icons[type] || '💊'}</div>
+    <div class="msg">${type === 'loading' ? '<span class="spinner"></span>' : ''}${escHtml(msg)}</div>
+    ${sub ? `<div class="sub">${escHtml(sub)}</div>` : ''}
+  `;
+  el.style.display = '';
+}
+
+function hideAll() {
+  document.getElementById('table-wrap').style.display  = 'none';
+  document.getElementById('chart-wrap').classList.remove('active');
+  document.getElementById('summary-wrap').classList.remove('active');
+  document.getElementById('filter-wrap').classList.remove('active');
+  if (chart) { chart.clear(); }
+}
+
+// ── 유틸 ────────────────────────────────────────────────────────
+function fmtPrice(n) {
+  if (n == null) return '—';
+  return Number(n).toLocaleString('ko-KR');
+}
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escAttr(s) {
+  if (!s) return '#';
+  return String(s).replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>

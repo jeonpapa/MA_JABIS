@@ -1,0 +1,34 @@
+{
+  "query": "대한민국에서 아토젯정10/20밀리그램_의 약가가 2018.02.01 전후로 변동된 사유를 조사해 주세요. 한국 약가 사후관리 4대 기전(적응증 확대, 특허 만료, 사용량-연동, 실거래가 연동) 중 어느 것에 해당하는지 분석하고, HIRA·복지부 고시나 의약전문 매체 보도를 인용해 근거를 제시하세요.",
+  "mode": "pro",
+  "model": "sonar-pro",
+  "answer": "**아토젯정 10/20mg의 약가는 2018년 2월 1일 전후로 사용량 연동 제도에 따라 인하되었습니다.** 이는 한국 약가 사후관리 4대 기전 중 **사용량 연동**에 해당합니다.\n\n### 변동 사유 및 근거\n- 데일리팜 보도에 따르면, 아토젯정 10/20mg 등 블록버스터 제품의 약가가 **사용량 약가 인하**로 조정되었으며, 구체적으로 1111원에서 1093원으로 인하된 것으로 확인됩니다[1](https://oldm.dailypharm.com/newsView.html?ID=326092). 이는 2018년 2월 1일 시행된 사용량 연동 제도의 적용으로, 고사용량 의약품의 실거래가 반영을 목적으로 한 조치입니다.\n- 사용량 연동은 보건복지부의 약가 사후관리 정책으로, 연간 처방량이 일정 기준(예: 100억 원 이상)을 초과한 블록버스터 약물에 대해 실사용량에 비례한 약가 인하를 실시합니다. 아토젯정은 고지혈증 치료제로서 해당 기준을 충족한 대표 사례입니다[1](https://oldm.dailypharm.com/newsView.html?ID=326092).\n\n### 4대 기전 분석\n| 기전          | 해당 여부 | 이유 |\n|---------------|-----------|------|\n| **적응증 확대** | 해당 없음 | 검색 결과에서 2018년 전후 적응증 확대 관련 HIRA/복지부 고시나 보도 없음[3][6]. |\n| **특허 만료**  | 해당 없음 | 아토젯정(아토르바스타틴/에제티미브 복합제)의 특허 만료 시점은 2022년 이후로 확인되며, 2018년과 무관[5]. |\n| **사용량 연동** | **해당**  | 블록버스터 제품(아토젯 등)의 사용량 초과로 인한 명확한 약가 인하[1](https://oldm.dailypharm.com/newsView.html?ID=326092). |\n| **실거래가 연동** | 해당 없음 | 실거래가 연동은 별도 제도로, 사용량 연동과 구분되며 해당 보도 없음. |\n\nHIRA 의약품정보 조회 결과 현재 보험상한가(10/80mg 기준 1340원)는 확인되나, 2018년 변동 내역은 데일리팜 등 전문 매체 보도가 주요 근거입니다[3](https://www.hira.or.kr/ra/medi/getPermissionInfo.do?pgmid=HIRAA030029000000&medcCd=073100400). 복지부 공식 고시 검색에서 직접적 문서 미확인으로, 추가 공식 자료 보완 필요.",
+  "citations": [
+    "https://oldm.dailypharm.com/newsView.html?ID=326092",
+    "https://www.health.kr/searchDrug/result_sunb.asp?drug_cd=2021021900217&produced=&ordered=boh_price_up",
+    "https://www.hira.or.kr/ra/medi/getPermissionInfo.do?pgmid=HIRAA030029000000&medcCd=073100400",
+    "http://m.dailymedipharm.com/news/articleView.html?idxno=75008",
+    "https://dailypharm.com/user/news?group=%EC%9D%B8%EB%AC%BC%C2%B7%EC%97%B0%EC%9E%AC&category=%EB%82%98%EB%8A%94+%EA%B8%B0%EC%9E%90%EB%8B%A4&name=%EC%9D%B4%ED%83%81%EC%88%9C&view_mode=pc&page=3",
+    "http://medinavi.co.kr/pill/p/201500364.html",
+    "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260331001106",
+    "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20220513000540",
+    "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20231114000488&docno=&viewerhost="
+  ],
+  "usage": {
+    "completion_tokens": 655,
+    "prompt_tokens": 177,
+    "total_tokens": 832,
+    "completion_tokens_details": null,
+    "prompt_tokens_details": null,
+    "search_context_size": "low",
+    "cost": {
+      "input_tokens_cost": 0.00053,
+      "output_tokens_cost": 0.00983,
+      "request_cost": 0.006,
+      "total_cost": 0.01636
+    }
+  },
+  "drug_name": "아토젯정10/20밀리그램_",
+  "country": "대한민국",
+  "created_at": "2026-04-15T13:19:45.906295Z"
+}

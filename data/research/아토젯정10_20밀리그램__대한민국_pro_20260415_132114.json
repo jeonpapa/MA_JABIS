@@ -1,0 +1,34 @@
+{
+  "query": "대한민국에서 아토젯정10/20밀리그램_의 약가가 2020.01.01 전후로 변동된 사유를 조사해 주세요. 한국 약가 사후관리 4대 기전(적응증 확대, 특허 만료, 사용량-연동, 실거래가 연동) 중 어느 것에 해당하는지 분석하고, HIRA·복지부 고시나 의약전문 매체 보도를 인용해 근거를 제시하세요.",
+  "mode": "pro",
+  "model": "sonar-pro",
+  "answer": "제공된 검색 결과만으로는 **2020년 1월 1일 전후 아토젯정 10/20mg의 약가 변동 사유를 특정하기 어렵습니다.**\n\n## 검색 결과의 한계\n\n검색 결과에서 확인할 수 있는 약가 정보는 제한적입니다:\n\n- **2022년 9월 1일**: 사용량-약가 연동 협상 유형에 따른 상한금액 조정 대상 제품으로 언급[3]\n- **2024년 7월 1일**: 0원/1정으로 기록[5]\n- **2022년 9월 1일**: 983원/1정[5]\n\n2020년 1월 1일 전후의 구체적인 약가 변동 기록이나 HIRA·복지부 고시는 검색 결과에 포함되지 않았습니다.\n\n## 필요한 추가 정보\n\n정확한 분석을 위해서는 다음 자료가 필요합니다:\n\n- **HIRA 약가 기준정보**: 2019년 12월~2020년 1월의 아토젯정 10/20mg 기준약가 변동 기록\n- **복지부 고시**: 해당 기간 약가 조정 관련 공식 고시문\n- **의약전문 매체 보도**: 당시 약가 인하/인상 사유를 보도한 기사\n\n추정: 아토젯정은 **특허 만료(2010년대 중반) 이후 제품**으로, 2020년 전후 약가 변동은 **실거래가 연동** 또는 **사용량-약가 연동** 기전에 해당할 가능성이 높으나, 구체적 근거 없이 단정할 수 없습니다.\n\n**HIRA 공식 약가 데이터베이스(https://www.hira.or.kr)** 또는 **의약품 안전나라(https://www.mfds.go.kr)** 직접 조회를 권장합니다.",
+  "citations": [
+    "https://www.health.kr/searchDrug/result_sunb.asp?drug_cd=2021021900217&produced=&ordered=boh_price_up",
+    "http://m.dailymedipharm.com/news/articleView.html?idxno=75008",
+    "https://oldm.dailypharm.com/newsView.html?ID=326092",
+    "https://www.organon.com/korea/wp-content/uploads/sites/15/2021/06/9_%E2%95%9B%E2%95%9E%E2%94%BC%CE%A3%E2%94%B4%C2%BCo%CE%93%E2%94%B4n_ATOZET_LPC_20210126.pdf",
+    "http://www.druginfo.co.kr/detail/product_cp_cancer.aspx?pid=210480",
+    "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20220513000540",
+    "https://common.health.kr/shared/docs/healthkr/approval_result/%EC%9D%98%EC%95%BD%ED%92%88%20%ED%92%88%EB%AA%A9%ED%97%88%EA%B0%80%20%EB%B3%B4%EA%B3%A0%EC%84%9C_(%EC%A3%BC)%EC%9C%A0%ED%95%9C%EC%96%91%ED%96%89,%20%EC%95%84%ED%86%A0%EB%B0%94%EB%AF%B8%EB%B8%8C%EC%A0%9510_5%EB%B0%80%EB%A6%AC%EA%B7%B8%EB%9E%A8(%EC%97%90%EC%A0%9C%ED%8B%B0%EB%AF%B8%EB%B8%8C,%20%EC%95%84%ED%86%A0%EB%A5%B4%EB%B0%94%EC%8A%A4%ED%83%80%ED%8B%B4%EC%B9%BC%EC%8A%98%EC%82%BC%EC%88%98%ED%99%94%EB%AC%BC).pdf",
+    "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20220317000326",
+    "https://common.health.kr/shared/docs/healthkr/approval_result/%EC%9D%98%EC%95%BD%ED%92%88%20%ED%92%88%EB%AA%A9%ED%97%88%EA%B0%80%20%EB%B3%B4%EA%B3%A0%EC%84%9C_(%EC%A3%BC)%EC%9C%A0%ED%95%9C%EC%96%91%ED%96%89,%20%EC%95%84%ED%86%A0%EB%A5%B4%EB%B0%94%EC%A0%955%EB%B0%80%EB%A6%AC%EA%B7%B8%EB%9E%A8(%EC%95%84%ED%86%A0%EB%A5%B4%EB%B0%94%EC%8A%A4%ED%83%80%ED%8B%B4%EC%B9%BC%EC%8A%98%EC%82%BC%EC%88%98%ED%99%94%EB%AC%BC).pdf"
+  ],
+  "usage": {
+    "completion_tokens": 411,
+    "prompt_tokens": 177,
+    "total_tokens": 588,
+    "completion_tokens_details": null,
+    "prompt_tokens_details": null,
+    "search_context_size": "low",
+    "cost": {
+      "input_tokens_cost": 0.00053,
+      "output_tokens_cost": 0.00617,
+      "request_cost": 0.006,
+      "total_cost": 0.0127
+    }
+  },
+  "drug_name": "아토젯정10/20밀리그램_",
+  "country": "대한민국",
+  "created_at": "2026-04-15T13:21:14.179692Z"
+}
