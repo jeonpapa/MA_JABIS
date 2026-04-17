@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>MA Workbench — Settings</title>
 <link rel="stylesheet" href="/dashboard/assets/css/tokens.css">
+<link rel="stylesheet" href="/dashboard/assets/css/components.css">
+<script src="/dashboard/assets/js/ui.js" defer></script>
 <style>
+/* Local backward-compat aliases (tokens.css 우선). */
 :root {
   --bg:            var(--bg, #F5F1FF);
   --card:          var(--surface-0, #fff);
@@ -29,27 +32,11 @@ body {
   font-size: 14px;
   line-height: 1.5;
 }
-header {
-  background: var(--card);
-  border-bottom: 1px solid var(--border);
-  padding: 14px 32px;
+/* Sticky variant for .page-header (components.css). */
+.page-header.sticky {
   position: sticky; top: 0; z-index: 100;
   box-shadow: var(--shadow);
-  display: flex; align-items: center; gap: 24px;
-}
-header .brand {
-  font-weight: 700; font-size: 16px; color: var(--primary);
-  display: flex; align-items: center; gap: 8px;
-}
-header .brand::before { content: "⚙"; font-size: 18px; }
-header nav { display: flex; gap: 4px; margin-left: auto; }
-header nav a {
-  color: var(--muted); text-decoration: none;
-  padding: 8px 14px; border-radius: 8px; font-size: 13px;
-  transition: all .15s;
-}
-header nav a.active, header nav a:hover {
-  background: var(--primary-light); color: var(--primary);
+  padding: 14px 32px;
 }
 main { max-width: 1200px; margin: 0 auto; padding: 24px 32px 80px; }
 
@@ -186,20 +173,7 @@ button.btn.danger {
 button.btn.danger:hover { background: #FEE2E2; }
 button.btn:disabled { opacity: .5; cursor: not-allowed; }
 
-/* Toast */
-.toast {
-  position: fixed; bottom: 90px; left: 50%;
-  transform: translateX(-50%);
-  background: var(--text); color: #fff;
-  padding: 10px 18px; border-radius: 999px;
-  font-size: 13px; font-weight: 600;
-  box-shadow: 0 4px 20px rgba(0,0,0,.18);
-  opacity: 0; transition: opacity .2s;
-  pointer-events: none; z-index: 200;
-}
-.toast.show { opacity: 1; }
-.toast.success { background: var(--success); }
-.toast.error { background: var(--danger); }
+/* Toast 는 components.css 의 .toast 와 ui.js UI.toast() 사용 */
 
 /* Notice */
 .notice {
@@ -213,12 +187,16 @@ button.btn:disabled { opacity: .5; cursor: not-allowed; }
 </head>
 <body>
 
-<header>
-  <div class="brand">MA Negotiation Workbench</div>
-  <nav>
-    <a href="/dashboard/workbench.html">Workbench</a>
-    <a href="/dashboard/settings.html" class="active">Settings</a>
-    <a href="/dashboard/foreign_prices.html">Legacy Dashboard</a>
+<header class="page-header sticky">
+  <span class="ph-icon">⚙️</span>
+  <div class="ph-titles">
+    <h1>MA Negotiation Workbench</h1>
+    <div class="ph-sub">협상 가정치 · xlsx 내보내기 설정</div>
+  </div>
+  <nav class="app-tabs">
+    <a href="/dashboard/workbench.html"><span class="tab-icon">🧮</span>Workbench</a>
+    <a class="active" href="/dashboard/settings.html"><span class="tab-icon">⚙️</span>Settings</a>
+    <a href="/dashboard/foreign_prices.html"><span class="tab-icon">🌍</span>Legacy</a>
   </nav>
 </header>
 
@@ -277,8 +255,6 @@ button.btn:disabled { opacity: .5; cursor: not-allowed; }
   </div>
 </main>
 
-<div class="toast" id="toast"></div>
-
 <script>
 const COUNTRY_INFO = {
   JP: { flag: "🇯🇵", name: "일본 (JP)" },
@@ -306,10 +282,13 @@ async function fetchJson(url, opts = {}) {
 }
 
 function toast(msg, kind = "success") {
-  const el = document.getElementById("toast");
-  el.textContent = msg;
-  el.className = `toast show ${kind}`;
-  setTimeout(() => el.classList.remove("show"), 2400);
+  // kind: "success" | "error" | "info" — UI.toast 는 error default.
+  if (window.UI && typeof UI.toast === "function") {
+    UI.toast(msg, kind === "error" ? "error" : (kind === "info" ? "info" : "success"), 2400);
+  } else {
+    // SSR/script-load 실패 fallback
+    console.warn("UI.toast unavailable:", msg);
+  }
 }
 
 function asPercent(v) {

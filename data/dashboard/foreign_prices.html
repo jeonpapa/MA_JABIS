@@ -6,16 +6,12 @@
 <title>해외 약가 추적 — MA AI Dossier</title>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
 <link rel="stylesheet" href="/dashboard/assets/css/tokens.css">
+<link rel="stylesheet" href="/dashboard/assets/css/components.css">
+<script src="/dashboard/assets/js/ui.js" defer></script>
 <style>
   /* :root design tokens 는 assets/css/tokens.css 단일 소스에서 상속 */
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif; font-size: 14px; }
-
-  /* ── header ── */
-  header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 12px; }
-  header h1 { font-size: 18px; font-weight: 700; }
-  header .sub { color: var(--muted); font-size: 13px; }
-  header a.back { text-decoration: none; color: var(--primary); font-size: 13px; margin-left: auto; }
 
   /* ── search area ── */
   .search-wrap { background: var(--surface); border-bottom: 1px solid var(--border); padding: 20px 24px; }
@@ -110,11 +106,11 @@
 </head>
 <body>
 
-<header>
-  <span style="font-size:22px">🌍</span>
-  <div>
+<header class="page-header">
+  <span class="ph-icon">🌍</span>
+  <div class="ph-titles">
     <h1>해외 약가 추적</h1>
-    <div class="sub">JP · IT · FR · CH · UK · DE — 현지 약가 및 KRW 조정가 비교</div>
+    <div class="ph-sub">JP · IT · FR · CH · UK · DE — 현지 약가 및 KRW 조정가 비교</div>
   </div>
   <nav class="app-tabs" id="appTabs">
     <a href="/dashboard/"><span class="tab-icon">🏥</span>국내 약가</a>
@@ -838,7 +834,7 @@ async function resolveDrug(q) {
 // 캐시는 사용자가 실제로 검색했던 제품명 그대로의 이력. 리졸버 적용 X.
 async function doCache() {
   const q = document.getElementById('searchInput').value.trim();
-  if (!q) { alert('검색어를 입력하세요.'); return; }
+  if (!q) { (window.UI ? UI.toast('검색어를 입력하세요.', 'info') : alert('검색어를 입력하세요.')); return; }
   clearError();
   hideProgress();
   showProgress('이전 검색 이력 조회 중…', 30);
@@ -858,9 +854,9 @@ async function doCache() {
 // ── 실시간 검색 ────────────────────────────────────────────────────────────
 async function doLive() {
   const qIn = document.getElementById('searchInput').value.trim();
-  if (!qIn) { alert('검색어를 입력하세요.'); return; }
+  if (!qIn) { (window.UI ? UI.toast('검색어를 입력하세요.', 'info') : alert('검색어를 입력하세요.')); return; }
   const selected = getSelectedCountries();
-  if (selected.length === 0) { alert('최소 1개 국가를 선택하세요.'); return; }
+  if (selected.length === 0) { (window.UI ? UI.toast('최소 1개 국가를 선택하세요.', 'info') : alert('최소 1개 국가를 선택하세요.')); return; }
 
   clearError();
   document.getElementById('main').style.display = 'none';

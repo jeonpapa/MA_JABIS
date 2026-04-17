@@ -6,9 +6,12 @@
 <title>MA AI Dossier — 약가 모니터링 대쉬보드</title>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
 <link rel="stylesheet" href="/dashboard/assets/css/tokens.css">
+<link rel="stylesheet" href="/dashboard/assets/css/components.css">
+<script src="/dashboard/assets/js/ui.js" defer></script>
 <style>
 /* ══════════════════════════════════════════════════════════════
    :root design tokens 는 assets/css/tokens.css 단일 소스에서 상속.
+   공용 헤더 / 탭 / 버튼 등은 components.css + tokens.css 상속.
 ═══════════════════════════════════════════════════════════════ */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
@@ -19,64 +22,13 @@ body {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   헤더 & 탭 네비게이션
+   헤더 = .page-header.sticky (components.css) — 로컬 분기 제거.
 ═══════════════════════════════════════════════════════════════ */
-header {
-  background: var(--card);
-  border-bottom: 1px solid var(--border);
-  padding: 0 32px;
-  display: flex;
-  align-items: stretch;
-  gap: 0;
-  position: sticky;
-  top: 0;
-  z-index: 100;
+.page-header.sticky {
+  position: sticky; top: 0; z-index: 100;
   box-shadow: var(--shadow);
+  padding: 14px 32px;
 }
-.header-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 0;
-  margin-right: 32px;
-  flex-shrink: 0;
-}
-.header-brand .logo {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--primary);
-}
-.header-brand .subtitle {
-  font-size: 12px;
-  color: var(--muted);
-}
-.tab-nav {
-  display: flex;
-  align-items: stretch;
-  gap: 0;
-}
-.tab-btn {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 0 22px;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--muted);
-  background: none;
-  border: none;
-  border-bottom: 3px solid transparent;
-  cursor: pointer;
-  transition: color .15s, border-color .15s;
-  white-space: nowrap;
-}
-.tab-btn:hover { color: var(--primary); }
-.tab-btn.active {
-  color: var(--primary);
-  font-weight: 700;
-  border-bottom-color: var(--primary);
-}
-.tab-icon { font-size: 16px; }
 
 /* ══════════════════════════════════════════════════════════════
    탭 컨텐츠 영역
@@ -311,13 +263,7 @@ tr:hover td { background: #f9fafb; }
 #dom-state-msg .icon { font-size: 40px; margin-bottom: 12px; }
 #dom-state-msg .msg  { font-size: 15px; }
 #dom-state-msg .sub  { font-size: 13px; margin-top: 6px; }
-.spinner {
-  display: inline-block; width: 20px; height: 20px;
-  border: 3px solid var(--border); border-top-color: var(--primary);
-  border-radius: 50%; animation: spin .7s linear infinite;
-  vertical-align: middle; margin-right: 8px;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
+/* .spinner / @keyframes spin 은 components.css 로 이동. 14px 기본. */
 
 /* ══════════════════════════════════════════════════════════════
    ② 해외 약가 추적 탭
@@ -512,12 +458,11 @@ tr:hover td { background: #f9fafb; }
 <!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
      헤더 & 탭 네비게이션
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
-<header>
-  <div class="header-brand">
-    <div>
-      <div class="logo">MA AI Dossier</div>
-      <div class="subtitle">약가 모니터링 대쉬보드</div>
-    </div>
+<header class="page-header sticky">
+  <span class="ph-icon">💊</span>
+  <div class="ph-titles">
+    <h1>MA AI Dossier</h1>
+    <div class="ph-sub">약가 모니터링 대쉬보드</div>
   </div>
   <nav class="app-tabs" id="appTabs">
     <a class="active" href="/dashboard/"><span class="tab-icon">🏥</span>국내 약가</a>
@@ -1265,7 +1210,7 @@ function domSetState(type, msg, sub) {
   const icons = { loading:'⏳', empty:'🔍', error:'⚠️', info:'💊' };
   el.innerHTML = `
     <div class="icon">${icons[type] || '💊'}</div>
-    <div class="msg">${type === 'loading' ? '<span class="spinner"></span>' : ''}${escHtml(msg)}</div>
+    <div class="msg">${type === 'loading' ? '<span class="spinner lg"></span>' : ''}${escHtml(msg)}</div>
     ${sub ? `<div class="sub">${escHtml(sub)}</div>` : ''}`;
   el.style.display = '';
 }
@@ -1396,7 +1341,7 @@ function forToggleCountryPanel() {
 // ── 신규 검색 (상단 입력창) ───────────────────────────────────────────────
 function forOpenNewSearch() {
   const q = document.getElementById('for-search-input').value.trim();
-  if (!q) { alert('검색어를 입력하세요.'); return; }
+  if (!q) { (window.UI ? UI.toast('검색어를 입력하세요.', 'info') : alert('검색어를 입력하세요.')); return; }
 
   forCurrentQuery  = q;
   forCurrentFilter = null;
@@ -1420,7 +1365,7 @@ async function forDoLive() {
   const query = forCurrentQuery;
   if (!query) return;
   const selected = forGetSelected();
-  if (!selected.length) { alert('최소 1개 국가를 선택하세요.'); return; }
+  if (!selected.length) { (window.UI ? UI.toast('최소 1개 국가를 선택하세요.', 'info') : alert('최소 1개 국가를 선택하세요.')); return; }
 
   forCountryPanelOpen = false;
   document.getElementById('for-country-panel').classList.remove('open');

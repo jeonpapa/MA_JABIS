@@ -1,0 +1,170 @@
+/* MA AI Dossier — Component Catalog
+   tokens.css 위에서 동작하는 공용 컴포넌트.
+   페이지마다 분기된 동일 패턴(spinner, toast, search bar, filter row, count badge)을
+   한 곳으로 모아 신규 페이지/마이그레이션 기준 제공. */
+
+/* ── Page header (모든 페이지 상단) ─────────────────────────────
+   사용: <header class="page-header">
+           <span class="ph-icon">📋</span>
+           <div class="ph-titles"><h1>...</h1><div class="ph-sub">...</div></div>
+           <nav class="app-tabs">...</nav>
+         </header> */
+.page-header {
+  background: var(--surface) !important;
+  border-bottom: 1px solid var(--border);
+  padding: 14px 24px;
+  display: flex; align-items: center; gap: 12px;
+}
+.page-header .ph-icon  { font-size: 22px; }
+.page-header .ph-titles h1 { font-size: 18px; font-weight: 700; margin: 0; }
+.page-header .ph-titles .ph-sub { color: var(--muted); font-size: 13px; }
+
+/* ── Search bar (검색 input + 액션 버튼) ────────────────────────
+   사용: <div class="search-bar">
+           <input class="search-input" .../>
+           <button class="btn-primary">검색</button>
+         </div> */
+.search-bar {
+  display: flex; gap: 8px; align-items: center;
+  flex-wrap: wrap;
+}
+.search-bar .search-input,
+input.search-input {
+  flex: 1 1 280px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-family: var(--font);
+  outline: none;
+  transition: border-color var(--dur) var(--ease);
+}
+input.search-input:focus { border-color: var(--primary); }
+
+/* ── Action buttons (primary/secondary) ──────────────────────── */
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--dur) var(--ease);
+  white-space: nowrap;
+}
+.btn-primary:hover    { background: var(--primary-hover); }
+.btn-primary:disabled { opacity: .5; cursor: default; }
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--primary);
+  border: 1px solid var(--primary-100);
+  border-radius: var(--radius-sm);
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--dur) var(--ease);
+  white-space: nowrap;
+}
+.btn-secondary:hover { background: var(--primary-50); }
+
+/* ── Filter row (라벨 + select + 검색 input 가로 배치) ───────── */
+.filter-row {
+  display: flex; gap: 8px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+  align-items: center;
+}
+.filter-row label { font-size: 12px; color: var(--muted); font-weight: 500; }
+.filter-row select,
+.filter-row .filter-input {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: var(--font);
+  outline: none;
+}
+.filter-row .filter-input { min-width: 200px; }
+.filter-row .filter-input:focus,
+.filter-row select:focus { border-color: var(--primary); }
+
+/* ── Filter chip (선택형 칩 버튼) ───────────────────────────── */
+.filter-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text-700);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.filter-chip:hover { border-color: var(--primary); color: var(--primary); }
+.filter-chip.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+/* ── Count badge (검색·필터 결과 카운트, "5/12건") ────────────
+   tokens.css 의 .result-count 와 동일 — 신규 페이지는 .count-badge 권장 */
+.count-badge,
+.result-count {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--muted); font-weight: 500;
+  padding: 4px 10px;
+  background: var(--surface-1);
+  border-radius: var(--radius-pill);
+}
+.count-badge strong,
+.result-count strong { color: var(--primary); font-weight: 700; }
+
+/* ── Spinner (inline 로딩) ────────────────────────────────────
+   사용: <span class="spinner"></span> 검색 중… */
+.spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid var(--primary-light);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+.spinner.lg { width: 20px; height: 20px; border-width: 3px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Toast (alert 대체, 우하단 고정) ─────────────────────────
+   ui.js 의 showToast(message, type) 가 이 클래스를 사용 */
+.toast {
+  position: fixed; right: 24px; bottom: 80px; z-index: 200;
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.12);
+  border-left: 4px solid var(--danger);
+  font-size: 13px; color: var(--text);
+  max-width: 380px;
+  animation: toastIn .25s ease;
+  transition: opacity .25s ease;
+}
+.toast.success { border-left-color: var(--success); }
+.toast.info    { border-left-color: var(--primary); }
+@keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ── Empty / loading state (대형 메시지) ────────────────────── */
+.empty-state {
+  text-align: center; padding: 60px 20px;
+  color: var(--muted);
+}
+.empty-state .big { font-size: 48px; margin-bottom: 12px; }
+.empty-state .msg { font-size: 15px; }
+.empty-state .sub { font-size: 13px; margin-top: 6px; }

@@ -5,19 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>허가사항 비교 — MA AI Dossier</title>
 <link rel="stylesheet" href="/dashboard/assets/css/tokens.css">
+<link rel="stylesheet" href="/dashboard/assets/css/components.css">
+<script src="/dashboard/assets/js/ui.js" defer></script>
 <style>
-  /* :root design tokens 는 assets/css/tokens.css 단일 소스에서 상속 */
+  /* tokens / components 는 assets/css 단일 소스. 페이지 고유 룰만 여기에. */
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: 'Apple SD Gothic Neo','Noto Sans KR',sans-serif; font-size: 14px; }
-
-  header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 12px; }
-  header h1 { font-size: 18px; font-weight: 700; }
-  header .sub { color: var(--muted); font-size: 13px; }
-  nav.app-tabs { display:flex; gap:4px; margin-left:auto; }
-  nav.app-tabs a { padding:8px 14px; border-radius:8px; text-decoration:none; color:var(--muted); font-size:13px; font-weight:500; transition:.15s; white-space:nowrap; }
-  nav.app-tabs a:hover { background:#f1f5f9; color:var(--text); }
-  nav.app-tabs a.active { background:var(--primary); color:#fff; }
-  .tab-icon { margin-right:4px; }
 
   .container { max-width:1400px; margin:0 auto; padding:20px 24px; }
 
@@ -88,11 +81,11 @@
 </head>
 <body>
 
-<header>
-  <span style="font-size:22px">📋</span>
-  <div>
+<header class="page-header">
+  <span class="ph-icon">📋</span>
+  <div class="ph-titles">
     <h1>허가사항 비교</h1>
-    <div class="sub">FDA · EMA · PMDA · MFDS · MHRA · TGA — 6기관 적응증 단위 비교</div>
+    <div class="ph-sub">FDA · EMA · PMDA · MFDS · MHRA · TGA — 6기관 적응증 단위 비교</div>
   </div>
   <nav class="app-tabs" id="appTabs">
     <a href="/dashboard/"><span class="tab-icon">🏥</span>국내 약가</a>
@@ -153,9 +146,10 @@
           <option value="TGA">TGA only</option>
         </select>
         <label style="margin-left:12px">검색:</label>
-        <input id="filterText" type="search" placeholder="trial / biomarker / disease 키워드"
-               oninput="renderDetail()" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;min-width:200px" />
-        <span class="result-count" id="resultCount">0건</span>
+        <input id="filterText" class="filter-input" type="search"
+               placeholder="trial / biomarker / disease 키워드"
+               oninput="renderDetail()" />
+        <span class="count-badge" id="resultCount">0건</span>
       </div>
       <div class="detail-table-wrap">
         <table>
@@ -312,8 +306,7 @@ function renderDetail() {
         .some(v => v && String(v).toLowerCase().includes(textFilter)));
   }
 
-  const counter = document.getElementById('resultCount');
-  if (counter) counter.innerHTML = `<strong>${rows.length}</strong>/${total}건`;
+  if (window.UI) UI.setCount('resultCount', rows.length, total);
 
   document.getElementById('detailTitle').textContent =
     `적응증 상세 — ${currentProduct} · 행을 클릭하면 기관별 상세 정보`;
@@ -456,12 +449,8 @@ async function loadDetail(indId) {
   }
 }
 
-function esc(s) {
-  if (!s) return '';
-  const d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
-}
+// esc() 는 ui.js 의 UI.escHtml 로 대체. 호환성 유지를 위해 wrapper 만 남김.
+const esc = (s) => (window.UI ? UI.escHtml(s) : (s || ''));
 
 loadProducts();
 </script>
