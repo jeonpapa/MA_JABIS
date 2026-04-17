@@ -4,6 +4,11 @@ config/.env
 
 # DB 파일
 data/db/*.db
+data/db/*.db-shm
+data/db/*.db-wal
+
+# 캐시 (대용량, 별도 백업)
+data/hta_cache/
 
 # 로그
 logs/*.log
@@ -13,3 +18,10 @@ __pycache__/
 *.pyc
 *.pyo
 .DS_Store
+
+# 가상환경
+.venv/
+venv/
+
+# Claude Code 세션 메타
+.claude/

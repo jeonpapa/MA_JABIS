@@ -1,0 +1,1022 @@
+{
+  "nice": {
+    "agency": {
+      "code": "nice",
+      "name": "NICE",
+      "country": "UK",
+      "fields": [
+        "ta_number",
+        "decision",
+        "decision_date",
+        "indication_scope",
+        "icer_value_gbp",
+        "pas_applied",
+        "rationale",
+        "source_url"
+      ],
+      "narrative_fields": [
+        "indication_scope",
+        "rationale"
+      ],
+      "prompt_template": "Find NICE Technology Appraisal guidance for {product} in {indication}.\n\nReturn a single JSON object with exactly these keys:\n{{\n  \"ta_number\":          \"e.g. TA531\",\n  \"decision\":           \"Recommended | Not recommended | Optimised | Conditional\",\n  \"decision_date\":      \"YYYY-MM\",\n  \"indication_scope\":   \"브리핑용 1~2문장 요약 (제한조건·임계값 포함)\",\n  \"icer_value_gbp\":     \"주요 ICER 수치 in £/QALY (없으면 null)\",\n  \"pas_applied\":        true | false | null,\n  \"rationale\":          \"NICE가 왜 이 결정을 내렸는지 100단어 이내로 요약\",\n  \"source_url\":         \"NICE 공식 TA 페이지 URL\"\n}}\n\nReturn ONLY the JSON — no prose before or after.",
+      "description": "NICE Technology Appraisal (UK)"
+    },
+    "responses": {
+      "gemini": {
+        "text": "```json\n{\n  \"ta_number\": \"TA531\",\n  \"decision\": \"Recommended\",\n  \"decision_date\": \"2018-07\",\n  \"indication_scope\": \"성인에서 PD-L1 발현율(TPS)이 50% 이상이고 EGFR 또는 ALK 변이가 없는, 치료 경험이 없는 전이성 비소세포폐암(NSCLC)의 1차 치료 옵션으로 권고됨.\",\n  \"icer_value_gbp\": \"30000-50000\",\n  \"pas_applied\": true,\n  \"rationale\": \"위원회는 전체 생존기간 및 치료 효과 지속기간에 대한 불확실성에도 불구하고, 제시된 ICER 값(£30,000-£50,000/QALY)이 비용 효과적인 범위 내에 있다고 판단했습니다. 또한, 미충족 의료 수요가 높은 질환에 대한 중요한 치료 옵션이며 NICE의 'end-of-life' 기준을 충족한다고 보았습니다. 따라서, 2년 치료 중단 조건 및 환자 접근성 협상(PAS)을 전제로 사용을 권고했습니다.\",\n  \"source_url\": \"https://www.nice.org.uk/guidance/ta531\"\n}\n```",
+        "citations": [],
+        "parsed": {
+          "ta_number": "TA531",
+          "decision": "Recommended",
+          "decision_date": "2018-07",
+          "indication_scope": "성인에서 PD-L1 발현율(TPS)이 50% 이상이고 EGFR 또는 ALK 변이가 없는, 치료 경험이 없는 전이성 비소세포폐암(NSCLC)의 1차 치료 옵션으로 권고됨.",
+          "icer_value_gbp": "30000-50000",
+          "pas_applied": true,
+          "rationale": "위원회는 전체 생존기간 및 치료 효과 지속기간에 대한 불확실성에도 불구하고, 제시된 ICER 값(£30,000-£50,000/QALY)이 비용 효과적인 범위 내에 있다고 판단했습니다. 또한, 미충족 의료 수요가 높은 질환에 대한 중요한 치료 옵션이며 NICE의 'end-of-life' 기준을 충족한다고 보았습니다. 따라서, 2년 치료 중단 조건 및 환자 접근성 협상(PAS)을 전제로 사용을 권고했습니다.",
+          "source_url": "https://www.nice.org.uk/guidance/ta531"
+        },
+        "source": "gemini (gemini-2.5-pro, grounded)"
+      },
+      "perplexity": {
+        "text": "```json\n{\n  \"ta_number\": \"TA531\",\n  \"decision\": \"Recommended\",\n  \"decision_date\": null,\n  \"indication_scope\": \"첫 번째 치료선 전이성 편평상피 NSCLC 환자 중 PD-L1 TPS ≥50%인 경우 펨브롤리주맙 단독요법 권장. EGFR/ALK 야생형 환자 대상.\",\n  \"icer_value_gbp\": null,\n  \"pas_applied\": null,\n  \"rationale\": \"NICE는 펨브롤리주맙을 고PD-L1 발현 전이성 NSCLC의 중요한 치료 옵션으로 평가했습니다. 임상시험 근거에 따르면 PD-L1 발현 수준이 높을수록 임상 반응이 우수하며, 실제 임상 데이터도 이를 지지합니다. 위원회는 펨브롤리주맙이 백금 기반 화학요법 대비 우월한 무진행생존기간과 전체생존기간을 제공한다고 결론지었습니다.\",\n  \"source_url\": \"https://www.nice.org.uk/guidance/ta531\"\n}\n```",
+        "citations": [
+          {
+            "title": "",
+            "url": "https://www.nice.org.uk/guidance/ta911/documents/final-scope"
+          },
+          {
+            "title": "",
+            "url": "https://pubmed.ncbi.nlm.nih.gov/40427002/"
+          },
+          {
+            "title": "",
+            "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9440307/"
+          },
+          {
+            "title": "",
+            "url": "https://www.nice.org.uk/guidance/ta428/documents/final-appraisal-determination-document"
+          },
+          {
+            "title": "",
+            "url": "https://www.nice.org.uk/guidance/ta428/resources/pembrolizumab-for-treating-pdl1positive-nonsmallcell-lung-cancer-after-chemotherapy-pdf-82604670410437"
+          }
+        ],
+        "parsed": {
+          "ta_number": "TA531",
+          "decision": "Recommended",
+          "decision_date": null,
+          "indication_scope": "첫 번째 치료선 전이성 편평상피 NSCLC 환자 중 PD-L1 TPS ≥50%인 경우 펨브롤리주맙 단독요법 권장. EGFR/ALK 야생형 환자 대상.",
+          "icer_value_gbp": null,
+          "pas_applied": null,
+          "rationale": "NICE는 펨브롤리주맙을 고PD-L1 발현 전이성 NSCLC의 중요한 치료 옵션으로 평가했습니다. 임상시험 근거에 따르면 PD-L1 발현 수준이 높을수록 임상 반응이 우수하며, 실제 임상 데이터도 이를 지지합니다. 위원회는 펨브롤리주맙이 백금 기반 화학요법 대비 우월한 무진행생존기간과 전체생존기간을 제공한다고 결론지었습니다.",
+          "source_url": "https://www.nice.org.uk/guidance/ta531"
+        },
+        "source": "perplexity (sonar-pro)"
+      },
+      "openai": {
+        "text": "{\n  \"ta_number\": \"TA531\",\n  \"decision\": \"Recommended\",\n  \"decision_date\": null,\n  \"indication_scope\": \"성인 진행성/전이성 NSCLC 1차 치료로서 PD‑L1 TPS ≥50%이고 EGFR/ALK 변이 음성일 때 펨브롤리주맙 단독요법을 권고(회사 제공 PAS 할인 조건).\",\n  \"icer_value_gbp\": null,\n  \"pas_applied\": true,\n  \"rationale\": \"KEYNOTE‑024 등에서 화학요법 대비 전체생존 및 무진행생존이 유의하게 향상되고, 삶의 질도 유지·개선됨. 생존 곡선 외삽 등 모델 불확실성이 있으나, 회사의 환자접근제도(PAS) 할인을 적용하면 ICER가 NHS가 수용 가능한 범위에 들어와 비용효과성이 확인되어 해당 하위군에서 권고됨.\",\n  \"source_url\": \"https://www.nice.org.uk/guidance/ta531\"\n}",
+        "citations": [],
+        "parsed": {
+          "ta_number": "TA531",
+          "decision": "Recommended",
+          "decision_date": null,
+          "indication_scope": "성인 진행성/전이성 NSCLC 1차 치료로서 PD‑L1 TPS ≥50%이고 EGFR/ALK 변이 음성일 때 펨브롤리주맙 단독요법을 권고(회사 제공 PAS 할인 조건).",
+          "icer_value_gbp": null,
+          "pas_applied": true,
+          "rationale": "KEYNOTE‑024 등에서 화학요법 대비 전체생존 및 무진행생존이 유의하게 향상되고, 삶의 질도 유지·개선됨. 생존 곡선 외삽 등 모델 불확실성이 있으나, 회사의 환자접근제도(PAS) 할인을 적용하면 ICER가 NHS가 수용 가능한 범위에 들어와 비용효과성이 확인되어 해당 하위군에서 권고됨.",
+          "source_url": "https://www.nice.org.uk/guidance/ta531"
+        },
+        "source": "openai (gpt-5)"
+      }
+    },
+    "matrix": {
+      "decision": {
+        "gemini": "Recommended",
+        "perplexity": "Recommended",
+        "openai": "Recommended"
+      },
+      "decision_date": {
+        "gemini": "2018-07",
+        "perplexity": null,
+        "openai": null
+      },
+      "icer_value_gbp": {
+        "gemini": "30000-50000",
+        "perplexity": null,
+        "openai": null
+      },
+      "indication_scope": {
+        "gemini": "성인에서 PD-L1 발현율(TPS)이 50% 이상이고 EGFR 또는 ALK 변이가 없는, 치료 경험이 없는 전이성 비소세포폐암(NSCLC)의 1차 치료 옵션으로 권고됨.",
+        "perplexity": "첫 번째 치료선 전이성 편평상피 NSCLC 환자 중 PD-L1 TPS ≥50%인 경우 펨브롤리주맙 단독요법 권장. EGFR/ALK 야생형 환자 대상.",
+        "openai": "성인 진행성/전이성 NSCLC 1차 치료로서 PD‑L1 TPS ≥50%이고 EGFR/ALK 변이 음성일 때 펨브롤리주맙 단독요법을 권고(회사 제공 PAS 할인 조건)."
+      },
+      "pas_applied": {
+        "gemini": true,
+        "perplexity": null,
+        "openai": true
+      },
+      "rationale": {
+        "gemini": "위원회는 전체 생존기간 및 치료 효과 지속기간에 대한 불확실성에도 불구하고, 제시된 ICER 값(£30,000-£50,000/QALY)이 비용 효과적인 범위 내에 있다고 판단했습니다. 또한, 미충족 의료 수요가 높은 질환에 대한 중요한 치료 옵션이며 NICE의 'end-of-life' 기준을 충족한다고 보았습니다. 따라서, 2년 치료 중단 조건 및 환자 접근성 협상(PAS)을 전제로 사용을 권고했습니다.",
+        "perplexity": "NICE는 펨브롤리주맙을 고PD-L1 발현 전이성 NSCLC의 중요한 치료 옵션으로 평가했습니다. 임상시험 근거에 따르면 PD-L1 발현 수준이 높을수록 임상 반응이 우수하며, 실제 임상 데이터도 이를 지지합니다. 위원회는 펨브롤리주맙이 백금 기반 화학요법 대비 우월한 무진행생존기간과 전체생존기간을 제공한다고 결론지었습니다.",
+        "openai": "KEYNOTE‑024 등에서 화학요법 대비 전체생존 및 무진행생존이 유의하게 향상되고, 삶의 질도 유지·개선됨. 생존 곡선 외삽 등 모델 불확실성이 있으나, 회사의 환자접근제도(PAS) 할인을 적용하면 ICER가 NHS가 수용 가능한 범위에 들어와 비용효과성이 확인되어 해당 하위군에서 권고됨."
+      },
+      "source_url": {
+        "gemini": "https://www.nice.org.uk/guidance/ta531",
+        "perplexity": "https://www.nice.org.uk/guidance/ta531",
+        "openai": "https://www.nice.org.uk/guidance/ta531"
+      },
+      "ta_number": {
+        "gemini": "TA531",
+        "perplexity": "TA531",
+        "openai": "TA531"
+      }
+    },
+    "consensus": {
+      "decision": {
+        "status": "agree",
+        "value": "Recommended",
+        "sources": [
+          "gemini",
+          "openai",
+          "perplexity"
+        ]
+      },
+      "decision_date": {
+        "status": "single",
+        "value": "2018-07",
+        "sources": [
+          "gemini"
+        ]
+      },
+      "icer_value_gbp": {
+        "status": "single",
+        "value": "30000-50000",
+        "sources": [
+          "gemini"
+        ]
+      },
+      "indication_scope": {
+        "status": "narrative",
+        "values": {
+          "gemini": "성인에서 PD-L1 발현율(TPS)이 50% 이상이고 EGFR 또는 ALK 변이가 없는, 치료 경험이 없는 전이성 비소세포폐암(NSCLC)의 1차 치료 옵션으로 권고됨.",
+          "perplexity": "첫 번째 치료선 전이성 편평상피 NSCLC 환자 중 PD-L1 TPS ≥50%인 경우 펨브롤리주맙 단독요법 권장. EGFR/ALK 야생형 환자 대상.",
+          "openai": "성인 진행성/전이성 NSCLC 1차 치료로서 PD‑L1 TPS ≥50%이고 EGFR/ALK 변이 음성일 때 펨브롤리주맙 단독요법을 권고(회사 제공 PAS 할인 조건)."
+        },
+        "sources": [
+          "gemini",
+          "openai",
+          "perplexity"
+        ]
+      },
+      "pas_applied": {
+        "status": "agree",
+        "value": true,
+        "sources": [
+          "gemini",
+          "openai"
+        ]
+      },
+      "rationale": {
+        "status": "narrative",
+        "values": {
+          "gemini": "위원회는 전체 생존기간 및 치료 효과 지속기간에 대한 불확실성에도 불구하고, 제시된 ICER 값(£30,000-£50,000/QALY)이 비용 효과적인 범위 내에 있다고 판단했습니다. 또한, 미충족 의료 수요가 높은 질환에 대한 중요한 치료 옵션이며 NICE의 'end-of-life' 기준을 충족한다고 보았습니다. 따라서, 2년 치료 중단 조건 및 환자 접근성 협상(PAS)을 전제로 사용을 권고했습니다.",
+          "perplexity": "NICE는 펨브롤리주맙을 고PD-L1 발현 전이성 NSCLC의 중요한 치료 옵션으로 평가했습니다. 임상시험 근거에 따르면 PD-L1 발현 수준이 높을수록 임상 반응이 우수하며, 실제 임상 데이터도 이를 지지합니다. 위원회는 펨브롤리주맙이 백금 기반 화학요법 대비 우월한 무진행생존기간과 전체생존기간을 제공한다고 결론지었습니다.",
+          "openai": "KEYNOTE‑024 등에서 화학요법 대비 전체생존 및 무진행생존이 유의하게 향상되고, 삶의 질도 유지·개선됨. 생존 곡선 외삽 등 모델 불확실성이 있으나, 회사의 환자접근제도(PAS) 할인을 적용하면 ICER가 NHS가 수용 가능한 범위에 들어와 비용효과성이 확인되어 해당 하위군에서 권고됨."
+        },
+        "sources": [
+          "gemini",
+          "openai",
+          "perplexity"
+        ]
+      },
+      "source_url": {
+        "status": "agree",
+        "value": "https://www.nice.org.uk/guidance/ta531",
+        "sources": [
+          "gemini",
+          "openai",
+          "perplexity"
+        ]
+      },
+      "ta_number": {
+        "status": "agree",
+        "value": "TA531",
+        "sources": [
+          "gemini",
+          "openai",
+          "perplexity"
+        ]
+      }
+    },
+    "flags": [
+      {
+        "field": "decision_date",
+        "issue": "단일 소스 (gemini) 만 값 제공 — 교차검증 불가"
+      },
+      {
+        "field": "icer_value_gbp",
+        "issue": "단일 소스 (gemini) 만 값 제공 — 교차검증 불가"
+      },
+      {
+        "field": "indication_scope",
+        "issue": "서술형 필드 — 3개 소스 표현 차이 (유저가 통합 필요)",
+        "severity": "info"
+      },
+      {
+        "field": "rationale",
+        "issue": "서술형 필드 — 3개 소스 표현 차이 (유저가 통합 필요)",
+        "severity": "info"
+      }
+    ],
+    "summary": {
+      "agree_count": 4,
+      "conflict_count": 0,
+      "missing_count": 0,
+      "single_source": 2,
+      "narrative_count": 2,
+      "total_fields": 8,
+      "sources_active": 3
+    }
+  },
+  "pbac": {
+    "agency": {
+      "code": "pbac",
+      "name": "PBAC",
+      "country": "AU",
+      "fields": [
+        "recommendation",
+        "meeting_date",
+        "listing_type",
+        "indication_scope",
+        "icer_value_aud",
+        "rsa_applied",
+        "rationale",
+        "source_url"
+      ],
+      "narrative_fields": [
+        "indication_scope",
+        "rationale"
+      ],
+      "prompt_template": "Find PBAC (Pharmaceutical Benefits Advisory Committee, Australia) recommendation for {product} in {indication}.\n\nReturn a single JSON object with exactly these keys:\n{{\n  \"recommendation\":        \"Recommended | Not recommended | Deferred | Reject\",\n  \"meeting_date\":          \"YYYY-MM (decision meeting date)\",\n  \"listing_type\":          \"New listing | Extension | Amendment | null\",\n  \"indication_scope\":      \"PBS 등재 적응증 요약 (2문장 이내, 제한조건 포함)\",\n  \"icer_value_aud\":        \"$/QALY if disclosed (usually redacted, then null)\",\n  \"rsa_applied\":           true | false | null,\n  \"rationale\":             \"PBAC가 이 결정을 내린 핵심 근거 100단어 이내 요약\",\n  \"source_url\":            \"PBAC Public Summary Document URL (pbs.gov.au)\"\n}}\n\nReturn ONLY the JSON — no prose before or after.",
+      "description": "Pharmaceutical Benefits Advisory Committee (Australia)"
+    },
+    "responses": {
+      "gemini": {
+        "text": "```json\n{\n  \"recommendation\": \"Recommended\",\n  \"meeting_date\": \"2018-07\",\n  \"listing_type\": \"New listing\",\n  \"indication_scope\": \"1차 치료 환경에서 PD-L1 발현율(TPS)이 50% 이상이고, EGFR 또는 ALK 유전자 변이가 없는 전이성(4기) 비소세포폐암(NSCLC) 환자의 단독요법. \",\n  \"icer_value_aud\": null,\n  \"rsa_applied\": null,\n  \"rationale\": \"이전에 비용효과성이 불확실하여 기각되었으나, 신청사가 수정한 재정 추정치와 위험분담계약(RSA)을 제시하여 비용효과성을 수용할 수 있는 수준으로 개선함. KEYNOTE-024 임상시험에서 백금 기반 화학요법 대비 전체 생존기간(OS) 및 무진행 생존기간(PFS)에서 통계적으로 유의하고 임상적으로 의미 있는 개선을 보인 점을 핵심 근거로 인정함.\",\n  \"source_url\": \"https://www.pbs.gov.au/industry/listing/elements/pbac-meetings/psd/2018-07/files/pembrolizumab-psd-july-2018.pdf\"\n}\n```",
+        "citations": [],
+        "parsed": {
+          "recommendation": "Recommended",
+          "meeting_date": "2018-07",
+          "listing_type": "New listing",
+          "indication_scope": "1차 치료 환경에서 PD-L1 발현율(TPS)이 50% 이상이고, EGFR 또는 ALK 유전자 변이가 없는 전이성(4기) 비소세포폐암(NSCLC) 환자의 단독요법. ",
+          "icer_value_aud": null,
+          "rsa_applied": null,
+          "rationale": "이전에 비용효과성이 불확실하여 기각되었으나, 신청사가 수정한 재정 추정치와 위험분담계약(RSA)을 제시하여 비용효과성을 수용할 수 있는 수준으로 개선함. KEYNOTE-024 임상시험에서 백금 기반 화학요법 대비 전체 생존기간(OS) 및 무진행 생존기간(PFS)에서 통계적으로 유의하고 임상적으로 의미 있는 개선을 보인 점을 핵심 근거로 인정함.",
+          "source_url": "https://www.pbs.gov.au/industry/listing/elements/pbac-meetings/psd/2018-07/files/pembrolizumab-psd-july-2018.pdf"
+        },
+        "source": "gemini (gemini-2.5-pro, grounded)"
+      },
+      "perplexity": {
+        "text": "{\"recommendation\":null,\"meeting_date\":null,\"listing_type\":null,\"indication_scope\":null,\"icer_value_aud\":null,\"rsa_applied\":null,\"rationale\":null,\"source_url\":null}",
+        "citations": [
+          {
+            "title": "",
+            "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6354672/"
+          },
+          {
+            "title": "",
+            "url": "https://join.targetedonc.com/view/frontline-pembrolizumab-improves-survival-in-nsclc-with-lower-level-of-pdl1-expression"
+          },
+          {
+            "title": "",
+            "url": "https://m.pbs.gov.au/industry/listing/elements/pbac-meetings/psd/2018-07/files/pembrolizumab-nsclc-psd-july-2018.docx"
+          },
+          {
+            "title": "",
+            "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC12248725/"
+          },
+          {
+            "title": "",
+            "url": "https://www.ispor.org/docs/default-source/asia2020/bohenskyispor-apeposter-pdf.pdf?sfvrsn=1b86576e_0"
+          },
+          {
+            "title": "",
+            "url": "https://www.msac.gov.au/sites/default/files/2024-10/msac-position-statement-on-pd-l1-ihc-testing-to-determine-eligibility-for-treatment-with-pd--l-1-checkpoint-inhibitors.docx"
+          },
+          {
+            "title": "",
+            "url": "https://m.pbs.gov.au/industry/listing/elements/pbac-meetings/psd/2018-11/files/pembrolizumab-nsclc-psd-november-2018.docx"
+          }
+        ],
+        "parsed": {
+          "recommendation": null,
+          "meeting_date": null,
+          "listing_type": null,
+          "indication_scope": null,
+          "icer_value_aud": null,
+          "rsa_applied": null,
+          "rationale": null,
+          "source_url": null
+        },
+        "source": "perplexity (sonar-pro)"
+      },
+      "openai": {
+        "text": "",
+        "citations": [],
+        "parsed": null,
+        "source": "openai (gpt-5)"
+      }
+    },
+    "matrix": {
+      "icer_value_aud": {
+        "gemini": null,
+        "perplexity": null,
+        "openai": "⚠️ (응답 없음)"
+      },
+      "indication_scope": {
+        "gemini": "1차 치료 환경에서 PD-L1 발현율(TPS)이 50% 이상이고, EGFR 또는 ALK 유전자 변이가 없는 전이성(4기) 비소세포폐암(NSCLC) 환자의 단독요법. ",
+        "perplexity": null,
+        "openai": "⚠️ (응답 없음)"
+      },
+      "listing_type": {
+        "gemini": "New listing",
+        "perplexity": null,
+        "openai": "⚠️ (응답 없음)"
+      },
+      "meeting_date": {
+        "gemini": "2018-07",
+        "perplexity": null,
+        "openai": "⚠️ (응답 없음)"
+      },
+      "rationale": {
+        "gemini": "이전에 비용효과성이 불확실하여 기각되었으나, 신청사가 수정한 재정 추정치와 위험분담계약(RSA)을 제시하여 비용효과성을 수용할 수 있는 수준으로 개선함. KEYNOTE-024 임상시험에서 백금 기반 화학요법 대비 전체 생존기간(OS) 및 무진행 생존기간(PFS)에서 통계적으로 유의하고 임상적으로 의미 있는 개선을 보인 점을 핵심 근거로 인정함.",
+        "perplexity": null,
+        "openai": "⚠️ (응답 없음)"
+      },
+      "recommendation": {
+        "gemini": "Recommended",
+        "perplexity": null,
+        "openai": "⚠️ (응답 없음)"
+      },
+      "rsa_applied": {
+        "gemini": null,
+        "perplexity": null,
+        "openai": "⚠️ (응답 없음)"
+      },
+      "source_url": {
+        "gemini": "https://www.pbs.gov.au/industry/listing/elements/pbac-meetings/psd/2018-07/files/pembrolizumab-psd-july-2018.pdf",
+        "perplexity": null,
+        "openai": "⚠️ (응답 없음)"
+      }
+    },
+    "consensus": {
+      "icer_value_aud": {
+        "status": "missing",
+        "value": null,
+        "sources": []
+      },
+      "indication_scope": {
+        "status": "narrative",
+        "values": {
+          "gemini": "1차 치료 환경에서 PD-L1 발현율(TPS)이 50% 이상이고, EGFR 또는 ALK 유전자 변이가 없는 전이성(4기) 비소세포폐암(NSCLC) 환자의 단독요법. "
+        },
+        "sources": [
+          "gemini"
+        ]
+      },
+      "listing_type": {
+        "status": "single",
+        "value": "New listing",
+        "sources": [
+          "gemini"
+        ]
+      },
+      "meeting_date": {
+        "status": "single",
+        "value": "2018-07",
+        "sources": [
+          "gemini"
+        ]
+      },
+      "rationale": {
+        "status": "narrative",
+        "values": {
+          "gemini": "이전에 비용효과성이 불확실하여 기각되었으나, 신청사가 수정한 재정 추정치와 위험분담계약(RSA)을 제시하여 비용효과성을 수용할 수 있는 수준으로 개선함. KEYNOTE-024 임상시험에서 백금 기반 화학요법 대비 전체 생존기간(OS) 및 무진행 생존기간(PFS)에서 통계적으로 유의하고 임상적으로 의미 있는 개선을 보인 점을 핵심 근거로 인정함."
+        },
+        "sources": [
+          "gemini"
+        ]
+      },
+      "recommendation": {
+        "status": "single",
+        "value": "Recommended",
+        "sources": [
+          "gemini"
+        ]
+      },
+      "rsa_applied": {
+        "status": "missing",
+        "value": null,
+        "sources": []
+      },
+      "source_url": {
+        "status": "single",
+        "value": "https://www.pbs.gov.au/industry/listing/elements/pbac-meetings/psd/2018-07/files/pembrolizumab-psd-july-2018.pdf",
+        "sources": [
+          "gemini"
+        ]
+      }
+    },
+    "flags": [
+      {
+        "field": "icer_value_aud",
+        "issue": "모든 소스가 값을 제공하지 않음"
+      },
+      {
+        "field": "listing_type",
+        "issue": "단일 소스 (gemini) 만 값 제공 — 교차검증 불가"
+      },
+      {
+        "field": "meeting_date",
+        "issue": "단일 소스 (gemini) 만 값 제공 — 교차검증 불가"
+      },
+      {
+        "field": "recommendation",
+        "issue": "단일 소스 (gemini) 만 값 제공 — 교차검증 불가"
+      },
+      {
+        "field": "rsa_applied",
+        "issue": "모든 소스가 값을 제공하지 않음"
+      },
+      {
+        "field": "source_url",
+        "issue": "단일 소스 (gemini) 만 값 제공 — 교차검증 불가"
+      }
+    ],
+    "summary": {
+      "agree_count": 0,
+      "conflict_count": 0,
+      "missing_count": 2,
+      "single_source": 4,
+      "narrative_count": 2,
+      "total_fields": 8,
+      "sources_active": 2
+    }
+  },
+  "has": {
+    "agency": {
+      "code": "has",
+      "name": "HAS",
+      "country": "FR",
+      "fields": [
+        "smr_rating",
+        "asmr_rating",
+        "opinion_date",
+        "indication_scope",
+        "reimbursement_rate",
+        "rationale",
+        "ceesp_applied",
+        "source_url"
+      ],
+      "narrative_fields": [
+        "indication_scope",
+        "rationale"
+      ],
+      "prompt_template": "Find HAS (Haute Autorité de Santé, France) / CT (Commission de la Transparence) opinion for {product} in {indication}.\n\nReturn a single JSON object with exactly these keys:\n{{\n  \"smr_rating\":         \"Important | Modéré | Faible | Insuffisant | null\",\n  \"asmr_rating\":        \"I (majeur) | II (important) | III (modéré) | IV (mineur) | V (absence) | null\",\n  \"opinion_date\":       \"YYYY-MM\",\n  \"indication_scope\":   \"HAS 평가 적응증 범위 요약 (2문장 이내)\",\n  \"reimbursement_rate\": \"100% | 65% | 30% | 15% | null (ALD/일반 구분 포함 가능)\",\n  \"rationale\":          \"SMR/ASMR 평가 핵심 근거 100단어 이내\",\n  \"ceesp_applied\":      true | false | null,\n  \"source_url\":         \"HAS 공식 평가 페이지 URL (has-sante.fr)\"\n}}\n\nReturn ONLY the JSON — no prose before or after.",
+      "description": "Haute Autorité de Santé / Commission de la Transparence (France)"
+    },
+    "responses": {
+      "gemini": {
+        "text": "```json\n{\n  \"smr_rating\": \"Important\",\n  \"asmr_rating\": \"III (modéré)\",\n  \"opinion_date\": \"2017-05\",\n  \"indication_scope\": \"KEYTRUDA (pembrolizumab) en monothérapie, est indiqué dans le traitement de première ligne du cancer bronchique non à petites cellules (CBNPC) métastatique chez les adultes dont les tumeurs expriment PD-L1 à un score de proportion tumorale (TPS) ≥ 50 % et qui ne présentent pas de mutations tumorales EGFR ou ALK.\",\n  \"reimbursement_rate\": \"100% (ALD)\",\n  \"rationale\": \"La supériorité de pembrolizumab en monothérapie a été démontrée par rapport à une bichimiothérapie à base de sels de platine en termes de survie sans progression et de survie globale. Le profil de tolérance est également plus favorable que celui de la chimiothérapie. Ces données sont issues de l'étude KEYNOTE-024, positionnant Keytruda comme un traitement de première intention dans cette population spécifique.\",\n  \"ceesp_applied\": true,\n  \"source_url\": \"https://www.has-sante.fr/jcms/c_2862021/fr/keytruda-cancer-bronchique-non-a-petites-cellules-1ere-ligne-pembrolizumab\"\n}\n```",
+        "citations": [],
+        "parsed": {
+          "smr_rating": "Important",
+          "asmr_rating": "III (modéré)",
+          "opinion_date": "2017-05",
+          "indication_scope": "KEYTRUDA (pembrolizumab) en monothérapie, est indiqué dans le traitement de première ligne du cancer bronchique non à petites cellules (CBNPC) métastatique chez les adultes dont les tumeurs expriment PD-L1 à un score de proportion tumorale (TPS) ≥ 50 % et qui ne présentent pas de mutations tumorales EGFR ou ALK.",
+          "reimbursement_rate": "100% (ALD)",
+          "rationale": "La supériorité de pembrolizumab en monothérapie a été démontrée par rapport à une bichimiothérapie à base de sels de platine en termes de survie sans progression et de survie globale. Le profil de tolérance est également plus favorable que celui de la chimiothérapie. Ces données sont issues de l'étude KEYNOTE-024, positionnant Keytruda comme un traitement de première intention dans cette population spécifique.",
+          "ceesp_applied": true,
+          "source_url": "https://www.has-sante.fr/jcms/c_2862021/fr/keytruda-cancer-bronchique-non-a-petites-cellules-1ere-ligne-pembrolizumab"
+        },
+        "source": "gemini (gemini-2.5-pro, grounded)"
+      },
+      "perplexity": {
+        "text": "{\"smr_rating\":null,\"asmr_rating\":null,\"opinion_date\":null,\"indication_scope\":null,\"reimbursement_rate\":null,\"rationale\":null,\"ceesp_applied\":null,\"source_url\":null}",
+        "citations": [
+          {
+            "title": "",
+            "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6354672/"
+          },
+          {
+            "title": "",
+            "url": "https://ascopubs.org/doi/10.1200/JCO.2019.37.15_suppl.9111"
+          },
+          {
+            "title": "",
+            "url": "https://www.youtube.com/watch?v=EjziALy1TcM"
+          },
+          {
+            "title": "",
+            "url": "https://www.linkos.cz/files/klinicka-onkologie/548/6464.pdf"
+          },
+          {
+            "title": "",
+            "url": "https://www.keytrudahcp.com/biomarker-testing/pd-l1"
+          }
+        ],
+        "parsed": {
+          "smr_rating": null,
+          "asmr_rating": null,
+          "opinion_date": null,
+          "indication_scope": null,
+          "reimbursement_rate": null,
+          "rationale": null,
+          "ceesp_applied": null,
+          "source_url": null
+        },
+        "source": "perplexity (sonar-pro)"
+      },
+      "openai": {
+        "text": "{\n  \"smr_rating\": \"Important\",\n  \"asmr_rating\": \"II (important)\",\n  \"opinion_date\": null,\n  \"indication_scope\": \"성인 진행성/전이성 비소세포폐암(NSCLC)에서 PD-L1 발현이 높음(TPS ≥50%)이고 EGFR/ALK 변이가 없는 환자에 대한 1차 단독요법. 국소 진행 또는 전이 단계의 비편평/편평 포함.\",\n  \"reimbursement_rate\": \"100%\",\n  \"rationale\": \"KEYNOTE‑024 등에서 표준 백금기반 화학요법 대비 전체생존기간과 무진행생존기간이 유의하게 개선되고 반응률도 높았다. 내약성은 수용 가능 수준이었다. 중증 질환에서 임상적 유용성과 대체 치료의 한계가 인정되어 SMR ‘Important’로 판단되었고, 대조군 대비 임상적 유익성의 크기가 뚜렷해 ASMR II로 평가되었다.\",\n  \"ceesp_applied\": null,\n  \"source_url\": null\n}",
+        "citations": [],
+        "parsed": {
+          "smr_rating": "Important",
+          "asmr_rating": "II (important)",
+          "opinion_date": null,
+          "indication_scope": "성인 진행성/전이성 비소세포폐암(NSCLC)에서 PD-L1 발현이 높음(TPS ≥50%)이고 EGFR/ALK 변이가 없는 환자에 대한 1차 단독요법. 국소 진행 또는 전이 단계의 비편평/편평 포함.",
+          "reimbursement_rate": "100%",
+          "rationale": "KEYNOTE‑024 등에서 표준 백금기반 화학요법 대비 전체생존기간과 무진행생존기간이 유의하게 개선되고 반응률도 높았다. 내약성은 수용 가능 수준이었다. 중증 질환에서 임상적 유용성과 대체 치료의 한계가 인정되어 SMR ‘Important’로 판단되었고, 대조군 대비 임상적 유익성의 크기가 뚜렷해 ASMR II로 평가되었다.",
+          "ceesp_applied": null,
+          "source_url": null
+        },
+        "source": "openai (gpt-5)"
+      }
+    },
+    "matrix": {
+      "asmr_rating": {
+        "gemini": "III (modéré)",
+        "perplexity": null,
+        "openai": "II (important)"
+      },
+      "ceesp_applied": {
+        "gemini": true,
+        "perplexity": null,
+        "openai": null
+      },
+      "indication_scope": {
+        "gemini": "KEYTRUDA (pembrolizumab) en monothérapie, est indiqué dans le traitement de première ligne du cancer bronchique non à petites cellules (CBNPC) métastatique chez les adultes dont les tumeurs expriment PD-L1 à un score de proportion tumorale (TPS) ≥ 50 % et qui ne présentent pas de mutations tumorales EGFR ou ALK.",
+        "perplexity": null,
+        "openai": "성인 진행성/전이성 비소세포폐암(NSCLC)에서 PD-L1 발현이 높음(TPS ≥50%)이고 EGFR/ALK 변이가 없는 환자에 대한 1차 단독요법. 국소 진행 또는 전이 단계의 비편평/편평 포함."
+      },
+      "opinion_date": {
+        "gemini": "2017-05",
+        "perplexity": null,
+        "openai": null
+      },
+      "rationale": {
+        "gemini": "La supériorité de pembrolizumab en monothérapie a été démontrée par rapport à une bichimiothérapie à base de sels de platine en termes de survie sans progression et de survie globale. Le profil de tolérance est également plus favorable que celui de la chimiothérapie. Ces données sont issues de l'étude KEYNOTE-024, positionnant Keytruda comme un traitement de première intention dans cette population spécifique.",
+        "perplexity": null,
+        "openai": "KEYNOTE‑024 등에서 표준 백금기반 화학요법 대비 전체생존기간과 무진행생존기간이 유의하게 개선되고 반응률도 높았다. 내약성은 수용 가능 수준이었다. 중증 질환에서 임상적 유용성과 대체 치료의 한계가 인정되어 SMR ‘Important’로 판단되었고, 대조군 대비 임상적 유익성의 크기가 뚜렷해 ASMR II로 평가되었다."
+      },
+      "reimbursement_rate": {
+        "gemini": "100% (ALD)",
+        "perplexity": null,
+        "openai": "100%"
+      },
+      "smr_rating": {
+        "gemini": "Important",
+        "perplexity": null,
+        "openai": "Important"
+      },
+      "source_url": {
+        "gemini": "https://www.has-sante.fr/jcms/c_2862021/fr/keytruda-cancer-bronchique-non-a-petites-cellules-1ere-ligne-pembrolizumab",
+        "perplexity": null,
+        "openai": null
+      }
+    },
+    "consensus": {
+      "asmr_rating": {
+        "status": "conflict",
+        "values": {
+          "iii (modéré)": "III (modéré)",
+          "ii (important)": "II (important)"
+        },
+        "grouped_sources": {
+          "iii (modéré)": [
+            "gemini"
+          ],
+          "ii (important)": [
+            "openai"
+          ]
+        }
+      },
+      "ceesp_applied": {
+        "status": "single",
+        "value": true,
+        "sources": [
+          "gemini"
+        ]
+      },
+      "indication_scope": {
+        "status": "narrative",
+        "values": {
+          "gemini": "KEYTRUDA (pembrolizumab) en monothérapie, est indiqué dans le traitement de première ligne du cancer bronchique non à petites cellules (CBNPC) métastatique chez les adultes dont les tumeurs expriment PD-L1 à un score de proportion tumorale (TPS) ≥ 50 % et qui ne présentent pas de mutations tumorales EGFR ou ALK.",
+          "openai": "성인 진행성/전이성 비소세포폐암(NSCLC)에서 PD-L1 발현이 높음(TPS ≥50%)이고 EGFR/ALK 변이가 없는 환자에 대한 1차 단독요법. 국소 진행 또는 전이 단계의 비편평/편평 포함."
+        },
+        "sources": [
+          "gemini",
+          "openai"
+        ]
+      },
+      "opinion_date": {
+        "status": "single",
+        "value": "2017-05",
+        "sources": [
+          "gemini"
+        ]
+      },
+      "rationale": {
+        "status": "narrative",
+        "values": {
+          "gemini": "La supériorité de pembrolizumab en monothérapie a été démontrée par rapport à une bichimiothérapie à base de sels de platine en termes de survie sans progression et de survie globale. Le profil de tolérance est également plus favorable que celui de la chimiothérapie. Ces données sont issues de l'étude KEYNOTE-024, positionnant Keytruda comme un traitement de première intention dans cette population spécifique.",
+          "openai": "KEYNOTE‑024 등에서 표준 백금기반 화학요법 대비 전체생존기간과 무진행생존기간이 유의하게 개선되고 반응률도 높았다. 내약성은 수용 가능 수준이었다. 중증 질환에서 임상적 유용성과 대체 치료의 한계가 인정되어 SMR ‘Important’로 판단되었고, 대조군 대비 임상적 유익성의 크기가 뚜렷해 ASMR II로 평가되었다."
+        },
+        "sources": [
+          "gemini",
+          "openai"
+        ]
+      },
+      "reimbursement_rate": {
+        "status": "conflict",
+        "values": {
+          "100% (ald)": "100% (ALD)",
+          "100%": "100%"
+        },
+        "grouped_sources": {
+          "100% (ald)": [
+            "gemini"
+          ],
+          "100%": [
+            "openai"
+          ]
+        }
+      },
+      "smr_rating": {
+        "status": "agree",
+        "value": "Important",
+        "sources": [
+          "gemini",
+          "openai"
+        ]
+      },
+      "source_url": {
+        "status": "single",
+        "value": "https://www.has-sante.fr/jcms/c_2862021/fr/keytruda-cancer-bronchique-non-a-petites-cellules-1ere-ligne-pembrolizumab",
+        "sources": [
+          "gemini"
+        ]
+      }
+    },
+    "flags": [
+      {
+        "field": "asmr_rating",
+        "issue": "소스 간 값 충돌 — 사용자 리뷰 필요",
+        "groups": {
+          "iii (modéré)": [
+            "gemini"
+          ],
+          "ii (important)": [
+            "openai"
+          ]
+        }
+      },
+      {
+        "field": "ceesp_applied",
+        "issue": "단일 소스 (gemini) 만 값 제공 — 교차검증 불가"
+      },
+      {
+        "field": "indication_scope",
+        "issue": "서술형 필드 — 2개 소스 표현 차이 (유저가 통합 필요)",
+        "severity": "info"
+      },
+      {
+        "field": "opinion_date",
+        "issue": "단일 소스 (gemini) 만 값 제공 — 교차검증 불가"
+      },
+      {
+        "field": "rationale",
+        "issue": "서술형 필드 — 2개 소스 표현 차이 (유저가 통합 필요)",
+        "severity": "info"
+      },
+      {
+        "field": "reimbursement_rate",
+        "issue": "소스 간 값 충돌 — 사용자 리뷰 필요",
+        "groups": {
+          "100% (ald)": [
+            "gemini"
+          ],
+          "100%": [
+            "openai"
+          ]
+        }
+      },
+      {
+        "field": "source_url",
+        "issue": "단일 소스 (gemini) 만 값 제공 — 교차검증 불가"
+      }
+    ],
+    "summary": {
+      "agree_count": 1,
+      "conflict_count": 2,
+      "missing_count": 0,
+      "single_source": 3,
+      "narrative_count": 2,
+      "total_fields": 8,
+      "sources_active": 3
+    }
+  },
+  "gba": {
+    "agency": {
+      "code": "gba",
+      "name": "G-BA",
+      "country": "DE",
+      "fields": [
+        "benefit_rating",
+        "decision_date",
+        "subpopulation_count",
+        "indication_scope",
+        "comparator",
+        "rationale",
+        "price_negotiation",
+        "source_url"
+      ],
+      "narrative_fields": [
+        "comparator",
+        "indication_scope",
+        "rationale"
+      ],
+      "prompt_template": "Find G-BA (Gemeinsamer Bundesausschuss, Germany) added benefit assessment for {product} in {indication}.\n\nReturn a single JSON object with exactly these keys:\n{{\n  \"benefit_rating\":      \"major | considerable | minor | non-quantifiable | no added benefit | less benefit | null\",\n  \"decision_date\":       \"YYYY-MM (G-BA Beschluss date)\",\n  \"subpopulation_count\": \"평가된 환자 하위집단 수 (integer, 없으면 null)\",\n  \"indication_scope\":    \"G-BA 평가 적응증 · 하위집단 요약 (2문장 이내)\",\n  \"comparator\":          \"appropriate comparator therapy (zVT) 명시\",\n  \"rationale\":           \"benefit 판정 핵심 근거 100단어 이내\",\n  \"price_negotiation\":   \"GKV-SV 가격협상 상태 | 결과 (예: 가격 합의, 중재판정, 진행중, null)\",\n  \"source_url\":          \"G-BA Beschluss PDF 또는 IQWiG 보고서 URL\"\n}}\n\nReturn ONLY the JSON — no prose before or after.",
+      "description": "Gemeinsamer Bundesausschuss (Germany)"
+    },
+    "responses": {
+      "gemini": {
+        "text": "```json\n{\n  \"benefit_rating\": \"considerable\",\n  \"decision_date\": \"2017-08\",\n  \"subpopulation_count\": 1,\n  \"indication_scope\": \"성인에서 PD-L1 발현(TPS≥50%)이 있고 EGFR 또는 ALK 양성 종양 변이가 없는 전이성 비소세포폐암(NSCLC)의 1차 단독 요법. 이 평가는 명확하게 정의된 단일 환자 하위 그룹에 적용됩니다.\",\n  \"comparator\": \"백금 기반 화학요법(시스플라틴 또는 카보플라틴)과 3세대 세포독성 약물(예: 페메트렉시드, 젬시타빈, 도세탁셀, 파클리탁셀)의 병용 요법. 또는 비편평상피성 NSCLC의 경우 페메트렉시드와 백금 기반 화학요법 병용.\",\n  \"rationale\": \"KEYNOTE-024 임상시험 결과, 펨브롤리주맙은 적절한 비교화학요법 대비 전체 생존기간(Overall Survival)에서 통계적으로 유의하고 임상적으로 현저한 개선을 보였습니다. 또한, 질병 진행까지의 시간 연장 및 심각한 부작용 발생률 감소 등 다른 평가 항목에서도 긍정적인 결과를 나타내어 상당한 부가적 이익이 있다고 평가되었습니다.\",\n  \"price_negotiation\": \"가격 합의\",\n  \"source_url\": \"https://www.g-ba.de/downloads/39-261-2918/2017-08-03_AM-RL-Anlage-XII_Pembrolizumab_nAWG-1L-NSCLC_D-284_TrG.pdf\"\n}\n```",
+        "citations": [],
+        "parsed": {
+          "benefit_rating": "considerable",
+          "decision_date": "2017-08",
+          "subpopulation_count": 1,
+          "indication_scope": "성인에서 PD-L1 발현(TPS≥50%)이 있고 EGFR 또는 ALK 양성 종양 변이가 없는 전이성 비소세포폐암(NSCLC)의 1차 단독 요법. 이 평가는 명확하게 정의된 단일 환자 하위 그룹에 적용됩니다.",
+          "comparator": "백금 기반 화학요법(시스플라틴 또는 카보플라틴)과 3세대 세포독성 약물(예: 페메트렉시드, 젬시타빈, 도세탁셀, 파클리탁셀)의 병용 요법. 또는 비편평상피성 NSCLC의 경우 페메트렉시드와 백금 기반 화학요법 병용.",
+          "rationale": "KEYNOTE-024 임상시험 결과, 펨브롤리주맙은 적절한 비교화학요법 대비 전체 생존기간(Overall Survival)에서 통계적으로 유의하고 임상적으로 현저한 개선을 보였습니다. 또한, 질병 진행까지의 시간 연장 및 심각한 부작용 발생률 감소 등 다른 평가 항목에서도 긍정적인 결과를 나타내어 상당한 부가적 이익이 있다고 평가되었습니다.",
+          "price_negotiation": "가격 합의",
+          "source_url": "https://www.g-ba.de/downloads/39-261-2918/2017-08-03_AM-RL-Anlage-XII_Pembrolizumab_nAWG-1L-NSCLC_D-284_TrG.pdf"
+        },
+        "source": "gemini (gemini-2.5-pro, grounded)"
+      },
+      "perplexity": {
+        "text": "{\"benefit_rating\":null,\"decision_date\":null,\"subpopulation_count\":null,\"indication_scope\":null,\"comparator\":null,\"rationale\":null,\"price_negotiation\":null,\"source_url\":null}",
+        "citations": [
+          {
+            "title": "",
+            "url": "https://www.keytrudahcp.com/biomarker-testing/pd-l1"
+          },
+          {
+            "title": "",
+            "url": "https://www.fda.gov/drugs/fda-expands-pembrolizumab-indication-first-line-treatment-nsclc-tps-1"
+          },
+          {
+            "title": "",
+            "url": "https://www.merck.com/news/fda-approves-mercks-keytruda-pembrolizumab-in-metastatic-nsclc-for-first-line-treatment-of-patients-whose-tumors-have-high-pd-l1-expression-tumor-proportion-score-tps-of-50-percent/"
+          },
+          {
+            "title": "",
+            "url": "https://eprints.aihta.at/1474/1/Fact%20Sheet%20Nr.148_Update.pdf"
+          },
+          {
+            "title": "",
+            "url": "https://www.g-ba.de/downloads/40-1465-6011/2019-09-19_AM-RL-XII_Pembrolizumab_D-448_TrG_EN.pdf"
+          },
+          {
+            "title": "",
+            "url": "https://www.g-ba.de/downloads/91-1455-1082/2024-10-17_Current-Version_Pembrolizumab_D-1059_EN.pdf"
+          },
+          {
+            "title": "",
+            "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC12108898/"
+          },
+          {
+            "title": "",
+            "url": "https://www.g-ba.de/downloads/39-1464-3958/2019-09-19_AM-RL-XII_Pembrolizumab_D-448_EN.pdf"
+          },
+          {
+            "title": "",
+            "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6668842/"
+          },
+          {
+            "title": "",
+            "url": "https://www.iqwig.de/download/a24-46_pembrolizumab_extract-of-dossier-assessment_v1-0.pdf"
+          }
+        ],
+        "parsed": {
+          "benefit_rating": null,
+          "decision_date": null,
+          "subpopulation_count": null,
+          "indication_scope": null,
+          "comparator": null,
+          "rationale": null,
+          "price_negotiation": null,
+          "source_url": null
+        },
+        "source": "perplexity (sonar-pro)"
+      },
+      "openai": {
+        "text": "{\n  \"benefit_rating\": \"considerable\",\n  \"decision_date\": null,\n  \"subpopulation_count\": 2,\n  \"indication_scope\": \"성인 진행성/전이성 NSCLC 1차 단독요법으로 PD‑L1 TPS ≥50%, EGFR/ALK 음성 환자. 병리조직형에 따라 비편평 및 편평 상피암 하위집단으로 평가.\",\n  \"comparator\": \"Platinum-based doublet chemotherapy per histology: non-squamous: cisplatin or carboplatin + pemetrexed; squamous: cisplatin + gemcitabine or carboplatin + paclitaxel (per G-BA zVT).\",\n  \"rationale\": \"In KEYNOTE‑024, pembrolizumab monotherapy showed a clinically relevant overall survival benefit versus platinum-doublet chemotherapy in PD‑L1 TPS ≥50% EGFR/ALK‑WT NSCLC, with improved PFS and higher response rates. Fewer grade 3–5 adverse events and favorable patient-reported outcomes supported a positive benefit–risk profile. Given robust OS gains across histologies and acceptable harms, G‑BA concluded a considerable added benefit.\",\n  \"price_negotiation\": null,\n  \"source_url\": null\n}",
+        "citations": [],
+        "parsed": {
+          "benefit_rating": "considerable",
+          "decision_date": null,
+          "subpopulation_count": 2,
+          "indication_scope": "성인 진행성/전이성 NSCLC 1차 단독요법으로 PD‑L1 TPS ≥50%, EGFR/ALK 음성 환자. 병리조직형에 따라 비편평 및 편평 상피암 하위집단으로 평가.",
+          "comparator": "Platinum-based doublet chemotherapy per histology: non-squamous: cisplatin or carboplatin + pemetrexed; squamous: cisplatin + gemcitabine or carboplatin + paclitaxel (per G-BA zVT).",
+          "rationale": "In KEYNOTE‑024, pembrolizumab monotherapy showed a clinically relevant overall survival benefit versus platinum-doublet chemotherapy in PD‑L1 TPS ≥50% EGFR/ALK‑WT NSCLC, with improved PFS and higher response rates. Fewer grade 3–5 adverse events and favorable patient-reported outcomes supported a positive benefit–risk profile. Given robust OS gains across histologies and acceptable harms, G‑BA concluded a considerable added benefit.",
+          "price_negotiation": null,
+          "source_url": null
+        },
+        "source": "openai (gpt-5)"
+      }
+    },
+    "matrix": {
+      "benefit_rating": {
+        "gemini": "considerable",
+        "perplexity": null,
+        "openai": "considerable"
+      },
+      "comparator": {
+        "gemini": "백금 기반 화학요법(시스플라틴 또는 카보플라틴)과 3세대 세포독성 약물(예: 페메트렉시드, 젬시타빈, 도세탁셀, 파클리탁셀)의 병용 요법. 또는 비편평상피성 NSCLC의 경우 페메트렉시드와 백금 기반 화학요법 병용.",
+        "perplexity": null,
+        "openai": "Platinum-based doublet chemotherapy per histology: non-squamous: cisplatin or carboplatin + pemetrexed; squamous: cisplatin + gemcitabine or carboplatin + paclitaxel (per G-BA zVT)."
+      },
+      "decision_date": {
+        "gemini": "2017-08",
+        "perplexity": null,
+        "openai": null
+      },
+      "indication_scope": {
+        "gemini": "성인에서 PD-L1 발현(TPS≥50%)이 있고 EGFR 또는 ALK 양성 종양 변이가 없는 전이성 비소세포폐암(NSCLC)의 1차 단독 요법. 이 평가는 명확하게 정의된 단일 환자 하위 그룹에 적용됩니다.",
+        "perplexity": null,
+        "openai": "성인 진행성/전이성 NSCLC 1차 단독요법으로 PD‑L1 TPS ≥50%, EGFR/ALK 음성 환자. 병리조직형에 따라 비편평 및 편평 상피암 하위집단으로 평가."
+      },
+      "price_negotiation": {
+        "gemini": "가격 합의",
+        "perplexity": null,
+        "openai": null
+      },
+      "rationale": {
+        "gemini": "KEYNOTE-024 임상시험 결과, 펨브롤리주맙은 적절한 비교화학요법 대비 전체 생존기간(Overall Survival)에서 통계적으로 유의하고 임상적으로 현저한 개선을 보였습니다. 또한, 질병 진행까지의 시간 연장 및 심각한 부작용 발생률 감소 등 다른 평가 항목에서도 긍정적인 결과를 나타내어 상당한 부가적 이익이 있다고 평가되었습니다.",
+        "perplexity": null,
+        "openai": "In KEYNOTE‑024, pembrolizumab monotherapy showed a clinically relevant overall survival benefit versus platinum-doublet chemotherapy in PD‑L1 TPS ≥50% EGFR/ALK‑WT NSCLC, with improved PFS and higher response rates. Fewer grade 3–5 adverse events and favorable patient-reported outcomes supported a positive benefit–risk profile. Given robust OS gains across histologies and acceptable harms, G‑BA concluded a considerable added benefit."
+      },
+      "source_url": {
+        "gemini": "https://www.g-ba.de/downloads/39-261-2918/2017-08-03_AM-RL-Anlage-XII_Pembrolizumab_nAWG-1L-NSCLC_D-284_TrG.pdf",
+        "perplexity": null,
+        "openai": null
+      },
+      "subpopulation_count": {
+        "gemini": 1,
+        "perplexity": null,
+        "openai": 2
+      }
+    },
+    "consensus": {
+      "benefit_rating": {
+        "status": "agree",
+        "value": "considerable",
+        "sources": [
+          "gemini",
+          "openai"
+        ]
+      },
+      "comparator": {
+        "status": "narrative",
+        "values": {
+          "gemini": "백금 기반 화학요법(시스플라틴 또는 카보플라틴)과 3세대 세포독성 약물(예: 페메트렉시드, 젬시타빈, 도세탁셀, 파클리탁셀)의 병용 요법. 또는 비편평상피성 NSCLC의 경우 페메트렉시드와 백금 기반 화학요법 병용.",
+          "openai": "Platinum-based doublet chemotherapy per histology: non-squamous: cisplatin or carboplatin + pemetrexed; squamous: cisplatin + gemcitabine or carboplatin + paclitaxel (per G-BA zVT)."
+        },
+        "sources": [
+          "gemini",
+          "openai"
+        ]
+      },
+      "decision_date": {
+        "status": "single",
+        "value": "2017-08",
+        "sources": [
+          "gemini"
+        ]
+      },
+      "indication_scope": {
+        "status": "narrative",
+        "values": {
+          "gemini": "성인에서 PD-L1 발현(TPS≥50%)이 있고 EGFR 또는 ALK 양성 종양 변이가 없는 전이성 비소세포폐암(NSCLC)의 1차 단독 요법. 이 평가는 명확하게 정의된 단일 환자 하위 그룹에 적용됩니다.",
+          "openai": "성인 진행성/전이성 NSCLC 1차 단독요법으로 PD‑L1 TPS ≥50%, EGFR/ALK 음성 환자. 병리조직형에 따라 비편평 및 편평 상피암 하위집단으로 평가."
+        },
+        "sources": [
+          "gemini",
+          "openai"
+        ]
+      },
+      "price_negotiation": {
+        "status": "single",
+        "value": "가격 합의",
+        "sources": [
+          "gemini"
+        ]
+      },
+      "rationale": {
+        "status": "narrative",
+        "values": {
+          "gemini": "KEYNOTE-024 임상시험 결과, 펨브롤리주맙은 적절한 비교화학요법 대비 전체 생존기간(Overall Survival)에서 통계적으로 유의하고 임상적으로 현저한 개선을 보였습니다. 또한, 질병 진행까지의 시간 연장 및 심각한 부작용 발생률 감소 등 다른 평가 항목에서도 긍정적인 결과를 나타내어 상당한 부가적 이익이 있다고 평가되었습니다.",
+          "openai": "In KEYNOTE‑024, pembrolizumab monotherapy showed a clinically relevant overall survival benefit versus platinum-doublet chemotherapy in PD‑L1 TPS ≥50% EGFR/ALK‑WT NSCLC, with improved PFS and higher response rates. Fewer grade 3–5 adverse events and favorable patient-reported outcomes supported a positive benefit–risk profile. Given robust OS gains across histologies and acceptable harms, G‑BA concluded a considerable added benefit."
+        },
+        "sources": [
+          "gemini",
+          "openai"
+        ]
+      },
+      "source_url": {
+        "status": "single",
+        "value": "https://www.g-ba.de/downloads/39-261-2918/2017-08-03_AM-RL-Anlage-XII_Pembrolizumab_nAWG-1L-NSCLC_D-284_TrG.pdf",
+        "sources": [
+          "gemini"
+        ]
+      },
+      "subpopulation_count": {
+        "status": "conflict",
+        "values": {
+          "1": 1,
+          "2": 2
+        },
+        "grouped_sources": {
+          "1": [
+            "gemini"
+          ],
+          "2": [
+            "openai"
+          ]
+        }
+      }
+    },
+    "flags": [
+      {
+        "field": "comparator",
+        "issue": "서술형 필드 — 2개 소스 표현 차이 (유저가 통합 필요)",
+        "severity": "info"
+      },
+      {
+        "field": "decision_date",
+        "issue": "단일 소스 (gemini) 만 값 제공 — 교차검증 불가"
+      },
+      {
+        "field": "indication_scope",
+        "issue": "서술형 필드 — 2개 소스 표현 차이 (유저가 통합 필요)",
+        "severity": "info"
+      },
+      {
+        "field": "price_negotiation",
+        "issue": "단일 소스 (gemini) 만 값 제공 — 교차검증 불가"
+      },
+      {
+        "field": "rationale",
+        "issue": "서술형 필드 — 2개 소스 표현 차이 (유저가 통합 필요)",
+        "severity": "info"
+      },
+      {
+        "field": "source_url",
+        "issue": "단일 소스 (gemini) 만 값 제공 — 교차검증 불가"
+      },
+      {
+        "field": "subpopulation_count",
+        "issue": "소스 간 값 충돌 — 사용자 리뷰 필요",
+        "groups": {
+          "1": [
+            "gemini"
+          ],
+          "2": [
+            "openai"
+          ]
+        }
+      }
+    ],
+    "summary": {
+      "agree_count": 1,
+      "conflict_count": 1,
+      "missing_count": 0,
+      "single_source": 3,
+      "narrative_count": 3,
+      "total_fields": 8,
+      "sources_active": 3
+    }
+  }
+}

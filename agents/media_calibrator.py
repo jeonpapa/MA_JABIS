@@ -424,7 +424,7 @@ def run_calibration(dry_run: bool = False) -> dict:
     전체 캘리브레이션 파이프라인 실행.
     반환: {"weight_updates": {...}, "domain_scores": {...}, "saved_path": str}
     """
-    from agents.market_intelligence_agent import MEDIA_DB
+    from agents.market_intelligence import MEDIA_DB
 
     logger.info("=== MediaCalibrator 시작 (%d개 약제) ===", len(CALIBRATION_DRUGS))
 

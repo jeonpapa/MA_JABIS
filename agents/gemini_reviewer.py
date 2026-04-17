@@ -67,7 +67,7 @@ def _load_env() -> None:
 
 
 class GeminiReviewer:
-    def __init__(self, model: str = "gemini-2.0-flash"):
+    def __init__(self, model: str = "gemini-2.5-flash"):
         self.model = model
         _load_env()
         self.api_key = os.environ.get("GEMINI_API_KEY", "")
@@ -92,8 +92,12 @@ class GeminiReviewer:
         body = {
             "systemInstruction": {"role": "system", "parts": [{"text": SYSTEM_PROMPT}]},
             "contents":          [{"role": "user", "parts": [{"text": user_msg}]}],
-            "generationConfig":  {"temperature": 0.1, "maxOutputTokens": 800,
-                                  "responseMimeType": "application/json"},
+            "generationConfig":  {
+                "temperature": 0.1,
+                "maxOutputTokens": 2048,
+                "responseMimeType": "application/json",
+                "thinkingConfig": {"thinkingBudget": 0},   # 2.5-flash: thinking 비활성화
+            },
         }
         url = GEMINI_ENDPOINT.format(model=self.model, key=self.api_key)
         try:

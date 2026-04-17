@@ -20,7 +20,7 @@ sys.path.insert(0, str(BASE_DIR))
 
 from agents.db import DrugPriceDB
 from agents.foreign_price_agent import ForeignPriceAgent, AVAILABLE_COUNTRIES
-from agents.market_intelligence_agent import MarketIntelligenceAgent, MI_RULES_TEXT
+from agents.market_intelligence import MarketIntelligenceAgent, MI_RULES_TEXT
 from agents.review_agent import ReviewAgent
 from agents.drug_enrichment_agent import DrugEnrichmentAgent
 
@@ -355,6 +355,174 @@ def price_changes():
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# 엑셀/CSV 다운로드 (가격 변동 이력 · 약가 정보)
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _export_rows(
+    rows: list[dict],
+    columns: list[tuple[str, str]],
+    filename_base: str,
+    fmt: str,
+):
+    """
+    rows: list of dicts
+    columns: [(key, header_label), ...]  — 출력 순서·헤더명
+    fmt: 'csv' | 'xlsx'
+    """
+    import io
+    from flask import Response
+    from datetime import datetime
+    from urllib.parse import quote
+
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_base = re.sub(r"[^\w\-]", "_", filename_base)[:60] or "export"
+
+    if fmt == "xlsx":
+        try:
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, PatternFill, Alignment
+        except ImportError:
+            return jsonify({"error": "openpyxl 미설치 — pip install openpyxl"}), 500
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "export"
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill("solid", fgColor="1A56DB")
+        ws.append([label for _, label in columns])
+        for cell in ws[1]:
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center")
+        for r in rows:
+            ws.append([r.get(k, "") for k, _ in columns])
+        # 컬럼 폭 자동
+        for col_idx, (k, _) in enumerate(columns, start=1):
+            max_len = max(
+                [len(str(r.get(k, ""))) for r in rows] + [len(columns[col_idx-1][1])]
+            ) + 2
+            ws.column_dimensions[ws.cell(1, col_idx).column_letter].width = min(max_len, 40)
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        fname = f"{safe_base}_{stamp}.xlsx"
+        return Response(
+            buf.read(),
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(fname)}"},
+        )
+
+    # CSV (엑셀 한글 호환 BOM 추가)
+    import csv as _csv
+    buf = io.StringIO()
+    buf.write("\ufeff")
+    writer = _csv.writer(buf)
+    writer.writerow([label for _, label in columns])
+    for r in rows:
+        writer.writerow([r.get(k, "") for k, _ in columns])
+    fname = f"{safe_base}_{stamp}.csv"
+    return Response(
+        buf.getvalue(),
+        mimetype="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(fname)}"},
+    )
+
+
+@app.get("/api/domestic/price-changes/export")
+def price_changes_export():
+    """
+    가격 변동 이력을 엑셀/CSV 로 다운로드.
+    GET /api/domestic/price-changes/export?q=키트루다&format=xlsx
+    format: 'csv' | 'xlsx' (default 'xlsx')
+    """
+    query = request.args.get("q", "").strip()
+    fmt   = (request.args.get("format", "xlsx") or "xlsx").lower()
+    if fmt not in ("csv", "xlsx"):
+        return jsonify({"error": "format 은 csv 또는 xlsx 여야 합니다."}), 400
+    if not query:
+        return jsonify({"error": "검색어(q)를 입력하세요."}), 400
+
+    # /api/domestic/price-changes 와 동일 로직 재사용
+    with app.test_request_context(f"/api/domestic/price-changes?q={query}"):
+        payload = price_changes().get_json()
+    products = payload.get("products", [])
+    if not products:
+        return jsonify({"error": f"'{query}' 검색 결과 없음"}), 404
+
+    rows = []
+    for p in products:
+        base = {
+            "product_name":   p.get("product_name", ""),
+            "brand_name":     p.get("brand_name", ""),
+            "ingredient":     p.get("ingredient", ""),
+            "dosage_form":    p.get("dosage_form", ""),
+            "company":        p.get("company", ""),
+            "insurance_code": p.get("insurance_code", ""),
+            "status":         p.get("status", ""),
+        }
+        for h in p.get("price_history", []):
+            rows.append({
+                **base,
+                "date":      h.get("date", ""),
+                "price":     h.get("price", ""),
+                "delta_pct": ("" if h.get("is_first") else h.get("delta_pct", "")),
+                "is_first":  "등재" if h.get("is_first") else "변동",
+            })
+
+    columns = [
+        ("date",           "변동일"),
+        ("is_first",       "구분"),
+        ("price",          "상한금액(원)"),
+        ("delta_pct",      "변동률(%)"),
+        ("product_name",   "제품명"),
+        ("brand_name",     "브랜드"),
+        ("ingredient",     "주성분"),
+        ("dosage_form",    "규격"),
+        ("company",        "업체명"),
+        ("insurance_code", "보험코드"),
+        ("status",         "상태"),
+    ]
+    return _export_rows(rows, columns, f"price_history_{query}", fmt)
+
+
+@app.get("/api/domestic/search/export")
+def domestic_search_export():
+    """
+    약가 정보(최신 레코드)를 엑셀/CSV 로 다운로드.
+    GET /api/domestic/search/export?q=키트루다&format=xlsx
+    """
+    query = request.args.get("q", "").strip()
+    fmt   = (request.args.get("format", "xlsx") or "xlsx").lower()
+    if fmt not in ("csv", "xlsx"):
+        return jsonify({"error": "format 은 csv 또는 xlsx 여야 합니다."}), 400
+    if not query:
+        return jsonify({"error": "검색어(q)를 입력하세요."}), 400
+
+    results = db.search_drug(query, limit=500)
+    if not results:
+        return jsonify({"error": f"'{query}' 검색 결과 없음"}), 404
+
+    # DB 레코드 키 그대로 사용 (존재하는 키만 노출)
+    sample = results[0]
+    preferred = [
+        ("apply_date",      "적용일"),
+        ("product_name_kr", "제품명(한글)"),
+        ("ingredient_kr",   "주성분"),
+        ("company",         "업체명"),
+        ("insurance_code",  "보험코드"),
+        ("max_price",       "상한금액(원)"),
+        ("dosage_form",     "제형/규격"),
+        ("atc_code",        "ATC코드"),
+        ("remark",          "비고"),
+    ]
+    columns = [(k, label) for k, label in preferred if k in sample]
+    # 추가 키가 있으면 뒤에 붙임
+    for k in sample.keys():
+        if k not in {c[0] for c in columns}:
+            columns.append((k, k))
+    return _export_rows(results, columns, f"drug_info_{query}", fmt)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # 가격 변동 사유 조회 (MarketIntelligenceAgent — 의학전문지 + 기전 분석)
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -472,12 +640,21 @@ def change_reason():
             result = retry
             verdict = verdict2
         else:
-            # 재시도 후에도 거부 — 명시적 unknown/low 로 하향하여 반환
+            # 재시도 후에도 거부 — 명시적 unknown/low 로 하향 + reason 도 일관되게 재작성
             logger.info("[Review] 재시도 거부 — unknown 하향")
             result = retry
             result["mechanism"] = "unknown"
             result["mechanism_label"] = "미분류"
             result["confidence"] = "low"
+            win = result.get("window", {}) or {}
+            win_txt = f"{win.get('from','')}~{win.get('to','')}"
+            original_reason = (result.get("reason") or "").strip()
+            # 원문 단정형을 제거하고 추정형으로 재포장
+            result["reason"] = (
+                f"추정: 변동 시점 윈도우({win_txt}) 내 공개 보도에서 단일 기전을 확정할 수 없음. "
+                f"패널 리뷰어(OpenAI·Gemini)가 근거 부족 또는 윈도우 정합성 불일치로 거부함. "
+                + (f"1차 분석 요지: {original_reason[:160]}…" if original_reason else "")
+            ).strip()
             result["notes"] = (
                 (result.get("notes", "") + " · ReviewAgent 거부 — "
                  + verdict2.get("final_verdict", "")).strip(" ·")
@@ -521,7 +698,7 @@ def calibrate_media():
             logger.info("[Calibrator] 완료: %s", result.get("saved_path", "dry-run"))
             # 완료 후 에이전트 가중치 즉시 갱신
             if not dry_run:
-                from agents.market_intelligence_agent import _apply_calibrated_weights
+                from agents.market_intelligence import _apply_calibrated_weights
                 _apply_calibrated_weights()
         except Exception as e:
             logger.error("[Calibrator] 실패: %s", e, exc_info=True)
@@ -646,6 +823,12 @@ def foreign_cached():
     if not query:
         return jsonify({"error": "검색어(q)를 입력하세요."}), 400
     cached = foreign_agent.get_cached_results(query)
+    # 검색 이력 기록
+    try:
+        total = sum(len(v) if isinstance(v, list) else 0 for v in cached.values())
+        db.log_search(query, "foreign_price", result_count=total)
+    except Exception:
+        pass
     return jsonify({"query": query, "results": cached})
 
 
@@ -662,6 +845,568 @@ def foreign_drug_list():
 @app.get("/api/foreign/available_countries")
 def available_countries():
     return jsonify({"available": AVAILABLE_COUNTRIES})
+
+
+@app.get("/api/search/history")
+def search_history():
+    """검색 이력 조회. GET /api/search/history?type=hta&limit=20"""
+    search_type = request.args.get("type")
+    limit = int(request.args.get("limit", 20))
+    return jsonify(db.get_search_history(search_type, limit))
+
+
+@app.get("/api/data/freshness")
+def data_freshness():
+    """데이터 신선도 조회. GET /api/data/freshness?type=hta&key=belzutifan_FDA"""
+    data_type = request.args.get("type", "").strip()
+    scope_key = request.args.get("key", "").strip()
+    if data_type and scope_key:
+        info = db.get_freshness(data_type, scope_key)
+        return jsonify(info or {"status": "not_found"})
+    # 전체 목록
+    with db._connect() as conn:
+        rows = conn.execute("SELECT * FROM data_freshness ORDER BY last_fetched DESC").fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# HIRA 에이전트 (2025.3월 개정 SOP + 외국약가 조정가 검증)
+# ──────────────────────────────────────────────────────────────────────────────
+
+from agents.hira_agent import HIRAAgent
+_hira_agent = HIRAAgent()
+
+
+@app.get("/api/hira/pricing-summary")
+def hira_pricing_summary():
+    """약제결정신청(요양급여 등재) 핵심 조항 요약."""
+    try:
+        return jsonify(_hira_agent.pricing_application_summary())
+    except Exception as e:
+        logger.error("HIRA summary 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/hira/checklist")
+def hira_checklist():
+    return jsonify({"items": _hira_agent.submission_checklist()})
+
+
+@app.get("/api/hira/article")
+def hira_article():
+    """GET /api/hira/article?label=제3조의2"""
+    label = request.args.get("label", "").strip()
+    if not label:
+        return jsonify({"error": "label 파라미터 필요 (예: 제3조의2)"}), 400
+    art = _hira_agent.get_article(label)
+    if not art:
+        return jsonify({"error": f"조항 없음: {label}"}), 404
+    return jsonify({"label": art.label, "title": art.title, "page": art.page, "body": art.body})
+
+
+@app.get("/api/hira/audit-adjustment")
+def hira_audit_adjustment():
+    """_resource/산출식.xlsx 의 수식·비율이 규정과 일치하는지 더블체크."""
+    return jsonify(_hira_agent.audit_adjustment_excel())
+
+
+@app.post("/api/hira/compute-a8")
+def hira_compute_a8():
+    """
+    외국약가 → A8 조정가 산출.
+    Body: {
+      "prices": {"UK": 132.63, "US": 339.46, ...},   // 최소단위당 현지 통화
+      "fx_rates": {"UK": 1821.01, ...},              // optional, 기본값 2025.3월 기준
+      "subset": ["UK","US","CA","JP","FR","DE","IT","CH"]  // optional, 최저가 산출 대상
+    }
+    """
+    body = request.get_json(silent=True) or {}
+    prices = body.get("prices") or {}
+    if not prices:
+        return jsonify({"error": "prices 는 필수 — {국가코드: 현지가격} 형식"}), 400
+    try:
+        result = _hira_agent.compute_a8(
+            prices_local=prices,
+            fx_rates=body.get("fx_rates"),
+            subset=body.get("subset"),
+        )
+        return jsonify(result)
+    except Exception as e:
+        logger.error("A8 산출 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 약제명 리졸버 (제품명 ↔ 성분명)
+# ──────────────────────────────────────────────────────────────────────────────
+
+# 국내 DB 에 없는 해외 신약용 최소 매핑 (INN ↔ 대표 상품명).
+# 확장 필요 시 data/resource/drug_alias.json 으로 분리 가능.
+_KNOWN_ALIASES = {
+    "belzutifan":    ["welireg"],
+    "pembrolizumab": ["keytruda", "키트루다"],
+    "nivolumab":     ["opdivo", "옵디보"],
+    "atezolizumab":  ["tecentriq", "티쎈트릭"],
+    "durvalumab":    ["imfinzi", "임핀지"],
+    "lenvatinib":    ["lenvima", "렌비마"],
+    "osimertinib":   ["tagrisso", "타그리소"],
+    "sotorasib":     ["lumakras", "lumykras"],
+    "enfortumab vedotin": ["padcev", "패드세브"],
+}
+_ALIAS_TO_INGREDIENT = {}
+for ing, products in _KNOWN_ALIASES.items():
+    for p in products + [ing]:
+        _ALIAS_TO_INGREDIENT[p.lower()] = ing
+
+
+def _resolve_drug(query: str) -> dict:
+    """입력(제품명·성분명·한글·영문)을 성분명 + 제품명 리스트로 해석."""
+    q = (query or "").strip()
+    if not q:
+        return {"query": q, "ingredient": "", "products": [], "source": "empty"}
+
+    # 1) 국내 DB drug_latest 에서 ingredient 검색
+    try:
+        import sqlite3 as _sqlite3
+        like = f"%{q}%"
+        with _sqlite3.connect(str(db.db_path)) as c:
+            cur = c.execute(
+                "SELECT DISTINCT ingredient, product_name_kr, product_name_en "
+                "FROM drug_latest "
+                "WHERE ingredient LIKE ? OR product_name_kr LIKE ? OR product_name_en LIKE ? "
+                "LIMIT 20",
+                (like, like, like),
+            )
+            rows = cur.fetchall()
+        if rows:
+            ingredients = [r[0] for r in rows if r[0]]
+            products = [p for r in rows for p in (r[1], r[2]) if p]
+            from collections import Counter
+            top_ing = Counter(ingredients).most_common(1)[0][0] if ingredients else ""
+            # DB에서 성분명을 못 찾았으면 alias 맵에서 product→ingredient 역매핑 시도
+            if not top_ing:
+                for prod in products + [q]:
+                    ing = _ALIAS_TO_INGREDIENT.get(str(prod).lower().split("(")[0].strip())
+                    if ing:
+                        top_ing = ing
+                        break
+            return {
+                "query": q,
+                "ingredient": top_ing,
+                "products": list(dict.fromkeys(products))[:10],
+                "source": "domestic_db" + ("+alias" if top_ing and not ingredients else ""),
+            }
+    except Exception as e:
+        logger.warning("resolve domestic lookup 실패: %s", e)
+
+    # 2) 알려진 INN↔상품 매핑
+    ing = _ALIAS_TO_INGREDIENT.get(q.lower())
+    if ing:
+        return {
+            "query": q,
+            "ingredient": ing,
+            "products": _KNOWN_ALIASES.get(ing, []),
+            "source": "alias_map",
+        }
+
+    # 3) fallback — 입력을 성분명으로 간주
+    return {"query": q, "ingredient": q, "products": [], "source": "fallback"}
+
+
+@app.get("/api/drug/resolve")
+def drug_resolve():
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify({"error": "q 는 필수"}), 400
+    return jsonify(_resolve_drug(q))
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# HTA 허가현황 (PBAC/CADTH/NICE/SMC)
+# ──────────────────────────────────────────────────────────────────────────────
+
+from agents.hta_approval_agent import HTAApprovalAgent
+_hta_agent = HTAApprovalAgent()
+
+
+@app.get("/api/hta/approvals")
+def hta_approvals():
+    """GET /api/hta/approvals?drug=belzutifan[&body=SMC][&refresh=1]"""
+    drug = (request.args.get("drug") or "").strip()
+    if not drug:
+        return jsonify({"error": "drug 는 필수"}), 400
+    body = (request.args.get("body") or "").strip().upper() or None
+    refresh = request.args.get("refresh") in ("1", "true", "True")
+    try:
+        results = _hta_agent.get(drug, body=body, force_refresh=refresh)
+        return jsonify({
+            "drug": drug,
+            "available_bodies": _hta_agent.available_bodies(),
+            "count": len(results),
+            "results": results,
+        })
+    except Exception as e:
+        logger.error("HTA 조회 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/hta/pdf")
+def hta_pdf():
+    """GET /api/hta/pdf?path=<pdf_local 절대경로>  — 캐시된 평가 PDF 다운로드"""
+    from flask import send_file, abort
+    p = request.args.get("path") or ""
+    if not p:
+        abort(400)
+    fp = Path(p).resolve()
+    cache_root = (Path(__file__).parent.parent / "data" / "hta_cache").resolve()
+    if not str(fp).startswith(str(cache_root)) or not fp.exists():
+        abort(404)
+    return send_file(str(fp), mimetype="application/pdf", as_attachment=False, download_name=fp.name)
+
+
+@app.get("/api/hta/indication-matrix")
+def hta_indication_matrix():
+    """GET /api/hta/indication-matrix?drug=belzutifan[&refresh=1]
+
+    FDA 적응증을 축으로 PBAC/CADTH/NICE/SMC 평가를 매칭한 매트릭스 반환.
+    캐시 데이터가 있으면 즉시 반환 (refresh=1 시에만 재수집).
+    """
+    drug = (request.args.get("drug") or "").strip()
+    if not drug:
+        return jsonify({"error": "drug 는 필수"}), 400
+    refresh = request.args.get("refresh") in ("1", "true", "True")
+    try:
+        matrix = _hta_agent.get_indication_matrix(drug, force_refresh=refresh)
+        # 검색 이력 + 신선도 기록
+        try:
+            n_ind = len(matrix.get("indications", []))
+            db.log_search(drug, "hta", result_count=n_ind)
+            if n_ind > 0:
+                for body in ["FDA", "PBAC", "CADTH", "NICE", "SMC"]:
+                    db.update_freshness("hta", f"{drug}_{body}")
+        except Exception:
+            pass
+        return jsonify(matrix)
+    except Exception as e:
+        logger.error("Indication matrix 조회 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Regulatory Approval Matrix (6-agency)
+# ──────────────────────────────────────────────────────────────────────────────
+
+from agents.foreign_approval import ForeignApprovalAgent
+_approval_agent = ForeignApprovalAgent()
+
+@app.get("/api/approval/matrix")
+def approval_matrix():
+    """GET /api/approval/matrix?product=keytruda"""
+    product = (request.args.get("product") or "").strip().lower()
+    if not product:
+        return jsonify({"error": "product 는 필수"}), 400
+    try:
+        m = _approval_agent.matrix(product)
+        return jsonify(m)
+    except Exception as e:
+        logger.error("Approval matrix 조회 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+_TRANSLATE_CACHE_DIR = BASE_DIR / "data" / "hta_cache" / "translations"
+_TRANSLATE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _translate_ja_to_ko(text: str) -> str:
+    """Gemini 2.5-flash 로 일본어 → 한국어 번역 (파일 캐시)."""
+    if not text or not text.strip():
+        return text
+    import hashlib, json as _json, urllib.request, ssl, os
+    cache_key = hashlib.md5(text.encode()).hexdigest()
+    cache_file = _TRANSLATE_CACHE_DIR / f"ja_ko_{cache_key}.txt"
+    if cache_file.exists():
+        return cache_file.read_text("utf-8")
+
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        return text
+
+    body = {
+        "contents": [{"parts": [{"text":
+            f"다음 일본어 의약품 허가사항을 한국어로 번역하세요. 의약품/질환 전문용어를 정확히 사용하세요. 번역문만 출력하세요.\n\n{text}"
+        }]}],
+        "generationConfig": {"temperature": 0, "maxOutputTokens": 1024},
+    }
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    try:
+        req = urllib.request.Request(url, data=_json.dumps(body).encode("utf-8"),
+                                     headers={"Content-Type": "application/json"}, method="POST")
+        ctx = ssl.create_default_context()
+        with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
+            payload = _json.loads(resp.read().decode("utf-8"))
+        translated = (payload.get("candidates", [{}])[0]
+                      .get("content", {}).get("parts", [{}])[0]
+                      .get("text", "")).strip()
+        if translated:
+            cache_file.write_text(translated, "utf-8")
+            return translated
+    except Exception as e:
+        logger.warning("번역 실패: %s", e)
+    return text
+
+
+def _is_japanese(text: str) -> bool:
+    if not text:
+        return False
+    for ch in text[:100]:
+        if '\u3040' <= ch <= '\u30ff' or '\u4e00' <= ch <= '\u9fff':
+            return True
+    return False
+
+
+@app.get("/api/approval/detail")
+def approval_detail():
+    """GET /api/approval/detail?id=keytruda_nsclc_1l_metastatic_chemo"""
+    ind_id = (request.args.get("id") or "").strip()
+    if not ind_id:
+        return jsonify({"error": "id 는 필수"}), 400
+    try:
+        rec = db.get_indication(ind_id)
+        if not rec:
+            return jsonify({"error": "not found"}), 404
+        product = rec.get("product")
+        initial_auth: dict[str, str] = {}
+        if product:
+            with db._connect() as conn:
+                for row in conn.execute(
+                    "SELECT a.agency, MIN(a.approval_date) "
+                    "FROM indications_by_agency a "
+                    "JOIN indications_master m ON m.indication_id = a.indication_id "
+                    "WHERE m.product = ? AND a.approval_date IS NOT NULL "
+                    "GROUP BY a.agency",
+                    (product,),
+                ):
+                    initial_auth[row[0]] = row[1]
+        for a in (rec.get("agencies") or []):
+            ag = a.get("agency")
+            a["initial_auth_date"] = initial_auth.get(ag)
+            if ag == "PMDA":
+                excerpt = a.get("label_excerpt") or ""
+                if _is_japanese(excerpt):
+                    a["label_excerpt_original"] = excerpt
+                    a["label_excerpt"] = _translate_ja_to_ko(excerpt)
+                combo = a.get("combination_label") or ""
+                if _is_japanese(combo):
+                    a["combination_label_original"] = combo
+                    a["combination_label"] = _translate_ja_to_ko(combo)
+        return jsonify(rec)
+    except Exception as e:
+        logger.error("Approval detail 조회 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/approval/products")
+def approval_products():
+    """등록된 product 목록 + 간단한 통계."""
+    try:
+        with db._connect() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT product FROM indications_master ORDER BY product"
+            ).fetchall()
+        products = []
+        for r in rows:
+            slug = r[0]
+            m = _approval_agent.matrix(slug)
+            products.append({
+                "product": slug,
+                "masters": m["totals"]["masters"],
+                "agencies": {
+                    "FDA": m["totals"]["fda_agency"],
+                    "EMA": m["totals"]["ema_agency"],
+                    "PMDA": m["totals"]["pmda_agency"],
+                    "MFDS": m["totals"]["mfds_agency"],
+                    "MHRA": m["totals"]["mhra_agency"],
+                    "TGA": m["totals"]["tga_agency"],
+                },
+                "all_six": m["totals"]["all_six"],
+            })
+        products.sort(key=lambda p: p["masters"], reverse=True)
+        return jsonify({"products": products})
+    except Exception as e:
+        logger.error("Approval products 조회 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Negotiation Workbench (Phase 1 MVP)
+# ──────────────────────────────────────────────────────────────────────────────
+
+from datetime import datetime
+from flask import send_file
+from agents.workbench import (
+    DEFAULT_ASSUMPTIONS,
+    compute_all_scenarios,
+    export_workbook,
+    list_available_products,
+    load_assumptions,
+    load_hta_for_product,
+    save_assumptions,
+    summarize_hta,
+)
+
+
+@app.get("/api/workbench/assumptions")
+def workbench_assumptions_get():
+    """현재 가정치 (없으면 DEFAULT) 반환. 설정 화면용."""
+    return jsonify(load_assumptions())
+
+
+@app.put("/api/workbench/assumptions")
+def workbench_assumptions_put():
+    """가정치 전체 저장. Body: assumptions dict 전체."""
+    body = request.get_json(silent=True) or {}
+    if not body or "countries" not in body:
+        return jsonify({"error": "countries 키 필수"}), 400
+    save_assumptions(body, user=body.get("_user", "dashboard"))
+    return jsonify({"ok": True, "saved": load_assumptions()})
+
+
+@app.get("/api/workbench/defaults")
+def workbench_defaults():
+    """HIRA 고시 기본값 (복원용)."""
+    return jsonify(DEFAULT_ASSUMPTIONS)
+
+
+@app.get("/api/workbench/hta")
+def workbench_hta():
+    """
+    제품별 Tier-3 HTA 교차검증 캐시 조회.
+    Query: ?product=keytruda&summary=1 (summary=1 이면 요약만 반환)
+
+    Returns:
+      - full=True:  {"data": {nice:..., pbac:..., has:..., gba:...}, "summary": {...}}
+      - full=False: {"summary": {...}}
+    """
+    product = request.args.get("product", "").strip()
+    only_summary = request.args.get("summary") in ("1", "true")
+
+    if not product:
+        # 제품 인자 없으면 사용 가능한 목록 반환
+        return jsonify({
+            "available_products": list_available_products(),
+            "hint": "?product=keytruda",
+        })
+
+    data = load_hta_for_product(product)
+    if data is None:
+        return jsonify({
+            "error": f"제품 '{product}' 의 HTA 캐시 없음",
+            "available_products": list_available_products(),
+        }), 404
+
+    summary = summarize_hta(data)
+    if only_summary:
+        return jsonify({"product": product, "summary": summary})
+    return jsonify({"product": product, "data": data, "summary": summary})
+
+
+@app.post("/api/workbench/compute")
+def workbench_compute():
+    """
+    시나리오 병렬 계산 + (옵션) dose 정규화.
+
+    Body: {
+      "prices":       {"JP": 88300, "IT": 1200, ...},   # 국가별 현지가격
+      "rows_meta":    {country: {product_name, strength, pack, form}}  (선택)
+      "product_slug": "keytruda"                         (선택, REFERENCE_SKU 폴백용)
+      "reference_mg": 100                                (선택, 기준 mg)
+      "scenarios":    [...],
+      "assumptions":  {...}                              (선택)
+    }
+
+    rows_meta 가 있으면 국가별 SKU 의 strength/pack 을 파싱해 equivalent_price
+    (reference_mg 기준 환산가) 를 계산 후 A8 비교. 없으면 raw local_price 비교.
+    응답의 각 시나리오 rows[country] 에 mg_pack_total/price_per_mg/dose_confidence 추가,
+    excluded dict 에 동등비교 불가 국가와 사유 표기.
+    """
+    body = request.get_json(silent=True) or {}
+    prices = body.get("prices") or {}
+    if not prices:
+        return jsonify({"error": "prices 필수"}), 400
+    scenarios = body.get("scenarios") or []
+    if not scenarios:
+        return jsonify({"error": "scenarios 필수 (최소 1개)"}), 400
+    assumptions = body.get("assumptions") or load_assumptions()
+    rows_meta    = body.get("rows_meta")
+    product_slug = body.get("product_slug")
+    reference_mg = body.get("reference_mg")
+
+    try:
+        results = compute_all_scenarios(
+            prices, scenarios, assumptions,
+            rows_meta=rows_meta,
+            product_slug=product_slug,
+            reference_mg=reference_mg,
+        )
+        # HTA 캐시 자동 attach (있으면 summary, 없으면 null)
+        hta_summary = None
+        if product_slug:
+            hta_data = load_hta_for_product(product_slug)
+            if hta_data:
+                hta_summary = summarize_hta(hta_data)
+        return jsonify({"scenarios": results, "hta_summary": hta_summary})
+    except Exception as e:
+        logger.error("workbench compute 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/workbench/export")
+def workbench_export():
+    """
+    세션 전체 → xlsx 생성 후 다운로드.
+    Body: {
+      "project":   {...},
+      "prices":    {...},
+      "scenarios": [...],   # compute 결과 그대로
+      "selected":  "B안",
+      "source_raw": [...],
+      "matching":  [...],
+      "hta":       [...] | null,
+      "audit_log": [...],
+    }
+    """
+    body = request.get_json(silent=True) or {}
+    if not body.get("scenarios"):
+        return jsonify({"error": "scenarios 필수"}), 400
+
+    session = dict(body)
+    session.setdefault("assumptions", load_assumptions())
+
+    # 파일명
+    proj = session.get("project", {})
+    drug = (proj.get("drug_name_en") or proj.get("drug_name_kr") or "product").replace(" ", "_").replace("(", "").replace(")", "")
+
+    # HTA 자동 로드 — 클라이언트가 보내지 않았거나 dict 가 아닌 경우 캐시에서 attach
+    if not isinstance(session.get("hta"), dict):
+        for key in ("drug_name_en", "drug_name_kr"):
+            cached = load_hta_for_product(proj.get(key, ""))
+            if cached:
+                session["hta"] = cached
+                break
+    stamp = datetime.now().strftime("%Y%m%d_%H%M")
+    out_path = BASE_DIR / "data" / "workbench" / "exports" / f"MA_A8_Workbench_{drug}_{stamp}.xlsx"
+
+    try:
+        export_workbook(session, out_path)
+        return send_file(
+            str(out_path),
+            as_attachment=True,
+            download_name=out_path.name,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    except Exception as e:
+        logger.error("workbench export 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
 
 
 # ──────────────────────────────────────────────────────────────────────────────

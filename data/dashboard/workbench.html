@@ -1,0 +1,1114 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MA Negotiation Workbench</title>
+<link rel="stylesheet" href="/dashboard/assets/css/tokens.css">
+<style>
+:root {
+  --bg:            var(--bg, #F5F1FF);
+  --card:          var(--surface-0, #fff);
+  --primary:       var(--primary-600, #6C4DF6);
+  --primary-hover: var(--primary-500, #7C5CFC);
+  --primary-light: var(--primary-100, #EBE5FF);
+  --success:       #22C55E;
+  --warning:       #F59E0B;
+  --danger:        #EF4444;
+  --text:          var(--text-900, #1A1830);
+  --muted:         var(--text-500, #6B6880);
+  --border:        var(--border, rgba(108,77,246,.14));
+  --shadow:        var(--shadow, 0 4px 20px rgba(108,77,246,.06));
+  --radius:        var(--radius-sm, 12px);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+header {
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 32px;
+  position: sticky; top: 0; z-index: 100;
+  box-shadow: var(--shadow);
+  display: flex; align-items: center; gap: 24px;
+}
+header .brand {
+  font-weight: 700; font-size: 16px; color: var(--primary);
+  display: flex; align-items: center; gap: 8px;
+}
+header .brand::before { content: "⚖"; font-size: 18px; }
+header nav { display: flex; gap: 4px; margin-left: auto; }
+header nav a {
+  color: var(--muted); text-decoration: none;
+  padding: 8px 14px; border-radius: 8px; font-size: 13px;
+  transition: all .15s;
+}
+header nav a.active, header nav a:hover {
+  background: var(--primary-light); color: var(--primary);
+}
+main { max-width: 1400px; margin: 0 auto; padding: 24px 32px 80px; }
+
+/* Steps */
+.step {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 24px;
+  margin-bottom: 20px;
+  border: 1px solid var(--border);
+}
+.step h2 {
+  font-size: 15px; font-weight: 700; color: var(--primary);
+  margin-bottom: 14px; display: flex; align-items: center; gap: 10px;
+}
+.step h2 .num {
+  background: var(--primary); color: #fff;
+  width: 24px; height: 24px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px;
+}
+.step h2 small {
+  color: var(--muted); font-size: 12px; font-weight: 400; margin-left: 6px;
+}
+
+/* Search */
+.search-row {
+  display: flex; gap: 8px; margin-bottom: 12px;
+}
+.search-row input {
+  flex: 1; padding: 10px 14px; border-radius: 8px;
+  border: 1px solid var(--border); font-size: 14px;
+  background: #fff;
+}
+.search-row input:focus {
+  outline: none; border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-light);
+}
+button.btn {
+  padding: 10px 18px; border: none; border-radius: 8px;
+  background: var(--primary); color: #fff; font-weight: 600;
+  cursor: pointer; font-size: 13px; transition: background .15s;
+}
+button.btn:hover { background: var(--primary-hover); }
+button.btn.secondary {
+  background: transparent; color: var(--primary);
+  border: 1px solid var(--primary);
+}
+button.btn.secondary:hover { background: var(--primary-light); }
+button.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Matching */
+.matching-table {
+  width: 100%; border-collapse: collapse;
+  font-size: 13px;
+}
+.matching-table th {
+  background: var(--primary-light); color: var(--primary);
+  padding: 8px 12px; text-align: left; font-weight: 600;
+  font-size: 12px; text-transform: uppercase;
+}
+.matching-table td {
+  padding: 10px 12px; border-bottom: 1px solid var(--border);
+}
+.matching-table tr:hover { background: rgba(108,77,246,.03); }
+.badge {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 600;
+}
+.badge.green  { background: #D1FAE5; color: #065F46; }
+.badge.yellow { background: #FEF3C7; color: #92400E; }
+.badge.red    { background: #FEE2E2; color: #991B1B; }
+
+/* Scenario cards */
+.scenario-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px; margin-top: 12px;
+}
+.scenario-card {
+  border: 2px solid var(--border); border-radius: var(--radius);
+  padding: 16px; position: relative;
+  background: var(--surface-1, #FAFAFD);
+}
+.scenario-card.selected { border-color: var(--primary); background: var(--primary-light); }
+.scenario-card h3 { font-size: 14px; margin-bottom: 8px; color: var(--primary); }
+.scenario-card .meta { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+.scenario-card .ceiling {
+  font-size: 22px; font-weight: 700; color: var(--text);
+  margin: 10px 0 6px;
+}
+.scenario-card .ceiling small {
+  font-size: 11px; color: var(--muted); display: block; margin-top: 2px; font-weight: 400;
+}
+.scenario-card .includes {
+  display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0;
+}
+.scenario-card .includes .ctag {
+  padding: 2px 6px; background: #fff; border: 1px solid var(--border);
+  border-radius: 4px; font-size: 10px; font-weight: 600;
+}
+.scenario-card .actions {
+  display: flex; gap: 6px; margin-top: 10px;
+}
+.scenario-card .actions button {
+  flex: 1; padding: 6px 10px; font-size: 11px;
+}
+
+/* Scenario editor modal */
+.modal-bg {
+  position: fixed; inset: 0; background: rgba(26,24,48,.5);
+  display: none; align-items: center; justify-content: center;
+  z-index: 200;
+}
+.modal-bg.show { display: flex; }
+.modal {
+  background: #fff; border-radius: var(--radius);
+  padding: 24px; width: 520px; max-width: 90vw;
+  box-shadow: 0 20px 50px rgba(0,0,0,.2);
+}
+.modal h3 { color: var(--primary); margin-bottom: 14px; }
+.form-row { margin-bottom: 12px; }
+.form-row label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+.form-row input, .form-row select, .form-row textarea {
+  width: 100%; padding: 8px 10px; border-radius: 6px;
+  border: 1px solid var(--border); font-size: 13px;
+}
+.country-toggles {
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.country-toggles label {
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 10px; border: 1px solid var(--border);
+  border-radius: 999px; cursor: pointer; font-size: 12px;
+}
+.country-toggles label input { margin: 0; }
+.country-toggles label.disabled {
+  opacity: .5; cursor: not-allowed; background: #F3F4F6;
+}
+.formula-toggles { display: flex; gap: 8px; align-items: center; }
+.formula-toggles label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+
+/* Adjustment table */
+.adj-table {
+  width: 100%; border-collapse: collapse; font-size: 12px;
+  margin-top: 12px;
+}
+.adj-table th {
+  background: var(--primary); color: #fff;
+  padding: 8px; text-align: center; font-weight: 600;
+  font-size: 11px;
+}
+.adj-table td {
+  padding: 7px 8px; border: 1px solid var(--border);
+  text-align: right; font-variant-numeric: tabular-nums;
+}
+.adj-table td.c { text-align: center; }
+.adj-table td.ceiling { background: #D1FAE5; font-weight: 700; color: #065F46; }
+
+.status-line {
+  padding: 10px 14px; background: var(--primary-light);
+  border-radius: 8px; color: var(--primary); font-size: 13px;
+  display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
+}
+.status-line.empty { background: #F3F4F6; color: var(--muted); }
+
+.export-bar {
+  position: sticky; bottom: 0; background: var(--card);
+  padding: 14px 24px; border-radius: var(--radius);
+  box-shadow: 0 -4px 20px rgba(108,77,246,.08);
+  display: flex; align-items: center; gap: 12px;
+  margin-top: 20px; border: 1px solid var(--border);
+}
+.export-bar .info { flex: 1; font-size: 13px; color: var(--muted); }
+.export-bar .selected-name { color: var(--primary); font-weight: 600; }
+
+.hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+/* HTA Matrix */
+.hta-toolbar {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.hta-total {
+  margin-left: auto; font-size: 12px; color: var(--muted);
+}
+.hta-total strong { color: var(--text); font-weight: 600; }
+.hta-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+.hta-card {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 14px; background: var(--surface-1, #FAFAFD);
+}
+.hta-card h4 {
+  font-size: 13px; color: var(--primary); margin-bottom: 4px;
+  display: flex; align-items: center; gap: 6px;
+}
+.hta-card .agency-country {
+  font-size: 11px; color: var(--muted); margin-bottom: 10px;
+}
+.hta-chips {
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.hta-chip {
+  font-size: 11px; padding: 3px 10px; border-radius: 999px;
+  background: #F3F4F6; color: var(--text);
+}
+.hta-chip.agree     { background: #D1FAE5; color: #065F46; }
+.hta-chip.conflict  { background: #FEE2E2; color: #991B1B; }
+.hta-chip.single    { background: #FEF3C7; color: #92400E; }
+.hta-chip.narrative { background: #EDE9FE; color: #5B21B6; }
+.hta-chip.missing   { background: #ECEFF1; color: #546E7A; }
+.hta-empty {
+  padding: 20px; text-align: center; color: var(--muted); font-size: 13px;
+  border: 1px dashed var(--border); border-radius: 8px;
+}
+
+/* ── Stepper (상단 진행 가이드) ─────────────────────────── */
+.stepper {
+  display: flex; align-items: center; gap: 0;
+  background: var(--card); border-radius: var(--radius);
+  box-shadow: var(--shadow); border: 1px solid var(--border);
+  padding: 14px 20px; margin-bottom: 20px;
+  overflow-x: auto;
+}
+.stepper-item {
+  display: flex; align-items: center; gap: 8px;
+  flex: 1 1 0; min-width: 0;
+}
+.stepper-item:not(:last-child)::after {
+  content: ""; flex: 1; height: 2px; background: var(--border);
+  margin: 0 12px; border-radius: 1px;
+  transition: background .2s ease;
+}
+.stepper-item.complete:not(:last-child)::after { background: var(--success); }
+.stepper-bullet {
+  width: 28px; height: 28px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700;
+  background: #ECEFF1; color: var(--muted);
+  border: 2px solid transparent; flex-shrink: 0;
+  transition: all .2s ease;
+}
+.stepper-item.active   .stepper-bullet { background: var(--primary); color: #fff; box-shadow: 0 0 0 4px var(--primary-light); }
+.stepper-item.complete .stepper-bullet { background: var(--success); color: #fff; }
+.stepper-item.complete .stepper-bullet::before { content: "✓"; }
+.stepper-item.complete .stepper-bullet > span  { display: none; }
+.stepper-label { display: flex; flex-direction: column; min-width: 0; }
+.stepper-label .name { font-size: 12px; font-weight: 600; color: var(--text); white-space: nowrap; }
+.stepper-label .desc { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stepper-item.active .stepper-label .name { color: var(--primary); }
+.stepper-item:not(.active):not(.complete) .stepper-label .name { color: var(--muted); }
+
+/* 비활성 step 시각적 dim */
+.step[data-step].locked { opacity: .5; pointer-events: none; filter: grayscale(.4); }
+
+/* Loading spinner (compute 동안 inline) */
+.spinner {
+  display: inline-block; width: 14px; height: 14px;
+  border: 2px solid var(--primary-light); border-top-color: var(--primary);
+  border-radius: 50%; animation: spin .8s linear infinite;
+  vertical-align: middle; margin-right: 6px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Inline error toast */
+.toast {
+  position: fixed; right: 24px; bottom: 80px; z-index: 200;
+  background: var(--card); border-radius: var(--radius); padding: 12px 16px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.12); border-left: 4px solid var(--danger);
+  font-size: 13px; color: var(--text); max-width: 380px;
+  animation: toastIn .25s ease;
+}
+.toast.success { border-left-color: var(--success); }
+.toast.info    { border-left-color: var(--primary); }
+@keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">MA Negotiation Workbench</div>
+  <nav>
+    <a href="/dashboard/workbench.html" class="active">Workbench</a>
+    <a href="/dashboard/settings.html">Settings</a>
+    <a href="/dashboard/index.html">Legacy Dashboard</a>
+  </nav>
+</header>
+
+<main>
+
+<!-- Stepper (전체 진행 상태) -->
+<div class="stepper" id="stepper">
+  <div class="stepper-item" data-stepper="1"><div class="stepper-bullet"><span>1</span></div><div class="stepper-label"><span class="name">제품 검색</span><span class="desc">국내 + 해외</span></div></div>
+  <div class="stepper-item" data-stepper="2"><div class="stepper-bullet"><span>2</span></div><div class="stepper-label"><span class="name">매칭 확인</span><span class="desc">국가별 SKU</span></div></div>
+  <div class="stepper-item" data-stepper="3"><div class="stepper-bullet"><span>3</span></div><div class="stepper-label"><span class="name">시나리오</span><span class="desc">A·B·C안</span></div></div>
+  <div class="stepper-item" data-stepper="4"><div class="stepper-bullet"><span>4</span></div><div class="stepper-label"><span class="name">조정가 산출</span><span class="desc">상한가 비교</span></div></div>
+  <div class="stepper-item" data-stepper="5"><div class="stepper-bullet"><span>5</span></div><div class="stepper-label"><span class="name">HTA & Export</span><span class="desc">xlsx 다운로드</span></div></div>
+</div>
+
+<!-- Step 1. 제품 검색 -->
+<section class="step" data-step="1">
+  <h2><span class="num">1</span>제품 검색 <small>국내 약가 DB + 해외 스크래퍼</small></h2>
+  <div class="search-row">
+    <input id="q" type="text" placeholder="제품명 또는 성분명 (예: 키트루다 / pembrolizumab)" />
+    <button class="btn" onclick="searchProduct()">검색</button>
+  </div>
+  <div id="search-status" class="status-line empty">검색어를 입력하세요</div>
+  <div id="search-results"></div>
+</section>
+
+<!-- Step 2. 매칭 확인 -->
+<section class="step" id="matching-section" data-step="2" style="display:none">
+  <h2><span class="num">2</span>데이터 매칭 확인 <small>Source Raw + Product Matching 시트</small></h2>
+  <table class="matching-table" id="matching-table">
+    <thead>
+      <tr>
+        <th>국가</th><th>소스</th><th>추출 제품명</th><th>용량 (정규화)</th>
+        <th>현지가격</th><th>통화</th><th>일관성</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+  <div class="hint">
+    🟢 Exact (국내와 동일 SKU) · 🟡 Strength-equivalent (환산 필요) · 🔴 Mismatch (수동 확인)
+  </div>
+</section>
+
+<!-- Step 3. 시나리오 빌더 -->
+<section class="step" id="scenario-section" data-step="3" style="display:none">
+  <h2><span class="num">3</span>협상 시나리오 빌더 <small>A·B·C안 병렬 비교</small></h2>
+  <div style="display:flex;gap:8px;margin-bottom:12px">
+    <button class="btn" onclick="openScenarioModal()">+ 시나리오 추가</button>
+    <button class="btn secondary" onclick="seedDefaultScenarios()">기본 3개 시나리오 생성</button>
+  </div>
+  <div class="scenario-grid" id="scenario-grid"></div>
+</section>
+
+<!-- Step 4. 계산 결과 -->
+<section class="step" id="result-section" data-step="4" style="display:none">
+  <h2><span class="num">4</span>결과 — 조정가 상세 <small>Adjustment Logic 시트 (선택된 시나리오)</small></h2>
+  <div id="adjustment-detail"></div>
+</section>
+
+<!-- Step 5. HTA Matrix (Tier-3 AI 교차검증) -->
+<section class="step" id="hta-section" data-step="5" style="display:none">
+  <h2>
+    <span class="num">5</span>HTA Matrix
+    <small>Tier-3 다중-LLM 교차검증 · Gemini · Perplexity · OpenAI</small>
+  </h2>
+  <div class="hta-toolbar">
+    <button class="btn secondary" id="btn-load-hta" onclick="loadHTA()">HTA 데이터 로드</button>
+    <span class="hint">제품별 Tier-3 AI 교차검증 캐시를 불러와 xlsx HTA Matrix 시트에 포함시킵니다.</span>
+    <span class="hta-total" id="hta-total"></span>
+  </div>
+  <div id="hta-grid" class="hta-grid"></div>
+</section>
+
+<!-- Export bar -->
+<div class="export-bar" id="export-bar" style="display:none">
+  <div class="info">
+    선정: <span class="selected-name" id="selected-label">—</span>
+    <span id="selected-ceiling" style="margin-left:12px"></span>
+  </div>
+  <button class="btn secondary" onclick="openAudit()">Audit Log</button>
+  <button class="btn" onclick="exportXlsx()">xlsx Export</button>
+</div>
+
+</main>
+
+<!-- 시나리오 편집 모달 -->
+<div class="modal-bg" id="scenario-modal">
+  <div class="modal">
+    <h3 id="modal-title">시나리오 추가</h3>
+    <div class="form-row">
+      <label>이름</label>
+      <input id="sc-name" type="text" placeholder="예: A안 (전체 6개국)" />
+    </div>
+    <div class="form-row">
+      <label>포함 국가</label>
+      <div class="country-toggles" id="sc-countries"></div>
+    </div>
+    <div class="form-row">
+      <label>환율 기준</label>
+      <select id="sc-fx">
+        <option value="default">이전월 기준 36개월 rolling (기본)</option>
+        <option value="24">24개월</option>
+        <option value="12">12개월</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label>제안가 공식</label>
+      <div class="formula-toggles">
+        <label><input type="radio" name="sc-formula" value="min_n" checked /> 최저 × N%</label>
+        <label><input type="radio" name="sc-formula" value="avg_n" /> 평균 × N%</label>
+        <label style="margin-left:auto">N% = <input id="sc-percent" type="number" value="90" min="1" max="100" style="width:60px" /></label>
+      </div>
+    </div>
+    <div class="form-row">
+      <label>메모 / 전략 근거</label>
+      <textarea id="sc-notes" rows="2" placeholder="예: IT 환율 변동성 커서 제외"></textarea>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+      <button class="btn secondary" onclick="closeScenarioModal()">취소</button>
+      <button class="btn" onclick="saveScenario()">저장</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═════════════════════════════════════════════════
+// 상태
+// ═════════════════════════════════════════════════
+const STATE = {
+  query:       "",
+  product:     null,        // {drug_name_en, drug_name_kr, sku, ...}
+  prices:      {},          // {country: local_price}
+  matching:    [],          // [{country, source, product_name, ...}]
+  hta:         null,        // Tier-3 cross-validation payload (nice/pbac/has/gba)
+  scenarios:   [],          // [{name, include_countries, formula, percent, notes, computed:{...}}]
+  selected:    null,        // scenario name
+  assumptions: null,
+  editingIdx:  -1,
+};
+
+const ALL_COUNTRIES = ["JP","IT","FR","CH","UK","DE","US"];
+
+// 국내 SKU 문자열에서 기준 mg 추출 — "100mg / 1 vial" → 100, "40mg 30정" → 40
+function parseReferenceMg(sku) {
+  if (!sku) return null;
+  const m = String(sku).match(/(\d+(?:\.\d+)?)\s*mg/i);
+  return m ? parseFloat(m[1]) : null;
+}
+
+// ═════════════════════════════════════════════════
+// 초기 로드 + UX 헬퍼 (stepper, toast)
+// ═════════════════════════════════════════════════
+fetch("/api/workbench/assumptions").then(r => r.json()).then(d => {
+  STATE.assumptions = d;
+});
+
+/** 진행 stepper 업데이트. activeStep=현재 단계, completedThrough=완료된 마지막 단계. */
+function setStepper(activeStep, completedThrough) {
+  document.querySelectorAll(".stepper-item").forEach(el => {
+    const n = Number(el.dataset.stepper);
+    el.classList.toggle("complete", n <= completedThrough);
+    el.classList.toggle("active",   n === activeStep);
+  });
+}
+
+/** Inline toast 알림 — alert() 대체. type: "info"|"success"|"error" (default error). */
+function showToast(message, type = "error", durationMs = 3500) {
+  const t = document.createElement("div");
+  t.className = "toast" + (type === "success" ? " success" : type === "info" ? " info" : "");
+  t.textContent = message;
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.opacity = "0"; setTimeout(() => t.remove(), 250); }, durationMs);
+}
+setStepper(1, 0);
+
+// ═════════════════════════════════════════════════
+// 검색
+// ═════════════════════════════════════════════════
+async function searchProduct() {
+  const q = document.getElementById("q").value.trim();
+  if (!q) return;
+  STATE.query = q;
+  const status = document.getElementById("search-status");
+  status.className = "status-line";
+  status.textContent = `검색 중… ${q}`;
+
+  try {
+    // 1) resolve → ingredient + products
+    const resolved = await fetch(`/api/drug/resolve?q=${encodeURIComponent(q)}`).then(r => r.json());
+    // 2) domestic search for SKU metadata
+    const dom = await fetch(`/api/domestic/search?q=${encodeURIComponent(q)}&limit=5`).then(r => r.json());
+    // 3) foreign cached — 입력 → 성분명 순으로 두 번 시도
+    STATE.foreignQueryUsed = null;
+    let foreign = await fetchForeignCached(q);
+    if (!countCached(foreign) && resolved.ingredient && resolved.ingredient.toLowerCase() !== q.toLowerCase()) {
+      foreign = await fetchForeignCached(resolved.ingredient);
+    }
+
+    renderSearchResults(resolved, dom, foreign);
+  } catch (e) {
+    status.className = "status-line";
+    status.style.color = "var(--danger)";
+    status.textContent = `검색 실패: ${e.message}`;
+  }
+}
+
+async function fetchForeignCached(q) {
+  try {
+    const r = await fetch(`/api/foreign/cached?q=${encodeURIComponent(q)}`).then(r => r.json());
+    if (countCached(r)) STATE.foreignQueryUsed = q;
+    return r;
+  } catch (_) { return null; }
+}
+
+function countCached(foreign) {
+  if (!foreign || !foreign.results) return 0;
+  return Object.values(foreign.results).reduce((n, rows) => n + (rows?.length || 0), 0);
+}
+
+async function runLiveScrape() {
+  const q = STATE.product?.drug_name_en || STATE.query;
+  if (!q) return;
+  const status = document.getElementById("search-status");
+  status.className = "status-line";
+  status.textContent = `Live 스크래핑 중 (7개국 동시 호출)… ${q}`;
+  try {
+    const r = await fetch("/api/foreign/search", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({query: q, use_cache: false}),
+    }).then(r => r.json());
+    if (r.error) { showToast("스크래핑 실패: " + r.error); return; }
+    // search 는 {country:[rows]} 형식으로 바로 사용 가능하나, adjusted 필드가 없어
+    // cached 재조회로 통일 (enrichment 포함)
+    STATE.foreignQueryUsed = q;
+    const cached = await fetch(`/api/foreign/cached?q=${encodeURIComponent(q)}`).then(r => r.json());
+    applyForeignResults(cached);
+  } catch (e) {
+    status.className = "status-line";
+    status.style.color = "var(--danger)";
+    status.textContent = `스크래핑 실패: ${e.message}`;
+  }
+}
+
+function renderSearchResults(resolved, dom, foreign) {
+  const status = document.getElementById("search-status");
+  const results = document.getElementById("search-results");
+
+  const firstDom = (dom.results || [])[0];
+  const firstProduct = (resolved.products || [])[0] || firstDom?.product_name_kr || resolved.query;
+
+  STATE.product = {
+    drug_name_en: resolved.ingredient || "",
+    drug_name_kr: firstProduct || "",
+    ingredient:   resolved.ingredient || "",
+    sku:          firstDom?.dosage_strength || "100mg / 1 vial",
+    atc:          firstDom?.atc_code || "",
+    manufacturer: firstDom?.manufacturer || "",
+  };
+
+  status.innerHTML = `<strong>✓</strong> 해석됨 — 성분명: <strong>${resolved.ingredient || "—"}</strong> · 국내 제품: ${firstProduct}`;
+  applyForeignResults(foreign);
+  results.innerHTML = "";
+}
+
+function applyForeignResults(foreign) {
+  STATE.matching = [];
+  STATE.prices = {};
+
+  const ing = (STATE.product?.ingredient || STATE.query || "").toLowerCase();
+  const results = foreign?.results || {};
+  const cached = countCached(foreign);
+
+  // results 는 {country: [row, ...]} dict — 국가별 최신 1건 사용
+  for (const [country, rows] of Object.entries(results)) {
+    if (!rows?.length) continue;
+    const row = rows[0];
+    const nameLc = (row.product_name || "").toLowerCase();
+    const grade = row.local_price && ing && nameLc.includes(ing)
+      ? "🟢" : row.local_price ? "🟡" : "🔴";
+    STATE.matching.push({
+      country:      country,
+      source:       row.source_site || row.source_url || "scraper",
+      product_name: row.product_name || "",
+      form:         row.form || "",
+      strength:     row.strength || "",
+      pack:         row.pack || "",
+      raw_price:    row.local_price,
+      currency:     row.currency || "",
+      grade:        grade,
+      searched_at:  row.searched_at,
+    });
+    if (row.local_price) STATE.prices[country] = row.local_price;
+  }
+
+  const mSec = document.getElementById("matching-section");
+  const sSec = document.getElementById("scenario-section");
+
+  if (Object.keys(STATE.prices).length === 0) {
+    // 캐시 0건 — 샘플 대신 Live 스크래핑 CTA
+    mSec.style.display = "block";
+    sSec.style.display = "none";
+    document.getElementById("result-section").style.display = "none";
+    document.getElementById("hta-section").style.display = "none";
+    document.getElementById("export-bar").style.display = "none";
+    renderEmptyMatching(cached);
+    setStepper(2, 1);
+    return;
+  }
+
+  renderMatching();
+  mSec.style.display = "block";
+  sSec.style.display = "block";
+  setStepper(3, 2);
+  seedDefaultScenarios();
+}
+
+function renderEmptyMatching(cached) {
+  const tbody = document.querySelector("#matching-table tbody");
+  tbody.innerHTML = `<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--muted)">
+    해외 약가 캐시 없음 (${cached || 0}건) —
+    <button class="btn" style="margin-left:8px" onclick="runLiveScrape()">Live 스크래핑 실행</button>
+    <div class="hint" style="margin-top:6px">7개국 동시 스크래핑, 30초~2분 소요</div>
+  </td></tr>`;
+}
+
+function renderMatching() {
+  const tbody = document.querySelector("#matching-table tbody");
+  tbody.innerHTML = "";
+  // dose 정보는 compute 이후 STATE.scenarios[0].computed.rows 에 저장됨
+  const sel = STATE.scenarios.find(s => s.name === STATE.selected) || STATE.scenarios[0];
+  const doseRows = sel?.computed?.rows || {};
+  for (const m of STATE.matching) {
+    const tr = document.createElement("tr");
+    const badge = m.grade.includes("🟢") ? "green" : m.grade.includes("🔴") ? "red" : "yellow";
+    const d = doseRows[m.country] || {};
+    const confBadge = doseConfBadge(d.dose_confidence);
+    const mgLbl = d.mg_pack_total
+      ? `${d.mg_pack_total} mg${confBadge}` : (d.dose_confidence === "combo" ? `복합제${confBadge}` : "—");
+    tr.innerHTML = `
+      <td><strong>${m.country}</strong></td>
+      <td>${m.source}</td>
+      <td>${m.product_name || ""}</td>
+      <td>${mgLbl}</td>
+      <td style="text-align:right">${(m.raw_price ?? "—").toLocaleString?.() ?? m.raw_price ?? "—"}</td>
+      <td>${m.currency || ""}</td>
+      <td><span class="badge ${badge}">${m.grade}</span></td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+function doseConfBadge(conf) {
+  if (!conf) return "";
+  if (conf === "parsed")    return ` <span class="badge green"  style="margin-left:4px">파싱</span>`;
+  if (conf === "reference") return ` <span class="badge yellow" style="margin-left:4px">참조</span>`;
+  if (conf === "combo")     return ` <span class="badge red"    style="margin-left:4px">복합제</span>`;
+  return ` <span class="badge red" style="margin-left:4px">미상</span>`;
+}
+
+// ═════════════════════════════════════════════════
+// 시나리오
+// ═════════════════════════════════════════════════
+function seedDefaultScenarios() {
+  const countries = Object.keys(STATE.prices);
+  STATE.scenarios = [
+    {
+      name: "A안 (전체)",
+      include_countries: countries,
+      formula: "min_n", percent: 0.90,
+      notes: "전체 국가 포함, 최저 × 90%",
+    },
+    {
+      name: "B안 (IT 제외)",
+      include_countries: countries.filter(c => c !== "IT"),
+      formula: "min_n", percent: 0.90,
+      notes: "IT 환율 변동성 고려 제외",
+    },
+    {
+      name: "C안 (평균 × 85%)",
+      include_countries: countries,
+      formula: "avg_n", percent: 0.85,
+      notes: "평균 기준, 보수적 85%",
+    },
+  ];
+  computeAndRender();
+}
+
+async function computeAndRender() {
+  if (!STATE.scenarios.length) return;
+  // dose 정규화 메타 구성 — product_name/strength/pack 을 국가별로 전달
+  const rows_meta = {};
+  for (const m of STATE.matching) {
+    rows_meta[m.country] = {
+      product_name: m.product_name,
+      strength:     m.strength,
+      pack:         m.pack,
+      form:         m.form,
+    };
+  }
+  const product_slug = (STATE.product?.drug_name_en || STATE.query || "").toLowerCase();
+  const reference_mg = parseReferenceMg(STATE.product?.sku);
+
+  const body = {
+    prices: STATE.prices,
+    scenarios: STATE.scenarios.map(s => ({
+      name: s.name, include_countries: s.include_countries,
+      formula: s.formula, percent: s.percent, notes: s.notes,
+    })),
+    assumptions: STATE.assumptions,
+    rows_meta,
+    product_slug,
+    reference_mg,
+  };
+  const r = await fetch("/api/workbench/compute", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(body),
+  }).then(r => r.json());
+
+  if (r.error) { showToast("계산 실패: " + r.error); return; }
+
+  // merge computed 결과
+  for (let i = 0; i < STATE.scenarios.length; i++) {
+    STATE.scenarios[i].computed = r.scenarios[i];
+  }
+  if (!STATE.selected) STATE.selected = STATE.scenarios[0]?.name;
+
+  renderScenarios();
+  renderAdjustmentDetail();
+  document.getElementById("result-section").style.display = "block";
+  document.getElementById("hta-section").style.display = "block";
+  document.getElementById("export-bar").style.display = "flex";
+  setStepper(5, 4);
+
+  // HTA 자동 attach — compute 응답에 summary 가 있으면 즉시 표시 + 전체 데이터 백그라운드 로드
+  if (r.hta_summary) {
+    renderHTA(r.hta_summary);
+    if (!STATE.hta) loadHTA();   // STATE.hta (전체 dict) 가 비어있으면 export 용으로 미리 로드
+  } else {
+    document.getElementById("hta-grid").innerHTML =
+      `<div class="hta-empty">제품 '<strong>${product_slug}</strong>' 의 HTA 캐시 없음. <span class="hint">신규 제품은 Tier-3 LLM 교차검증 캐시 생성 후 자동 attach 됩니다.</span></div>`;
+    document.getElementById("hta-total").textContent = "";
+    STATE.hta = null;
+  }
+}
+
+// ═════════════════════════════════════════════════
+// HTA Matrix (Tier-3 교차검증)
+// ═════════════════════════════════════════════════
+async function loadHTA() {
+  const product = STATE.product?.drug_name_en || STATE.product?.drug_name_kr || STATE.query;
+  if (!product) { showToast("먼저 제품을 검색하세요"); return; }
+  const btn = document.getElementById("btn-load-hta");
+  const grid = document.getElementById("hta-grid");
+  const totalEl = document.getElementById("hta-total");
+
+  btn.disabled = true;
+  btn.textContent = "로딩 중…";
+  grid.innerHTML = "";
+  totalEl.textContent = "";
+
+  try {
+    const r = await fetch(`/api/workbench/hta?product=${encodeURIComponent(product)}`);
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}));
+      grid.innerHTML = `<div class="hta-empty">
+        제품 '<strong>${product}</strong>' 의 HTA 교차검증 캐시가 없습니다.<br/>
+        <span class="hint">사용 가능: ${(e.available_products || []).join(", ") || "(없음)"}</span>
+      </div>`;
+      STATE.hta = null;
+      return;
+    }
+    const data = await r.json();
+    STATE.hta = data.data;
+    renderHTA(data.summary);
+  } catch (e) {
+    grid.innerHTML = `<div class="hta-empty" style="color:var(--danger)">로드 실패: ${e.message}</div>`;
+    STATE.hta = null;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = STATE.hta ? "HTA 다시 로드" : "HTA 데이터 로드";
+  }
+}
+
+function renderHTA(summary) {
+  const grid = document.getElementById("hta-grid");
+  const totalEl = document.getElementById("hta-total");
+  grid.innerHTML = "";
+
+  if (!summary || !summary.agencies?.length) {
+    grid.innerHTML = `<div class="hta-empty">HTA 데이터 없음</div>`;
+    return;
+  }
+
+  totalEl.innerHTML = `총 <strong>${summary.total_fields}</strong> 필드 ·
+    합의 <strong>${summary.agree}</strong> · 충돌 <strong>${summary.conflict}</strong>`;
+
+  summary.agencies.forEach(a => {
+    const card = document.createElement("div");
+    card.className = "hta-card";
+    card.innerHTML = `
+      <h4>${a.name}</h4>
+      <div class="agency-country">${a.country || ""} · 기관코드 <code>${a.code}</code></div>
+      <div class="hta-chips">
+        <span class="hta-chip agree">✅ 합의 ${a.agree}</span>
+        ${a.conflict ? `<span class="hta-chip conflict">❌ 충돌 ${a.conflict}</span>` : ""}
+        ${a.single ? `<span class="hta-chip single">⚠ 단일 ${a.single}</span>` : ""}
+        ${a.narrative ? `<span class="hta-chip narrative">📝 서술 ${a.narrative}</span>` : ""}
+        ${a.missing ? `<span class="hta-chip missing">∅ 미수집 ${a.missing}</span>` : ""}
+      </div>
+    `;
+    grid.appendChild(card);
+  });
+}
+
+function renderScenarios() {
+  const grid = document.getElementById("scenario-grid");
+  grid.innerHTML = "";
+  for (let i = 0; i < STATE.scenarios.length; i++) {
+    const s = STATE.scenarios[i];
+    const c = s.computed || {};
+    const isSelected = s.name === STATE.selected;
+    const ceiling = c.proposed_ceiling ? `₩ ${c.proposed_ceiling.toLocaleString()}` : "—";
+    const card = document.createElement("div");
+    card.className = "scenario-card" + (isSelected ? " selected" : "");
+    card.innerHTML = `
+      <h3>${s.name}</h3>
+      <div class="meta">${c.basis || (s.formula + " × " + (s.percent*100) + "%")}</div>
+      <div class="includes">${(s.include_countries || []).map(x => `<span class="ctag">${x}</span>`).join("")}</div>
+      <div class="ceiling">${ceiling}<small>제안 상한가</small></div>
+      <div class="meta">${s.notes || ""}</div>
+      <div class="actions">
+        <button class="btn ${isSelected ? '' : 'secondary'}" onclick="selectScenario('${s.name}')">
+          ${isSelected ? '✓ 선정됨' : '선정'}
+        </button>
+        <button class="btn secondary" onclick="editScenario(${i})">수정</button>
+        <button class="btn secondary" onclick="removeScenario(${i})" style="max-width:60px">삭제</button>
+      </div>
+    `;
+    grid.appendChild(card);
+  }
+
+  // selected bar
+  const sel = STATE.scenarios.find(s => s.name === STATE.selected);
+  document.getElementById("selected-label").textContent = sel?.name || "—";
+  const ceil = sel?.computed?.proposed_ceiling;
+  document.getElementById("selected-ceiling").innerHTML =
+    ceil ? `<strong style="color:var(--primary);font-size:16px">₩ ${ceil.toLocaleString()}</strong> <span style="color:var(--muted);font-size:11px">(${sel.computed.basis})</span>` : "";
+}
+
+function selectScenario(name) {
+  STATE.selected = name;
+  renderScenarios();
+  renderAdjustmentDetail();
+}
+
+function removeScenario(i) {
+  if (!confirm("삭제하시겠어요?")) return;
+  STATE.scenarios.splice(i, 1);
+  if (!STATE.scenarios.find(s => s.name === STATE.selected)) {
+    STATE.selected = STATE.scenarios[0]?.name || null;
+  }
+  computeAndRender();
+}
+
+// 시나리오 모달
+function openScenarioModal(idx = -1) {
+  STATE.editingIdx = idx;
+  const modal = document.getElementById("scenario-modal");
+  const title = document.getElementById("modal-title");
+  const nameI = document.getElementById("sc-name");
+  const pctI  = document.getElementById("sc-percent");
+  const notesI = document.getElementById("sc-notes");
+  const ctoggles = document.getElementById("sc-countries");
+
+  ctoggles.innerHTML = "";
+  const existing = idx >= 0 ? STATE.scenarios[idx] : null;
+  const initCountries = existing?.include_countries || Object.keys(STATE.prices);
+
+  for (const c of ALL_COUNTRIES) {
+    const disabled = STATE.assumptions?.countries?.[c]?.phase === 2;
+    const checked = initCountries.includes(c) && !disabled;
+    const lbl = document.createElement("label");
+    if (disabled) lbl.classList.add("disabled");
+    lbl.innerHTML = `<input type="checkbox" value="${c}" ${checked?'checked':''} ${disabled?'disabled':''}/> ${c}${disabled?' (P2)':''}`;
+    ctoggles.appendChild(lbl);
+  }
+
+  if (existing) {
+    title.textContent = "시나리오 수정";
+    nameI.value = existing.name;
+    pctI.value = Math.round((existing.percent || 0.9) * 100);
+    notesI.value = existing.notes || "";
+    document.querySelector(`input[name="sc-formula"][value="${existing.formula}"]`).checked = true;
+  } else {
+    title.textContent = "시나리오 추가";
+    nameI.value = `시나리오 ${STATE.scenarios.length + 1}`;
+    pctI.value = 90;
+    notesI.value = "";
+    document.querySelector(`input[name="sc-formula"][value="min_n"]`).checked = true;
+  }
+
+  modal.classList.add("show");
+}
+
+function closeScenarioModal() {
+  document.getElementById("scenario-modal").classList.remove("show");
+}
+
+function editScenario(idx) { openScenarioModal(idx); }
+
+function saveScenario() {
+  const name = document.getElementById("sc-name").value.trim();
+  if (!name) { showToast("이름 필수"); return; }
+  const include = Array.from(document.querySelectorAll("#sc-countries input:checked")).map(i => i.value);
+  if (!include.length) { showToast("최소 1개 국가 포함"); return; }
+  const percent = parseFloat(document.getElementById("sc-percent").value) / 100;
+  const formula = document.querySelector("input[name='sc-formula']:checked").value;
+  const notes = document.getElementById("sc-notes").value.trim();
+
+  const spec = { name, include_countries: include, formula, percent, notes };
+  if (STATE.editingIdx >= 0) {
+    STATE.scenarios[STATE.editingIdx] = spec;
+  } else {
+    STATE.scenarios.push(spec);
+  }
+  if (!STATE.selected) STATE.selected = name;
+  closeScenarioModal();
+  computeAndRender();
+}
+
+// ═════════════════════════════════════════════════
+// Adjustment 상세
+// ═════════════════════════════════════════════════
+function renderAdjustmentDetail() {
+  const sel = STATE.scenarios.find(s => s.name === STATE.selected);
+  const c = sel?.computed;
+  const root = document.getElementById("adjustment-detail");
+  if (!c || !c.rows || !Object.keys(c.rows).length) {
+    root.innerHTML = `<div class="status-line empty">선택된 시나리오에 데이터가 없습니다</div>`;
+    return;
+  }
+  const hasDose = Object.values(c.rows).some(r => r.mg_pack_total != null);
+  const doseHdr = hasDose
+    ? `<th>원시가격</th><th>SKU mg</th><th>per-mg</th><th>동등가(${c.reference_mg || '?'}mg)</th>`
+    : `<th>현지약가</th>`;
+  let html = `<table class="adj-table"><thead><tr>
+    <th>국가</th>${doseHdr}<th>환율</th><th>KRW환산</th>
+    <th>공장도%</th><th>공장도(KRW)</th><th>VAT%</th><th>VAT적용</th>
+    <th>유통마진%</th><th>조정가(KRW)</th>
+  </tr></thead><tbody>`;
+  const countryEntries = Object.entries(c.rows);
+  for (const [country, r] of countryEntries) {
+    const isMin = country === c.stats?.min_country;
+    const doseCells = hasDose
+      ? `<td>${(r.raw_local_price ?? r.local_price ?? 0).toLocaleString()}</td>
+         <td class="c">${r.mg_pack_total ?? '—'}</td>
+         <td>${r.price_per_mg != null ? r.price_per_mg.toFixed(3) : '—'}</td>
+         <td>${(r.local_price ?? 0).toLocaleString()}</td>`
+      : `<td>${(r.local_price ?? 0).toLocaleString()}</td>`;
+    html += `<tr>
+      <td class="c"><strong>${country}</strong>${isMin ? ' ⭐' : ''}</td>
+      ${doseCells}
+      <td>${(r.fx_rate ?? 0).toFixed(2)}</td>
+      <td>${(r.krw_converted ?? 0).toLocaleString()}</td>
+      <td class="c">${(r.factory_ratio * 100).toFixed(1)}%</td>
+      <td>${(r.factory_krw ?? 0).toLocaleString()}</td>
+      <td class="c">${(r.vat_rate * 100).toFixed(1)}%</td>
+      <td>${(r.vat_applied ?? 0).toLocaleString()}</td>
+      <td class="c">${(r.margin_rate * 100).toFixed(1)}%</td>
+      <td class="ceiling">${(r.adjusted ?? 0).toLocaleString()}</td>
+    </tr>`;
+  }
+  html += `</tbody></table>`;
+
+  // 제외국 노출
+  const excluded = c.excluded || {};
+  const exKeys = Object.keys(excluded);
+  if (exKeys.length) {
+    html += `<div style="margin-top:10px;font-size:12px;color:var(--muted)">
+      ⊘ 제외: ${exKeys.map(c => `<strong>${c}</strong> (${excluded[c]})`).join(" · ")}
+    </div>`;
+  }
+
+  const st = c.stats || {};
+  html += `<div style="margin-top:14px;display:flex;gap:18px;flex-wrap:wrap;font-size:13px">
+    <div>A8 최저: <strong>${(st.min ?? 0).toLocaleString()}</strong> (${st.min_country || '-'})</div>
+    <div>A8 평균: <strong>${(st.avg ?? 0).toLocaleString()}</strong></div>
+    <div>최저 × ${Math.round((st.percent ?? 0)*100)}%: <strong>${(st.min_percent ?? 0).toLocaleString()}</strong></div>
+    <div>평균 × ${Math.round((st.percent ?? 0)*100)}%: <strong>${(st.avg_percent ?? 0).toLocaleString()}</strong></div>
+    <div style="margin-left:auto;color:var(--primary);font-weight:700">
+      제안 상한가: ₩ ${(c.proposed_ceiling ?? 0).toLocaleString()} (${c.basis})
+    </div>
+  </div>`;
+  root.innerHTML = html;
+}
+
+// ═════════════════════════════════════════════════
+// Export
+// ═════════════════════════════════════════════════
+async function exportXlsx() {
+  if (!STATE.selected || !STATE.scenarios.length) { showToast("시나리오를 먼저 선정하세요"); return; }
+  const exportBtn = document.querySelector(".export-bar button.btn:last-child");
+  const oldLabel = exportBtn?.textContent;
+  if (exportBtn) { exportBtn.disabled = true; exportBtn.innerHTML = '<span class="spinner"></span>생성 중…'; }
+
+  const session = {
+    project: {
+      project_name:   `${STATE.product?.drug_name_kr || STATE.query} 협상 시나리오`,
+      drug_name_en:   STATE.product?.drug_name_en || "",
+      drug_name_kr:   STATE.product?.drug_name_kr || "",
+      manufacturer:   STATE.product?.manufacturer || "",
+      atc:            STATE.product?.atc || "",
+      sku:            STATE.product?.sku || "",
+      neg_type:       "약가 조정",
+      author:         "Workbench User",
+      date:           new Date().toISOString().slice(0,10),
+      version:        "v1.0",
+    },
+    prices:     STATE.prices,
+    scenarios:  STATE.scenarios.map(s => s.computed).filter(Boolean),
+    selected:   STATE.selected,
+    source_raw: STATE.matching.map(m => ({
+      country: m.country, site: m.source, url: "",
+      fetched_at: new Date().toISOString(),
+      query: STATE.query, product_id: "",
+      raw_price: m.raw_price, currency: m.currency,
+      note: m.grade,
+    })),
+    matching: STATE.matching.map(m => ({
+      country: m.country, source: m.source,
+      product_name: m.product_name, form: m.form,
+      strength: m.strength, pack: m.pack,
+      kr_reference: STATE.product?.drug_name_kr || "",
+      grade: m.grade,
+    })),
+    hta: STATE.hta,   // Tier-3 cross-validation payload (nice/pbac/has/gba) — null 이면 시트 placeholder
+    audit_log: [{
+      timestamp: new Date().toISOString(),
+      user: "dashboard", sheet: "Export",
+      field: "selected_scenario", old: "", new: STATE.selected,
+      reason: "xlsx export 실행",
+    }],
+    assumptions: STATE.assumptions,
+  };
+
+  const r = await fetch("/api/workbench/export", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(session),
+  });
+  if (exportBtn) { exportBtn.disabled = false; exportBtn.textContent = oldLabel || "xlsx Export"; }
+  if (!r.ok) { const e = await r.json().catch(() => ({})); showToast("export 실패: " + (e.error || r.status)); return; }
+  const blob = await r.blob();
+  const name = r.headers.get("Content-Disposition")?.match(/filename="?([^";]+)"?/)?.[1]
+            || `workbench_${Date.now()}.xlsx`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 100);
+  showToast(`xlsx 다운로드 완료 — ${name}`, "success");
+}
+
+function openAudit() {
+  showToast("Audit Log 는 xlsx Audit Log 시트에 자동 기록됩니다 (브라우저 UI 는 Phase 2)", "info", 4500);
+}
+
+// Enter 로 검색 (한글 IME composition 중일 때는 무시)
+document.getElementById("q").addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.isComposing && e.keyCode !== 229) searchProduct();
+});
+</script>
+
+</body>
+</html>

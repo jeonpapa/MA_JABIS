@@ -107,7 +107,7 @@ class JpMhlwScraper(BaseScraper):
         self,
         page_url: str = MHLW_PAGE_URL,
         cache_dir: Path = None,
-        msd_only: bool = True,
+        msd_only: bool = False,
         **kwargs,
     ):
         """

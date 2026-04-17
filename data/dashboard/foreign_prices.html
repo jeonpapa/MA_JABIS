@@ -5,20 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>해외 약가 추적 — MA AI Dossier</title>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<link rel="stylesheet" href="/dashboard/assets/css/tokens.css">
 <style>
-  :root {
-    --bg: #f0f2f5;
-    --surface: #ffffff;
-    --border: #e2e8f0;
-    --primary: #2563eb;
-    --primary-hover: #1d4ed8;
-    --danger: #dc2626;
-    --success: #16a34a;
-    --text: #1e293b;
-    --muted: #64748b;
-    --radius: 10px;
-    --shadow: 0 1px 4px rgba(0,0,0,.08);
-  }
+  /* :root design tokens 는 assets/css/tokens.css 단일 소스에서 상속 */
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif; font-size: 14px; }
 
@@ -109,6 +98,14 @@
   /* ── skeleton (loading) ── */
   .skeleton { background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%); background-size: 200% 100%; animation: shimmer 1.2s infinite; border-radius: 4px; }
   @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+  /* ── HTA matrix responsive ── */
+  @media (max-width: 720px) {
+    #htaMatrix .card > div:last-child { grid-template-columns: repeat(2, 1fr) !important; }
+  }
+  @media (max-width: 480px) {
+    #htaMatrix .card > div:last-child { grid-template-columns: 1fr !important; }
+  }
 </style>
 </head>
 <body>
@@ -119,7 +116,11 @@
     <h1>해외 약가 추적</h1>
     <div class="sub">JP · IT · FR · CH · UK · DE — 현지 약가 및 KRW 조정가 비교</div>
   </div>
-  <a class="back" href="price_history.html">← 국내 가격변동이력</a>
+  <nav class="app-tabs" id="appTabs">
+    <a href="/dashboard/"><span class="tab-icon">🏥</span>국내 약가</a>
+    <a class="active" href="/dashboard/foreign_prices.html"><span class="tab-icon">🌍</span>해외 약가</a>
+    <a href="/dashboard/approvals.html"><span class="tab-icon">📋</span>허가사항</a>
+  </nav>
 </header>
 
 <div class="search-wrap">
@@ -155,6 +156,38 @@
 
   <!-- 요약 카드 -->
   <div class="summary-title" id="summaryTitle"></div>
+
+  <!-- A8 조정가 요약 (평균/최저/최저×%) -->
+  <div id="a8Summary" style="display:none; margin-bottom:24px;">
+    <div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.06em;margin-bottom:8px;">
+      A8 외국약가 조정가 요약 · HIRA 2025.3월 규정 기준
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">
+      <div class="card" style="border-left:3px solid #6366f1;">
+        <div style="font-size:11px;font-weight:700;color:var(--muted);">A8 조정 평균가</div>
+        <div id="a8Avg" style="font-size:20px;font-weight:700;color:#6366f1;margin-top:6px;">—</div>
+        <div id="a8AvgDetail" style="font-size:11px;color:var(--muted);margin-top:3px;"></div>
+      </div>
+      <div class="card" style="border-left:3px solid var(--success);">
+        <div style="font-size:11px;font-weight:700;color:var(--muted);">A8 조정 최저가</div>
+        <div id="a8Min" style="font-size:20px;font-weight:700;color:var(--success);margin-top:6px;">—</div>
+        <div id="a8MinDetail" style="font-size:11px;color:var(--muted);margin-top:3px;"></div>
+      </div>
+      <div class="card" style="border-left:3px solid var(--primary);">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div style="font-size:11px;font-weight:700;color:var(--muted);">A8 최저가 × 비율</div>
+          <div style="display:flex;align-items:center;gap:4px;">
+            <input id="a8Pct" type="number" min="1" max="200" step="1" value="80"
+                   style="width:54px;border:1px solid var(--border);border-radius:6px;padding:2px 6px;font-size:12px;text-align:right;" />
+            <span style="font-size:11px;color:var(--muted);">%</span>
+          </div>
+        </div>
+        <div id="a8Adjusted" style="font-size:20px;font-weight:700;color:var(--primary);margin-top:6px;">—</div>
+        <div id="a8AdjustedDetail" style="font-size:11px;color:var(--muted);margin-top:3px;">예: 최저가 대비 목표가·협상 제안가 추정</div>
+      </div>
+    </div>
+  </div>
+
   <div class="cards" id="cards"></div>
 
   <!-- 조정가 비교 차트 -->
@@ -163,28 +196,56 @@
     <div id="priceChart"></div>
   </div>
 
-  <!-- 상세 테이블 -->
+  <!-- A8 조정가 분해 테이블 -->
   <div class="detail-section" id="detailSection" style="display:none">
-    <h2>상세 약가 데이터</h2>
+    <h2>HIRA A8 외국약가 조정가 산출 내역</h2>
     <div class="detail-meta" id="detailMeta"></div>
     <div class="table-wrap">
-      <table id="detailTable">
+      <table id="detailTable" style="font-size:12px;">
         <thead>
           <tr>
             <th>국가</th>
-            <th>제품명</th>
-            <th>성분명</th>
-            <th>함량 / 제형</th>
-            <th>포장단위</th>
+            <th>제품 (함량)</th>
             <th style="text-align:right">현지 약가</th>
-            <th style="text-align:right">적용 환율</th>
-            <th style="text-align:right">KRW 조정가</th>
+            <th style="text-align:right">환율<br><span style="font-weight:400;font-size:10px">(36개월 평균)</span></th>
+            <th style="text-align:right">원화 환산</th>
+            <th style="text-align:center">공장도 비율</th>
+            <th style="text-align:right">공장도가<br><span style="font-weight:400;font-size:10px">(KRW)</span></th>
+            <th style="text-align:center">VAT</th>
+            <th style="text-align:right">VAT 적용<br><span style="font-weight:400;font-size:10px">(KRW)</span></th>
+            <th style="text-align:right;color:var(--primary);font-weight:700">조정가<br><span style="font-weight:400;font-size:10px">(KRW)</span></th>
             <th>자료원</th>
-            <th>검색 일시</th>
           </tr>
         </thead>
         <tbody id="detailBody"></tbody>
       </table>
+    </div>
+    <div style="margin-top:10px;font-size:11px;color:var(--muted);line-height:1.6;">
+      <div><strong>산출 공식:</strong> 현지약가 × 공장도비율 = 공장도가 → × 환율 = 공장도가(KRW) → × (1+VAT) → × (1+유통마진) = <strong>조정가</strong></div>
+      <div><strong>공장도비율:</strong> US 0.74 · UK 0.73 · JP 0.79 · FR 0.77(Vidal 0.65) · IT — AIFA Ex-factory 직접 제공 · CH 0.73(Compendium 0.65) · DE 특수공식</div>
+      <div><strong>유통거래폭:</strong> 현재 0% (A8 규정상 별도 적용 없음) · <strong>환율:</strong> KEB하나은행 매매기준율 36개월 평균</div>
+    </div>
+  </div>
+
+  <!-- 제외국 허가현황 (FDA 적응증 중심 매트릭스) -->
+  <div id="htaSection" style="display:none; margin-top:32px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:4px;">
+      <h2 style="margin:0;">제외국 허가현황</h2>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span id="htaLastChecked" style="font-size:11px;color:var(--muted);"></span>
+        <button id="htaRefreshBtn" onclick="refreshHTA()" style="font-size:11px;padding:4px 12px;border-radius:999px;border:1px solid var(--border);background:#fff;color:var(--primary);cursor:pointer;font-weight:600;">업데이트 확인</button>
+      </div>
+    </div>
+    <div id="htaFdaMeta" style="font-size:12px;color:var(--muted);margin-bottom:8px;"></div>
+    <!-- 적응증 필터 (3개 이상일 때 표시) -->
+    <div id="htaFilter" style="display:none;margin-bottom:12px;padding:8px 12px;background:var(--surface-1);border-radius:var(--radius-sm);border:1px solid var(--border);">
+      <span style="font-size:11px;font-weight:600;color:var(--muted);margin-right:8px;">적응증 필터:</span>
+      <span id="htaFilterChips" style="display:inline-flex;flex-wrap:wrap;gap:4px;"></span>
+    </div>
+    <div id="htaMatrix"></div>
+    <div id="htaUnmatched" style="margin-top:16px;"></div>
+    <div id="htaEmpty" style="display:none;font-size:13px;color:var(--muted);padding:20px;text-align:center;">
+      해당 약제의 FDA 허가 정보가 없습니다.
     </div>
   </div>
 
@@ -197,6 +258,28 @@
 </main>
 
 <script>
+// ── 탭 간 검색 상태 유지 ─────────────────────────────────────────────────────
+(function() {
+  const params = new URLSearchParams(location.search);
+  const q = params.get('q');
+  if (q) {
+    const input = document.getElementById('searchInput');
+    if (input) input.value = q;
+  }
+  // 탭 링크에 현재 검색어 전달
+  document.getElementById('appTabs').querySelectorAll('a').forEach(a => {
+    a.addEventListener('click', function(e) {
+      const cur = document.getElementById('searchInput');
+      if (cur && cur.value.trim()) {
+        e.preventDefault();
+        const url = new URL(this.href, location.origin);
+        url.searchParams.set('q', cur.value.trim());
+        location.href = url.toString();
+      }
+    });
+  });
+})();
+
 // ── 상수 ──────────────────────────────────────────────────────────────────────
 const API = 'http://127.0.0.1:5001';
 
@@ -282,7 +365,8 @@ function hideProgress() {
 }
 
 // ── 결과 렌더링 ────────────────────────────────────────────────────────────
-function renderResults(query, data, mode) {
+function renderResults(query, data, mode, meta) {
+  meta = meta || {};
   clearError();
   const main    = document.getElementById('main');
   const cards   = document.getElementById('cards');
@@ -334,28 +418,41 @@ function renderResults(query, data, mode) {
     }
     cards.appendChild(card);
 
-    /* ── 상세 테이블 rows ── */
+    /* ── A8 조정가 분해 테이블 rows ── */
     rows.forEach(r => {
       const tr = document.createElement('tr');
       const dosage = [r.dosage_strength, r.dosage_form].filter(Boolean).join(' / ');
+      const productLabel = r.product_name ? `${r.product_name}${dosage ? '<br><span class="dosage-pill">' + dosage + '</span>' : ''}` : '—';
+
+      const ratioLabel = r.factory_ratio_label || (r.factory_ratio != null ? r.factory_ratio : '—');
+      const factoryKRW = r.factory_price_krw != null ? r.factory_price_krw : (r.factory_price && r.exchange_rate ? Math.round(r.factory_price * r.exchange_rate) : null);
+      const krwConverted = r.krw_converted != null ? r.krw_converted : (r.local_price && r.exchange_rate ? Math.round(r.local_price * r.exchange_rate) : null);
+      const vatPct = r.vat_rate != null ? (r.vat_rate * 100).toFixed(1) + '%' : '—';
+      const vatApplied = r.vat_applied_krw != null ? r.vat_applied_krw : (factoryKRW && r.vat_rate != null ? Math.round(factoryKRW * (1 + r.vat_rate)) : null);
+
       const rateRange = (r.exchange_rate_from && r.exchange_rate_to)
-        ? `<br><span style="font-size:10px;color:var(--muted)">(${r.exchange_rate_from}~${r.exchange_rate_to})</span>` : '';
+        ? `<br><span style="font-size:9px;color:var(--muted)">${r.exchange_rate_from}~${r.exchange_rate_to}</span>` : '';
+
       tr.innerHTML = `
         <td><span class="tag tag-country">${info.flag} ${code}</span></td>
-        <td>${r.product_name || '—'}</td>
-        <td style="color:var(--muted)">${r.ingredient || '—'}</td>
-        <td>${dosage ? `<span class="dosage-pill">${dosage}</span>` : '—'}</td>
-        <td>${r.package_unit || '—'}</td>
+        <td style="max-width:180px;line-height:1.3;">${productLabel}</td>
         <td class="num">${fmtLocal(r.local_price, r.currency)}</td>
         <td class="num">${fmtRate(r.exchange_rate)}${rateRange}</td>
-        <td class="num" style="font-weight:600;color:var(--primary)">${fmtKRW(r.adjusted_price_krw)}</td>
-        <td>${r.source_url
+        <td class="num" style="color:var(--muted)">${fmtKRW(krwConverted)}</td>
+        <td style="text-align:center;font-size:11px;">${ratioLabel}</td>
+        <td class="num">${fmtKRW(factoryKRW)}</td>
+        <td style="text-align:center;font-size:11px;">${vatPct}</td>
+        <td class="num">${fmtKRW(vatApplied)}</td>
+        <td class="num" style="font-weight:700;color:var(--primary)">${fmtKRW(r.adjusted_price_krw)}</td>
+        <td style="font-size:11px;">${r.source_url
           ? `<a class="source-link" href="${r.source_url}" target="_blank">${r.source_label || r.source_url.split('/')[2] || '링크'}</a>`
-          : (r.source_label || '—')}</td>
-        <td style="white-space:nowrap;color:var(--muted)">${fmtDate(r.searched_at)}</td>`;
+          : (r.source_label || '—')}</td>`;
       detBody.appendChild(tr);
     });
   });
+
+  /* ── A8 요약 (평균/최저/최저×%) ── */
+  renderA8Summary(chartData);
 
   /* ── 빈 상태 ── */
   empty.style.display = (totalItems === 0) ? 'block' : 'none';
@@ -378,11 +475,297 @@ function renderResults(query, data, mode) {
   if (totalItems > 0) {
     detailSection.style.display = 'block';
     document.getElementById('detailMeta').textContent =
-      `총 ${totalItems}개 품목 · 조정가는 HIRA 기준(공장도가→부가세→유통마진 적용) KRW 환산 금액입니다.`;
+      `총 ${totalItems}개 품목 · 각 단계별 조정가 산출 과정을 표시합니다. (HIRA 2025.3월 A8 규정 기준)`;
   } else {
     detailSection.style.display = 'none';
   }
+
+  /* ── 제외국 허가현황 (HTA) — 성분명 우선, 제품명 fallback ── */
+  const ingredients = new Set();
+  const products    = new Set();
+  Object.values(data || {}).forEach(rows => (rows || []).forEach(r => {
+    if (r.ingredient)   ingredients.add(String(r.ingredient).trim().toLowerCase());
+    if (r.product_name) products.add(String(r.product_name).trim().toLowerCase().split(/\s+/)[0]);
+  }));
+  const resolvedOrder = (meta.resolved && meta.resolved.order) || [];
+  const inputQuery    = meta.input || query;
+  const candidates = [
+    ...resolvedOrder.map(s => s.toLowerCase()),
+    ...Array.from(ingredients),
+    ...Array.from(products),
+    String(inputQuery).trim().toLowerCase(),
+  ].filter((v, i, a) => v && a.indexOf(v) === i);
+  loadHTA(candidates, inputQuery);
 }
+
+// ── HTA 허가현황 (적응증 매트릭스) ─────────────────────────────────────────
+const HTA_BODY_META = {
+  PBAC:  { flag: '🇦🇺', label: 'PBAC',   full: '호주 PBAC',       color: '#0ea5e9' },
+  CADTH: { flag: '🇨🇦', label: 'CADTH',  full: '캐나다 CADTH',    color: '#ef4444' },
+  NICE:  { flag: '🇬🇧', label: 'NICE',   full: '영국 NICE',       color: '#6366f1' },
+  SMC:   { flag: '🏴󠁧󠁢󠁳󠁣󠁴󠁿', label: 'SMC',    full: '스코틀랜드 SMC', color: '#0284c7' },
+};
+const BODIES = ['PBAC','CADTH','NICE','SMC'];
+
+const DECISION_TINT = {
+  'Accepted':              { bg:'#d6f3e4', fg:'#16a34a', icon:'✅' },
+  'Accepted (restricted)': { bg:'#fef3c7', fg:'#b45309', icon:'⚠️' },
+  'Recommended':           { bg:'#d6f3e4', fg:'#16a34a', icon:'✅' },
+  'Recommended (managed access)': { bg:'#fef3c7', fg:'#b45309', icon:'⚠️' },
+  'Not recommended':       { bg:'#fee2e2', fg:'#dc2626', icon:'❌' },
+  'Non-submission':        { bg:'#e5e7eb', fg:'#6b7280', icon:'—' },
+  'Unknown':               { bg:'#f1f5f9', fg:'#6b7280', icon:'?' },
+  'Approved':              { bg:'#d6f3e4', fg:'#16a34a', icon:'✅' },
+};
+
+function tintFor(d) { return DECISION_TINT[d] || DECISION_TINT.Unknown; }
+
+// 글로벌 HTA 상태
+let _htaCandidates = [];
+let _htaData = null;
+let _htaActiveFilter = null;  // null = 전체, code = 특정 적응증
+
+async function loadHTA(candidates, originalQuery) {
+  const sec    = document.getElementById('htaSection');
+  const matrix = document.getElementById('htaMatrix');
+  const empty  = document.getElementById('htaEmpty');
+  const meta   = document.getElementById('htaFdaMeta');
+  const unmEl  = document.getElementById('htaUnmatched');
+  const list   = Array.isArray(candidates) ? candidates : [candidates];
+  _htaCandidates = list;
+  if (!list.length) { sec.style.display = 'none'; return; }
+
+  sec.style.display = 'block';
+  matrix.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:12px;">허가현황 로딩 중…</div>';
+  empty.style.display = 'none';
+  unmEl.innerHTML = '';
+
+  await _fetchAndRenderHTA(list, false);
+}
+
+async function refreshHTA() {
+  if (!_htaCandidates.length) return;
+  const btn = document.getElementById('htaRefreshBtn');
+  btn.textContent = '업데이트 중…';
+  btn.disabled = true;
+  await _fetchAndRenderHTA(_htaCandidates, true);
+  btn.textContent = '업데이트 확인';
+  btn.disabled = false;
+}
+
+async function _fetchAndRenderHTA(list, refresh) {
+  const matrix = document.getElementById('htaMatrix');
+  const empty  = document.getElementById('htaEmpty');
+  const unmEl  = document.getElementById('htaUnmatched');
+
+  let data = null;
+  try {
+    const refreshParam = refresh ? '&refresh=1' : '';
+    for (const q of list) {
+      const res = await fetch(`${API}/api/hta/indication-matrix?drug=${encodeURIComponent(q)}${refreshParam}`);
+      const d   = await res.json();
+      if (d.indications && d.indications.length > 0) { data = d; break; }
+      if (!data) data = d;
+    }
+  } catch (e) {
+    matrix.innerHTML = `<div style="color:#dc2626;font-size:12px;">허가현황 조회 실패: ${e}</div>`;
+    return;
+  }
+
+  _htaData = data;
+  _htaActiveFilter = null;
+
+  if (!data || !data.indications || !data.indications.length) {
+    matrix.innerHTML = '';
+    empty.style.display = 'block';
+    document.getElementById('htaFilter').style.display = 'none';
+    return;
+  }
+
+  // 마지막 조사일 표시
+  const lastEl = document.getElementById('htaLastChecked');
+  if (lastEl) lastEl.textContent = `마지막 조사: ${new Date().toLocaleDateString('ko-KR')}`;
+
+  // FDA meta
+  const f = data.fda || {};
+  document.getElementById('htaFdaMeta').innerHTML = `
+    <span style="font-weight:600;color:var(--text);">🇺🇸 FDA 허가:</span>
+    ${f.brand || ''} (${f.generic || ''})
+    ${f.manufacturer ? '· ' + f.manufacturer : ''}
+    ${f.effective_time ? '· 라벨 발효 ' + f.effective_time : ''}
+    ${f.label_url ? ` · <a href="${f.label_url}" target="_blank" style="color:var(--primary);">DailyMed 라벨</a>` : ''}
+  `;
+
+  // 적응증 필터 (3개 이상일 때)
+  _renderHTAFilter(data.indications);
+
+  // 매트릭스 렌더
+  _renderHTAMatrix(data.indications, data.unmatched);
+}
+
+function _renderHTAFilter(indications) {
+  const wrap = document.getElementById('htaFilter');
+  const chips = document.getElementById('htaFilterChips');
+  if (indications.length < 3) { wrap.style.display = 'none'; return; }
+
+  wrap.style.display = 'block';
+  let html = `<button onclick="_setHTAFilter(null)" class="hta-filter-chip${!_htaActiveFilter ? ' active' : ''}" style="${_chipStyle(!_htaActiveFilter)}">전체 (${indications.length})</button>`;
+  indications.forEach(ind => {
+    const active = _htaActiveFilter === ind.code;
+    // 요약: 국가별 결정 수
+    const countStr = BODIES.map(b => {
+      const n = ((ind.by_country || {})[b] || []).length;
+      return n > 0 ? HTA_BODY_META[b].flag : '';
+    }).filter(Boolean).join('');
+    html += `<button onclick="_setHTAFilter('${ind.code}')" class="hta-filter-chip${active ? ' active' : ''}" style="${_chipStyle(active)}">${ind.code} ${ind.label.slice(0,25)}${ind.label.length > 25 ? '…' : ''} ${countStr}</button>`;
+  });
+  chips.innerHTML = html;
+}
+
+function _chipStyle(active) {
+  return active
+    ? 'display:inline-block;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid var(--primary-600);background:var(--primary-600);color:#fff;'
+    : 'display:inline-block;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:#fff;color:var(--text-700);';
+}
+
+function _setHTAFilter(code) {
+  _htaActiveFilter = code;
+  if (_htaData) {
+    _renderHTAFilter(_htaData.indications);
+    const filtered = code
+      ? _htaData.indications.filter(i => i.code === code)
+      : _htaData.indications;
+    _renderHTAMatrix(filtered, code ? {} : _htaData.unmatched);
+  }
+}
+
+function _renderHTAMatrix(indications, unmatched) {
+  const matrix = document.getElementById('htaMatrix');
+  const unmEl  = document.getElementById('htaUnmatched');
+  matrix.innerHTML = '';
+
+  indications.forEach(ind => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.style.cssText = 'margin-bottom:16px;padding:20px;';
+
+    let hdr = `<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:12px;">
+      <span style="background:var(--primary-100);color:var(--primary-600);font-weight:700;font-size:13px;padding:3px 10px;border-radius:999px;">${ind.code}</span>
+      <span style="font-size:15px;font-weight:600;color:var(--text);">${ind.label}</span>
+    </div>`;
+    if (ind.body) {
+      const bodyShort = ind.body.length > 200 ? ind.body.slice(0,200) + '…' : ind.body;
+      hdr += `<div style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:14px;">${bodyShort}</div>`;
+    }
+
+    let grid = `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">`;
+    BODIES.forEach(b => {
+      const m = HTA_BODY_META[b];
+      const rows = (ind.by_country || {})[b] || [];
+      let cellContent;
+      if (rows.length === 0) {
+        cellContent = `<div style="color:var(--muted);font-size:11px;text-align:center;padding:12px 6px;">평가 없음</div>`;
+      } else {
+        cellContent = rows.map(r => {
+          const t = tintFor(r.decision);
+          const indText = (r.indication || '').replace(/^[\s:：]+/, '').trim();
+          const short = indText.length > 120 ? indText.slice(0,120) + '…' : indText;
+          const links = [];
+          if (r.pdf_local) links.push(`<a href="${API}/api/hta/pdf?path=${encodeURIComponent(r.pdf_local)}" target="_blank" style="color:var(--primary);font-size:10px;">PDF</a>`);
+          else if (r.pdf_url) links.push(`<a href="${r.pdf_url}" target="_blank" style="color:var(--primary);font-size:10px;">PDF</a>`);
+          if (r.detail_url) links.push(`<a href="${r.detail_url}" target="_blank" style="color:var(--primary);font-size:10px;">원문</a>`);
+          return `
+            <div style="padding:8px;border-radius:var(--radius-sm);background:${t.bg};margin-bottom:4px;">
+              <div style="font-size:12px;font-weight:600;color:${t.fg};">${t.icon} ${r.decision || 'Unknown'}</div>
+              ${r.decision_date ? `<div style="font-size:10px;color:${t.fg};opacity:.7;margin-top:2px;">${r.decision_date}</div>` : ''}
+              ${short ? `<div style="font-size:11px;color:var(--text);margin-top:4px;line-height:1.4;">${short}</div>` : ''}
+              ${links.length ? `<div style="margin-top:4px;">${links.join(' · ')}</div>` : ''}
+            </div>`;
+        }).join('');
+      }
+      grid += `<div>
+        <div style="font-size:11px;font-weight:700;color:${m.color};margin-bottom:6px;text-align:center;">${m.flag} ${m.label}</div>
+        ${cellContent}
+      </div>`;
+    });
+    grid += '</div>';
+    card.innerHTML = hdr + grid;
+    matrix.appendChild(card);
+  });
+
+  // Unmatched
+  const unm = unmatched || {};
+  const hasUnm = BODIES.some(b => (unm[b] || []).length > 0);
+  if (hasUnm) {
+    let html = `<div class="card" style="padding:16px;border-left:3px solid var(--warning);">
+      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:8px;">기타 (FDA 적응증 미매칭)</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;">`;
+    BODIES.forEach(b => {
+      (unm[b] || []).forEach(r => {
+        const m = HTA_BODY_META[b];
+        const t = tintFor(r.decision);
+        html += `<div style="padding:8px;border-radius:var(--radius-sm);background:var(--surface-1);border:1px solid var(--border);">
+          <div style="font-size:10px;font-weight:700;color:${m.color};">${m.flag} ${m.label}</div>
+          <div style="font-size:12px;font-weight:600;color:${t.fg};margin-top:2px;">${r.decision || 'Unknown'}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px;">${r.title || ''}</div>
+          ${r.detail_url ? `<a href="${r.detail_url}" target="_blank" style="font-size:10px;color:var(--primary);">원문</a>` : ''}
+        </div>`;
+      });
+    });
+    html += '</div></div>';
+    unmEl.innerHTML = html;
+  } else {
+    unmEl.innerHTML = '';
+  }
+}
+
+// ── A8 요약 (평균/최저/최저×%) ─────────────────────────────────────────────
+let _a8MinKRW = null;
+
+function renderA8Summary(chartData) {
+  const wrap = document.getElementById('a8Summary');
+  const avgEl = document.getElementById('a8Avg');
+  const avgDet = document.getElementById('a8AvgDetail');
+  const minEl = document.getElementById('a8Min');
+  const minDet = document.getElementById('a8MinDetail');
+
+  if (!chartData || chartData.length === 0) {
+    wrap.style.display = 'none';
+    _a8MinKRW = null;
+    return;
+  }
+  wrap.style.display = 'block';
+
+  const values = chartData.map(d => d.krw);
+  const avg    = values.reduce((a,b) => a + b, 0) / values.length;
+  const minIdx = values.indexOf(Math.min(...values));
+  const minVal = values[minIdx];
+  const minCountry = chartData[minIdx].label;
+
+  avgEl.textContent  = fmtKRW(Math.round(avg));
+  avgDet.textContent = `${chartData.length}개국 평균 (${chartData.map(d=>d.code).join('·')})`;
+  minEl.textContent  = fmtKRW(Math.round(minVal));
+  minDet.textContent = `최저 — ${minCountry}`;
+
+  _a8MinKRW = minVal;
+  updateA8Adjusted();
+}
+
+function updateA8Adjusted() {
+  const pctEl = document.getElementById('a8Pct');
+  const outEl = document.getElementById('a8Adjusted');
+  const pct   = Number(pctEl.value) || 0;
+  if (_a8MinKRW == null) {
+    outEl.textContent = '—';
+    return;
+  }
+  outEl.textContent = fmtKRW(Math.round(_a8MinKRW * pct / 100));
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const pctEl = document.getElementById('a8Pct');
+  if (pctEl) pctEl.addEventListener('input', updateA8Adjusted);
+});
 
 // ── ECharts 차트 ───────────────────────────────────────────────────────────
 function renderChart(chartData) {
@@ -433,20 +816,39 @@ function renderChart(chartData) {
 
 window.addEventListener('resize', () => { if (chart) chart.resize(); });
 
-// ── 캐시 조회 ─────────────────────────────────────────────────────────────
+// ── 검색어 해석 (성분명 우선 → 제품명 fallback) ─────────────────────────
+async function resolveDrug(q) {
+  try {
+    const r = await fetch(`${API}/api/drug/resolve?q=${encodeURIComponent(q)}`);
+    if (!r.ok) return { ingredient: q, products: [], order: [q] };
+    const d = await r.json();
+    const seen = new Set();
+    const order = [];
+    [d.ingredient, ...(d.products || []), q].forEach(x => {
+      const v = (x || '').trim();
+      if (v && !seen.has(v.toLowerCase())) { seen.add(v.toLowerCase()); order.push(v); }
+    });
+    return { ingredient: d.ingredient || q, products: d.products || [], order, source: d.source };
+  } catch {
+    return { ingredient: q, products: [], order: [q], source: 'error' };
+  }
+}
+
+// ── 캐시 조회 (= 이전 검색 이력) ──────────────────────────────────────────
+// 캐시는 사용자가 실제로 검색했던 제품명 그대로의 이력. 리졸버 적용 X.
 async function doCache() {
   const q = document.getElementById('searchInput').value.trim();
   if (!q) { alert('검색어를 입력하세요.'); return; }
   clearError();
   hideProgress();
-  showProgress('캐시 조회 중…', 30);
+  showProgress('이전 검색 이력 조회 중…', 30);
 
   try {
     const res = await fetch(`${API}/api/foreign/cached?q=${encodeURIComponent(q)}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
     hideProgress();
-    renderResults(q, json.results || {}, 'cache');
+    renderResults(q, json.results || {}, 'cache', { input: q });
   } catch (e) {
     hideProgress();
     showError(e.message);
@@ -455,8 +857,8 @@ async function doCache() {
 
 // ── 실시간 검색 ────────────────────────────────────────────────────────────
 async function doLive() {
-  const q = document.getElementById('searchInput').value.trim();
-  if (!q) { alert('검색어를 입력하세요.'); return; }
+  const qIn = document.getElementById('searchInput').value.trim();
+  if (!qIn) { alert('검색어를 입력하세요.'); return; }
   const selected = getSelectedCountries();
   if (selected.length === 0) { alert('최소 1개 국가를 선택하세요.'); return; }
 
@@ -464,12 +866,16 @@ async function doLive() {
   document.getElementById('main').style.display = 'none';
   document.getElementById('btnRun').disabled = true;
 
+  // 성분명 우선 해석 — live 검색은 긴 시간 걸리므로 한 번만 호출 (순차 fallback X)
+  const resolved = await resolveDrug(qIn);
+  const q = resolved.ingredient || qIn;
+
   let elapsed = 0;
-  showProgress(`${selected.join(', ')} 실시간 검색 중… (0초 경과)`, 5);
+  showProgress(`${selected.join(', ')} 실시간 검색 중… 성분명 "${q}" (0초)`, 5);
   const timer = setInterval(() => {
     elapsed++;
     const pct = Math.min(5 + elapsed * (90 / (selected.length * 90)), 90);
-    showProgress(`${selected.join(', ')} 실시간 검색 중… (${elapsed}초 경과)`, pct);
+    showProgress(`${selected.join(', ')} 실시간 검색 중… 성분명 "${q}" (${elapsed}초)`, pct);
   }, 1000);
 
   try {
@@ -477,7 +883,6 @@ async function doLive() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query: q, countries: selected, use_cache: false }),
-      // 실시간 스크래핑 타임아웃 10분
       signal: AbortSignal.timeout(600_000),
     });
     clearInterval(timer);
@@ -488,7 +893,7 @@ async function doLive() {
     const json = await res.json();
     hideProgress();
     document.getElementById('btnRun').disabled = false;
-    renderResults(q, json.results || {}, 'live');
+    renderResults(q, json.results || {}, 'live', { input: qIn, resolved });
   } catch (e) {
     clearInterval(timer);
     hideProgress();

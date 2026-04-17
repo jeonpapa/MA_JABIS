@@ -1,0 +1,39 @@
+{
+  "mechanism": "unknown",
+  "mechanism_label": "미분류",
+  "reason": "추정: 키트루다주의 약가 변동은 2018년 3월 1일에 -0.50%로 소폭 인하되었습니다. 변동 시점인 2018년 3월 1일을 포함한 윈도우 내(2017.09~2018.09)에서는 실거래가 연동에 따른 약가 인하 가능성이 추정되지만, 이를 뒷받침할 공개 보도나 공식 고시는 확인되지 않았습니다. 따라서, 이 변동의 정확한 기전은 미분류로 남아 있으며, 관련 근거가 부족한 상황입니다.",
+  "evidence_summary": "윈도우 내 확인 가능한 근거 없음.",
+  "confidence": "low",
+  "window": {
+    "from": "2017.09",
+    "to": "2018.09",
+    "months": 6
+  },
+  "references": [],
+  "notes": "제공된 검색 결과는 2025년 키트루다 폐암 1차 치료제 급여 신설 시점의 약가 협상 사례만 포함. 2018년 초기 급여 시점의 -0.50% 소폭 인하 사유를 규명하기 위해서는 당시 보건복지부 고시, 심사평가원 공식 자료, 또는 2018년 3월 전후 의약전문 매체 보도가 필요함. · [enforce] published_at 누락/불량 4건 제거 · reason 문장 1개 삭제(윈도우 외 연도) · [enforce] published_at 누락/불량 5건 제거",
+  "_source": "perplexity-sonar-pro",
+  "analysis_meta": {
+    "source": "perplexity-sonar-pro",
+    "total_articles": 0,
+    "tier_a_count": 0,
+    "tier_b_count": 0,
+    "tier_c_count": 0,
+    "detected_mechanisms": [
+      "미분류"
+    ],
+    "top_media": []
+  },
+  "deep_research": {
+    "source": "perplexity-sonar-pro-research",
+    "model": "sonar-pro",
+    "citations": [
+      "https://dailypharm.com/user/news/334728?view_mode=pc",
+      "https://v.daum.net/v/20250905084111897?f=p",
+      "https://www.medicaltimes.com/Users/News/NewsView.html/'http:/www.medigatenews.com/Users2/News/NewsView.html?ID=1168141",
+      "https://biz.chosun.com/science-chosun/bio/2025/12/23/R57WCJHDCVARHNL7BSRH3YCGHI/",
+      "https://www.hira.or.kr/bbsDummy.do?pgmid=HIRAA020041000100&brdScnBltNo=4&brdBltNo=11416&pageIndex=1&pageIndex2=1"
+    ],
+    "created_at": "2026-04-15T23:23:01.561855Z"
+  },
+  "cached": false
+}

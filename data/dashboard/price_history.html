@@ -5,22 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>국내 약가 변동 이력 — MA AI Dossier</title>
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+  <link rel="stylesheet" href="/dashboard/assets/css/tokens.css">
   <style>
-    :root {
-      --bg: #f0f2f5;
-      --card: #ffffff;
-      --primary: #1a56db;
-      --primary-light: #e8f0fe;
-      --danger: #e02424;
-      --danger-light: #fde8e8;
-      --success: #057a55;
-      --success-light: #def7ec;
-      --text: #111827;
-      --muted: #6b7280;
-      --border: #e5e7eb;
-      --shadow: 0 1px 4px rgba(0,0,0,.08);
-      --radius: 10px;
-    }
+    /* :root design tokens 는 assets/css/tokens.css 단일 소스에서 상속 */
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       background: var(--bg);
@@ -341,7 +328,10 @@
 <header>
   <div class="logo">MA AI Dossier</div>
   <div class="subtitle">국내 약가 변동 이력 대쉬보드</div>
-  <a href="foreign_prices.html" style="margin-left:auto;text-decoration:none;color:#1a56db;font-size:13px;font-weight:600">🌍 해외 약가 추적 →</a>
+  <nav class="app-tabs">
+    <a href="/dashboard/"><span class="tab-icon">🏥</span>국내 약가</a>
+    <a href="/dashboard/foreign_prices.html"><span class="tab-icon">🌍</span>해외 약가</a>
+  </nav>
 </header>
 
 <main>
@@ -352,6 +342,14 @@
            placeholder="제품명 또는 주성분명을 입력하세요 (예: 키트루다, 펨브롤리주맙)"
            autocomplete="off" />
     <button id="search-btn" onclick="doSearch()">검색</button>
+    <button id="dl-xlsx-btn" onclick="downloadExport('xlsx')"
+            style="padding:12px 18px;background:#057a55;color:#fff;border:none;border-radius:10px;font-size:14px;cursor:pointer;display:none;">
+      📥 엑셀
+    </button>
+    <button id="dl-csv-btn" onclick="downloadExport('csv')"
+            style="padding:12px 18px;background:#6b7280;color:#fff;border:none;border-radius:10px;font-size:14px;cursor:pointer;display:none;">
+      📥 CSV
+    </button>
   </div>
 
   <!-- 제형 필터 -->
@@ -427,6 +425,14 @@ const API = 'http://127.0.0.1:5001';
 let allProducts = [];       // 전체 product 목록
 let activeCode  = null;     // 현재 선택된 insurance_code
 let chart       = null;     // ECharts 인스턴스
+let lastQuery   = '';       // 마지막 검색어 (다운로드용)
+
+// ── 엑셀/CSV 다운로드 ──────────────────────────────────────────
+function downloadExport(fmt) {
+  if (!lastQuery) return;
+  const url = `${API}/api/domestic/price-changes/export?q=${encodeURIComponent(lastQuery)}&format=${fmt}`;
+  window.location.href = url;
+}
 
 // ── Enter 키 검색 ──────────────────────────────────────────────
 document.getElementById('search-input').addEventListener('keydown', e => {
@@ -454,6 +460,9 @@ async function doSearch() {
     }
 
     allProducts = data.products;
+    lastQuery   = q;
+    document.getElementById('dl-xlsx-btn').style.display = 'inline-block';
+    document.getElementById('dl-csv-btn').style.display  = 'inline-block';
     buildFilters(data.dosage_forms, data.products);
 
     // 첫 번째 제품 선택

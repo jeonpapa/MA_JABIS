@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MA Workbench — Settings</title>
+<link rel="stylesheet" href="/dashboard/assets/css/tokens.css">
+<style>
+:root {
+  --bg:            var(--bg, #F5F1FF);
+  --card:          var(--surface-0, #fff);
+  --primary:       var(--primary-600, #6C4DF6);
+  --primary-hover: var(--primary-500, #7C5CFC);
+  --primary-light: var(--primary-100, #EBE5FF);
+  --success:       #22C55E;
+  --warning:       #F59E0B;
+  --danger:        #EF4444;
+  --text:          var(--text-900, #1A1830);
+  --muted:         var(--text-500, #6B6880);
+  --border:        var(--border, rgba(108,77,246,.14));
+  --shadow:        var(--shadow, 0 4px 20px rgba(108,77,246,.06));
+  --radius:        var(--radius-sm, 12px);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+header {
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 32px;
+  position: sticky; top: 0; z-index: 100;
+  box-shadow: var(--shadow);
+  display: flex; align-items: center; gap: 24px;
+}
+header .brand {
+  font-weight: 700; font-size: 16px; color: var(--primary);
+  display: flex; align-items: center; gap: 8px;
+}
+header .brand::before { content: "⚙"; font-size: 18px; }
+header nav { display: flex; gap: 4px; margin-left: auto; }
+header nav a {
+  color: var(--muted); text-decoration: none;
+  padding: 8px 14px; border-radius: 8px; font-size: 13px;
+  transition: all .15s;
+}
+header nav a.active, header nav a:hover {
+  background: var(--primary-light); color: var(--primary);
+}
+main { max-width: 1200px; margin: 0 auto; padding: 24px 32px 80px; }
+
+h1.page-title {
+  font-size: 22px; font-weight: 700; color: var(--text);
+  margin-bottom: 6px;
+}
+.page-lead {
+  color: var(--muted); font-size: 13px; margin-bottom: 20px;
+}
+
+.section {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+  padding: 24px;
+  margin-bottom: 20px;
+}
+.section h2 {
+  font-size: 15px; font-weight: 700; color: var(--primary);
+  margin-bottom: 4px;
+}
+.section .section-lead {
+  color: var(--muted); font-size: 12px; margin-bottom: 16px;
+}
+
+/* Global (fx) */
+.form-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+.field label {
+  display: block; font-size: 12px; color: var(--muted);
+  margin-bottom: 4px; font-weight: 600;
+}
+.field input, .field select {
+  width: 100%; padding: 8px 12px;
+  border: 1px solid var(--border); border-radius: 8px;
+  font-size: 13px; background: #fff;
+  font-family: inherit;
+}
+.field input:focus, .field select:focus {
+  outline: none; border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-light);
+}
+.field .unit {
+  font-size: 11px; color: var(--muted); margin-left: 4px;
+}
+
+/* Country cards */
+.country-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+.country-card {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 16px; background: var(--surface-1, #FAFAFD);
+  position: relative;
+}
+.country-card.phase2 {
+  opacity: .7; background: #FAF8F2;
+  border-style: dashed;
+}
+.country-card h3 {
+  font-size: 14px; color: var(--primary); margin-bottom: 2px;
+  display: flex; align-items: center; gap: 8px;
+}
+.country-card .flag-label {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-weight: 700;
+}
+.country-card .curr-tag {
+  background: var(--primary-light); color: var(--primary);
+  padding: 2px 8px; border-radius: 999px;
+  font-size: 10px; font-weight: 600;
+  margin-left: auto;
+}
+.country-card .phase-tag {
+  background: #FEF3C7; color: #92400E;
+  padding: 2px 8px; border-radius: 999px;
+  font-size: 10px; font-weight: 600;
+  margin-left: 6px;
+}
+.country-card .sub {
+  font-size: 11px; color: var(--muted); margin-bottom: 10px;
+}
+.country-fields {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.country-fields .field.wide { grid-column: 1 / -1; }
+.country-fields input {
+  padding: 6px 10px; font-size: 12px;
+}
+.phase-toggle {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 10px; font-size: 12px; color: var(--muted);
+  padding-top: 10px; border-top: 1px dashed var(--border);
+}
+.phase-toggle input { width: 14px; height: 14px; accent-color: var(--primary); }
+
+/* Actions */
+.actions-bar {
+  position: sticky; bottom: 0;
+  background: rgba(255,255,255,.92);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid var(--border);
+  padding: 16px 32px;
+  margin: 20px -32px -80px;
+  display: flex; gap: 12px; align-items: center;
+}
+.actions-bar .spacer { flex: 1; }
+.actions-bar .audit {
+  font-size: 11px; color: var(--muted);
+  display: flex; flex-direction: column; align-items: flex-end;
+  gap: 2px;
+}
+button.btn {
+  padding: 10px 18px; border: none; border-radius: 8px;
+  background: var(--primary); color: #fff; font-weight: 600;
+  cursor: pointer; font-size: 13px; transition: background .15s;
+}
+button.btn:hover { background: var(--primary-hover); }
+button.btn.secondary {
+  background: transparent; color: var(--primary);
+  border: 1px solid var(--primary);
+}
+button.btn.secondary:hover { background: var(--primary-light); }
+button.btn.danger {
+  background: transparent; color: var(--danger);
+  border: 1px solid var(--danger);
+}
+button.btn.danger:hover { background: #FEE2E2; }
+button.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Toast */
+.toast {
+  position: fixed; bottom: 90px; left: 50%;
+  transform: translateX(-50%);
+  background: var(--text); color: #fff;
+  padding: 10px 18px; border-radius: 999px;
+  font-size: 13px; font-weight: 600;
+  box-shadow: 0 4px 20px rgba(0,0,0,.18);
+  opacity: 0; transition: opacity .2s;
+  pointer-events: none; z-index: 200;
+}
+.toast.show { opacity: 1; }
+.toast.success { background: var(--success); }
+.toast.error { background: var(--danger); }
+
+/* Notice */
+.notice {
+  background: #FFF8EB; border: 1px solid #FDE5B0;
+  border-radius: 8px; padding: 10px 14px;
+  font-size: 12px; color: #92400E; margin-bottom: 16px;
+  display: flex; align-items: flex-start; gap: 8px;
+}
+.notice::before { content: "⚠"; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">MA Negotiation Workbench</div>
+  <nav>
+    <a href="/dashboard/workbench.html">Workbench</a>
+    <a href="/dashboard/settings.html" class="active">Settings</a>
+    <a href="/dashboard/foreign_prices.html">Legacy Dashboard</a>
+  </nav>
+</header>
+
+<main>
+  <h1 class="page-title">환경 설정 (Assumptions)</h1>
+  <p class="page-lead">
+    HIRA 고시값 기반 조정가 계산 가정치. 변경 시 모든 시나리오 계산에 즉시 반영되며,
+    xlsx 워크북의 <strong>Assumptions</strong> · <strong>Audit Log</strong> 시트에 기록됩니다.
+  </p>
+
+  <div class="notice">
+    <span>이 값은 HIRA 기본 고시값입니다. 협상 담당자의 판단으로 조정 후 "저장" 하면 다음 시나리오 계산부터 적용됩니다.</span>
+  </div>
+
+  <!-- Global FX Settings -->
+  <section class="section">
+    <h2>환율 기준</h2>
+    <p class="section-lead">이전월 기준 rolling 평균 환율을 사용. 기본 36개월 (KEB하나은행 고시).</p>
+    <div class="form-grid">
+      <div class="field">
+        <label>FX Window <span class="unit">개월</span></label>
+        <input type="number" id="fx-window" min="1" max="60" />
+      </div>
+      <div class="field">
+        <label>FX Source</label>
+        <select id="fx-source">
+          <option value="KEB_HANA_BANK">KEB 하나은행</option>
+          <option value="BOK">한국은행</option>
+          <option value="ECB">ECB</option>
+          <option value="MANUAL">수동 입력</option>
+        </select>
+      </div>
+    </div>
+  </section>
+
+  <!-- Country-level Assumptions -->
+  <section class="section">
+    <h2>국가별 가정치</h2>
+    <p class="section-lead">
+      공장도비율 · VAT · 유통마진 · 기본환율 (Phase 2 국가는 계산 제외)
+    </p>
+    <div class="country-grid" id="country-grid">
+      <!-- rendered by JS -->
+    </div>
+  </section>
+
+  <div class="actions-bar">
+    <button class="btn" id="btn-save">💾 저장</button>
+    <button class="btn secondary" id="btn-restore">↺ HIRA 기본값 복원</button>
+    <button class="btn secondary" id="btn-reload">새로고침</button>
+    <div class="spacer"></div>
+    <div class="audit" id="audit">
+      <div>마지막 수정: <span id="last-updated">—</span></div>
+      <div>수정자: <span id="updated-by">—</span></div>
+    </div>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const COUNTRY_INFO = {
+  JP: { flag: "🇯🇵", name: "일본 (JP)" },
+  IT: { flag: "🇮🇹", name: "이탈리아 (IT)" },
+  FR: { flag: "🇫🇷", name: "프랑스 (FR)" },
+  CH: { flag: "🇨🇭", name: "스위스 (CH)" },
+  UK: { flag: "🇬🇧", name: "영국 (UK)" },
+  DE: { flag: "🇩🇪", name: "독일 (DE)" },
+  US: { flag: "🇺🇸", name: "미국 (US)" },
+};
+const COUNTRY_ORDER = ["JP", "IT", "FR", "CH", "UK", "DE", "US"];
+
+let STATE = {
+  assumptions: null,
+  dirty: false,
+};
+
+async function fetchJson(url, opts = {}) {
+  const r = await fetch(url, opts);
+  if (!r.ok) {
+    const txt = await r.text();
+    throw new Error(`${r.status} ${txt}`);
+  }
+  return r.json();
+}
+
+function toast(msg, kind = "success") {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.className = `toast show ${kind}`;
+  setTimeout(() => el.classList.remove("show"), 2400);
+}
+
+function asPercent(v) {
+  const n = Number(v);
+  if (Number.isNaN(n)) return "";
+  return (n * 100).toFixed(2);
+}
+
+function pctToFloat(v) {
+  const n = Number(v);
+  if (Number.isNaN(n)) return 0;
+  return n / 100;
+}
+
+function render() {
+  const a = STATE.assumptions;
+  if (!a) return;
+
+  document.getElementById("fx-window").value = a.fx_window_months ?? 36;
+  document.getElementById("fx-source").value = a.fx_source ?? "KEB_HANA_BANK";
+  document.getElementById("last-updated").textContent = a.last_updated || "—";
+  document.getElementById("updated-by").textContent = a.updated_by || "—";
+
+  const grid = document.getElementById("country-grid");
+  grid.innerHTML = "";
+
+  COUNTRY_ORDER.forEach((code) => {
+    const c = a.countries?.[code];
+    if (!c) return;
+    const info = COUNTRY_INFO[code] || { flag: "🏳", name: code };
+    const isPhase2 = c.phase === 2;
+
+    const card = document.createElement("div");
+    card.className = "country-card" + (isPhase2 ? " phase2" : "");
+    card.innerHTML = `
+      <h3>
+        <span class="flag-label">${info.flag} ${info.name}</span>
+        <span class="curr-tag">${c.currency || ""}</span>
+        ${isPhase2 ? '<span class="phase-tag">Phase 2</span>' : ""}
+      </h3>
+      <div class="sub">국가 코드 <code>${code}</code> · 통화 <code>${c.currency}</code></div>
+      <div class="country-fields">
+        <div class="field">
+          <label>공장도비율 <span class="unit">%</span></label>
+          <input type="number" step="0.01" data-c="${code}" data-k="factory_ratio_pct"
+            value="${asPercent(c.factory_ratio)}" />
+        </div>
+        <div class="field">
+          <label>VAT <span class="unit">%</span></label>
+          <input type="number" step="0.01" data-c="${code}" data-k="vat_rate_pct"
+            value="${asPercent(c.vat_rate)}" />
+        </div>
+        <div class="field">
+          <label>유통마진 <span class="unit">%</span></label>
+          <input type="number" step="0.01" data-c="${code}" data-k="margin_rate_pct"
+            value="${asPercent(c.margin_rate)}" />
+        </div>
+        <div class="field">
+          <label>기본 환율 <span class="unit">KRW / 1 ${c.currency}</span></label>
+          <input type="number" step="0.01" data-c="${code}" data-k="fx_rate_default"
+            value="${c.fx_rate_default ?? ""}" />
+        </div>
+        <div class="field wide">
+          <div class="phase-toggle">
+            <input type="checkbox" data-c="${code}" data-k="phase2_toggle"
+              ${isPhase2 ? "checked" : ""} />
+            <span>Phase 2 (계산 제외) — 데이터 수집 미구축 국가</span>
+          </div>
+        </div>
+      </div>
+    `;
+    grid.appendChild(card);
+  });
+
+  // wire inputs
+  grid.querySelectorAll("input").forEach((input) => {
+    input.addEventListener("change", handleInputChange);
+  });
+}
+
+function handleInputChange(e) {
+  const code = e.target.dataset.c;
+  const key = e.target.dataset.k;
+  const c = STATE.assumptions.countries[code];
+  if (!c) return;
+
+  if (key === "phase2_toggle") {
+    if (e.target.checked) {
+      c.phase = 2;
+    } else {
+      delete c.phase;
+    }
+    STATE.dirty = true;
+    render();  // re-render to update phase2 styling
+    return;
+  }
+
+  if (key.endsWith("_pct")) {
+    const real = key.replace("_pct", "");
+    c[real] = pctToFloat(e.target.value);
+  } else {
+    c[key] = Number(e.target.value);
+  }
+  STATE.dirty = true;
+}
+
+async function load() {
+  try {
+    STATE.assumptions = await fetchJson("/api/workbench/assumptions");
+    STATE.dirty = false;
+    render();
+  } catch (e) {
+    toast("가정치 로드 실패: " + e.message, "error");
+  }
+}
+
+async function save() {
+  if (!STATE.assumptions) return;
+  // capture global fields
+  STATE.assumptions.fx_window_months = Number(document.getElementById("fx-window").value) || 36;
+  STATE.assumptions.fx_source = document.getElementById("fx-source").value;
+  STATE.assumptions.last_updated = new Date().toISOString().slice(0, 10);
+  STATE.assumptions._user = "dashboard";
+
+  try {
+    const btn = document.getElementById("btn-save");
+    btn.disabled = true;
+    btn.textContent = "저장 중...";
+    const r = await fetchJson("/api/workbench/assumptions", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(STATE.assumptions),
+    });
+    STATE.assumptions = r.saved;
+    STATE.dirty = false;
+    render();
+    toast("저장 완료 · Audit Log 에 기록됨", "success");
+  } catch (e) {
+    toast("저장 실패: " + e.message, "error");
+  } finally {
+    const btn = document.getElementById("btn-save");
+    btn.disabled = false;
+    btn.textContent = "💾 저장";
+  }
+}
+
+async function restoreDefaults() {
+  if (!confirm("HIRA 기본값으로 복원합니다. 현재 변경 내용은 사라집니다.\n계속할까요?")) return;
+  try {
+    const defaults = await fetchJson("/api/workbench/defaults");
+    STATE.assumptions = JSON.parse(JSON.stringify(defaults));
+    STATE.dirty = true;
+    render();
+    toast("기본값 로드됨 · 저장 버튼을 눌러 확정하세요", "success");
+  } catch (e) {
+    toast("기본값 로드 실패: " + e.message, "error");
+  }
+}
+
+document.getElementById("btn-save").addEventListener("click", save);
+document.getElementById("btn-restore").addEventListener("click", restoreDefaults);
+document.getElementById("btn-reload").addEventListener("click", load);
+
+document.getElementById("fx-window").addEventListener("change", () => { STATE.dirty = true; });
+document.getElementById("fx-source").addEventListener("change", () => { STATE.dirty = true; });
+
+// Warn on unsaved leave
+window.addEventListener("beforeunload", (e) => {
+  if (STATE.dirty) { e.preventDefault(); e.returnValue = ""; }
+});
+
+load();
+</script>
+
+</body>
+</html>

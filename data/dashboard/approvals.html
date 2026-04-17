@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>허가사항 비교 — MA AI Dossier</title>
+<link rel="stylesheet" href="/dashboard/assets/css/tokens.css">
+<style>
+  /* :root design tokens 는 assets/css/tokens.css 단일 소스에서 상속 */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Apple SD Gothic Neo','Noto Sans KR',sans-serif; font-size: 14px; }
+
+  header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 12px; }
+  header h1 { font-size: 18px; font-weight: 700; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  nav.app-tabs { display:flex; gap:4px; margin-left:auto; }
+  nav.app-tabs a { padding:8px 14px; border-radius:8px; text-decoration:none; color:var(--muted); font-size:13px; font-weight:500; transition:.15s; white-space:nowrap; }
+  nav.app-tabs a:hover { background:#f1f5f9; color:var(--text); }
+  nav.app-tabs a.active { background:var(--primary); color:#fff; }
+  .tab-icon { margin-right:4px; }
+
+  .container { max-width:1400px; margin:0 auto; padding:20px 24px; }
+
+  .product-cards { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:24px; }
+  .product-card { background:var(--surface); border:2px solid var(--border); border-radius:var(--radius); padding:16px 20px; cursor:pointer; min-width:180px; transition:.15s; }
+  .product-card:hover { border-color:var(--primary); box-shadow:0 2px 8px rgba(37,99,235,.15); }
+  .product-card.active { border-color:var(--primary); background:#eff6ff; }
+  .product-card .name { font-size:16px; font-weight:700; text-transform:capitalize; }
+  .product-card .stat { color:var(--muted); font-size:12px; margin-top:4px; }
+  .product-card .all6 { display:inline-block; background:var(--success); color:#fff; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600; margin-top:6px; }
+
+  .summary-bar { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:20px; }
+  .summary-item { background:var(--surface); border-radius:var(--radius); padding:14px 20px; box-shadow:var(--shadow); min-width:100px; text-align:center; position:relative; }
+  .summary-item .val { font-size:24px; font-weight:700; color:var(--primary); }
+  .summary-item .lbl { font-size:11px; color:var(--muted); margin-top:2px; }
+  .summary-item .info { position:absolute; top:6px; right:8px; width:14px; height:14px; border-radius:50%; background:var(--border); color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center; cursor:help; }
+  .summary-item .info:hover::after { content: attr(data-tip); position:absolute; top:20px; right:-4px; background:#1f2937; color:#fff; padding:10px 12px; border-radius:6px; font-size:11px; font-weight:400; line-height:1.5; white-space:normal; width:280px; text-align:left; z-index:10; box-shadow:0 4px 12px rgba(0,0,0,.2); }
+
+  .disclaimer-banner { background:#fef9e7; border:1px solid #facc15; border-radius:var(--radius); padding:12px 16px; margin-bottom:20px; font-size:12px; line-height:1.6; color:#78350f; }
+  .disclaimer-banner strong { color:#713f12; }
+  .disclaimer-banner .tag { display:inline-block; background:#fde68a; color:#713f12; padding:1px 6px; border-radius:4px; font-weight:600; font-size:11px; margin:0 2px; }
+
+  .matrix-section { background:var(--surface); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; margin-bottom:24px; }
+  .matrix-section h2 { font-size:15px; font-weight:600; padding:14px 20px; border-bottom:1px solid var(--border); }
+
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  thead th { background:#f8fafc; padding:10px 12px; text-align:center; font-weight:600; color:var(--muted); font-size:12px; border-bottom:2px solid var(--border); position:sticky; top:0; }
+  thead th:first-child { text-align:left; }
+  tbody td { padding:8px 12px; border-bottom:1px solid #f1f5f9; text-align:center; }
+  tbody td:first-child { text-align:left; font-weight:500; }
+  tbody tr:hover { background:#f8fafc; }
+
+  .badge-y { display:inline-block; width:22px; height:22px; line-height:22px; text-align:center; border-radius:50%; font-size:11px; font-weight:700; }
+  .badge-yes { background:#dcfce7; color:#166534; }
+  .badge-no  { background:#fee2e2; color:#991b1b; }
+
+  .disease-bar { display:flex; gap:2px; height:20px; border-radius:4px; overflow:hidden; margin-top:2px; }
+  .disease-bar div { height:100%; min-width:3px; }
+
+  .detail-panel { background:var(--surface); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; }
+  .detail-panel h2 { font-size:15px; font-weight:600; padding:14px 20px; border-bottom:1px solid var(--border); }
+  .detail-table-wrap { max-height:600px; overflow-y:auto; }
+
+  .filter-row { display:flex; gap:8px; padding:12px 20px; border-bottom:1px solid var(--border); flex-wrap:wrap; align-items:center; }
+  .filter-row label { font-size:12px; color:var(--muted); font-weight:500; }
+  .filter-row select { padding:4px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px; }
+
+  tbody tr.clickable { cursor:pointer; }
+  tbody tr.clickable:hover { background:#eff6ff; }
+  tr.expand-row td { padding:0; background:#f8fafc; }
+  .expand-content { padding:16px 20px; }
+  .expand-content .agency-cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:12px; }
+  .agency-card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:14px; }
+  .agency-card.missing { opacity:.4; }
+  .agency-card .ag-header { display:flex; align-items:center; gap:8px; margin-bottom:8px; font-weight:600; font-size:13px; }
+  .agency-card .ag-flag { font-size:18px; }
+  .agency-card .ag-label { font-size:11px; color:var(--muted); margin-bottom:2px; margin-top:8px; text-transform:uppercase; letter-spacing:.3px; }
+  .agency-card .ag-value { font-size:13px; line-height:1.5; }
+  .agency-card .ag-date { display:inline-block; background:#eff6ff; color:var(--primary); padding:2px 10px; border-radius:10px; font-size:12px; font-weight:600; }
+  .agency-card .ag-excerpt { font-size:12px; color:var(--text); line-height:1.6; max-height:120px; overflow-y:auto; background:#f8fafc; padding:8px; border-radius:6px; margin-top:6px; }
+  .agency-card .ag-link { display:inline-flex; align-items:center; gap:4px; margin-top:10px; padding:6px 12px; background:#f0f7ff; border:1px solid #bfdbfe; border-radius:6px; font-size:12px; color:var(--primary); text-decoration:none; font-weight:500; transition:.15s; }
+  .agency-card .ag-link:hover { background:#dbeafe; border-color:var(--primary); }
+
+  .loading { text-align:center; padding:40px; color:var(--muted); }
+  .empty-state { text-align:center; padding:60px 20px; color:var(--muted); }
+  .empty-state .big { font-size:48px; margin-bottom:12px; }
+</style>
+</head>
+<body>
+
+<header>
+  <span style="font-size:22px">📋</span>
+  <div>
+    <h1>허가사항 비교</h1>
+    <div class="sub">FDA · EMA · PMDA · MFDS · MHRA · TGA — 6기관 적응증 단위 비교</div>
+  </div>
+  <nav class="app-tabs" id="appTabs">
+    <a href="/dashboard/"><span class="tab-icon">🏥</span>국내 약가</a>
+    <a href="/dashboard/foreign_prices.html"><span class="tab-icon">🌍</span>해외 약가</a>
+    <a class="active" href="/dashboard/approvals.html"><span class="tab-icon">📋</span>허가사항</a>
+  </nav>
+</header>
+
+<div class="container">
+  <div class="disclaimer-banner">
+    <strong>📊 수치 해석 가이드</strong> — <span class="tag">6기관 공통</span>은 동일 적응증이 6개 기관 라벨에 모두 등재된 건수입니다.
+    나머지 건수는 <strong>미승인이 아닐 수 있음</strong>: FDA는 combo·biomarker·LoT별로 세분해 라벨링하고(예: KEYNOTE-189·407·042를 각기 분리),
+    PMDA·MFDS는 같은 disease 영역을 하나로 통합 표기합니다. 따라서 <span class="tag">FDA only</span>로 보이는 적응증 상당수가 실제로는 타 기관의 "disease 단위 통합 라벨"에 포함되어 있습니다.
+    각 적응증 클릭 → 기관별 원문 발췌로 확인하세요.
+  </div>
+
+  <div id="productCards" class="product-cards">
+    <div class="loading">제품 목록 로딩 중...</div>
+  </div>
+
+  <div id="matrixArea" style="display:none">
+    <div id="summaryBar" class="summary-bar"></div>
+
+    <div class="matrix-section">
+      <h2 id="diseaseTitle">Disease 별 커버리지</h2>
+      <table>
+        <thead>
+          <tr>
+            <th style="min-width:120px">Disease</th>
+            <th>Masters</th>
+            <th>🇺🇸 FDA</th>
+            <th>🇪🇺 EMA</th>
+            <th>🇯🇵 PMDA</th>
+            <th>🇰🇷 MFDS</th>
+            <th>🇬🇧 MHRA</th>
+            <th>🇦🇺 TGA</th>
+          </tr>
+        </thead>
+        <tbody id="diseaseTbody"></tbody>
+      </table>
+    </div>
+
+    <div class="detail-panel">
+      <h2 id="detailTitle">적응증 상세</h2>
+      <div class="filter-row">
+        <label>Disease:</label>
+        <select id="filterDisease" onchange="renderDetail()"><option value="">전체</option></select>
+        <label style="margin-left:12px">기관 필터:</label>
+        <select id="filterAgency" onchange="renderDetail()">
+          <option value="">전체</option>
+          <option value="all6">6기관 공통</option>
+          <option value="gap">격차 (일부 미허가)</option>
+          <option value="FDA">FDA only</option>
+          <option value="EMA">EMA only</option>
+          <option value="PMDA">PMDA only</option>
+          <option value="MFDS">MFDS only</option>
+          <option value="MHRA">MHRA only</option>
+          <option value="TGA">TGA only</option>
+        </select>
+        <label style="margin-left:12px">검색:</label>
+        <input id="filterText" type="search" placeholder="trial / biomarker / disease 키워드"
+               oninput="renderDetail()" style="padding:4px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;min-width:200px" />
+        <span class="result-count" id="resultCount">0건</span>
+      </div>
+      <div class="detail-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="min-width:100px">Disease</th>
+              <th style="min-width:110px">Trial</th>
+              <th style="min-width:60px">LoT</th>
+              <th style="min-width:80px">Stage</th>
+              <th style="min-width:70px">Biomarker</th>
+              <th>🇺🇸</th><th>🇪🇺</th><th>🇯🇵</th><th>🇰🇷</th><th>🇬🇧</th><th>🇦🇺</th>
+            </tr>
+          </thead>
+          <tbody id="detailTbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="emptyState" class="empty-state" style="display:none">
+    <div class="big">📋</div>
+    <div>등록된 허가사항 데이터가 없습니다.</div>
+  </div>
+</div>
+
+<script>
+const AGENCIES = ['FDA','EMA','PMDA','MFDS','MHRA','TGA'];
+const FLAGS = {'FDA':'🇺🇸','EMA':'🇪🇺','PMDA':'🇯🇵','MFDS':'🇰🇷','MHRA':'🇬🇧','TGA':'🇦🇺'};
+const COLORS = {'FDA':'#3b82f6','EMA':'#8b5cf6','PMDA':'#ef4444','MFDS':'#10b981','MHRA':'#f59e0b','TGA':'#06b6d4'};
+
+let currentProduct = null;
+let matrixData = null;
+
+async function loadProducts() {
+  try {
+    const r = await fetch('/api/approval/products');
+    const d = await r.json();
+    if (!d.products || d.products.length === 0) {
+      document.getElementById('productCards').innerHTML = '';
+      document.getElementById('emptyState').style.display = '';
+      return;
+    }
+    const el = document.getElementById('productCards');
+    el.innerHTML = d.products.map(p => `
+      <div class="product-card" data-product="${p.product}" onclick="selectProduct('${p.product}')">
+        <div class="name">${p.product}</div>
+        <div class="stat">${p.masters} 적응증 · ${Object.values(p.agencies).filter(v=>v>0).length}기관</div>
+        <div class="all6" title="6개 기관 모두 라벨에 수록된 교차검증 가능 건수 (나머지는 미승인이 아닌 라벨 구조 차이 가능성)">6기관 공통 ${p.all_six}건</div>
+      </div>
+    `).join('');
+    selectProduct(d.products[0].product);
+  } catch(e) {
+    document.getElementById('productCards').innerHTML = `<div class="loading">로딩 실패: ${e.message}</div>`;
+  }
+}
+
+async function selectProduct(product) {
+  currentProduct = product;
+  document.querySelectorAll('.product-card').forEach(c => {
+    c.classList.toggle('active', c.dataset.product === product);
+  });
+  document.getElementById('matrixArea').style.display = '';
+
+  try {
+    const r = await fetch(`/api/approval/matrix?product=${encodeURIComponent(product)}`);
+    matrixData = await r.json();
+    renderSummary();
+    renderDisease();
+    populateDiseaseFilter();
+    renderDetail();
+  } catch(e) {
+    console.error(e);
+  }
+}
+
+function renderSummary() {
+  const t = matrixData.totals;
+  const agencyTip = '해당 기관 라벨에 수록된 적응증 행 수. FDA가 높다고 "더 많이 승인"이 아닌, FDA가 combo·biomarker·LoT별로 쪼개 라벨링하기 때문. PMDA·MFDS는 disease 단위로 통합.';
+  const all6Tip = '6개 기관 모두 동일 적응증으로 라벨에 수록된 건수. 교차 검증 가능한 "confidence 높은" 적응증 수이며, 나머지는 미승인이 아니라 기관별 라벨 구조가 달라서 1:1 매칭이 안 된 경우가 많음.';
+  const mastersTip = '본 약물에 대해 시스템이 식별한 고유 적응증 수 (trial·LoT·combo·biomarker 앵커 기반).';
+  const items = [
+    {val: t.masters, lbl: '전체 적응증', tip: mastersTip},
+    {val: t.fda_agency, lbl: '🇺🇸 FDA', tip: agencyTip},
+    {val: t.ema_agency, lbl: '🇪🇺 EMA', tip: agencyTip},
+    {val: t.pmda_agency, lbl: '🇯🇵 PMDA', tip: agencyTip},
+    {val: t.mfds_agency, lbl: '🇰🇷 MFDS', tip: agencyTip},
+    {val: t.mhra_agency, lbl: '🇬🇧 MHRA', tip: agencyTip},
+    {val: t.tga_agency, lbl: '🇦🇺 TGA', tip: agencyTip},
+    {val: t.all_six, lbl: '6기관 공통', tip: all6Tip},
+  ];
+  document.getElementById('summaryBar').innerHTML = items.map(i =>
+    `<div class="summary-item">
+       <span class="info" data-tip="${i.tip}">i</span>
+       <div class="val">${i.val}</div>
+       <div class="lbl">${i.lbl}</div>
+     </div>`
+  ).join('');
+}
+
+function renderDisease() {
+  const tbody = document.getElementById('diseaseTbody');
+  const ds = matrixData.by_disease || [];
+  document.getElementById('diseaseTitle').textContent =
+    `Disease 별 커버리지 — ${currentProduct}`;
+  tbody.innerHTML = ds.map(d => {
+    const cells = AGENCIES.map(a => {
+      const k = a.toLowerCase();
+      const v = d[k] || 0;
+      return `<td>${v > 0 ? `<span class="badge-y badge-yes">${v}</span>` : `<span class="badge-y badge-no">0</span>`}</td>`;
+    }).join('');
+    return `<tr>
+      <td>${d.disease || '—'}</td>
+      <td>${d.masters}</td>
+      ${cells}
+    </tr>`;
+  }).join('');
+}
+
+function populateDiseaseFilter() {
+  const sel = document.getElementById('filterDisease');
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">전체</option>';
+  const diseases = [...new Set(matrixData.rows.map(r => r.disease || '—'))].sort();
+  diseases.forEach(d => {
+    sel.innerHTML += `<option value="${d}">${d}</option>`;
+  });
+  sel.value = prev || '';
+}
+
+let expandedId = null;
+
+function renderDetail() {
+  const tbody = document.getElementById('detailTbody');
+  const dxFilter = document.getElementById('filterDisease').value;
+  const agFilter = document.getElementById('filterAgency').value;
+  const textFilter = (document.getElementById('filterText')?.value || '').trim().toLowerCase();
+
+  const total = (matrixData.rows || []).length;
+  let rows = matrixData.rows || [];
+
+  if (dxFilter) rows = rows.filter(r => (r.disease || '—') === dxFilter);
+
+  if (agFilter === 'all6') {
+    rows = rows.filter(r => r.agencies.length === 6);
+  } else if (agFilter === 'gap') {
+    rows = rows.filter(r => r.agencies.length > 0 && r.agencies.length < 6);
+  } else if (agFilter && AGENCIES.includes(agFilter)) {
+    rows = rows.filter(r => r.agencies.includes(agFilter) && r.agencies.length === 1);
+  }
+
+  if (textFilter) {
+    rows = rows.filter(r =>
+      [r.disease, r.pivotal_trial, r.biomarker_class, r.line_of_therapy, r.stage]
+        .some(v => v && String(v).toLowerCase().includes(textFilter)));
+  }
+
+  const counter = document.getElementById('resultCount');
+  if (counter) counter.innerHTML = `<strong>${rows.length}</strong>/${total}건`;
+
+  document.getElementById('detailTitle').textContent =
+    `적응증 상세 — ${currentProduct} · 행을 클릭하면 기관별 상세 정보`;
+
+  tbody.innerHTML = rows.map(r => {
+    const agSet = new Set(r.agencies);
+    const cells = AGENCIES.map(a =>
+      `<td><span class="badge-y ${agSet.has(a) ? 'badge-yes' : 'badge-no'}">${agSet.has(a) ? '✓' : '—'}</span></td>`
+    ).join('');
+    const isOpen = expandedId === r.indication_id;
+    const trialLabel = r.pivotal_trial
+      ? `<span style="font-size:12px;font-weight:600;color:var(--primary)">${esc(r.pivotal_trial)}</span>`
+      : '<span style="color:var(--muted)">—</span>';
+    return `<tr class="clickable ${isOpen ? 'expanded' : ''}" onclick="toggleExpand('${r.indication_id}', this)">
+      <td>${r.disease || '—'}</td>
+      <td>${trialLabel}</td>
+      <td>${r.line_of_therapy || '—'}</td>
+      <td>${r.stage || '—'}</td>
+      <td>${r.biomarker_class || '—'}</td>
+      ${cells}
+    </tr>
+    <tr class="expand-row" id="expand-${r.indication_id}" style="display:${isOpen ? '' : 'none'}">
+      <td colspan="11"><div class="expand-content" id="detail-${r.indication_id}">로딩 중...</div></td>
+    </tr>`;
+  }).join('');
+
+  if (expandedId) {
+    const row = document.getElementById(`expand-${expandedId}`);
+    if (row && row.style.display !== 'none') loadDetail(expandedId);
+  }
+}
+
+async function toggleExpand(indId, rowEl) {
+  const expandRow = document.getElementById(`expand-${indId}`);
+  if (!expandRow) return;
+
+  if (expandedId === indId) {
+    expandRow.style.display = 'none';
+    expandedId = null;
+    return;
+  }
+
+  document.querySelectorAll('.expand-row').forEach(r => r.style.display = 'none');
+  expandedId = indId;
+  expandRow.style.display = '';
+  await loadDetail(indId);
+}
+
+async function loadDetail(indId) {
+  const container = document.getElementById(`detail-${indId}`);
+  if (!container) return;
+  container.innerHTML = '<div class="loading">기관별 상세 정보 로딩 중...</div>';
+
+  try {
+    const r = await fetch(`/api/approval/detail?id=${encodeURIComponent(indId)}`);
+    const d = await r.json();
+    if (d.error) { container.innerHTML = `<div class="loading">${d.error}</div>`; return; }
+
+    const agMap = {};
+    (d.agencies || []).forEach(a => { agMap[a.agency] = a; });
+
+    const AGENCY_LABELS = {
+      'FDA':'U.S. FDA','EMA':'EU EMA','PMDA':'JP PMDA',
+      'MFDS':'KR MFDS (식약처)','MHRA':'UK MHRA','TGA':'AU TGA'
+    };
+    const cards = AGENCIES.map(ag => {
+      const a = agMap[ag];
+      if (!a) {
+        const structNote = (ag === 'PMDA' || ag === 'MFDS')
+          ? '<div style="margin-top:6px;font-size:11px;color:var(--muted);line-height:1.5">ⓘ 해당 기관은 disease 단위 통합 라벨을 쓰는 경향이 있어, 타 기관의 세분된 적응증이 별도 표기되지 않을 수 있습니다.</div>'
+          : '';
+        return `<div class="agency-card missing">
+          <div class="ag-header"><span class="ag-flag">${FLAGS[ag]}</span> ${AGENCY_LABELS[ag] || ag}</div>
+          <div class="ag-value" style="color:var(--muted)">미허가 또는 라벨에 별도 수록되지 않음</div>
+          ${structNote}
+        </div>`;
+      }
+
+      const srcBadge = (() => {
+        const src = a.date_source || '';
+        if (src === 'mfds_official') {
+          return `<span title="식약처 변경이력에서 확인된 공식 승인일" `
+               + `style="display:inline-block;margin-left:6px;padding:1px 6px;border-radius:8px;`
+               + `background:#ecfdf5;color:#047857;font-size:10px;font-weight:600">✓ 공식</span>`;
+        }
+        if (src === 'unverified_estimate') {
+          return `<span title="공식 출처 미확인 — 추정값" `
+               + `style="display:inline-block;margin-left:6px;padding:1px 6px;border-radius:8px;`
+               + `background:#fef3c7;color:#92400e;font-size:10px;font-weight:600">⚠ 추정</span>`;
+        }
+        return '';
+      })();
+      const dateHtml = a.approval_date
+        ? `<span class="ag-date">${esc(a.approval_date)}</span>${srcBadge}`
+        : '<span style="font-size:12px;color:var(--muted)">승인일 미확인</span>';
+
+      const initialDate = a.initial_auth_date;
+      const isInitial = initialDate && a.approval_date === initialDate;
+      const initialHtml = initialDate && !isInitial
+        ? `<div style="margin-top:4px;font-size:11px;color:var(--muted)">초기 약물 승인일: ${esc(initialDate)}</div>`
+        : (isInitial ? '<div style="margin-top:4px;font-size:11px;color:#059669;font-weight:500">★ 이 적응증이 초기 승인 시점</div>' : '');
+
+      const combo = a.combination_label
+        ? `<div class="ag-label">병용요법</div><div class="ag-value">${esc(a.combination_label)}</div>` : '';
+      const bio = a.biomarker_label
+        ? `<div class="ag-label">바이오마커</div><div class="ag-value">${esc(a.biomarker_label)}</div>` : '';
+      const restriction = a.restriction_note
+        ? `<div class="ag-label">제한사항</div><div class="ag-value">${esc(a.restriction_note)}</div>` : '';
+
+      let excerptHtml = '';
+      if (a.label_excerpt) {
+        const origNote = a.label_excerpt_original
+          ? `<div style="margin-top:4px;font-size:11px;color:var(--muted)">원문(日): ${esc(a.label_excerpt_original)}</div>`
+          : '';
+        excerptHtml = `<div class="ag-label">허가사항 발췌</div><div class="ag-excerpt">${esc(a.label_excerpt)}${origNote}</div>`;
+      }
+
+      const linkUrl = a.label_url || '';
+      const linkHtml = linkUrl
+        ? `<a class="ag-link" href="${linkUrl}" target="_blank" rel="noopener">📄 원문 보기 ↗</a>`
+        : '';
+
+      return `<div class="agency-card">
+        <div class="ag-header"><span class="ag-flag">${FLAGS[ag]}</span> ${AGENCY_LABELS[ag] || ag} ${dateHtml}</div>
+        ${initialHtml}${combo}${bio}${restriction}${excerptHtml}${linkHtml}
+      </div>`;
+    }).join('');
+
+    const trialBadge = d.pivotal_trial
+      ? `<span style="display:inline-block;background:#eff6ff;color:var(--primary);padding:2px 10px;border-radius:12px;font-weight:600;font-size:13px;margin-left:8px">${esc(d.pivotal_trial)}</span>`
+      : '';
+    const masterInfo = `<div style="margin-bottom:12px; font-size:13px; color:var(--text)">
+      <strong>${esc(d.title || d.indication_id)}</strong>${trialBadge}
+      ${d.population ? ` · <span style="color:var(--muted)">Population: ${esc(d.population)}</span>` : ''}
+    </div>`;
+
+    container.innerHTML = masterInfo + `<div class="agency-cards">${cards}</div>`;
+  } catch(e) {
+    container.innerHTML = `<div class="loading">로딩 실패: ${e.message}</div>`;
+  }
+}
+
+function esc(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+loadProducts();
+</script>
+</body>
+</html>

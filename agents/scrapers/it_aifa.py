@@ -51,13 +51,14 @@ MSD_COMPANY_PATTERNS = [
 class ItAifaScraper(BaseScraper):
     COUNTRY       = "IT"
     CURRENCY      = "EUR"
+    SOURCE_TYPE   = "aifa_exfactory"
     SOURCE_LABEL  = "AIFA Lista Classe H (Prezzo Ex-factory)"
     REQUIRES_LOGIN = False
 
     def __init__(
         self,
         cache_dir: Path = None,
-        msd_only: bool = True,
+        msd_only: bool = False,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -258,10 +259,11 @@ class ItAifaScraper(BaseScraper):
             results.append({
                 "product_name":    denom_raw,
                 "ingredient":      str(row.get(principio_col, "") if principio_col else ""),
-                "dosage_strength": denom_raw,   # 포장 규격 포함된 전체 문자열
+                "dosage_strength": denom_raw,
                 "dosage_form":     str(row.get(gruppo_col, "") if gruppo_col else ""),
                 "package_unit":    "",
                 "local_price":     local_price,
+                "source_type":     "aifa_exfactory",
                 "source_url":      AIFA_PAGE_URL,
                 "extra": {
                     "company":    str(row.get(titolare_col, "") if titolare_col else ""),

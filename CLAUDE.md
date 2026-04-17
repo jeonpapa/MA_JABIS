@@ -1,97 +1,89 @@
-# MA AI Dossier — 약가 모니터링 대쉬보드 개발 규칙
+# MA AI Dossier — 진입점
 
-## 프로젝트 개요
-
-**목적**: MSD Korea MA(Market Access) 팀의 국내·해외 약가를 자동 수집·비교·모니터링하는 AI 기반 대쉬보드  
-**사용자**: 글로벌 제약회사 Marketing & Market Access 담당자  
-**기술 스택**: Python 3.9, Playwright, requests, Flask, SQLite, pandas, HTML/JS 대쉬보드
+MSD Korea MA 팀의 국내·해외 약가·허가·HTA 모니터링 자동화 플랫폼.
+상세 규칙은 각 `agents/rules/*.md` 참조. 이 파일은 **링크 맵 + 최소 원칙** 만 유지한다.
 
 ---
 
 ## 에이전트 아키텍처
 
 ```
-사용자 요청
+사용자 / 스케줄러
     │
     ▼
-[OrchestratorAgent]  ← 요청 검토 · 룰 비교 · 작업 분배 (OpenAI GPT-4o)
+[OrchestratorAgent] ─── 요청 분석 · 룰 비교 · 작업 분배
     │
-    ├─▶ [DomesticPriceAgent]   국내 약가 (HIRA)
-    ├─▶ [ForeignPriceAgent]    해외 약가 (JP/IT/FR/CH/UK/DE/US)
-    │       └─▶ [Scrapers]     국가별 스크레이퍼
-    ├─▶ [DashboardAgent]       대쉬보드 생성·갱신
-    ├─▶ [BackfillAgent]        과거 데이터 보완
-    └─▶ [SchedulerAgent]       자동 스케줄링
+    ├─▶ [DomesticPriceAgent]       국내 약가 (HIRA)
+    ├─▶ [HiraAgent]                급여 SOP 평가
+    ├─▶ [ForeignPriceAgent]        해외 약가 (JP/IT/FR/CH/UK/DE/US)
+    ├─▶ [ForeignApprovalAgent]     FDA/EMA/PMDA/MFDS/MHRA/TGA 적응증 단위 허가
+    │     └─▶ [KR MFDS 공식일 교체]  변경이력 diff — itemSeq 자동조회 + 캐시
+    ├─▶ [DrugEnrichmentAgent]      성분·ATC·mechanism 보강
+    ├─▶ [MarketIntelligenceAgent]  뉴스·컨센서스 수집
+    ├─▶ [ReviewAgent]              LLM 리뷰 (다수결)
+    └─▶ [DashboardAgent]           HTML 대쉬보드 · 워크벤치 생성
     │
     ▼
-[QualityGuardAgent]  ← 진행 상황 모니터링 · 편차 기록 · 보완
+[QualityGuardAgent] ── 상시 감시 + 일일 리뷰 + 회귀 탐지 + 개선 제안
 ```
-
-각 에이전트의 상세 규칙은 `agents/rules/*.md` 참조.
 
 ---
 
-## 핵심 원칙
+## 규칙 맵 (권위 소스)
+
+| 영역 | 파일 |
+|------|------|
+| Orchestrator / 작업 분배 | `agents/rules/orchestrator_rules.md` |
+| Quality Guard (감시·리뷰·제안) | `agents/rules/quality_guard_rules.md` |
+| 스크레이퍼 공통 | `agents/rules/scraper_rules.md` |
+| 국내 약가 (HIRA Excel) | `agents/rules/domestic_agent_rules.md` |
+| 해외 약가 | `agents/rules/foreign_agent_rules.md` |
+| HIRA 급여 SOP | `agents/rules/hira_agent_rules.md` |
+| 해외 허가 (적응증 단위) | `agents/rules/foreign_approval_agent_rules.md` |
+| MFDS 공식 승인일 파이프라인 | `agents/rules/kr_mfds_approval_agent_rules.md` |
+| 성분 enrichment | `agents/rules/drug_enrichment_rules.md` |
+| Market Intelligence | `agents/rules/market_intelligence_rules.md` |
+| Review (LLM 다수결) | `agents/rules/review_agent_rules.md` |
+
+---
+
+## 최소 원칙 (모든 에이전트 공통)
 
 - **단방향 데이터 흐름**: 스크레이퍼 → DB → 대쉬보드. 대쉬보드는 DB만 읽음
-- **용량별 가격 구분**: 동일 약제라도 용량/포장이 다르면 별도 레코드 (`dosage_strength` 필드)
-- **비급여 처리**: `local_price=None`으로 명시. 임의 값 반환 금지
-- **자격증명 관리**: `config/.env` 파일에만 저장. git 커밋 금지
-- **Validation 기준**: Keytruda(pembrolizumab)로 신규 스크레이퍼 검증
+- **적응증 단위 수집**: 허가는 브랜드 단위 금지. FDA 1.x / EMA 4.1 / MFDS 번호블록 sub-split 후 anchor(disease+LoT+stage+biomarker+combo+trial) 로 master 통합
+- **데이터 출처 구분 필수**: MFDS `approval_date` 는 `date_source` 컬럼으로 `mfds_official`/`unverified_estimate` 명시. 비급여는 `local_price=None` 명시
+- **자격증명**: `config/.env` 외 어디에도 하드코딩 금지
+- **LLM 판단 애매 시**: 단독 결정 대신 `ReviewAgent` 다수결
 - **배포 순서**: 기능 완성 → 로컬 검증 → 웹 배포 (역순 금지)
-
----
-
-## 디렉터리 구조
-
-```
-MA_AI_Dossier/
-├── CLAUDE.md                          # 이 파일 — 전체 프로젝트 진입점
-├── config/
-│   ├── .env                           # 자격증명 (git 제외)
-│   └── foreign_credentials.json       # fallback 자격증명
-├── agents/
-│   ├── rules/                         # 에이전트별 상세 룰
-│   │   ├── orchestrator_rules.md
-│   │   ├── quality_guard_rules.md
-│   │   ├── domestic_agent_rules.md
-│   │   ├── foreign_agent_rules.md
-│   │   └── scraper_rules.md
-│   ├── orchestrator_agent.py
-│   ├── quality_guard_agent.py
-│   ├── domestic_price_agent.py
-│   ├── foreign_price_agent.py
-│   ├── exchange_rate.py
-│   ├── db.py
-│   └── scrapers/
-│       ├── base.py
-│       ├── jp_mhlw.py / it_aifa.py / fr_vidal.py
-│       ├── ch_compendium.py / uk_mims.py / de_rote_liste.py
-│       └── us_micromedex.py           # 예정
-├── api/server.py                      # Flask REST API
-├── data/
-│   ├── raw/                           # HIRA Excel 원본
-│   ├── foreign/                       # 국가별 캐시
-│   └── db/drug_prices.db
-├── dashboard/                         # HTML 대쉬보드
-└── quality_guard/
-    └── deviation_log.jsonl
-```
-
----
-
-## 개발 절차
-
-1. **OrchestratorAgent** — 요청 분석, 기존 룰 충돌 검토, 작업 계획 수립
-2. **개발** — BaseScraper 상속, DB 저장 형식 통일 (`agents/rules/scraper_rules.md` 준수)
-3. **QualityGuardAgent** — 편차 감지·기록·보완
-4. **Validation** — Keytruda로 신규 스크레이퍼 최종 확인
+- **Keytruda baseline**: 모든 신규 스크레이퍼/구조화 로직은 Keytruda 로 최종 검증
 
 ---
 
 ## 절대 금지
 
-- `msd_only=True` 하드코딩 (모든 약제 검색 가능해야 함)
+- `msd_only=True` 하드코딩
 - `config/.env` git 커밋
-- 가격 없을 때 임의 값 반환 (반드시 `None` 명시)
-- 기능 미완성 상태에서 웹 배포 진행
+- 가격 없을 때 임의 값 반환
+- 기능 미완성 상태에서 웹 배포
+- MFDS 변경이력 매칭을 segment-blob / 단순 문자열 매칭으로 처리 (peri/adj/neo 붕괴)
+- 허가 master 에 anchor 없이 brand+code 만으로 slug 생성
+
+---
+
+## 과거 실수 (회귀 방지)
+
+- **2026-04-17 MFDS NSCLC adj 오매칭** (2023-12-19 → 2024-05-14): segment-blob 매칭이 peri 문단을 adj 로 인식. 이후 과도 exclude 로 Lynparza BC adj 회귀. 세부: `agents/rules/kr_mfds_approval_agent_rules.md` §8. 회귀 체크는 `QualityGuardAgent.review_codebase()` 가 8개 baseline 자동 검증.
+- **MFDS 키워드 누락**: 신규 product 추가 시 `DISEASE_KR` 커버리지 미확인 → disease_layer 비어 매칭 0. 신규 product 추가 시 반드시 `indications_master.disease` 전량을 dict 와 비교.
+
+---
+
+## 감시 · 리뷰 · 제안 (QualityGuardAgent)
+
+QualityGuard 는 사후 기록자가 아니라 **상시 감시자 + 제안자**.
+
+- 파이프라인 실행 후 자동 트리거: 스키마 / 가격 이상값 / 환율 검증
+- **매일 06:00 코드베이스 리뷰**: 규칙 위반 패턴 스캔 + MFDS 8개 baseline 회귀 체크 + 개선 제안 생성
+- 결과: `quality_guard/review_YYYY-MM-DD.md` (사용자 확인용) + `deviation_log.jsonl` (기록)
+- 상세: `agents/rules/quality_guard_rules.md`
+
+신규 규칙 추가 / 대규모 변경 시 반드시 `QualityGuardAgent.review_codebase()` 수동 실행으로 회귀 확인.

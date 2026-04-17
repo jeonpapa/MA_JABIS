@@ -1,0 +1,59 @@
+{
+  "countries": {
+    "CH": {
+      "currency": "CHF",
+      "factory_ratio": 0.7,
+      "fx_rate_default": 1510.0,
+      "margin_rate": 0.12,
+      "vat_rate": 0.025
+    },
+    "DE": {
+      "currency": "EUR",
+      "factory_ratio": 0.85,
+      "fx_rate_default": 1476.0,
+      "margin_rate": 0.034,
+      "vat_rate": 0.19
+    },
+    "FR": {
+      "currency": "EUR",
+      "factory_ratio": 0.77,
+      "fx_rate_default": 1476.0,
+      "margin_rate": 0.09,
+      "vat_rate": 0.021
+    },
+    "IT": {
+      "currency": "EUR",
+      "factory_ratio": 0.665,
+      "fx_rate_default": 1476.0,
+      "margin_rate": 0.3,
+      "vat_rate": 0.1
+    },
+    "JP": {
+      "currency": "JPY",
+      "factory_ratio": 0.7,
+      "fx_rate_default": 9.12,
+      "margin_rate": 0.04,
+      "vat_rate": 0.1
+    },
+    "UK": {
+      "currency": "GBP",
+      "factory_ratio": 0.95,
+      "fx_rate_default": 1780.0,
+      "margin_rate": 0.125,
+      "vat_rate": 0.0
+    },
+    "US": {
+      "currency": "USD",
+      "factory_ratio": 0.8,
+      "fx_rate_default": 1380.0,
+      "margin_rate": 0.15,
+      "phase": 2,
+      "vat_rate": 0.0
+    }
+  },
+  "fx_source": "KEB_HANA_BANK",
+  "fx_window_months": 36,
+  "last_updated": "2026-04-16",
+  "updated_by": "smoke-restore",
+  "_user": "smoke-restore"
+}

@@ -131,10 +131,16 @@ class ForeignPriceAgent:
                     "exchange_rate": rate_info["rate"],
                     "exchange_rate_from": rate_info["from_month"],
                     "exchange_rate_to": rate_info["to_month"],
+                    "factory_ratio": calc.get("factory_ratio"),
+                    "factory_ratio_label": calc.get("factory_ratio_label", ""),
+                    "factory_price": calc.get("factory_price"),
                     "factory_price_krw": calc["factory_price_krw"],
+                    "krw_converted": calc.get("krw_converted"),
                     "vat_rate": calc["vat_rate"],
+                    "vat_applied_krw": calc.get("vat_applied_krw"),
                     "distribution_margin": calc["distribution_margin"],
                     "adjusted_price_krw": calc["adjusted_price_krw"],
+                    "source_type": source_type,
                 })
 
             row_id = self.db.save_foreign_price(item)
@@ -165,10 +171,30 @@ class ForeignPriceAgent:
         return results
 
     def get_cached_results(self, query: str) -> dict:
-        """DB에 저장된 최신 검색 결과 반환 (재검색 없이)."""
+        """DB에 저장된 최신 검색 결과 반환 (재검색 없이). 조정가 분해 데이터 추가."""
         rows = self.db.get_foreign_prices(query)
         by_country = {}
         for row in rows:
+            if row.get("local_price") and row.get("exchange_rate") and row.get("country"):
+                country = row["country"]
+                scraper = self._build_scraper(country) if country in AVAILABLE_COUNTRIES else None
+                src_type = getattr(scraper, "SOURCE_TYPE", None) if scraper else None
+                calc = self.calculator.calculate_adjusted_price(
+                    country=country,
+                    listed_price=row["local_price"],
+                    exchange_rate=row["exchange_rate"],
+                    source_type=src_type,
+                )
+                row["factory_ratio"] = calc.get("factory_ratio")
+                row["factory_ratio_label"] = calc.get("factory_ratio_label", "")
+                row["factory_price"] = calc.get("factory_price")
+                row["krw_converted"] = calc.get("krw_converted")
+                row["factory_price_krw"] = calc["factory_price_krw"]
+                row["vat_applied_krw"] = calc.get("vat_applied_krw")
+                row["vat_rate"] = calc["vat_rate"]
+                row["distribution_margin"] = calc["distribution_margin"]
+                row["adjusted_price_krw"] = calc["adjusted_price_krw"]
+                row["source_type"] = src_type
             by_country.setdefault(row["country"], []).append(row)
         return by_country
 

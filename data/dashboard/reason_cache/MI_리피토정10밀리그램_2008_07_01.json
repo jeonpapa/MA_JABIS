@@ -1,0 +1,42 @@
+{
+  "mechanism": "unknown",
+  "mechanism_label": "미분류",
+  "reason": "추정: 리피토정 10밀리그램의 2008년 7월 1일 약가 변동은 -20.02%로, 이는 제네릭 등재 또는 실거래가 연동에 따른 약가 인하 가능성이 추정됩니다. 그러나 해당 변동에 대한 공식적인 근거는 윈도우 내 공개된 보도 자료나 공식 고시에서 확인되지 않았습니다. 따라서 변동의 정확한 이유는 불분명하며, 관련 정보의 부족으로 인해 신뢰도는 낮습니다.",
+  "evidence_summary": "윈도우 내 확인 가능한 공개 보도 없음.",
+  "confidence": "low",
+  "window": {
+    "from": "2008.01",
+    "to": "2009.01",
+    "months": 6
+  },
+  "references": [],
+  "notes": "검색 결과의 모든 기사(데일리팜, 약업신문, 의협신문, 메디칼타임즈 등)는 2010년 이후 리피토의 약가재평가, 제네릭 등재(2010년 6월 1일), 비용효과성 평가 등을 다루고 있으며, 2008년 7월의 -20.02% 변동에 대한 직접적인 설명이 없음. 2008년 시점의 변동 사유 파악을 위해서는 당시 보건복지부 고시, 심사평가원 공식 자료, 또는 2008년 의약 전문 매체 기사가 필요함. · [enforce] published_at 누락/불량 7건 제거 · reason 문장 1개 삭제(윈도우 외 연도) · [enforce] published_at 누락/불량 8건 제거",
+  "_source": "perplexity-sonar-pro",
+  "analysis_meta": {
+    "source": "perplexity-sonar-pro",
+    "total_articles": 0,
+    "tier_a_count": 0,
+    "tier_b_count": 0,
+    "tier_c_count": 0,
+    "detected_mechanisms": [
+      "미분류"
+    ],
+    "top_media": []
+  },
+  "deep_research": {
+    "source": "perplexity-sonar-pro-research",
+    "model": "sonar-pro",
+    "citations": [
+      "https://dailypharm.com/user/news/215568",
+      "https://www.medicaltimes.com/Mobile/News/NewsView.html?ID=106412",
+      "https://www.medifonews.com/news/article.html?no=43198",
+      "https://www.newsthevoice.com/news/articleView.html?idxno=29811",
+      "https://www.medicaltimes.com/News/106412?ID=1130729",
+      "https://www.health.kr/searchDrug/result_sunb.asp?drug_cd=2018103000007&produced=&ordered=boh_price_down",
+      "https://www.viatris.co.kr/-/media/project/common/viatriscokr/pdf/product-chart/lld_lipitor-tab-10mg20mg40mg80mg_08jul2023_clean-copy.pdf",
+      "https://www.hira.or.kr/ra/medi/getPermissionInfo.do?pgmid=HIRAA030029000000&medcCd=645405300"
+    ],
+    "created_at": "2026-04-16T02:35:44.443298Z"
+  },
+  "cached": false
+}

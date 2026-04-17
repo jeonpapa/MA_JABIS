@@ -54,7 +54,7 @@ class ChCompendiumScraper(BaseScraper):
     SOURCE_TYPE   = "compendium"    # PriceCalculator에 전달 → ratio 0.65
     REQUIRES_LOGIN = False
 
-    def __init__(self, cache_dir: Path = None, msd_only: bool = True, **kwargs):
+    def __init__(self, cache_dir: Path = None, msd_only: bool = False, **kwargs):
         super().__init__(**kwargs)
         self.cache_dir = cache_dir or Path("data/foreign/ch")
         self.cache_dir.mkdir(parents=True, exist_ok=True)

@@ -1,0 +1,209 @@
+/* MA AI Dossier — Design Tokens (Single Source of Truth)
+   기준: _context/design.md (MeetCraft 스타일, lavender pastel)
+   기존 페이지의 CSS 변수명(--bg, --surface, --primary, --border, --text, --muted)을
+   라벤더 팔레트로 매핑하여 페이지 변경 없이 디자인을 일괄 갱신한다. */
+
+:root {
+  /* ── Primary (lavender) ─────────────────────────────────────── */
+  --primary-600: #6C4DF6;
+  --primary-500: #7C5CFC;
+  --primary-100: #EBE5FF;
+  --primary-50:  #F5F1FF;
+
+  /* 기존 변수명 매핑 */
+  --primary:       var(--primary-600);
+  --primary-hover: var(--primary-500);
+
+  /* ── Surface ────────────────────────────────────────────────── */
+  --bg-gradient: linear-gradient(135deg, #F3EEFF 0%, #FBF5FF 50%, #F0ECFF 100%);
+  --surface-0:   #FFFFFF;
+  --surface-1:   #FAFAFD;
+  --sidebar-bg:  #F7F3FF;
+
+  --bg:      #F5F1FF;             /* fallback solid */
+  --surface: var(--surface-0);
+  --border:  rgba(108, 77, 246, .14);
+
+  /* ── Text ───────────────────────────────────────────────────── */
+  --text-900: #1A1830;
+  --text-700: #3C3A52;
+  --text-500: #6B6880;
+  --text-300: #A9A6BD;
+  --text:  var(--text-900);
+  --muted: var(--text-500);
+
+  /* ── Semantic ───────────────────────────────────────────────── */
+  --success: #22C55E;
+  --warning: #F59E0B;
+  --danger:  #EF4444;
+  --info:    #3B82F6;
+
+  /* light tints (legacy alias 호환 — 구 페이지의 --primary-light 등) */
+  --primary-light: var(--primary-100);
+  --primary-hover: var(--primary-500);
+  --danger-light:  #FEE2E2;
+  --success-light: #DCFCE7;
+  --warning-light: #FEF3C7;
+
+  /* legacy alias: 구 페이지가 --card 를 사용 */
+  --card: var(--surface-0);
+
+  /* ── Category tints (이벤트/카테고리 구분) ──────────────────── */
+  --tint-lavender: #E8DEFF;
+  --tint-peach:    #FFE4D6;
+  --tint-mint:     #D6F3E4;
+  --tint-sky:      #DCEBFF;
+  --tint-pink:     #FFDDEC;
+
+  /* ── Geometry ───────────────────────────────────────────────── */
+  --radius:    20px;
+  --radius-sm: 12px;
+  --radius-pill: 999px;
+  --shadow:    0 4px 20px rgba(108, 77, 246, .06);
+  --shadow-lg: 0 10px 32px rgba(108, 77, 246, .10);
+
+  /* ── Motion ─────────────────────────────────────────────────── */
+  --ease:    cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dur:     180ms;
+
+  /* ── Type ───────────────────────────────────────────────────── */
+  --font: "Pretendard Variable", "Pretendard", "Inter",
+          -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+}
+
+/* Pretendard CDN */
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css");
+
+/* ── Body 배경 그라디언트 ───────────────────────────────────── */
+body {
+  background: var(--bg-gradient) !important;
+  background-attachment: fixed;
+  font-family: var(--font);
+  color: var(--text-900);
+}
+
+/* ── 카드 공통 (border-radius 20, shadow) ───────────────────── */
+.card,
+.chart-section,
+.detail-section {
+  border-radius: var(--radius) !important;
+  border-color: var(--border) !important;
+  box-shadow: var(--shadow) !important;
+  background: var(--surface-0) !important;
+  transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+.card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg) !important; }
+
+/* ── 헤더/검색 영역 ───────────────────────────────────────── */
+header,
+.search-wrap {
+  background: rgba(255,255,255,.7) !important;
+  backdrop-filter: blur(8px);
+  border-color: var(--border) !important;
+}
+
+/* ── 통합 탭 네비게이션 (우측 상단) ───────────────────────── */
+header { position: relative; }
+.app-tabs {
+  position: absolute;
+  top: 50%;
+  right: 24px;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 4px;
+  background: rgba(108, 77, 246, .06);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 4px;
+  z-index: 10;
+}
+.app-tabs a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-500);
+  text-decoration: none;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+  white-space: nowrap;
+}
+.app-tabs a:hover { background: var(--primary-50); color: var(--primary-600); }
+.app-tabs a.active {
+  background: var(--primary-600);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(108, 77, 246, .25);
+}
+.app-tabs .tab-icon { font-size: 14px; }
+@media (max-width: 720px) {
+  .app-tabs { position: static; transform: none; margin-left: auto; }
+  header { flex-wrap: wrap; }
+}
+
+/* ── 버튼 (primary) ─────────────────────────────────────── */
+button.btn-live, .btn-run {
+  background: var(--primary-600) !important;
+  border-radius: var(--radius-sm) !important;
+}
+button.btn-live:hover, .btn-run:hover { background: var(--primary-500) !important; }
+
+button.btn-cache {
+  background: #fff !important;
+  border: 1px solid var(--primary-100) !important;
+  color: var(--primary-600) !important;
+  border-radius: var(--radius-sm) !important;
+}
+button.btn-cache:hover { background: var(--primary-50) !important; }
+
+/* ── 입력 ─────────────────────────────────────────────── */
+input[type="text"], input[type="search"], input[type="number"], select, textarea {
+  border-radius: var(--radius-sm) !important;
+  border-color: var(--border) !important;
+  font-family: var(--font);
+}
+input:focus, select:focus, textarea:focus {
+  outline: 2px solid var(--primary-500) !important;
+  outline-offset: 2px;
+  border-color: transparent !important;
+}
+
+/* ── 표 ──────────────────────────────────────────────── */
+thead tr { background: var(--surface-1) !important; }
+thead th {
+  position: sticky; top: 0; z-index: 5;
+  background: var(--surface-1) !important;
+  box-shadow: 0 1px 0 var(--border);
+}
+th { color: var(--text-500) !important; text-transform: uppercase; letter-spacing: .04em; font-size: 11px !important; }
+tr:hover td { background: var(--primary-50) !important; }
+td.num, .metric { font-variant-numeric: tabular-nums; }
+
+/* ── 결과 카운터 / 필터 상태 표시 ───────────────────── */
+.result-count {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--text-500); font-weight: 500;
+  margin-left: auto; padding: 4px 10px;
+  background: var(--surface-1); border-radius: var(--radius-pill);
+}
+.result-count strong { color: var(--primary-600); font-weight: 700; }
+
+/* ── 칩/태그 ─────────────────────────────────────────── */
+.tag, .dosage-pill, .cp-chip label {
+  border-radius: var(--radius-pill) !important;
+}
+.tag-country { background: var(--tint-lavender) !important; color: var(--primary-600) !important; }
+.cp-chip input:checked + label {
+  background: var(--primary-100) !important;
+  border-color: var(--primary-500) !important;
+  color: var(--primary-600) !important;
+}
+
+/* ── 링크 ───────────────────────────────────────────── */
+a, .source-link, header a.back { color: var(--primary-600); }
+a:hover { color: var(--primary-500); }
+
+/* ── 진행 상태 (warning tint로) ─────────────────────── */
+#progress { background: #FFF8EB !important; border-color: #FDE5B0 !important; }
+.prog-bar { background: var(--warning) !important; }

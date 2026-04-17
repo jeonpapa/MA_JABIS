@@ -1,0 +1,271 @@
+{
+  "responses": {
+    "gemini": {
+      "text": "```json\n{\n  \"ta_number\": \"TA531\",\n  \"decision\": \"Recommended\",\n  \"decision_date\": \"2018-07\",\n  \"indication_scope\": \"이전에 치료받지 않은 성인의 PD-L1 발현 양성(종양비율점수[TPS] 50% 이상)이고 EGFR 또는 ALK 양성 변이가 없는 전이성 비소세포폐암(NSCLC) 1차 치료 단독요법\",\n  \"icer_value_gbp\": null,\n  \"pas_applied\": true,\n  \"rationale\": \"임상시험 결과, 펨브롤리주맙은 화학요법에 비해 생존기간을 약 16개월 연장시키는 것으로 나타났습니다. 치료 중단 후 장기적인 혜택에 대한 불확실성은 있지만, 생존기간 연장 효과는 충분히 입증되었습니다. 생애 말기 치료(end-of-life treatment)에 대해 NICE가 통상적으로 수용 가능한 범위 내의 비용-효과성 추정치를 보였으므로, 2년 치료 중단 조건 및 환자 접근성 합의(PAS) 하에 권고되었습니다.\",\n  \"source_url\": \"https://www.nice.org.uk/guidance/ta531\"\n}\n```",
+      "citations": [],
+      "parsed": {
+        "ta_number": "TA531",
+        "decision": "Recommended",
+        "decision_date": "2018-07",
+        "indication_scope": "이전에 치료받지 않은 성인의 PD-L1 발현 양성(종양비율점수[TPS] 50% 이상)이고 EGFR 또는 ALK 양성 변이가 없는 전이성 비소세포폐암(NSCLC) 1차 치료 단독요법",
+        "icer_value_gbp": null,
+        "pas_applied": true,
+        "rationale": "임상시험 결과, 펨브롤리주맙은 화학요법에 비해 생존기간을 약 16개월 연장시키는 것으로 나타났습니다. 치료 중단 후 장기적인 혜택에 대한 불확실성은 있지만, 생존기간 연장 효과는 충분히 입증되었습니다. 생애 말기 치료(end-of-life treatment)에 대해 NICE가 통상적으로 수용 가능한 범위 내의 비용-효과성 추정치를 보였으므로, 2년 치료 중단 조건 및 환자 접근성 합의(PAS) 하에 권고되었습니다.",
+        "source_url": "https://www.nice.org.uk/guidance/ta531"
+      },
+      "source": "gemini (gemini-2.5-pro, grounded)"
+    },
+    "perplexity": {
+      "text": "{\"ta_number\":null,\"decision\":null,\"decision_date\":null,\"indication_scope\":null,\"icer_value_gbp\":null,\"pas_applied\":null,\"rationale\":null,\"source_url\":null}",
+      "citations": [
+        {
+          "title": "",
+          "url": "https://www.nice.org.uk/guidance/ta428/documents/final-appraisal-determination-document"
+        },
+        {
+          "title": "",
+          "url": "https://clinicaltrials.gov/study/NCT03447678"
+        },
+        {
+          "title": "",
+          "url": "https://www.nice.org.uk/guidance/ta428/documents/appraisal-consultation-document"
+        },
+        {
+          "title": "",
+          "url": "https://www.nice.org.uk/guidance/ta428"
+        },
+        {
+          "title": "",
+          "url": "https://academic.oup.com/jjco/article/55/3/253/7916281"
+        },
+        {
+          "title": "",
+          "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC11937191/"
+        },
+        {
+          "title": "",
+          "url": "https://njl-admin.nihr.ac.uk/document/download/2022729"
+        }
+      ],
+      "parsed": {
+        "ta_number": null,
+        "decision": null,
+        "decision_date": null,
+        "indication_scope": null,
+        "icer_value_gbp": null,
+        "pas_applied": null,
+        "rationale": null,
+        "source_url": null
+      },
+      "source": "perplexity (sonar-pro)"
+    },
+    "openai": {
+      "text": "{\n  \"ta_number\": \"TA447\",\n  \"decision\": \"Recommended\",\n  \"decision_date\": \"2017-06\",\n  \"indication_scope\": \"성인에서 이전 치료 경험이 없는 진행성/전이성 NSCLC 중 PD-L1 발현 ≥50%이고 EGFR/ALK 변이 음성인 환자에 대한 펨브롤리주맙 단독 1차 치료.\",\n  \"icer_value_gbp\": null,\n  \"pas_applied\": true,\n  \"rationale\": \"KEYNOTE-024 등에서 화학요법 대비 전체생존과 무진행생존이 유의하게 개선되었고, 건강관련 삶의 질 이점과 수용 가능한 독성 프로파일을 보였다. 제조사의 환자접근제도(비공개 할인가) 적용 시 비용‑효과성이 NICE 수용 범위 내로 추정되며, 고 PD-L1 아형의 미충족 수요를 충족하는 점을 고려해 해당 아형(≥50%, EGFR/ALK 음성)에 한해 권고했다.\",\n  \"source_url\": \"https://www.nice.org.uk/guidance/ta447\"\n}",
+      "citations": [],
+      "parsed": {
+        "ta_number": "TA447",
+        "decision": "Recommended",
+        "decision_date": "2017-06",
+        "indication_scope": "성인에서 이전 치료 경험이 없는 진행성/전이성 NSCLC 중 PD-L1 발현 ≥50%이고 EGFR/ALK 변이 음성인 환자에 대한 펨브롤리주맙 단독 1차 치료.",
+        "icer_value_gbp": null,
+        "pas_applied": true,
+        "rationale": "KEYNOTE-024 등에서 화학요법 대비 전체생존과 무진행생존이 유의하게 개선되었고, 건강관련 삶의 질 이점과 수용 가능한 독성 프로파일을 보였다. 제조사의 환자접근제도(비공개 할인가) 적용 시 비용‑효과성이 NICE 수용 범위 내로 추정되며, 고 PD-L1 아형의 미충족 수요를 충족하는 점을 고려해 해당 아형(≥50%, EGFR/ALK 음성)에 한해 권고했다.",
+        "source_url": "https://www.nice.org.uk/guidance/ta447"
+      },
+      "source": "openai (gpt-5)"
+    }
+  },
+  "matrix": {
+    "decision": {
+      "gemini": "Recommended",
+      "perplexity": null,
+      "openai": "Recommended"
+    },
+    "decision_date": {
+      "gemini": "2018-07",
+      "perplexity": null,
+      "openai": "2017-06"
+    },
+    "icer_value_gbp": {
+      "gemini": null,
+      "perplexity": null,
+      "openai": null
+    },
+    "indication_scope": {
+      "gemini": "이전에 치료받지 않은 성인의 PD-L1 발현 양성(종양비율점수[TPS] 50% 이상)이고 EGFR 또는 ALK 양성 변이가 없는 전이성 비소세포폐암(NSCLC) 1차 치료 단독요법",
+      "perplexity": null,
+      "openai": "성인에서 이전 치료 경험이 없는 진행성/전이성 NSCLC 중 PD-L1 발현 ≥50%이고 EGFR/ALK 변이 음성인 환자에 대한 펨브롤리주맙 단독 1차 치료."
+    },
+    "pas_applied": {
+      "gemini": true,
+      "perplexity": null,
+      "openai": true
+    },
+    "rationale": {
+      "gemini": "임상시험 결과, 펨브롤리주맙은 화학요법에 비해 생존기간을 약 16개월 연장시키는 것으로 나타났습니다. 치료 중단 후 장기적인 혜택에 대한 불확실성은 있지만, 생존기간 연장 효과는 충분히 입증되었습니다. 생애 말기 치료(end-of-life treatment)에 대해 NICE가 통상적으로 수용 가능한 범위 내의 비용-효과성 추정치를 보였으므로, 2년 치료 중단 조건 및 환자 접근성 합의(PAS) 하에 권고되었습니다.",
+      "perplexity": null,
+      "openai": "KEYNOTE-024 등에서 화학요법 대비 전체생존과 무진행생존이 유의하게 개선되었고, 건강관련 삶의 질 이점과 수용 가능한 독성 프로파일을 보였다. 제조사의 환자접근제도(비공개 할인가) 적용 시 비용‑효과성이 NICE 수용 범위 내로 추정되며, 고 PD-L1 아형의 미충족 수요를 충족하는 점을 고려해 해당 아형(≥50%, EGFR/ALK 음성)에 한해 권고했다."
+    },
+    "source_url": {
+      "gemini": "https://www.nice.org.uk/guidance/ta531",
+      "perplexity": null,
+      "openai": "https://www.nice.org.uk/guidance/ta447"
+    },
+    "ta_number": {
+      "gemini": "TA531",
+      "perplexity": null,
+      "openai": "TA447"
+    }
+  },
+  "consensus": {
+    "decision": {
+      "status": "agree",
+      "value": "Recommended",
+      "sources": [
+        "gemini",
+        "openai"
+      ]
+    },
+    "decision_date": {
+      "status": "conflict",
+      "values": {
+        "2018-07": "2018-07",
+        "2017-06": "2017-06"
+      },
+      "grouped_sources": {
+        "2018-07": [
+          "gemini"
+        ],
+        "2017-06": [
+          "openai"
+        ]
+      }
+    },
+    "icer_value_gbp": {
+      "status": "missing",
+      "value": null,
+      "sources": []
+    },
+    "indication_scope": {
+      "status": "narrative",
+      "values": {
+        "gemini": "이전에 치료받지 않은 성인의 PD-L1 발현 양성(종양비율점수[TPS] 50% 이상)이고 EGFR 또는 ALK 양성 변이가 없는 전이성 비소세포폐암(NSCLC) 1차 치료 단독요법",
+        "openai": "성인에서 이전 치료 경험이 없는 진행성/전이성 NSCLC 중 PD-L1 발현 ≥50%이고 EGFR/ALK 변이 음성인 환자에 대한 펨브롤리주맙 단독 1차 치료."
+      },
+      "sources": [
+        "gemini",
+        "openai"
+      ]
+    },
+    "pas_applied": {
+      "status": "agree",
+      "value": true,
+      "sources": [
+        "gemini",
+        "openai"
+      ]
+    },
+    "rationale": {
+      "status": "narrative",
+      "values": {
+        "gemini": "임상시험 결과, 펨브롤리주맙은 화학요법에 비해 생존기간을 약 16개월 연장시키는 것으로 나타났습니다. 치료 중단 후 장기적인 혜택에 대한 불확실성은 있지만, 생존기간 연장 효과는 충분히 입증되었습니다. 생애 말기 치료(end-of-life treatment)에 대해 NICE가 통상적으로 수용 가능한 범위 내의 비용-효과성 추정치를 보였으므로, 2년 치료 중단 조건 및 환자 접근성 합의(PAS) 하에 권고되었습니다.",
+        "openai": "KEYNOTE-024 등에서 화학요법 대비 전체생존과 무진행생존이 유의하게 개선되었고, 건강관련 삶의 질 이점과 수용 가능한 독성 프로파일을 보였다. 제조사의 환자접근제도(비공개 할인가) 적용 시 비용‑효과성이 NICE 수용 범위 내로 추정되며, 고 PD-L1 아형의 미충족 수요를 충족하는 점을 고려해 해당 아형(≥50%, EGFR/ALK 음성)에 한해 권고했다."
+      },
+      "sources": [
+        "gemini",
+        "openai"
+      ]
+    },
+    "source_url": {
+      "status": "conflict",
+      "values": {
+        "https://www.nice.org.uk/guidance/ta531": "https://www.nice.org.uk/guidance/ta531",
+        "https://www.nice.org.uk/guidance/ta447": "https://www.nice.org.uk/guidance/ta447"
+      },
+      "grouped_sources": {
+        "https://www.nice.org.uk/guidance/ta531": [
+          "gemini"
+        ],
+        "https://www.nice.org.uk/guidance/ta447": [
+          "openai"
+        ]
+      }
+    },
+    "ta_number": {
+      "status": "conflict",
+      "values": {
+        "ta531": "TA531",
+        "ta447": "TA447"
+      },
+      "grouped_sources": {
+        "ta531": [
+          "gemini"
+        ],
+        "ta447": [
+          "openai"
+        ]
+      }
+    }
+  },
+  "flags": [
+    {
+      "field": "decision_date",
+      "issue": "소스 간 값 충돌 — 사용자 리뷰 필요",
+      "groups": {
+        "2018-07": [
+          "gemini"
+        ],
+        "2017-06": [
+          "openai"
+        ]
+      }
+    },
+    {
+      "field": "icer_value_gbp",
+      "issue": "모든 소스가 값을 제공하지 않음"
+    },
+    {
+      "field": "indication_scope",
+      "issue": "서술형 필드 — 2개 소스 표현 차이 (유저가 통합 필요)",
+      "severity": "info"
+    },
+    {
+      "field": "rationale",
+      "issue": "서술형 필드 — 2개 소스 표현 차이 (유저가 통합 필요)",
+      "severity": "info"
+    },
+    {
+      "field": "source_url",
+      "issue": "소스 간 값 충돌 — 사용자 리뷰 필요",
+      "groups": {
+        "https://www.nice.org.uk/guidance/ta531": [
+          "gemini"
+        ],
+        "https://www.nice.org.uk/guidance/ta447": [
+          "openai"
+        ]
+      }
+    },
+    {
+      "field": "ta_number",
+      "issue": "소스 간 값 충돌 — 사용자 리뷰 필요",
+      "groups": {
+        "ta531": [
+          "gemini"
+        ],
+        "ta447": [
+          "openai"
+        ]
+      }
+    }
+  ],
+  "summary": {
+    "agree_count": 2,
+    "conflict_count": 3,
+    "missing_count": 1,
+    "single_source": 0,
+    "narrative_count": 2,
+    "total_fields": 8,
+    "sources_active": 3
+  }
+}

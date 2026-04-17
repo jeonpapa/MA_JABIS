@@ -1,0 +1,40 @@
+{
+  "mechanism": "indication_expansion",
+  "mechanism_label": "적응증 확대",
+  "reason": "2026.01.01 키트루다주 약가 상한금액이 2,103,620원에서 2,100,556원으로 소폭 조정되며, 이는 두경부암 등 9개 암종 17개 요법으로 급여범위 확대에 따른 공단 재협상 결과이다. 변동률 -0.15%는 소폭이나 적응증 확대 시 통상 5~30% 인하폭 범위 내에 속하며, 환자 1인당 연간 투약비용이 7,302만 원에서 365만 원으로 대폭 감소할 것으로 예상된다. 실거래가 연동 가능성도 검토되었으나, 윈도우 내 공식 고시에서 명시된 사용범위 확대가 주요 트리거로 확인된다.",
+  "evidence_summary": "보건복지부 고시(2026년): 키트루다주 상한금액 2,103,620원→2,100,556원 조정(2026.01.01 시행), 두경부암 등 9개 암종 17개 요법 급여 확대[3].",
+  "confidence": "high",
+  "window": {
+    "from": "2025.07",
+    "to": "2026.07",
+    "months": 6
+  },
+  "references": [
+    {
+      "title": "의료비용 분석 결과 등을 바탕으로 2026년 상대가치 상시 조정 추진한다",
+      "url": "https://www.mohw.go.kr/board.es?mid=a10503010100&bid=0027&act=view&list_no=1488346&tag=&nPage=6",
+      "media": "보건복지부",
+      "weight": 3.0,
+      "published_at": "2026.01.01"
+    }
+  ],
+  "notes": "소폭 변동이나 공식 고시에서 적응증 확대 명시. 실거래가 연동 별도 증거 없음. · [enforce] published_at 누락/불량 3건 제거",
+  "_source": "perplexity-sonar-pro",
+  "analysis_meta": {
+    "source": "perplexity-sonar-pro",
+    "total_articles": 1,
+    "tier_a_count": 0,
+    "tier_b_count": 0,
+    "tier_c_count": 1,
+    "detected_mechanisms": [
+      "적응증 확대"
+    ],
+    "top_media": [
+      {
+        "media": "보건복지부",
+        "weight": 3.0
+      }
+    ]
+  },
+  "cached": false
+}

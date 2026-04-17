@@ -276,6 +276,8 @@ class PriceCalculator:
 
     def calculate_factory_price(self, country: str, listed_price: float,
                                 source_type: str = None) -> float:
+        if source_type == "aifa_exfactory":
+            return listed_price
         ratio = self.FACTORY_RATIO.get(country)
         if ratio is None:   # 독일 특수 계산
             factory = listed_price / (1.19 * 1.0315) - 8.35 - 0.7
@@ -291,14 +293,39 @@ class PriceCalculator:
         factory_price = self.calculate_factory_price(country, listed_price, source_type)
         vat    = self.VAT_RATE.get(country, 0)
         margin = self.DISTRIBUTION_MARGIN.get(country, 0)
-        converted = int(factory_price * exchange_rate)
-        adjusted  = int(converted * (1 + vat) * (1 + margin))
+        krw_converted = listed_price * exchange_rate
+        factory_krw = factory_price * exchange_rate
+        vat_applied = factory_krw * (1 + vat)
+        adjusted = int(vat_applied * (1 + margin))
+
+        if source_type == "aifa_exfactory":
+            ratio_used = None
+            ratio_label = "Ex-factory (직접)"
+        elif country == "CH" and source_type == "compendium":
+            ratio_used = 0.65
+            ratio_label = "Compendium 0.65"
+        elif country == "FR" and source_type == "vidal":
+            ratio_used = 0.65
+            ratio_label = "Vidal 0.65"
+        elif country == "DE":
+            ratio_used = None
+            ratio_label = "독일 특수공식"
+        else:
+            ratio_used = self.FACTORY_RATIO.get(country)
+            ratio_label = f"HIRA 기준 {ratio_used}" if ratio_used else "—"
+
         return {
-            "factory_price":      factory_price,
-            "factory_price_krw":  converted,
-            "vat_rate":           vat,
+            "listed_price":        listed_price,
+            "factory_ratio":       ratio_used,
+            "factory_ratio_label": ratio_label,
+            "factory_price":       round(factory_price, 2),
+            "exchange_rate":       exchange_rate,
+            "krw_converted":       int(krw_converted),
+            "factory_price_krw":   int(factory_krw),
+            "vat_rate":            vat,
+            "vat_applied_krw":     int(vat_applied),
             "distribution_margin": margin,
-            "adjusted_price_krw": adjusted,
+            "adjusted_price_krw":  adjusted,
         }
 
 

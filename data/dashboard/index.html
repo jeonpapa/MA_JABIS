@@ -5,26 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>MA AI Dossier — 약가 모니터링 대쉬보드</title>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<link rel="stylesheet" href="/dashboard/assets/css/tokens.css">
 <style>
 /* ══════════════════════════════════════════════════════════════
-   공통 변수 & 리셋
+   :root design tokens 는 assets/css/tokens.css 단일 소스에서 상속.
 ═══════════════════════════════════════════════════════════════ */
-:root {
-  --bg:            #f0f2f5;
-  --card:          #ffffff;
-  --primary:       #1a56db;
-  --primary-light: #e8f0fe;
-  --primary-hover: #1648c5;
-  --danger:        #e02424;
-  --danger-light:  #fde8e8;
-  --success:       #057a55;
-  --success-light: #def7ec;
-  --text:          #111827;
-  --muted:         #6b7280;
-  --border:        #e5e7eb;
-  --shadow:        0 1px 4px rgba(0,0,0,.08);
-  --radius:        10px;
-}
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
   background: var(--bg);
@@ -534,13 +519,10 @@ tr:hover td { background: #f9fafb; }
       <div class="subtitle">약가 모니터링 대쉬보드</div>
     </div>
   </div>
-  <nav class="tab-nav">
-    <button class="tab-btn active" data-tab="domestic" onclick="switchTab('domestic')">
-      <span class="tab-icon">🏥</span> 국내 약가 변동이력
-    </button>
-    <button class="tab-btn" data-tab="foreign" onclick="switchTab('foreign')">
-      <span class="tab-icon">🌍</span> 해외 약가 추적
-    </button>
+  <nav class="app-tabs" id="appTabs">
+    <a class="active" href="/dashboard/"><span class="tab-icon">🏥</span>국내 약가</a>
+    <a href="/dashboard/foreign_prices.html"><span class="tab-icon">🌍</span>해외 약가</a>
+    <a href="/dashboard/approvals.html"><span class="tab-icon">📋</span>허가사항</a>
   </nav>
 </header>
 
@@ -706,22 +688,31 @@ tr:hover td { background: #f9fafb; }
         </div>
 
         <div class="for-detail-section" id="for-detail-section">
-          <h2>상세 약가 데이터</h2>
+          <h2>HIRA A8 외국약가 조정가 산출 내역</h2>
           <div class="for-detail-meta" id="for-detail-meta"></div>
           <div class="for-tbl-wrap">
-            <table>
+            <table style="font-size:12px;">
               <thead>
                 <tr>
-                  <th>국가</th><th>제품명</th><th>성분명</th><th>함량 / 제형</th>
-                  <th>포장단위</th>
+                  <th>국가</th>
+                  <th>제품 (함량)</th>
                   <th style="text-align:right">현지 약가</th>
-                  <th style="text-align:right">적용 환율</th>
-                  <th style="text-align:right">KRW 조정가</th>
-                  <th>자료원</th><th>검색 일시</th>
+                  <th style="text-align:right">환율<br><span style="font-weight:400;font-size:10px">(36개월 평균)</span></th>
+                  <th style="text-align:right">원화 환산</th>
+                  <th style="text-align:center">공장도 비율</th>
+                  <th style="text-align:right">공장도가<br><span style="font-weight:400;font-size:10px">(KRW)</span></th>
+                  <th style="text-align:center">VAT</th>
+                  <th style="text-align:right">VAT 적용<br><span style="font-weight:400;font-size:10px">(KRW)</span></th>
+                  <th style="text-align:right;color:var(--primary);font-weight:700">조정가<br><span style="font-weight:400;font-size:10px">(KRW)</span></th>
+                  <th>자료원</th>
                 </tr>
               </thead>
               <tbody id="for-detail-body"></tbody>
             </table>
+          </div>
+          <div style="margin-top:10px;font-size:11px;color:var(--muted);line-height:1.6;">
+            <div><strong>산출 공식:</strong> 현지약가 × 공장도비율 = 공장도가 → × 환율 = 공장도가(KRW) → × (1+VAT) = <strong>조정가</strong></div>
+            <div><strong>공장도비율:</strong> US 0.74 · UK 0.73 · JP 0.79 · FR 0.77(Vidal 0.65) · IT AIFA Ex-factory 직접 · CH 0.73(Compendium 0.65) · DE 특수공식</div>
           </div>
         </div>
 
@@ -742,6 +733,34 @@ tr:hover td { background: #f9fafb; }
 <script>
 'use strict';
 
+// ── 탭 간 검색 상태 유지 ─────────────────────────────────────────────────────
+(function() {
+  const params = new URLSearchParams(location.search);
+  const q = params.get('q');
+  if (q) {
+    const domInput = document.getElementById('dom-search-input');
+    const forInput = document.getElementById('for-search-input');
+    if (domInput) domInput.value = q;
+    if (forInput) forInput.value = q;
+  }
+  const nav = document.getElementById('appTabs');
+  if (nav) {
+    nav.querySelectorAll('a').forEach(a => {
+      a.addEventListener('click', function(e) {
+        const domQ = (document.getElementById('dom-search-input') || {}).value || '';
+        const forQ = (document.getElementById('for-search-input') || {}).value || '';
+        const curQ = (domQ.trim() || forQ.trim());
+        if (curQ) {
+          e.preventDefault();
+          const url = new URL(this.href, location.origin);
+          url.searchParams.set('q', curQ);
+          location.href = url.toString();
+        }
+      });
+    });
+  }
+})();
+
 const API = 'http://127.0.0.1:5001';
 
 // ══════════════════════════════════════════════════════════════
@@ -760,10 +779,12 @@ function switchTab(name) {
   history.replaceState(null, '', '#' + name);
 }
 
-// URL 해시로 초기 탭 결정
+// URL 해시로 초기 탭 결정 + ?q= 자동 검색
 (function () {
   const hash = location.hash.replace('#', '');
   if (hash === 'foreign') switchTab('foreign');
+  const q = new URLSearchParams(location.search).get('q');
+  if (q) setTimeout(() => domDoSearch(), 200);
 })();
 
 
@@ -1553,27 +1574,28 @@ function forRenderResults(query, data) {
     rows.forEach(r => {
       const tr = document.createElement('tr');
       const dosage = [r.dosage_strength, r.dosage_form].filter(Boolean).join(' / ');
+      const productLabel = r.product_name ? `${escHtml(r.product_name)}${dosage ? '<br><span class="dosage-pill">' + escHtml(dosage) + '</span>' : ''}` : '—';
+      const ratioLabel = r.factory_ratio_label || (r.factory_ratio != null ? r.factory_ratio : '—');
+      const factoryKRW = r.factory_price_krw != null ? r.factory_price_krw : (r.factory_price && r.exchange_rate ? Math.round(r.factory_price * r.exchange_rate) : null);
+      const krwConverted = r.krw_converted != null ? r.krw_converted : (r.local_price && r.exchange_rate ? Math.round(r.local_price * r.exchange_rate) : null);
+      const vatPct = r.vat_rate != null ? (r.vat_rate * 100).toFixed(1) + '%' : '—';
+      const vatApplied = r.vat_applied_krw != null ? r.vat_applied_krw : (factoryKRW && r.vat_rate != null ? Math.round(factoryKRW * (1 + r.vat_rate)) : null);
       const rateRange = (r.exchange_rate_from && r.exchange_rate_to)
-        ? `<br><span style="font-size:10px;color:var(--muted)">(${r.exchange_rate_from}~${r.exchange_rate_to})</span>` : '';
-      const rawData = (() => {
-        try {
-          const rd = JSON.parse(r.raw_data || '{}');
-          return rd.price_note || rd.remboursement || '';
-        } catch { return ''; }
-      })();
+        ? `<br><span style="font-size:9px;color:var(--muted)">${r.exchange_rate_from}~${r.exchange_rate_to}</span>` : '';
       tr.innerHTML = `
         <td><span class="tag-country">${info.flag} ${code}</span></td>
-        <td>${escHtml(r.product_name || '—')}</td>
-        <td style="color:var(--muted)">${escHtml(r.ingredient || '—')}</td>
-        <td>${dosage ? `<span class="dosage-pill">${escHtml(dosage)}</span>` : '—'}</td>
-        <td>${escHtml(r.package_unit || '—')}</td>
+        <td style="max-width:180px;line-height:1.3;">${productLabel}</td>
         <td class="num">${fmtLocal(r.local_price, r.currency)}</td>
         <td class="num">${fmtRate(r.exchange_rate)}${rateRange}</td>
-        <td class="num" style="font-weight:600;color:var(--primary)">${fmtKRW(r.adjusted_price_krw)}</td>
-        <td>${r.source_url
+        <td class="num" style="color:var(--muted)">${fmtKRW(krwConverted)}</td>
+        <td style="text-align:center;font-size:11px;">${ratioLabel}</td>
+        <td class="num">${fmtKRW(factoryKRW)}</td>
+        <td style="text-align:center;font-size:11px;">${vatPct}</td>
+        <td class="num">${fmtKRW(vatApplied)}</td>
+        <td class="num" style="font-weight:700;color:var(--primary)">${fmtKRW(r.adjusted_price_krw)}</td>
+        <td style="font-size:11px;">${r.source_url
           ? `<a class="source-link" href="${escAttr(r.source_url)}" target="_blank">${escHtml(r.source_label || '링크')}</a>`
-          : escHtml(r.source_label || '—')}${rawData ? `<br><span style="font-size:10px;color:var(--muted)">${escHtml(rawData)}</span>` : ''}</td>
-        <td style="white-space:nowrap;color:var(--muted)">${fmtDate(r.searched_at)}</td>`;
+          : escHtml(r.source_label || '—')}</td>`;
       detBody.appendChild(tr);
     });
   });
@@ -1592,7 +1614,7 @@ function forRenderResults(query, data) {
   if (total > 0) {
     detailSec.classList.add('visible');
     document.getElementById('for-detail-meta').textContent =
-      `총 ${total}개 품목 · 조정가는 HIRA 기준(공장도가→부가세→유통마진) KRW 환산 금액입니다.`;
+      `총 ${total}개 품목 · 각 단계별 조정가 산출 과정을 표시합니다. (HIRA 2025.3월 A8 규정 기준)`;
   } else {
     detailSec.classList.remove('visible');
   }

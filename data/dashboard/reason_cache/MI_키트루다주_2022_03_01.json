@@ -1,8 +1,8 @@
 {
   "mechanism": "indication_expansion",
   "mechanism_label": "적응증 확대",
-  "reason": "키트루다(펨브롤리주맙)의 2022.03 약가 25.61% 인하는 비소세포폐암 1차 치료제 급여 확대에 따른 공단 재협상 결과. 기존 급여 대비 환자군 증가로 예상청구액 1762억원 발생, MSD와 약가 주당 210만7642원으로 합의. 변동폭이 크므로 적응증 확대 기전과 부합.",
-  "evidence_summary": "헬스조선 2022.03.14 보도: 키트루다 폐암 1차 치료제 급여 확대, 약가 25.6% 인하 합의로 5년 협상 종료.",
+  "reason": "2022년 3월 키트루다는 비소세포폐암 1차 치료제로 급여 범위가 확대되었다. 이전에는 2차 이상 치료제로만 급여되던 것이 1차 치료제로 확대되면서 환자군이 대폭 증가했다. 이에 따라 건강보험공단의 재협상 요구로 약가가 주당 283만 3278원에서 210만 7642원으로 25.6% 인하되었다. MSD는 협상 과정에서 자누비아 등 15개 품목의 약가도 최대 77% 인하하는 트레이드오프를 통해 키트루다의 1차 치료제 급여 확대를 관철했다.",
+  "evidence_summary": "헬스조선(2022.03.14): '키트루다의 보험급여 범위가 1차 치료제로 확대됐으며, 약가는 25.6% 인하되어 주당 210만 7642원으로 조정됨'. 데일리팜(2022.03.13): '2022년 키트루다는 비소세포폐암 1차 치료 등으로 급여 확대를 성공했으며 예상청구액은 1762억원'.",
   "confidence": "high",
   "window": {
     "from": "2021.09",
@@ -11,19 +11,26 @@
   },
   "references": [
     {
-      "title": "[뜨는 약] 면역항암제 '키트루다' 5년 만에 '1차 치료 급여'",
+      "title": "[뜨는 약] 면역항암제 '키트루다' 5년 만에 '1차 치료 급여' - 헬스조선",
       "url": "https://m.health.chosun.com/svc/news_view.html?contid=2022031401630",
       "media": "헬스조선",
-      "weight": 2.1,
+      "weight": 2.4,
       "published_at": "2022.03.14"
+    },
+    {
+      "title": "예상청구액 2300억 키트루다 급여 확대...건보재정 경고등 - 데일리팜",
+      "url": "https://dailypharm.com/user/news/334728?view_mode=pc",
+      "media": "데일리팜",
+      "weight": 2.7,
+      "published_at": "2022.03.13"
     }
   ],
-  "notes": "특허 만료 관련 윈도우 내 보도 없음. 협상 과정에서 MSD 타 품목 약가 인하 트레이드 오프 동원. · [enforce] published_at 누락/불량 3건 제거",
+  "notes": "적응증 확대(비소세포폐암 1차 치료제 추가)로 인한 환자군 증가가 약가 인하의 직접적 원인. 25.6% 인하폭은 적응증 확대 기전의 전형적 범위(5~30%)에 부합. · [enforce] published_at 누락/불량 3건 제거",
   "_source": "perplexity-sonar-pro",
   "analysis_meta": {
     "source": "perplexity-sonar-pro",
-    "total_articles": 1,
-    "tier_a_count": 0,
+    "total_articles": 2,
+    "tier_a_count": 1,
     "tier_b_count": 0,
     "tier_c_count": 0,
     "detected_mechanisms": [
@@ -31,8 +38,12 @@
     ],
     "top_media": [
       {
+        "media": "데일리팜",
+        "weight": 2.7
+      },
+      {
         "media": "헬스조선",
-        "weight": 2.1
+        "weight": 2.4
       }
     ]
   },
