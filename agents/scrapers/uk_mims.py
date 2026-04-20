@@ -75,6 +75,7 @@ class UkMimsScraper(BaseScraper):
         """
         DuckDuckGo HTML 검색으로 MIMS 약제 페이지 URL 목록 반환.
         site:mims.co.uk {query} 검색 → /drugs/ 경로 URL 추출
+        DDG 실패 시 직접 URL 구성으로 폴백.
         """
         try:
             r = self._session.get(
@@ -93,6 +94,14 @@ class UkMimsScraper(BaseScraper):
             for u in uddg_links
             if "mims.co.uk/drugs" in unquote(u)
         ]))
+
+        # DDG 검색 결과가 없으면 직접 URL 구성으로 폴백
+        if not urls:
+            slug = query.lower().replace(" ", "-")
+            fallback_url = f"{MIMS_BASE}/drugs/{slug}/"
+            logger.info("[UK] DDG 검색 결과 없음, 직접 URL 시도: %s", fallback_url)
+            urls = [fallback_url]
+
         logger.info("[UK] DDG 검색 결과 MIMS URL: %d개 (query=%s)", len(urls), query)
         return urls
 
@@ -285,6 +294,7 @@ class UkMimsScraper(BaseScraper):
 
                 searched_at = datetime.now().isoformat()
                 for item in raw_results:
+                    form_type = self._resolve_form_type(item)
                     results.append({
                         "searched_at":         searched_at,
                         "query_name":          query,
@@ -308,6 +318,7 @@ class UkMimsScraper(BaseScraper):
                         "raw_data":            json.dumps(
                             item.get("extra", {}), ensure_ascii=False
                         ),
+                        "form_type":           form_type,
                     })
 
             except Exception as e:

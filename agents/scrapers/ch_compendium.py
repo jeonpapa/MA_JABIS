@@ -118,19 +118,30 @@ class ChCompendiumScraper(BaseScraper):
         # ── 가격 추출 ──────────────────────────────────────────────────
         # 패턴 1: "CHF 4,294.10" 또는 "CHF 4'294.10"
         price_match = re.search(
-            r"CHF\s+([\d]['\d,\.]+\d)",
+            r"CHF\s+([\d\s',\.]+)",
             html,
             re.IGNORECASE,
         )
+
+        if not price_match:
+            # 패턴 2: "CHF" 없이 "1'234.50" 또는 "1,234.50" 형식 (보험 약가)
+            price_match = re.search(
+                r"(?:Publikumspreis|VK-Preis|Preis)[:\s]*([0-9\s',\.]+)",
+                html,
+                re.IGNORECASE,
+            )
+
         if not price_match:
             logger.warning("[CH] MNR %s: 가격 미발견", mnr)
             return None
 
-        raw_price = price_match.group(1).replace("'", "").replace(",", "")
+        raw_price_str = price_match.group(1).strip()
+        raw_price = raw_price_str.replace(" ", "").replace("'", "").replace(",", "")
+
         try:
             price = float(raw_price)
         except ValueError:
-            logger.warning("[CH] 가격 파싱 실패: %s", price_match.group(1))
+            logger.warning("[CH] 가격 파싱 실패: %s", raw_price_str)
             return None
 
         # ── 성분명 추출 (Wirkstoff) ─────────────────────────────────────
