@@ -20,14 +20,14 @@ logger = logging.getLogger(__name__)
 # 구현된 스크레이퍼 등록 (국가 추가 시 여기에 import + 등록)
 from agents.scrapers.jp_mhlw import JpMhlwScraper
 from agents.scrapers.it_aifa import ItAifaScraper
-from agents.scrapers.fr_vidal import FrVidalScraper
+from agents.scrapers.fr_bdpm import FrBdpmScraper
 from agents.scrapers.ch_compendium import ChCompendiumScraper
 from agents.scrapers.uk_mims import UkMimsScraper
 from agents.scrapers.de_rote_liste import DeRoteListeScraper
+from agents.scrapers.ca_ontario import CaOntarioScraper
 # from agents.scrapers.us_micromedex import UsMicromedexScraper   # 추후 추가
-# from agents.scrapers.ca_ontario import CaOntarioScraper
 
-AVAILABLE_COUNTRIES = ["JP", "IT", "FR", "CH", "UK", "DE"]  # 구현 완료된 국가 목록
+AVAILABLE_COUNTRIES = ["JP", "IT", "FR", "CH", "UK", "DE", "CA"]  # 구현 완료된 국가 목록
 
 
 class ForeignPriceAgent:
@@ -57,7 +57,7 @@ class ForeignPriceAgent:
                 msd_only=False,
             )
         elif country == "FR":
-            return FrVidalScraper(
+            return FrBdpmScraper(
                 credentials=creds,
                 cache_dir=self.foreign_data_dir / "fr",
                 msd_only=False,
@@ -80,10 +80,14 @@ class ForeignPriceAgent:
                 cache_dir=self.foreign_data_dir / "de",
                 msd_only=False,
             )
+        elif country == "CA":
+            return CaOntarioScraper(
+                credentials=creds,
+                cache_dir=self.foreign_data_dir / "ca",
+                msd_only=False,
+            )
         # elif country == "US":
         #     return UsMicromedexScraper(credentials=creds)
-        # elif country == "CA":
-        #     return CaOntarioScraper(credentials=creds)
         else:
             raise ValueError(f"지원하지 않는 국가: {country} (구현된 국가: {AVAILABLE_COUNTRIES})")
 
@@ -150,6 +154,46 @@ class ForeignPriceAgent:
         logger.info("[%s] DB 저장 완료: %d건", country, len(saved))
         return saved
 
+    def _validate_data_integrity(self, query: str, results: dict) -> None:
+        """
+        스크레이퍼 결과와 API 반환 데이터 간 일치성 검증.
+        데이터 손실 감지 시 경고 기록.
+        """
+        # 스크레이퍼 결과 통계
+        scraper_count = {}
+        scraper_null_count = {}
+        for country, items in results.items():
+            scraper_count[country] = len(items)
+            scraper_null_count[country] = sum(1 for item in items if item.get("local_price") is None)
+
+        # API 반환 데이터 통계 (DB 조회)
+        api_data = self.get_cached_results(query)
+        api_count = {}
+        api_null_count = {}
+        for country, items in api_data.items():
+            api_count[country] = len(items)
+            api_null_count[country] = sum(1 for item in items if item.get("local_price") is None)
+
+        # 불일치 감지
+        for country in set(list(scraper_count.keys()) + list(api_count.keys())):
+            s_count = scraper_count.get(country, 0)
+            a_count = api_count.get(country, 0)
+            s_null = scraper_null_count.get(country, 0)
+            a_null = api_null_count.get(country, 0)
+
+            if s_count > a_count:
+                logger.warning(
+                    "[QualityGuard] '%s' [%s] 데이터 손실 감지: "
+                    "스크레이퍼 %d건 → API %d건 (null_price: %d → %d)",
+                    query, country, s_count, a_count, s_null, a_null
+                )
+            elif s_null > a_null:
+                logger.warning(
+                    "[QualityGuard] '%s' [%s] null_price 데이터 필터링 감지: "
+                    "스크레이퍼 %d건 → API %d건",
+                    query, country, s_null, a_null
+                )
+
     async def search_all(
         self, query: str, countries: list[str] = None, reference_date: date = None
     ) -> dict:
@@ -168,6 +212,9 @@ class ForeignPriceAgent:
             except Exception as e:
                 logger.error("[%s] 조회 실패: %s", country, e)
                 results[country] = []
+
+        # 데이터 손실 검증
+        self._validate_data_integrity(query, results)
         return results
 
     def get_cached_results(self, query: str) -> dict:
@@ -175,8 +222,12 @@ class ForeignPriceAgent:
         rows = self.db.get_foreign_prices(query)
         by_country = {}
         for row in rows:
-            if row.get("local_price") and row.get("exchange_rate") and row.get("country"):
-                country = row["country"]
+            country = row.get("country")
+            if not country:
+                continue
+
+            # 가격과 환율이 모두 존재할 때만 조정가 계산
+            if row.get("local_price") is not None and row.get("exchange_rate"):
                 scraper = self._build_scraper(country) if country in AVAILABLE_COUNTRIES else None
                 src_type = getattr(scraper, "SOURCE_TYPE", None) if scraper else None
                 calc = self.calculator.calculate_adjusted_price(
@@ -195,7 +246,14 @@ class ForeignPriceAgent:
                 row["distribution_margin"] = calc["distribution_margin"]
                 row["adjusted_price_krw"] = calc["adjusted_price_krw"]
                 row["source_type"] = src_type
-            by_country.setdefault(row["country"], []).append(row)
+            else:
+                # 가격 또는 환율 없을 때: 조정가는 계산하지 않지만 원본 데이터는 유지
+                row["factory_price_krw"] = None
+                row["adjusted_price_krw"] = None
+                row["vat_rate"] = None
+                row["distribution_margin"] = None
+
+            by_country.setdefault(country, []).append(row)
         return by_country
 
 

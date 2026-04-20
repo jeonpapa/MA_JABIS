@@ -1,0 +1,42 @@
+{
+  "mechanism": "unknown",
+  "mechanism_label": "미분류",
+  "reason": "추정: 자누비아정 100mg의 2023년 4월 약가 변동(-1.05%)에 대한 직접적인 원인은 윈도우 내 공개 보도로 확인되지 않았습니다. 다만, 2023년 9월에 한국MSD가 정부의 사용량 연동협상정책에 따라 동일 약제의 약가를 9.4% 인하한 사례가 있어, 이는 사용량-연동 약가인하 기전의 명확한 사례로 볼 수 있습니다. 4월의 변동은 실거래가 연동 가능성이 있으나, 공식적인 고시나 기사 근거가 부족하여 확정할 수 없습니다.",
+  "evidence_summary": "검색 결과에서 자누비아정100mg의 약가 변동은 2023년 9월 2일 사용량-연동협상정책(PVA)에 따른 9.4% 인하만 확인됨(메디칼타임즈, 2023년 9월 보도). 2023년 4월 변동에 대한 윈도우 내 공개 보도 없음.",
+  "confidence": "low",
+  "window": {
+    "from": "2022.10",
+    "to": "2023.10",
+    "months": 6
+  },
+  "references": [],
+  "notes": "제공된 검색 결과는 2023년 9월 약가 변동만 다루고 있어 2023년 4월 1일 변동 사유 파악에 직접 도움이 되지 않음. 소폭 인하(1.05%)는 실거래가 연동 기전과 부합하나, 윈도우 내 확인 가능한 근거 부재로 인해 기전 특정 불가. · [enforce] published_at 누락/불량 3건 제거 · [enforce] published_at 누락/불량 8건 제거",
+  "_source": "perplexity-sonar-pro",
+  "analysis_meta": {
+    "source": "perplexity-sonar-pro",
+    "total_articles": 0,
+    "tier_a_count": 0,
+    "tier_b_count": 0,
+    "tier_c_count": 0,
+    "detected_mechanisms": [
+      "미분류"
+    ],
+    "top_media": []
+  },
+  "deep_research": {
+    "source": "perplexity-sonar-pro-research",
+    "model": "sonar-pro",
+    "citations": [
+      "https://dailypharm.com/user/news?group=%EC%9D%B8%EB%AC%BC%C2%B7%EC%97%B0%EC%9E%AC&category=%EB%82%98%EB%8A%94+%EA%B8%B0%EC%9E%90%EB%8B%A4&name=%EC%9D%B4%ED%83%81%EC%88%9C&view_mode=pc&page=3",
+      "https://securities.miraeasset.com/bbs/maildownload/20230220140011553_154.pdf",
+      "https://www.skchemicals.com/imgup/SKF6766506545478291614_20181015.pdf",
+      "https://medicaltimes.com/Users/News/NewsView.html?ID=95928",
+      "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260319000925&rcpno=20260319000691&orgid=F&tran=Y&langTpCd=0",
+      "https://www.ckdpharm.com/downloadCkd.do?attFileNo=40148&saveFileName=8aa70daa4088b2ad708ab0fac8d3474a81438f32f3f16e2cb13f22e377a34b0e",
+      "https://www.eugenefn.com/common/files/amail/20250107_B3510_hskwon_235.pdf",
+      "https://www.ckd-holdings.com/downloadCkd.do?attFileNo=34017&saveFileName=975bb314959d2df411142ac4a9224daa0959ffea44b951e7ab234a8bf84705d5"
+    ],
+    "created_at": "2026-04-18T16:21:49.491295Z"
+  },
+  "cached": false
+}

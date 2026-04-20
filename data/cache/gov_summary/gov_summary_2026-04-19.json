@@ -1,0 +1,76 @@
+{
+  "updated_at": "2026-04-19T01:31:27.933727",
+  "markdown": "- **보건복지부와 금융위원회**가 비영리 장기요양기관에 대한 종신보험 가입 실태 전수조사를 실시하기로 결정.\n- **건강보험심사평가원**의 통계에 따르면, 65세 이상 임플란트 시술 환자가 감소세를 보이며, 수면무호흡증 환자는 3배 이상 증가.\n- **식품의약품안전처**는 주사기 공급망 안정화를 위해 제조업체와 협력하여 생산 확대 및 공급 안정화에 나섰음.\n\n**함의:** 건강보험 관련 정책 변화와 통계는 시장 접근 전략에 영향을 미칠 수 있으며, 특히 노인 및 만성질환 관리에 대한 관심이 높아짐에 따라 관련 제품 및 서비스의 수요가 증가할 것으로 예상됨.",
+  "reviewers": [
+    "openai:gpt-4o-mini",
+    "gemini:gemini-2.5-flash"
+  ],
+  "sources": [
+    {
+      "title": "조달청, 다음주 총 463건, 5,165억 원 상당 용역 입찰 집행 예정",
+      "url": "https://www.gukjenews.com/news/articleView.html?idxno=3560451",
+      "source": "gukjecom",
+      "date": "2026-04-19"
+    },
+    {
+      "title": "항암식품이라 믿었던 '이 소스'⋯보관 잘못하면 끓여도 안 사라지는 '발...",
+      "url": "http://www.inews24.com/view/1961305",
+      "source": "inews24",
+      "date": "2026-04-19"
+    },
+    {
+      "title": "요양시설 보험편취 의혹…전북도 점검",
+      "url": "https://www.newsfreezone.co.kr/news/articleView.html?idxno=685779",
+      "source": "newsfreezone",
+      "date": "2026-04-18"
+    },
+    {
+      "title": "핀란드 인플루언서 “한국서 안면윤곽 수술…시력 상실 부작용” 폭로",
+      "url": "https://www.seoul.co.kr/news/life/health-news/2026/04/18/20260418500057?wlog_tag3=naver",
+      "source": "seoul",
+      "date": "2026-04-18"
+    },
+    {
+      "title": "美 트럼프 정부 \"가향 전자담배 확대\"…FDA 국장 \"반대\"",
+      "url": "https://www.sentv.co.kr/article/view/sentv202604180021",
+      "source": "sentv",
+      "date": "2026-04-18"
+    },
+    {
+      "title": "백신 회의론자 트럼프, CDC국장에 ‘백신 찬성론자’ 지명",
+      "url": "https://www.munhwa.com/article/11583257?ref=naver",
+      "source": "munhwa",
+      "date": "2026-04-18"
+    },
+    {
+      "title": "청년 파고든 마약…정부 \"전주기 대응 강화\"",
+      "url": "https://www.namdonews.com/news/articleView.html?idxno=907790",
+      "source": "namdocom",
+      "date": "2026-04-18"
+    },
+    {
+      "title": "부산 여중생 집단폭행' 계기…촉법소년 연령, 낮춰질까?",
+      "url": "https://www.goodnews1.com/news/articleView.html?idxno=458949",
+      "source": "goodnews1",
+      "date": "2026-04-18"
+    },
+    {
+      "title": "[정책돋보기] 소득 vs 지출…기초수급 선정 기준 어떻게 해야 할까",
+      "url": "https://www.segye.com/newsView/20260417511893?OutUrl=naver",
+      "source": "segye",
+      "date": "2026-04-18"
+    },
+    {
+      "title": "“트럼프보다 제정신인 대통령은 없었다”…‘정신건강’ 지적에 옹호...",
+      "url": "https://www.mk.co.kr/article/12020765",
+      "source": "mk",
+      "date": "2026-04-18"
+    }
+  ],
+  "keywords": [
+    "보건복지부",
+    "건강보험심사평가원",
+    "건강보험공단",
+    "식품의약품안전처"
+  ]
+}

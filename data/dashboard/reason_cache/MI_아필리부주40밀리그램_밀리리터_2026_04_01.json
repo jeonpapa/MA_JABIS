@@ -1,0 +1,39 @@
+{
+  "mechanism": "unknown",
+  "mechanism_label": "미분류",
+  "reason": "추정: 아필리부주40밀리그램/밀리리터의 2026년 4월 1일 변동률 -33.56%는 실거래가 연동 또는 자진 인하와 관련이 있을 수 있습니다. 그러나 2025년 10월부터 2026년 10월 사이에 해당 약가 변동에 대한 공식적인 보도나 고시는 확인되지 않았습니다. 과거 자진 인하 사례가 존재하지만, 이번 변동과 직접적인 연관성을 입증할 수 있는 근거는 부족합니다.",
+  "evidence_summary": "",
+  "confidence": "low",
+  "window": {
+    "from": "2025.10",
+    "to": "2026.10",
+    "months": 6
+  },
+  "references": [],
+  "notes": "변동폭 기준 특허 만료(patent_expiration) 우선 검토 필요하나 윈도우 내 근거 없음. 공식 고시(보건복지부·심평원) 미확인. · [enforce] published_at 누락/불량 6건 제거 · [enforce] published_at 누락/불량 5건 제거",
+  "_source": "perplexity-sonar-pro",
+  "analysis_meta": {
+    "source": "perplexity-sonar-pro",
+    "total_articles": 0,
+    "tier_a_count": 0,
+    "tier_b_count": 0,
+    "tier_c_count": 0,
+    "detected_mechanisms": [
+      "미분류"
+    ],
+    "top_media": []
+  },
+  "deep_research": {
+    "source": "perplexity-sonar-pro-research",
+    "model": "sonar-pro",
+    "citations": [
+      "https://www.dailypharm.com/user/news/336743",
+      "https://dailypharm.com/user/news/335182",
+      "https://m.dailypharm.com/user/news/search?dropBarMode=search&searchOption=any&searchKeyword=%EA%B8%89%EC%97%AC+%EB%93%B1%EC%9E%AC&view_mode=pc&page=6",
+      "https://new.dailypharm.com/user/news?group=%EC%A0%95%EC%B1%85%C2%B7%EB%B2%95%EB%A5%A0&category=%EA%B3%B5%EB%8B%A8%C2%B7%EC%8B%AC%ED%8F%89%EC%9B%90&view_mode=pc&page=21",
+      "https://dailypharm.com/user/news?group=%EC%9D%B8%EB%AC%BC%C2%B7%EC%97%B0%EC%9E%AC&category=%EB%82%98%EB%8A%94+%EA%B8%B0%EC%9E%90%EB%8B%A4&name=%EC%9D%B4%ED%83%81%EC%88%9C&view_mode=pc&page=3"
+    ],
+    "created_at": "2026-04-18T15:50:12.622520Z"
+  },
+  "cached": false
+}

@@ -1,0 +1,40 @@
+{
+  "mechanism": "unknown",
+  "mechanism_label": "미분류",
+  "reason": "추정: 자누비아정 100mg의 약가 변동은 정부의 사용량 연동협상정책에 따른 것으로, 2024년 메디칼타임즈 보도에 따르면 9.4% 인하가 이루어졌습니다. 그러나 전체 변동률이 -23.48%로 보고된 점을 고려할 때, 실거래가 연동 등 추가적인 기전이 복합적으로 작용했을 가능성이 있습니다. 윈도우 내 공개 자료로는 이러한 복합 기전의 상세한 근거를 확인하기 어려우며, 추가적인 자료 검토가 필요합니다.",
+  "evidence_summary": "",
+  "confidence": "low",
+  "window": {
+    "from": "2024.04",
+    "to": "2025.04",
+    "months": 6
+  },
+  "references": [],
+  "notes": "변동폭 기준으로 indication_expansion 또는 patent_expiration 가능성 추정되나 윈도우 내 근거 없음. 공식 고시(hira.or.kr, mohw.go.kr) 확인 필요하나 검색 결과 미포함. · [enforce] published_at 누락/불량 8건 제거 · [enforce] published_at 누락/불량 6건 제거",
+  "_source": "perplexity-sonar-pro",
+  "analysis_meta": {
+    "source": "perplexity-sonar-pro",
+    "total_articles": 0,
+    "tier_a_count": 0,
+    "tier_b_count": 0,
+    "tier_c_count": 0,
+    "detected_mechanisms": [
+      "미분류"
+    ],
+    "top_media": []
+  },
+  "deep_research": {
+    "source": "perplexity-sonar-pro-research",
+    "model": "sonar-pro",
+    "citations": [
+      "https://medicaltimes.com/Users/News/NewsView.html?ID=95928",
+      "https://bktimes.net/detail.php?number=29115&thread=10r02",
+      "https://m.medicaltimes.com/NewsView.html?ID=56981",
+      "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20231114002162&docno=&viewerhost=",
+      "https://www.ckdpharm.com/downloadCkd.do?attFileNo=33486&saveFileName=e8a1da1b0b20d03999768aa4f05ef871dd34c1889a47ec32545fb4b258a63788",
+      "https://www.eugenefn.com/common/files/amail/20251124_B3510_hskwon_306.pdf"
+    ],
+    "created_at": "2026-04-18T16:21:46.032755Z"
+  },
+  "cached": false
+}

@@ -1,0 +1,51 @@
+{
+  "mechanism": "volume_price",
+  "mechanism_label": "사용량-연동 약가인하",
+  "reason": "자누비아정100밀리그램의 2010.10.01 약가 9.41% 인하는 정부의 사용량 연동협상정책에 따른 것이다. 한국MSD가 예상 사용량 초과에 따라 약가를 인하한다고 발표했다. 이는 4대 기전 중 사용량-연동에 해당한다.",
+  "evidence_summary": "메디포뉴스(2010년경): 한국MSD 자누비아100mg 약가 9.4% 인하, 10월1일부터 924원 공급. 정부 사용량 연동협상정책에 따른 것.",
+  "confidence": "high",
+  "window": {
+    "from": "2010.04",
+    "to": "2011.04",
+    "months": 6
+  },
+  "references": [
+    {
+      "title": "한국MSD 자누비아100mg 924원으로 약가 인하",
+      "url": "https://medifonews.com/news/article.html?no=67723",
+      "media": "메디포뉴스",
+      "weight": 2.1,
+      "published_at": "2010.09.30"
+    },
+    {
+      "title": "자누비아 정당 924원으로 약가 인하",
+      "url": "http://www.cdpnews.co.kr/admin/news/n_read_print_renewal.asp?menuID=4&idx=13987",
+      "media": "성인병뉴스",
+      "weight": 0.5,
+      "published_at": "2010.09.30"
+    }
+  ],
+  "notes": "[enforce] published_at 누락/불량 2건 제거",
+  "_source": "perplexity-sonar-pro",
+  "analysis_meta": {
+    "source": "perplexity-sonar-pro",
+    "total_articles": 2,
+    "tier_a_count": 0,
+    "tier_b_count": 0,
+    "tier_c_count": 0,
+    "detected_mechanisms": [
+      "사용량-연동 약가인하"
+    ],
+    "top_media": [
+      {
+        "media": "메디포뉴스",
+        "weight": 2.1
+      },
+      {
+        "media": "성인병뉴스",
+        "weight": 0.5
+      }
+    ]
+  },
+  "cached": false
+}

@@ -1,0 +1,51 @@
+{
+  "mechanism": "indication_expansion",
+  "mechanism_label": "적응증 확대",
+  "reason": "키트루다(펨브롤리주맙)의 비소세포폐암 1차 치료제 급여 확대가 2022년 3월 적용되면서 환자군 증가에 따른 건강보험공단 재협상으로 약가 25.6% 인하 합의. MSD는 키트루다 약가 주당 210만7642원으로 인하하며 자사 다른 품목 약가도 트레이드오프로 인하 제안. 변동폭이 크므로 적응증 확대 기전과 부합.",
+  "evidence_summary": "헬스조선 2022.03.14: 키트루다 비소세포폐암 1차 치료 급여 확대, 약가 25.6% 인하 합의(283만→210만). 데일리팜 2022: 키트루다 급여 확대 예상청구액 1762억원.",
+  "confidence": "high",
+  "window": {
+    "from": "2021.09",
+    "to": "2022.09",
+    "months": 6
+  },
+  "references": [
+    {
+      "title": "[뜨는 약] 면역항암제 '키트루다' 5년 만에 '1차 치료 급여'",
+      "url": "https://m.health.chosun.com/svc/news_view.html?contid=2022031401630",
+      "media": "헬스조선",
+      "weight": 2.1,
+      "published_at": "2022.03.14"
+    },
+    {
+      "title": "예상청구액 2300억 키트루다 급여 확대...건보재정 경고등",
+      "url": "https://dailypharm.com/user/news/334728?view_mode=pc",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "published_at": "2022.03.13"
+    }
+  ],
+  "notes": "특허 만료는 2022년 시점에서 해당되지 않음. 공식 고시(mohw/hira) 내 2022.03 변동 직접 확인되지 않음. · [enforce] published_at 누락/불량 2건 제거",
+  "_source": "perplexity-sonar-pro",
+  "analysis_meta": {
+    "source": "perplexity-sonar-pro",
+    "total_articles": 2,
+    "tier_a_count": 1,
+    "tier_b_count": 0,
+    "tier_c_count": 0,
+    "detected_mechanisms": [
+      "적응증 확대"
+    ],
+    "top_media": [
+      {
+        "media": "데일리팜",
+        "weight": 3.0
+      },
+      {
+        "media": "헬스조선",
+        "weight": 2.1
+      }
+    ]
+  },
+  "cached": false
+}

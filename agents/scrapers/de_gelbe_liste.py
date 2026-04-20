@@ -315,6 +315,7 @@ class DeGelbeListeScraper(BaseScraper):
 
         results = []
         for item in raw_results:
+            form_type = self._resolve_form_type(item)
             results.append({
                 "searched_at":         searched_at,
                 "query_name":          query,
@@ -336,6 +337,7 @@ class DeGelbeListeScraper(BaseScraper):
                 "source_url":          item.get("source_url", ""),
                 "source_label":        self.SOURCE_LABEL,
                 "raw_data":            json.dumps(item.get("extra", {}), ensure_ascii=False),
+                "form_type":           form_type,
             })
 
         return results

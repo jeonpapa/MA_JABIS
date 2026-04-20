@@ -1,0 +1,41 @@
+{
+  "mechanism": "unknown",
+  "mechanism_label": "미분류",
+  "reason": "추정: 자누비아정100밀리그램의 약가는 2023년 9월 5일 사용량-약가연동(PVA) 정책에 따라 30.02% 인하되었습니다. 이는 정부의 사용량 연동협상정책 결과로 추정되며, 종근당의 자누비아 판권 인수와의 연관성은 확인되지 않았습니다. 공식적인 고시는 확인되지 않았으나, 데일리팜과 메디칼타임즈에 따르면 해당 시기에 약가 인하가 이루어졌습니다.",
+  "evidence_summary": "약업신문(2023년, published_at 미확인): 종근당이 2023.07.15 자누비아 판권 인수 과정에서 MSD와 약가인하 합의 언급[1]. 메디칼타임즈: 과거 사용량 연동 9.4% 인하 사례(날짜 미확인)[2].",
+  "confidence": "low",
+  "window": {
+    "from": "2023.03",
+    "to": "2024.03",
+    "months": 6
+  },
+  "references": [],
+  "notes": "판권 인수로 인한 약가 조정 가능성 있으나 4대 기전 중 하나로 명확 분류 불가. 제네릭 허가(2023.09 발매) 시점과 변동 동시성 주목. · [enforce] published_at 누락/불량 4건 제거 · [enforce] published_at 누락/불량 7건 제거",
+  "_source": "perplexity-sonar-pro",
+  "analysis_meta": {
+    "source": "perplexity-sonar-pro",
+    "total_articles": 0,
+    "tier_a_count": 0,
+    "tier_b_count": 0,
+    "tier_c_count": 0,
+    "detected_mechanisms": [
+      "미분류"
+    ],
+    "top_media": []
+  },
+  "deep_research": {
+    "source": "perplexity-sonar-pro-research",
+    "model": "sonar-pro",
+    "citations": [
+      "https://dailypharm.com/user/news/24974?view_mode=pc",
+      "https://medicaltimes.com/Users/News/NewsView.html?ID=95928",
+      "https://www.newsthevoice.com/news/articleView.html?idxno=31851",
+      "https://bktimes.net/detail.php?number=29115&thread=10r02",
+      "https://m.medicaltimes.com/NewsView.html?ID=56981",
+      "https://www.eugenefn.com/common/files/amail/20251124_B3510_hskwon_306.pdf",
+      "https://www.health.kr/searchIdentity/result.asp?didx=18471&dcode=A11APPPPP2858"
+    ],
+    "created_at": "2026-04-18T16:21:51.055993Z"
+  },
+  "cached": false
+}

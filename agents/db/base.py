@@ -53,6 +53,19 @@ class _DbBase:
                 )
                 logger.info("Migrated: indications_master.biomarker_class added")
 
+            # competitor_trend: source_type / importance 컬럼 (auto 크롤 지원)
+            ct_cols = {row[1] for row in conn.execute("PRAGMA table_info(competitor_trend)")}
+            if "source_type" not in ct_cols:
+                conn.execute(
+                    "ALTER TABLE competitor_trend ADD COLUMN source_type TEXT NOT NULL DEFAULT 'manual'"
+                )
+                logger.info("Migrated: competitor_trend.source_type added")
+            if "importance" not in ct_cols:
+                conn.execute(
+                    "ALTER TABLE competitor_trend ADD COLUMN importance TEXT"
+                )
+                logger.info("Migrated: competitor_trend.importance added")
+
     def _migrate_search_tables(self) -> None:
         """drug_latest / FTS 인덱스 최초 1회 초기화."""
         with self._connect() as conn:

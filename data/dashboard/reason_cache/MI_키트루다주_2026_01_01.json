@@ -1,0 +1,51 @@
+{
+  "mechanism": "indication_expansion",
+  "mechanism_label": "적응증 확대",
+  "reason": "2026년 1월 1일 키트루다주는 기존 4개 암종에서 9개 암종이 추가되어 총 13개 암종, 17개 요법으로 급여범위가 확대되었다.[4] 적응증 확대에 따른 환자군 증가로 공단의 재협상 과정에서 소폭 인하가 이루어진 것으로 판단된다. 상한금액은 2,103,620원/병에서 2,100,556원/병으로 조정되었으며, 이는 -0.15%의 소폭 인하율에 해당한다.[4]",
+  "evidence_summary": "보건복지부(mohw.go.kr)는 2026년 1월 1일부터 키트루다주의 급여범위를 비소세포폐암 등 기존 4개 암종에서 두경부암 등 9개 암종이 추가된 13개 암종으로 확대하며 상한금액을 2,103,620원에서 2,100,556원으로 조정했다고 공시했다.[4]",
+  "confidence": "high",
+  "window": {
+    "from": "2025.07",
+    "to": "2026.07",
+    "months": 6
+  },
+  "references": [
+    {
+      "title": "의료비용 분석 결과 등을 바탕으로 2026년 상대가치 상시 조정 추진한다",
+      "url": "https://www.mohw.go.kr/board.es?mid=a10503010100&bid=0027&act=view&list_no=1488346&tag=&nPage=6",
+      "media": "보건복지부(mohw.go.kr)",
+      "weight": 3.0,
+      "published_at": "2025.12.31"
+    },
+    {
+      "title": "예상청구액 2300억 키트루다 급여 확대...건보재정 경고등",
+      "url": "https://dailypharm.com/user/news/334728",
+      "media": "데일리팜",
+      "weight": 2.7,
+      "published_at": "2026.04.13"
+    }
+  ],
+  "notes": "적응증 확대(13개 암종, 17개 요법)는 명확한 기전이나, -0.15%의 극히 소폭 인하율은 실거래가 연동 기전과의 복합 가능성도 배제할 수 없다. 다만 윈도우 내 공개 보도에서 실거래가 조사 결과에 대한 명시적 언급은 없으므로 적응증 확대를 주요 기전으로 분류했다. · [enforce] published_at 누락/불량 4건 제거",
+  "_source": "perplexity-sonar-pro",
+  "analysis_meta": {
+    "source": "perplexity-sonar-pro",
+    "total_articles": 2,
+    "tier_a_count": 1,
+    "tier_b_count": 0,
+    "tier_c_count": 1,
+    "detected_mechanisms": [
+      "적응증 확대"
+    ],
+    "top_media": [
+      {
+        "media": "보건복지부(mohw.go.kr)",
+        "weight": 3.0
+      },
+      {
+        "media": "데일리팜",
+        "weight": 2.7
+      }
+    ]
+  },
+  "cached": false
+}

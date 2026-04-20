@@ -1,0 +1,40 @@
+{
+  "mechanism": "unknown",
+  "mechanism_label": "미분류",
+  "reason": "추정: 키트루다주의 약가는 2024.07.01에 -0.19% 소폭 인하되었으며, 이는 실거래가 연동 약가인하 기전에 부합합니다. 변동률이 1~5% 범위 내 소폭인 점과 윈도우 내 공식 고시나 보도에서 다른 기전이 확인되지 않은 점을 고려할 때, 실거래가 연동이 우선 적용된 것으로 추정됩니다. 2024~2025년 동안 적응증 확대에 대한 논의가 있었으나, 이는 약가인하와 직접적인 연계가 확인되지 않았습니다.",
+  "evidence_summary": "윈도우 내 데일리팜 등 매체에서 키트루다 급여 확대 보도 있으나 약가 인하 직접 언급 없음.",
+  "confidence": "low",
+  "window": {
+    "from": "2024.01",
+    "to": "2025.01",
+    "months": 6
+  },
+  "references": [],
+  "notes": "소폭 변동 특성상 실거래가 연동 추정. 공식 고시(mohw/hira) 확인 시도했으나 윈도우 내 관련 자료 없음. · [enforce] published_at 누락/불량 6건 제거 · [enforce] published_at 누락/불량 6건 제거",
+  "_source": "perplexity-sonar-pro",
+  "analysis_meta": {
+    "source": "perplexity-sonar-pro",
+    "total_articles": 0,
+    "tier_a_count": 0,
+    "tier_b_count": 0,
+    "tier_c_count": 0,
+    "detected_mechanisms": [
+      "미분류"
+    ],
+    "top_media": []
+  },
+  "deep_research": {
+    "source": "perplexity-sonar-pro-research",
+    "model": "sonar-pro",
+    "citations": [
+      "https://dailypharm.com/user/news/334728",
+      "https://www.newsthevoice.com/news/articleView.html?idxno=44659",
+      "https://www.mohw.go.kr/board.es?mid=a10503010100&bid=0027&act=view&list_no=1488346&tag=&nPage=6",
+      "https://www.medicaltimes.com/Main/News/NewsView.html?ID=1168141",
+      "https://www.hira.or.kr/bbsDummy.do?pgmid=HIRAA020041000100&brdScnBltNo=4&brdBltNo=11579",
+      "https://www.doctorsnews.co.kr/news/articleView.html?idxno=162709"
+    ],
+    "created_at": "2026-04-18T16:05:39.243808Z"
+  },
+  "cached": false
+}

@@ -13,6 +13,8 @@ from pathlib import Path
 
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 
+from .formulation import detect_form, normalize_form_type
+
 logger = logging.getLogger(__name__)
 
 
@@ -77,6 +79,28 @@ class BaseScraper(ABC):
         pass
 
     # ──────────────────────────────────────────────────────────────────────
+    # 제형 판정 — 스크레이퍼가 item["form_type"] 를 직접 넣어줬으면 그대로,
+    # 아니면 제품명·제형·raw_data 를 모아 detect_form() 으로 추론.
+    # ──────────────────────────────────────────────────────────────────────
+
+    def _resolve_form_type(self, item: dict) -> str:
+        explicit = item.get("form_type")
+        if explicit:
+            return normalize_form_type(explicit)
+        extra = item.get("extra") or {}
+        extra_blob = " ".join(
+            str(v) for v in extra.values() if isinstance(v, (str, int, float))
+        )
+        result = detect_form(
+            extra_blob,
+            item.get("package_unit") or "",
+            item.get("dosage_strength") or "",
+            dosage_form=item.get("dosage_form"),
+            product_name=item.get("product_name"),
+        )
+        return result["form_type"]
+
+    # ──────────────────────────────────────────────────────────────────────
     # 공통 실행 메서드 (서브클래스에서 오버라이드 불필요)
     # ──────────────────────────────────────────────────────────────────────
 
@@ -112,6 +136,7 @@ class BaseScraper(ABC):
                 # 결과를 DB 저장 형식으로 변환
                 searched_at = datetime.now().isoformat()
                 for item in raw_results:
+                    form_type = self._resolve_form_type(item)
                     results.append({
                         "searched_at": searched_at,
                         "query_name": query,
@@ -133,6 +158,7 @@ class BaseScraper(ABC):
                         "source_url": item.get("source_url", ""),
                         "source_label": self.SOURCE_LABEL,
                         "raw_data": json.dumps(item.get("extra", {}), ensure_ascii=False),
+                        "form_type": form_type,
                     })
 
             except Exception as e:

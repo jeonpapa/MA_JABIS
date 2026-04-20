@@ -1,0 +1,33 @@
+{
+  "query": "[조사 대상]\n- 약제명: 자누비아정100밀리그램 (브랜드: 자누비아정100밀리그램)\n- 성분명: 시타글립틴인산염수화물\n- 약가 변동 시점: 2022.03.01\n- 변동률: -6.04%\n- 국가: 대한민국\n- 윈도우: 2022.01 ~ 2022.09 (이 범위 밖 사실 인용 금지)\n\n[반드시 아래 룰 원문을 그대로 준수할 것]\n# MarketIntelligenceAgent 규칙 (v3 — 윈도우 절대 강제)\n\n> 이 파일은 에이전트 프롬프트에 **원문 그대로** 주입됩니다.\n> 규칙은 여기서만 관리. 하드코딩 금지.\n\n---\n\n## 0. 최상위 원칙 (Hard Block)\n\n사용자가 반복적으로 **\"변동 시점의 기사만 참고해 달라\"** 고 요청했습니다.\n아래 원칙은 절대 규칙이며, 위반 시 결과는 무조건 거부·재시도됩니다.\n\n- **MUST**: 변동 시점(change_date) **±6개월** 윈도우(특허만료는 ±12개월) 내 기사·고시만 사용.\n- **MUST**: `references`의 모든 항목에 `published_at` 필드(YYYY.MM.DD) 존재. **없으면 포함 금지**.\n- **MUST**: `reason` 본문에 숫자 연도(19xx·20xx)가 등장하는 경우, 그 연도는 **반드시 윈도우 연도 집합** `{window.from.year, window.to.year}` 에 속해야 함.\n- **MUST**: 한국 약가 사후관리 **4대 기전 중 하나**로 분류. 불확실 → `unknown`.\n- **MUST NOT**: 윈도우 밖 연도·월의 사실을 근거·비교·배경으로 서술.\n- **MUST NOT**: `published_at` 없는 URL을 단순히 \"공식 출처\" 이유로 포함.\n- **MUST NOT**: 근거 없이 단정. 불확실 시 `reason` 맨 앞에 `\"추정:\"` 접두.\n- **MUST NOT**: 하드코딩된 프롬프트로 이 룰을 변형·복제.\n\n> **시스템 강제**: 에이전트 응답 후 `_enforce_rules()` 가 자동 실행되어\n> 1) `published_at` 누락 refs 제거, 2) 윈도우 외 refs 제거,\n> 3) reason 본문의 윈도우 외 연도 문장을 삭제, 4) 남은 refs=0 이면 `unknown/low` 로 하향.\n> 룰을 지키지 않으면 자동으로 결과가 공란 처리됩니다.\n\n---\n\n## 1. 한국 약가 사후관리 4대 기전\n\n| id | 라벨 | 트리거 | 통상 인하폭 |\n|---|---|---|---|\n| `indication_expansion` | 적응증 확대 | 급여 적응증 추가 → 환자군 증가 → 공단 재협상 | 5~30% |\n| `patent_expiration` | 특허 만료 | 제네릭·바이오시밀러 등재 → 오리지널 자동 인하 | 오리지널 59.5% (첫 제네릭) / 70% (바이오시밀러) |\n| `volume_price` | 사용량-연동 | 예상 사용량(보장금액) 초과 → 차기 협상기 인하·환급 | 변동률 다양 |\n| `actual_transaction` | 실거래가 연동 | HIRA 실거래가 조사 결과 상한금액 하향 | 1~5% (소폭) |\n\n### 변동률 → 기전 힌트\n- `|δ| > 20%` → 적응증 확대 또는 특허 만료 우선 검토\n- `|δ| ≤ 5%` → 실거래가 연동 우선 검토\n- 중간 → 사용량-연동 또는 적응증 확대\n\n---\n\n## 2. 시점 윈도우 (절대 규칙)\n\n- 기본: `change_date ± 6개월` (특허만료만 ± 12개월)\n- 허용 연도 집합 = `{ window.from.year, window.to.year }`. 두 해가 같으면 단일 원소.\n- `reason` 에 허용 집합 밖 연도가 등장하면 그 문장 **통째로 삭제**가 원칙.\n- 근거 기사의 `published_at` 이 윈도우 밖이면 references에서 즉시 제외.\n- **윈도우 내 근거 0건** → 결과를 다음과 같이 강제:\n  - `mechanism = \"unknown\"`, `confidence = \"low\"`, `references = []`\n  - `reason = \"추정: {기전명} 가능성. 윈도우 내 확인 가능한 공개 보도 없음.\"`\n  - 빈칸을 윈도우 외 사실로 채우지 말 것.\n\n---\n\n## 3. 우선 매체 (tier별 가중치)\n\n| Tier | 가중치 | 매체 |\n|---|---|---|\n| C (공식) | 3.0 | 보건복지부(mohw.go.kr), 심사평가원(hira.or.kr), 법제처(law.go.kr) |\n| A | 2.7~3.0 | 데일리팜(dailypharm.com), 약업신문(yakup.com), 메디파나뉴스(medipana.com), 히트뉴스(hitnews.co.kr) |\n| B | 2.1~2.4 | 청년의사(docdocdoc.co.kr), 메디칼타임즈(medicaltimes.com), 뉴스더보이스(newsthevoice.com), 팜뉴스(pharmnews.com), 메디게이트(medigatenews.com) |\n| 기타 | 0.5 | 일반 미디어 |\n\n- 동일 내용이면 상위 tier 우선.\n- 공식 고시(mohw/hira/law) 는 반드시 검토.\n\n---\n\n## 4. 출력 JSON 스키마 (고정)\n\n```json\n{\n  \"mechanism\": \"indication_expansion | patent_expiration | volume_price | actual_transaction | unknown\",\n  \"mechanism_label\": \"적응증 확대 | 특허 만료 | 사용량-연동 약가인하 | 실거래가 연동 약가인하 | 미분류\",\n  \"reason\": \"3~5문장 한국어. 윈도우 내 사실만. 숫자 연도는 허용 연도 집합만. 불확실 시 '추정:' 접두.\",\n  \"evidence_summary\": \"윈도우 내 최상위 tier 출처의 핵심 내용 1~2문장 (매체명·일자 포함)\",\n  \"confidence\": \"high | medium | low\",\n  \"window\": {\"from\": \"YYYY.MM\", \"to\": \"YYYY.MM\"},\n  \"references\": [\n    {\n      \"title\": \"...\",\n      \"url\": \"...\",\n      \"media\": \"...\",\n      \"weight\": 0.0,\n      \"published_at\": \"YYYY.MM.DD\"\n    }\n  ],\n  \"notes\": \"복합 기전 가능성 등. 없으면 빈 문자열.\"\n}\n```\n\n**스키마 강제**:\n- `references[i].published_at` 은 YYYY.MM.DD 형식으로 **반드시** 채워야 함.\n- 기사 날짜 미확인 → 해당 ref는 제외(포함 금지).\n\n---\n\n## 5. 자가 점검 체크리스트 (응답 직전)\n\n1. [ ] `mechanism` 이 4대 기전 id 또는 `unknown` 인가?\n2. [ ] 모든 `references[i].published_at` 이 윈도우 내이고 YYYY.MM.DD 형식인가?\n3. [ ] `reason` 본문의 모든 19xx/20xx 숫자 연도가 `{window.from.year, window.to.year}` 집합인가?\n4. [ ] `mechanism ≠ unknown` 인데 `references` 가 비어있지 않은가?\n5. [ ] 공식 고시(mohw/hira/law.go.kr) 확인을 시도했는가?\n\n하나라도 실패 → 스스로 재작성 후 재점검. 재작성 후에도 실패 → `mechanism=\"unknown\", confidence=\"low\", references=[]` 로 하향.\n\n---\n\n## 6. 절대 금지\n\n- 하드코딩된 프롬프트로 이 룰을 복제·변형.\n- 윈도우 외 사실 인용 (배경·비교·사례 포함).\n- `published_at` 없는 참조 포함.\n- 근거 없을 때 기전 억지 배정.\n- Perplexity 실패 시 빈 결과 반환 (반드시 `unknown/low` 명시).\n\n\n[답변 구조 한국어 500자 이내]\n[기전 판정] / [핵심 근거 (윈도우 내, 매체·일자)] / [보완 설명] / [출처 URL]\n",
+  "mode": "pro",
+  "model": "sonar-pro",
+  "answer": "```json\n{\n  \"mechanism\": \"unknown\",\n  \"mechanism_label\": \"미분류\",\n  \"reason\": \"추정: 실거래가 연동 가능성. 변동률 -6.04%가 소폭으로 actual_transaction 기전에 부합하나, 2022.01~2022.09 윈도우 내 자누비아정100밀리그램 약가 인하 관련 공개 보도나 고시 확인되지 않음. 공식 출처(HIRA, 보건복지부)에서도 해당 사실 없음.\",\n  \"evidence_summary\": \"윈도우 내 확인 가능한 최상위 tier 출처 없음.\",\n  \"confidence\": \"low\",\n  \"window\": {\"from\": \"2022.01\", \"to\": \"2022.09\"},\n  \"references\": [],\n  \"notes\": \"\"\n}\n```\n\n[기전 판정] unknown / [핵심 근거] 윈도우 내 관련 기사·고시 없음 / [보완 설명] 변동률 소폭이나 근거 미확인 / [출처 URL] 없음",
+  "citations": [
+    "https://dailypharm.com/user/news?group=%EC%9D%B8%EB%AC%BC%C2%B7%EC%97%B0%EC%9E%AC&category=%EB%82%98%EB%8A%94+%EA%B8%B0%EC%9E%90%EB%8B%A4&name=%EC%9D%B4%ED%83%81%EC%88%9C&view_mode=pc&page=3",
+    "https://securities.miraeasset.com/bbs/maildownload/20230220140011553_154.pdf",
+    "https://m.medicaltimes.com/NewsView.html?ID=56981",
+    "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260319000925&rcpno=20260319000691&orgid=F&tran=Y&langTpCd=0",
+    "https://repository.hira.or.kr/bitstream/2019.oak/728/2/%EC%99%B8%EA%B5%AD%EC%95%BD%EA%B0%80%20%EC%B0%B8%EC%A1%B0%EA%B8%B0%EC%A4%80%20%EA%B0%9C%EC%84%A0%EB%B0%A9%EC%95%88%20%EC%97%B0%EA%B5%AC.pdf",
+    "https://www.eugenefn.com/common/files/amail/20250107_B3510_hskwon_235.pdf",
+    "https://www.ckdpharm.com/downloadCkd.do?attFileNo=29621&saveFileName=44812ce39c5d8aeb99e4f6e6befbf1052b55136279bb356b23c3215d891e7516",
+    "https://www.vitalkorea.kr/uploads/trend/%ED%95%9C%EA%B5%AD%EB%B3%B4%EA%B1%B4%EC%82%B0%EC%97%85%EC%A7%84%ED%9D%A5%EC%9B%90%202023%20%EB%B3%B4%EA%B1%B4%EC%82%B0%EC%97%85%EB%B0%B1%EC%84%9C(%EC%B5%9C%EC%A2%85).pdf"
+  ],
+  "usage": {
+    "completion_tokens": 229,
+    "prompt_tokens": 2090,
+    "total_tokens": 2319,
+    "completion_tokens_details": null,
+    "prompt_tokens_details": null,
+    "search_context_size": "low",
+    "cost": {
+      "input_tokens_cost": 0.00627,
+      "output_tokens_cost": 0.00344,
+      "request_cost": 0.006,
+      "total_cost": 0.01571
+    }
+  },
+  "drug_name": "자누비아정100밀리그램",
+  "country": "대한민국",
+  "created_at": "2026-04-18T16:21:19.561465Z"
+}

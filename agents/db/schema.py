@@ -191,6 +191,162 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_ind_agency_unique
     ON indications_by_agency(indication_id, agency);
 CREATE INDEX IF NOT EXISTS idx_ind_agency_indid
     ON indications_by_agency(indication_id);
+
+-- ──────────────────────────────────────────────────────────────
+-- 적응증별 한국 급여 상태 (HIRA 항암화학요법 공고 / 고시 기반 수동 편집)
+-- LLM 파싱 대신 admin UI 에서 체크리스트 편집
+-- ──────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS indication_reimbursement (
+    indication_id    TEXT PRIMARY KEY,         -- FK -> indications_master.indication_id
+    is_reimbursed    INTEGER NOT NULL DEFAULT 0, -- 0/1 boolean
+    effective_date   TEXT,                     -- 급여 개시일 YYYY-MM-DD
+    criteria_text    TEXT,                     -- 급여 조건/제한 (예: "본인부담 30%, MSI-H 확인")
+    notice_date      TEXT,                     -- 근거 공고일 YYYY-MM-DD
+    notice_url       TEXT,                     -- HIRA 공고 원문 링크
+    updated_by       TEXT,                     -- 편집자 email
+    updated_at       TEXT NOT NULL,
+    FOREIGN KEY (indication_id) REFERENCES indications_master(indication_id)
+);
+
+-- ──────────────────────────────────────────────────────────────
+-- Korean Market Share (IQVIA NSA-E Master quarterly Excel drop)
+-- product_id = hash(PRODUCT NAME + MOLECULE DESC + PACK)
+-- ──────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS market_share_products (
+    product_id       TEXT PRIMARY KEY,
+    otc_ethical      TEXT,
+    atc2_code        TEXT,
+    atc3_code        TEXT,
+    atc4_code        TEXT,
+    atc4_desc        TEXT,
+    mfr_name         TEXT,
+    corp             TEXT,
+    mnc13            TEXT,
+    product_name     TEXT NOT NULL,
+    product_group    TEXT,
+    molecule_desc    TEXT NOT NULL,
+    em_ethical       TEXT,
+    kr_market        TEXT,
+    nfc3             TEXT,
+    strength         TEXT,
+    pack_desc        TEXT,
+    pack             TEXT,
+    pack_launch_date TEXT,
+    updated_at       TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_msp_atc4         ON market_share_products(atc4_code);
+CREATE INDEX IF NOT EXISTS idx_msp_product_name ON market_share_products(product_name);
+CREATE INDEX IF NOT EXISTS idx_msp_molecule     ON market_share_products(molecule_desc);
+CREATE INDEX IF NOT EXISTS idx_msp_mnc13        ON market_share_products(mnc13);
+
+CREATE TABLE IF NOT EXISTS market_share_quarterly (
+    product_id   TEXT NOT NULL,
+    quarter      TEXT NOT NULL,    -- '2021Q1', '2025Q4'
+    values_lc    REAL,             -- 매출 (원)
+    dosage_units REAL,             -- 처방 단위
+    PRIMARY KEY (product_id, quarter),
+    FOREIGN KEY (product_id) REFERENCES market_share_products(product_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_msq_quarter ON market_share_quarterly(quarter);
+
+CREATE TABLE IF NOT EXISTS market_share_upload_log (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    uploaded_at    TEXT NOT NULL,
+    uploaded_by    TEXT,
+    filename       TEXT,
+    rows_ingested  INTEGER,
+    quarters_json  TEXT
+);
+
+-- MSD 한국 파이프라인 (관리자 직접 관리)
+CREATE TABLE IF NOT EXISTS msd_pipeline (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT NOT NULL,
+    phase         TEXT,
+    indication    TEXT,
+    expected_year INTEGER,
+    status        TEXT NOT NULL DEFAULT 'upcoming',  -- 'current' | 'upcoming'
+    note          TEXT,
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_msd_pipeline_year   ON msd_pipeline(expected_year);
+CREATE INDEX IF NOT EXISTS idx_msd_pipeline_status ON msd_pipeline(status);
+
+-- 브랜드 미디어 트래픽 (관리자 직접 관리)
+CREATE TABLE IF NOT EXISTS brand_traffic (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    rank           INTEGER NOT NULL,
+    brand          TEXT NOT NULL,
+    company        TEXT,
+    category       TEXT,
+    color          TEXT,
+    traffic_index  INTEGER NOT NULL DEFAULT 0,
+    change_pct     REAL DEFAULT 0,
+    sparkline_json TEXT,            -- JSON array of 7 numbers
+    news_json      TEXT,            -- JSON array of {title,source,date,tag,url}
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_brand_traffic_rank ON brand_traffic(rank);
+
+-- Daily Mailing 구독 설정 (사용자별)
+CREATE TABLE IF NOT EXISTS mail_subscription (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_email    TEXT NOT NULL,           -- users.email
+    name           TEXT NOT NULL,
+    keywords_json  TEXT NOT NULL,           -- JSON string[]
+    media_json     TEXT NOT NULL,           -- JSON string[]  (media id)
+    schedule       TEXT NOT NULL,           -- 'Daily' | 'Weekly'
+    time           TEXT NOT NULL,           -- 'HH:MM'
+    week_day       TEXT,                    -- 'Monday'..'Friday' when Weekly
+    emails_json    TEXT NOT NULL,           -- JSON string[]  (수신 이메일)
+    active         INTEGER NOT NULL DEFAULT 1,
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL,
+    last_sent_at   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_mail_sub_owner  ON mail_subscription(owner_email);
+CREATE INDEX IF NOT EXISTS idx_mail_sub_active ON mail_subscription(active);
+
+-- Competitor Trends — 경쟁사 동향 카드 (Competitor Trends 페이지 & 대시보드)
+CREATE TABLE IF NOT EXISTS competitor_trend (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    company      TEXT NOT NULL,
+    logo         TEXT,                    -- 2~3자 약어
+    color        TEXT,                    -- '#RRGGBB'
+    badge        TEXT NOT NULL,           -- '신규 출시'|'가격 변동'|'임상 진행'|'급여 등재'|'파이프라인'|'전략 변화'
+    badge_color  TEXT,                    -- Tailwind class string
+    headline     TEXT NOT NULL,
+    detail       TEXT NOT NULL,
+    date         TEXT NOT NULL,           -- YYYY-MM-DD
+    source       TEXT,                    -- '보건복지부 고시' / 매체명
+    url          TEXT,
+    source_type  TEXT NOT NULL DEFAULT 'manual', -- 'manual' | 'auto_naver'
+    importance   TEXT,                    -- 'critical'|'moderate'|'low' (auto 만 사용)
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_competitor_trend_date    ON competitor_trend(date DESC);
+CREATE INDEX IF NOT EXISTS idx_competitor_trend_badge   ON competitor_trend(badge);
+CREATE INDEX IF NOT EXISTS idx_competitor_trend_company ON competitor_trend(company);
+-- URL 기반 lookup 용 (dedup 은 app-level SELECT-then-upsert)
+CREATE INDEX IF NOT EXISTS idx_competitor_trend_url ON competitor_trend(url);
+
+-- Keyword Cloud — Home 워드클라우드 (Phase 3e-2)
+CREATE TABLE IF NOT EXISTS keyword_cloud (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    text       TEXT NOT NULL UNIQUE,
+    weight     INTEGER NOT NULL DEFAULT 50,
+    color      TEXT,                      -- '#RRGGBB'
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_keyword_cloud_weight ON keyword_cloud(weight DESC);
 """
 
 

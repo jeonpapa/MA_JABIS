@@ -1,0 +1,40 @@
+{
+  "mechanism": "unknown",
+  "mechanism_label": "미분류",
+  "reason": "추정: 키트루다주의 약가 변동은 2022년 1월 1일을 기준으로 -0.43% 소폭 인하되었습니다. 이는 실거래가 연동 약가인하 기전에 따른 것으로 보이며, 윈도우 내 관련 보도에서는 급여 확대에 대한 언급은 있었으나 약가 인하에 대한 직접적인 언급은 확인되지 않았습니다. 추정컨대, 건강보험심사평가원의 실거래가 조사 결과에 따라 상한금액이 하향 조정된 것으로 판단됩니다.",
+  "evidence_summary": "",
+  "confidence": "low",
+  "window": {
+    "from": "2021.07",
+    "to": "2022.07",
+    "months": 6
+  },
+  "references": [],
+  "notes": "윈도우 내 우선 매체(데일리팜 등) 및 공식 고시에서 실거래가 연동 관련 구체적 보도 없음. 소폭 변동 특성상 추정. · [enforce] published_at 누락/불량 8건 제거 · [enforce] published_at 누락/불량 6건 제거",
+  "_source": "perplexity-sonar-pro",
+  "analysis_meta": {
+    "source": "perplexity-sonar-pro",
+    "total_articles": 0,
+    "tier_a_count": 0,
+    "tier_b_count": 0,
+    "tier_c_count": 0,
+    "detected_mechanisms": [
+      "미분류"
+    ],
+    "top_media": []
+  },
+  "deep_research": {
+    "source": "perplexity-sonar-pro-research",
+    "model": "sonar-pro",
+    "citations": [
+      "https://m.health.chosun.com/svc/news_view.html?contid=2022031401630",
+      "https://dailypharm.com/user/news/334728",
+      "https://www.newsis.com/view/NISX20251223_0003452206",
+      "https://www.mohw.go.kr/board.es?mid=a10503010100&bid=0027&act=view&list_no=1488346&tag=&nPage=6",
+      "http://newstapa.org/article/HZFyg",
+      "https://www.doctorsnews.co.kr/news/articleView.html?idxno=162709"
+    ],
+    "created_at": "2026-04-18T16:05:38.732314Z"
+  },
+  "cached": false
+}

@@ -1,0 +1,40 @@
+{
+  "mechanism": "unknown",
+  "mechanism_label": "미분류",
+  "reason": "추정: 자누비아정100밀리그램의 2015년 3월 1일 약가 변동은 -1.52%로, 이는 사용량-연동 약가인하 기전으로 추정됩니다. 변동률이 실거래가 연동과 사용량-연동 범위에 해당하며, 당뇨병 치료제의 특성상 사용량 기반 협상이 적용되었을 가능성이 높습니다. 그러나 윈도우 내 공식 고시나 보도 자료가 없어 확실한 근거를 제시하기는 어렵습니다.",
+  "evidence_summary": "윈도우 내 최상위 tier(데일리팜·약업신문 등)에서 2015.03.01 변동 관련 직접 보도 없음.",
+  "confidence": "low",
+  "window": {
+    "from": "2014.09",
+    "to": "2015.09",
+    "months": 6
+  },
+  "references": [],
+  "notes": "소폭 인하로 actual_transaction 우선 검토 권고 준수. 윈도우 내 근거 부족으로 low confidence. · [enforce] published_at 누락/불량 5건 제거 · [enforce] published_at 누락/불량 6건 제거",
+  "_source": "perplexity-sonar-pro",
+  "analysis_meta": {
+    "source": "perplexity-sonar-pro",
+    "total_articles": 0,
+    "tier_a_count": 0,
+    "tier_b_count": 0,
+    "tier_c_count": 0,
+    "detected_mechanisms": [
+      "미분류"
+    ],
+    "top_media": []
+  },
+  "deep_research": {
+    "source": "perplexity-sonar-pro-research",
+    "model": "sonar-pro",
+    "citations": [
+      "https://medifonews.com/news/article.html?no=67723",
+      "http://m.yakup.com/news/index.html?mode=view&cat=12&nid=304708",
+      "https://www.newsthevoice.com/news/articleView.html?idxno=31851",
+      "https://m.medicaltimes.com/NewsView.html?ID=56981",
+      "https://sunlikemoon.net/c_dangyo/48627?sort_index=title&order_type=desc&page=17&listStyle=viewer",
+      "https://dailymedi.com/news/news_view.php?wr_id=719984"
+    ],
+    "created_at": "2026-04-18T16:21:21.699572Z"
+  },
+  "cached": false
+}

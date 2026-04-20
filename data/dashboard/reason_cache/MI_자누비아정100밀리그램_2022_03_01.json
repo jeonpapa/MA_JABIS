@@ -1,0 +1,42 @@
+{
+  "mechanism": "unknown",
+  "mechanism_label": "미분류",
+  "reason": "추정: 자누비아정100밀리그램의 2022년 3월 1일 약가 변동은 -6.04%로, 이는 실거래가 연동 약가인하 기전과 부합하는 것으로 보입니다. 2022년 상반기 DPP-4 억제제 시장의 성장 정체로 인해, 적응증 확대보다는 기존 약제의 실거래가 기반 재협상이 이루어졌을 가능성이 높습니다. 윈도우 내 공개된 구체적인 기사나 고시는 확인되지 않았으나, 실거래가 조사 결과에 따른 상한금액 하향 조정이 주요 원인으로 추정됩니다.",
+  "evidence_summary": "",
+  "confidence": "low",
+  "window": {
+    "from": "2021.09",
+    "to": "2022.09",
+    "months": 6
+  },
+  "references": [],
+  "notes": "변동률 -6.04%는 중간 수준이나 윈도우 내 tier 매체(데일리팜 등) 확인 자료 없음. 공식 고시(mohw/hira) 검색 결과 미포함. · [enforce] published_at 누락/불량 4건 제거 · [enforce] published_at 누락/불량 8건 제거",
+  "_source": "perplexity-sonar-pro",
+  "analysis_meta": {
+    "source": "perplexity-sonar-pro",
+    "total_articles": 0,
+    "tier_a_count": 0,
+    "tier_b_count": 0,
+    "tier_c_count": 0,
+    "detected_mechanisms": [
+      "미분류"
+    ],
+    "top_media": []
+  },
+  "deep_research": {
+    "source": "perplexity-sonar-pro-research",
+    "model": "sonar-pro",
+    "citations": [
+      "https://dailypharm.com/user/news?group=%EC%9D%B8%EB%AC%BC%C2%B7%EC%97%B0%EC%9E%AC&category=%EB%82%98%EB%8A%94+%EA%B8%B0%EC%9E%90%EB%8B%A4&name=%EC%9D%B4%ED%83%81%EC%88%9C&view_mode=pc&page=3",
+      "https://securities.miraeasset.com/bbs/maildownload/20230220140011553_154.pdf",
+      "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260319000925&rcpno=20260319000691&orgid=F&tran=Y&langTpCd=0",
+      "https://repository.hira.or.kr/bitstream/2019.oak/728/2/%EC%99%B8%EA%B5%AD%EC%95%BD%EA%B0%80%20%EC%B0%B8%EC%A1%B0%EA%B8%B0%EC%A4%80%20%EA%B0%9C%EC%84%A0%EB%B0%A9%EC%95%88%20%EC%97%B0%EA%B5%AC.pdf",
+      "https://www.ckdpharm.com/downloadCkd.do?attFileNo=40148&saveFileName=8aa70daa4088b2ad708ab0fac8d3474a81438f32f3f16e2cb13f22e377a34b0e",
+      "https://www.eugenefn.com/common/files/amail/20250107_B3510_hskwon_235.pdf",
+      "https://www.vitalkorea.kr/uploads/trend/%ED%95%9C%EA%B5%AD%EB%B3%B4%EA%B1%B4%EC%82%B0%EC%97%85%EC%A7%84%ED%9D%A5%EC%9B%90%202023%20%EB%B3%B4%EA%B1%B4%EC%82%B0%EC%97%85%EB%B0%B1%EC%84%9C(%EC%B5%9C%EC%A2%85).pdf",
+      "https://m.medicaltimes.com/NewsView.html?ID=56981"
+    ],
+    "created_at": "2026-04-18T16:21:48.357639Z"
+  },
+  "cached": false
+}

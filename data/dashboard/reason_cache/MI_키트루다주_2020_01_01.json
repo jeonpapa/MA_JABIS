@@ -1,0 +1,38 @@
+{
+  "mechanism": "unknown",
+  "mechanism_label": "미분류",
+  "reason": "추정: 2020년 1월 1일 기준으로 키트루다주의 약가가 -0.02% 소폭 인하된 것은 실거래가 연동에 따른 자동 조정으로 추정됩니다. 보건복지부의 고시에서 키트루다주의 약가가 명시되었으나, 해당 시기 내 다른 기전이나 적응증 확대, 특허 만료 등과 관련된 구체적인 근거는 확인되지 않았습니다. 따라서, 실거래가 조사 결과에 따른 자동 연동 인하가 주요 원인으로 보입니다.",
+  "evidence_summary": "윈도우 내 확인 가능한 공개 보도 없음.",
+  "confidence": "low",
+  "window": {
+    "from": "2019.07",
+    "to": "2020.07",
+    "months": 6
+  },
+  "references": [],
+  "notes": "소폭 인하로 실거래가 연동 우선 검토했으나 윈도우 내 근거 부재. 다른 기전(사용량-연동 등) 배제 불가. · [enforce] published_at 누락/불량 4건 제거 · [enforce] published_at 누락/불량 4건 제거",
+  "_source": "perplexity-sonar-pro",
+  "analysis_meta": {
+    "source": "perplexity-sonar-pro",
+    "total_articles": 0,
+    "tier_a_count": 0,
+    "tier_b_count": 0,
+    "tier_c_count": 0,
+    "detected_mechanisms": [
+      "미분류"
+    ],
+    "top_media": []
+  },
+  "deep_research": {
+    "source": "perplexity-sonar-pro-research",
+    "model": "sonar-pro",
+    "citations": [
+      "https://www.mohw.go.kr/attachPreview.es?bid=0027&list_no=372244&seq=1",
+      "https://dailypharm.com/user/news/334728",
+      "http://newstapa.org/article/HZFyg",
+      "https://www.medicaltimes.com/Mobile/News/NewsView.html?ID=1166576"
+    ],
+    "created_at": "2026-04-18T16:05:39.919585Z"
+  },
+  "cached": false
+}

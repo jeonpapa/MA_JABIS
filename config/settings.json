@@ -38,7 +38,7 @@
     "reference_countries": []
   },
   "dashboard": {
-    "output_dir": "data/dashboard",
+    "output_dir": "data/dashboard_v1_archive",
     "main_file": "index.md",
     "domestic_file": "domestic_prices.md",
     "foreign_file": "foreign_prices.md"

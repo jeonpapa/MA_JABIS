@@ -1,8 +1,8 @@
 """
-대쉬보드 관리 에이전트
-- 각 에이전트가 생성한 Markdown 소스 파일을 통합하여 메인 대쉬보드를 렌더링한다.
-- data/dashboard/ 디렉토리의 소스 파일을 읽어 HTML 대쉬보드를 생성한다.
-- 새 에이전트가 추가될 때 이 파일만 수정해서 대쉬보드를 확장할 수 있다.
+대쉬보드 관리 에이전트 (v1 legacy — React SPA (dashboard_v2) 로 대체됨).
+- 각 에이전트가 생성한 Markdown 소스 파일을 통합하여 HTML 대쉬보드를 렌더링한다.
+- 출력 위치는 data/dashboard_v1_archive/ (config/settings.json → dashboard.output_dir).
+- 보존 목적으로 유지 — 신규 UI 작업은 data/dashboard_v2/ 에서 진행.
 """
 
 import json

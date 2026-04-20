@@ -2,26 +2,38 @@
 이탈리아 AIFA(Agenzia Italiana del Farmaco) 약가 스크레이퍼
 
 대상 페이지: https://www.aifa.gov.it/en/liste-farmaci-a-h
-다운로드 파일: List of Class H medicinal products by trade name (CSV)
+다운로드 파일:
+  - Classe_A_per_nome_commerciale_*.csv   — Class A (외래 급여 소매약)
+  - Classe_H_per_nome_commerciale_*.csv   — Class H (병원 전용)
 
-- 파일명에 날짜가 포함되어 업데이트마다 변경 → 페이지에서 동적 탐색
-- 로그인 불필요 (공개 데이터)
-- 이미 Prezzo Ex-factory(공장도출하가) 컬럼을 직접 제공
-  → HIRA 조정가 계산 시 Prezzo Ex-factory를 factory_price 로 직접 사용
-     (별도 비율 적용 불필요)
-- 통화: EUR, VAT 10%
+AIFA 분류 체계:
+  - Class A : 외래 환자 처방약, SSN 급여. Descrizione Gruppo 에 대부분 "USO ORALE"
+              → 경구제 위주. Prezzo al pubblico(소비자가) 만 공개, Ex-factory 비공개.
+  - Class H : 병원 전용 (주사제·항암제 등). Descrizione Gruppo 에 "USO PARENTERALE"
+              → 주사제 위주. Prezzo Ex-factory(공장도가) 공개.
+  - Class C : 비급여 (본 스크레이퍼 범위 밖).
 
-컬럼 구조:
-  Principio Attivo           : 성분명 (활성 성분)
-  Descrizione Gruppo         : 그룹 설명
-  Denominazione e Confezione : 제품명 + 포장 (trade name + packaging)
-  Prezzo al pubblico €       : 소비자가
-  Prezzo Ex-factory €        : 공장도출하가 ← 이것을 local_price로 사용
-  Prezzo massimo di cessione €: 최대 양도가
-  Titolare AIC               : 허가 보유자 (제조사/마케팅 보유자)
-  Codice AIC                 : 허가 코드
-  Codice Gruppo Equivalenza  : 동등성 그룹 코드
-  Metri cubi ossigeno        : 산소 세제곱미터 (대부분 공란)
+배경:
+  - 로그인 불필요 (공개 데이터)
+  - 파일명에 날짜가 포함되어 업데이트마다 변경 → 페이지에서 동적 탐색
+  - 통화: EUR, VAT 10%
+  - 제형(form_type)은 detect_form() 이 Descrizione Gruppo + Denominazione 텍스트로
+    oral/injection 을 판정
+
+가격 선택 규칙:
+  - Class H 행 → Prezzo Ex-factory 사용, SOURCE_TYPE="aifa_exfactory"
+                 (HIRA factory_ratio=1.0, ex-factory 직접 사용)
+  - Class A 행 → Prezzo al pubblico 사용, SOURCE_TYPE=None
+                 (HIRA 기본 factory_ratio + VAT + 유통마진 공식)
+
+컬럼 구조 (Class H):
+  Principio Attivo / Descrizione Gruppo / Denominazione e Confezione /
+  Prezzo al pubblico € / Prezzo Ex-factory € / Prezzo massimo di cessione € /
+  Titolare AIC / Codice AIC / Codice Gruppo Equivalenza / Metri cubi ossigeno
+
+컬럼 구조 (Class A — Ex-factory 컬럼 없음):
+  Principio Attivo / Descrizione Gruppo / Denominazione e Confezione /
+  Prezzo al pubblico € / Titolare AIC / AIC / Codice Gruppo / ...
 """
 
 import csv
@@ -71,10 +83,10 @@ class ItAifaScraper(BaseScraper):
     # 1) 페이지에서 최신 Class H by trade name CSV URL 탐색
     # ────────────────────────────────────────────────────────────────────────
 
-    def _find_csv_url_requests(self) -> str:
+    def _find_csv_urls_requests(self) -> dict[str, str]:
         """
-        AIFA 페이지 HTML을 requests로 직접 가져와 CSV URL 탐색.
-        Playwright 불필요 (정적 HTML에 링크가 포함돼 있음).
+        AIFA 페이지 HTML을 requests로 가져와 Class A / Class H CSV URL 탐색.
+        반환: {"A": url, "H": url} (각각 가장 최신 파일)
         """
         headers = {
             "User-Agent": (
@@ -88,29 +100,32 @@ class ItAifaScraper(BaseScraper):
         resp.raise_for_status()
         content = resp.text
 
-        matches = re.findall(
-            r'href="(/documents/[^"]+Classe_H_per_nome_commerciale[^"]+\.csv)"',
-            content,
-        )
-        if not matches:
-            matches = re.findall(
-                r'"(https://www\.aifa\.gov\.it/documents/[^"]+Classe_H_per_nome_commerciale[^"]+\.csv)"',
-                content,
-            )
-        if not matches:
+        out: dict[str, str] = {}
+        for cls in ("A", "H"):
+            pat = rf'href="(/documents/[^"]+Classe_{cls}_per_nome_commerciale[^"]+\.csv)"'
+            matches = re.findall(pat, content)
+            if not matches:
+                matches = re.findall(
+                    rf'"(https://www\.aifa\.gov\.it/documents/[^"]+Classe_{cls}_per_nome_commerciale[^"]+\.csv)"',
+                    content,
+                )
+            if not matches:
+                logger.warning("[IT] Class %s CSV 링크 미발견", cls)
+                continue
+            best = sorted(matches)[-1]
+            url = AIFA_DOC_BASE + best if best.startswith("/") else best
+            out[cls] = url
+            logger.info("[IT] Class %s CSV URL: %s", cls, url)
+
+        if not out:
             raise RuntimeError(
-                "AIFA 페이지에서 Class H CSV 링크를 찾지 못했습니다.\n"
+                "AIFA 페이지에서 Class A/H CSV 링크를 모두 찾지 못했습니다.\n"
                 f"페이지 URL: {AIFA_PAGE_URL}"
             )
+        return out
 
-        url = (AIFA_DOC_BASE + sorted(matches)[-1]
-               if matches[0].startswith("/") else sorted(matches)[-1])
-        logger.info("[IT] CSV URL: %s", url)
-        return url
-
-    async def _find_csv_url(self, _page: Page) -> str:
-        """_find_csv_url_requests() 래퍼 (BaseScraper Page 인터페이스 호환)."""
-        return self._find_csv_url_requests()
+    async def _find_csv_urls(self, _page: Page) -> dict[str, str]:
+        return self._find_csv_urls_requests()
 
     # ────────────────────────────────────────────────────────────────────────
     # 2) CSV 다운로드
@@ -118,7 +133,7 @@ class ItAifaScraper(BaseScraper):
 
     def _download_csv(self, url: str) -> Path:
         """AIFA CSV를 requests로 직접 다운로드해 캐시에 저장."""
-        fname = url.split("/")[-1].split("?")[0] or "classe_h_trade.csv"
+        fname = url.split("/")[-1].split("?")[0] or "classe_trade.csv"
         save_path = self.cache_dir / fname
 
         logger.info("[IT] CSV 다운로드: %s", url)
@@ -140,17 +155,20 @@ class ItAifaScraper(BaseScraper):
         logger.info("[IT] 저장: %s (%d bytes)", save_path.name, save_path.stat().st_size)
         return save_path
 
-    def _load_latest_cache(self) -> Optional[Path]:
-        """캐시 디렉터리에서 가장 최신 CSV 파일 경로 반환."""
-        files = sorted(self.cache_dir.glob("Classe_H_per_nome_commerciale*.csv"), reverse=True)
+    def _load_latest_cache(self, cls: str) -> Optional[Path]:
+        """캐시 디렉터리에서 지정 Class(A|H)의 가장 최신 CSV 파일 반환."""
+        files = sorted(
+            self.cache_dir.glob(f"Classe_{cls}_per_nome_commerciale*.csv"),
+            reverse=True,
+        )
         return files[0] if files else None
 
     # ────────────────────────────────────────────────────────────────────────
     # 3) CSV 파싱
     # ────────────────────────────────────────────────────────────────────────
 
-    def _parse_csv(self, path: Path) -> list[dict]:
-        """AIFA CSV → dict 리스트 반환. 인코딩은 UTF-8 우선, 실패 시 Latin-1."""
+    def _parse_csv(self, path: Path, cls: str) -> list[dict]:
+        """AIFA CSV → dict 리스트 반환. 각 행에 `_class`(A|H) 태깅."""
         for enc in ("utf-8-sig", "utf-8", "latin-1"):
             try:
                 raw = path.read_bytes().decode(enc)
@@ -160,13 +178,16 @@ class ItAifaScraper(BaseScraper):
         else:
             raise ValueError(f"인코딩 판별 실패: {path.name}")
 
-        # 구분자 자동 감지 (세미콜론 or 콤마)
         sample = raw[:2048]
         delimiter = ";" if sample.count(";") > sample.count(",") else ","
 
         reader = csv.DictReader(io.StringIO(raw), delimiter=delimiter)
-        rows = [row for row in reader]
-        logger.info("[IT] CSV 파싱: %d행 (구분자='%s', 인코딩=%s)", len(rows), delimiter, enc)
+        rows = []
+        for row in reader:
+            row["_class"] = cls
+            rows.append(row)
+        logger.info("[IT] CSV 파싱 (%s): %d행 (구분자='%s', 인코딩=%s)",
+                    cls, len(rows), delimiter, enc)
         return rows
 
     # ────────────────────────────────────────────────────────────────────────
@@ -226,49 +247,67 @@ class ItAifaScraper(BaseScraper):
     # ────────────────────────────────────────────────────────────────────────
 
     def _to_results(self, rows: list[dict]) -> list[dict]:
-        """CSV 행 → 표준 결과 dict 리스트."""
-        # 컬럼명 탐색 (헤더 공백·대소문자 차이 대응)
-        def find_col(rows, *keywords):
-            if not rows:
-                return None
+        """CSV 행 → 표준 결과 dict 리스트. Class H → Ex-factory, Class A → Prezzo al pubblico."""
+        def find_col(sample_row: dict, *keywords) -> Optional[str]:
             return next(
-                (k for k in rows[0] if any(kw.lower() in k.lower() for kw in keywords)),
+                (k for k in sample_row if any(kw.lower() in k.lower() for kw in keywords)),
                 None,
             )
 
-        denom_col    = find_col(rows, "Denominazione")
-        principio_col = find_col(rows, "Principio")
-        exfactory_col = find_col(rows, "Ex-factory", "Ex factory")
-        titolare_col  = find_col(rows, "Titolare")
-        codice_col    = find_col(rows, "Codice AIC")
-        gruppo_col    = find_col(rows, "Descrizione Gruppo", "Gruppo")
+        def parse_price(raw: str) -> Optional[float]:
+            s = str(raw or "").strip().replace("\xa0", "").replace(" ", "")
+            if not s or s == "-":
+                return None
+            # IT: comma = decimal. 간혹 혼용도 있으나 단일 컴마는 소수점.
+            s = s.replace(".", "").replace(",", ".") if s.count(",") == 1 else s.replace(",", ".")
+            try:
+                v = float(s)
+                return v if v > 0 else None
+            except ValueError:
+                return None
 
         results = []
         for row in rows:
-            # 공장도출하가 파싱 (예: "54,44" or "54.44")
-            raw_price = str(row.get(exfactory_col, "") if exfactory_col else "")
-            raw_price = raw_price.replace(",", ".")
-            try:
-                local_price = float(raw_price) if raw_price.replace(".", "").isdigit() else None
-            except ValueError:
-                local_price = None
+            cls = row.get("_class", "H")
+            denom_col     = find_col(row, "Denominazione")
+            principio_col = find_col(row, "Principio")
+            exfactory_col = find_col(row, "Ex-factory", "Ex factory")
+            pubblico_col  = find_col(row, "Prezzo al pubblico")
+            titolare_col  = find_col(row, "Titolare")
+            codice_col    = find_col(row, "Codice AIC", "AIC")
+            gruppo_col    = find_col(row, "Descrizione Gruppo", "Gruppo")
 
-            # Denominazione e Confezione → product_name + dosage_strength 분리
             denom_raw = str(row.get(denom_col, "") if denom_col else "")
+            gruppo_raw = str(row.get(gruppo_col, "") if gruppo_col else "")
+
+            # Class H → Ex-factory (공장도가, HIRA 직접 사용)
+            # Class A → Prezzo al pubblico (소비자가, HIRA 공식 환산 필요)
+            if cls == "H" and exfactory_col:
+                local_price = parse_price(row.get(exfactory_col))
+                src_type = "aifa_exfactory"
+                price_kind = "ex-factory"
+            else:
+                local_price = parse_price(row.get(pubblico_col)) if pubblico_col else None
+                src_type = None
+                price_kind = "prezzo al pubblico"
 
             results.append({
                 "product_name":    denom_raw,
                 "ingredient":      str(row.get(principio_col, "") if principio_col else ""),
                 "dosage_strength": denom_raw,
-                "dosage_form":     str(row.get(gruppo_col, "") if gruppo_col else ""),
+                "dosage_form":     gruppo_raw,
                 "package_unit":    "",
                 "local_price":     local_price,
-                "source_type":     "aifa_exfactory",
+                "source_type":     src_type,
                 "source_url":      AIFA_PAGE_URL,
                 "extra": {
-                    "company":    str(row.get(titolare_col, "") if titolare_col else ""),
-                    "codice_aic": str(row.get(codice_col, "") if codice_col else ""),
-                    "raw":        dict(row),
+                    "company":      str(row.get(titolare_col, "") if titolare_col else ""),
+                    "codice_aic":   str(row.get(codice_col, "") if codice_col else ""),
+                    "aifa_class":   cls,
+                    "price_kind":   price_kind,
+                    "descrizione":  gruppo_raw,
+                    "source_type":  src_type,
+                    "raw":          {k: v for k, v in row.items() if not k.startswith("_")},
                 },
             })
         return results
@@ -277,23 +316,31 @@ class ItAifaScraper(BaseScraper):
     # 6) BaseScraper 인터페이스 구현
     # ────────────────────────────────────────────────────────────────────────
 
+    def _ensure_class_rows(self, cls: str, page: Optional[Page] = None) -> list[dict]:
+        """Class A 또는 H CSV 를 로드 (캐시 우선, 없으면 다운로드)."""
+        cached = self._load_latest_cache(cls)
+        if cached:
+            logger.info("[IT] 캐시 로드 (Class %s): %s", cls, cached.name)
+            return self._parse_csv(cached, cls)
+        logger.info("[IT] 캐시 없음 (Class %s) — CSV 다운로드", cls)
+        urls = self._find_csv_urls_requests()
+        if cls not in urls:
+            logger.warning("[IT] Class %s URL 없음 — skip", cls)
+            return []
+        csv_path = self._download_csv(urls[cls])
+        return self._parse_csv(csv_path, cls)
+
     async def search(self, query: str, page: Page) -> list[dict]:
         """
-        AIFA Class H CSV에서 약제명으로 검색.
-        1. 캐시된 CSV가 있으면 재다운로드 없이 사용
-        2. 캐시 없으면 자동 다운로드
-        3. msd_only=True이면 MSD 제품만 반환
+        AIFA Class A + Class H CSV에서 약제명으로 검색.
+        캐시 없을 시 자동 다운로드. msd_only=True 이면 MSD 제품만.
         """
         if self._rows_cache is None:
-            cached = self._load_latest_cache()
-            if cached:
-                logger.info("[IT] 캐시 로드: %s", cached.name)
-                self._rows_cache = self._parse_csv(cached)
-            else:
-                logger.info("[IT] 캐시 없음 — CSV 다운로드 시작")
-                url = await self._find_csv_url(page)
-                csv_path = self._download_csv(url)
-                self._rows_cache = self._parse_csv(csv_path)
+            rows_all: list[dict] = []
+            for cls in ("A", "H"):
+                rows_all.extend(self._ensure_class_rows(cls, page))
+            self._rows_cache = rows_all
+            logger.info("[IT] 전체 캐시 로드: %d행 (A+H 병합)", len(self._rows_cache))
 
         rows = self._rows_cache
 
@@ -311,8 +358,11 @@ class ItAifaScraper(BaseScraper):
         return self._to_results(matched)
 
     async def refresh(self, page: Page) -> None:
-        """최신 CSV를 재다운로드해 캐시 갱신."""
-        url = await self._find_csv_url(page)
-        csv_path = self._download_csv(url)
-        self._rows_cache = self._parse_csv(csv_path)
-        logger.info("[IT] CSV 캐시 갱신 완료")
+        """최신 Class A/H CSV 를 모두 재다운로드해 캐시 갱신."""
+        urls = self._find_csv_urls_requests()
+        rows_all: list[dict] = []
+        for cls, url in urls.items():
+            csv_path = self._download_csv(url)
+            rows_all.extend(self._parse_csv(csv_path, cls))
+        self._rows_cache = rows_all
+        logger.info("[IT] CSV 캐시 갱신 완료 (%d행)", len(rows_all))

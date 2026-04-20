@@ -1,0 +1,3821 @@
+
+
+
+
+
+
+
+
+
+
+
+<!DOCTYPE html>
+<html lang="ko-KR">
+	<head>
+		<!-- header include -->
+		
+
+
+
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
+	<meta name="format-detection" content="telephone=no, address=no, email=no">
+	<meta name="WT.ti" content="제도·정책_약제기준정보_암질환 사용약제 및 요법_항암화학요법"/>
+	<meta name="WT.userlogin" content="0">
+	<meta name="WT.usergen" content="">
+	<meta name="WT.usertype" content="">
+	<script type="text/javascript" src="/js/webTrends.js?t=2"></script>
+	<script type="text/javascript" src="/lib/jquery-1.11.0.min.js?t=2"></script>
+	<script type="text/javascript" src="/js/jquery.rwdImageMaps.js?t=2"></script>
+	
+	<script type="text/javascript" src="/lib/jquery-ui.js?t=2"></script>
+	<link rel="stylesheet" type="text/css" href="/lib/jquery-ui.css?t=2">
+	
+	<!-- common -->
+	<link rel="stylesheet" type="text/css" href="/css/style.css?t=2">
+	<script type="text/javascript" src="/js/common.js?t=2"></script>
+	<script type="text/javascript" src="/js/co/Common.js?t=2"></script>
+	<script type="text/javascript" src="/js/Header.js?t=2"></script>
+	<script type="text/javascript" src="/js/AjaxJSON.js?t=2"></script>
+	<script type="text/javascript" src="/js/SNS.js?t=2"></script>
+	
+	<!-- 검색엔진 ark 팝업이 아닌경우만 사용하도록 -->
+	
+		<link rel="stylesheet" type="text/css" href="/css/ark/ark.css?t=3">
+		<script type="text/javascript" src="/js/ark/beta.fix.js?t=3"></script>
+		<script type="text/javascript" src="/js/ark/arkHeader.js?t=4"></script>
+	
+	
+	
+	    
+	        
+	        <script type="text/javascript"
+	            src="/js/AjaxJSON.js"></script>
+	    
+	
+	    
+	        
+	        <script type="text/javascript"
+	            src="/js/bbs.js"></script>
+	    
+	
+	
+	
+	
+	
+		
+	
+		
+	
+		
+	
+		
+	
+	
+	<title>항암화학요법 < 암질환 사용약제 및 요법 < 약제기준정보 < 제도·정책 <  건강보험심사평가원</title> 
+	
+	<script type="text/javascript">
+		//document.title = "항암화학요법 < 암질환 사용약제 및 요법 < 약제기준정보 < 제도·정책 <  건강보험심사평가원";
+		function settingScrap(aa){
+			Header.createFavorite("02", aa);
+		}
+
+	</script>
+	
+	<script type="text/javascript">
+    //<![CDATA[
+        var TOP_DIR = '';
+        
+        var WWW = 'https://www.hira.or.kr';
+        var PGMID = 'HIRAA030023030000';
+        var TIMER_CHECK_LOGIN = 60 * 60;
+        var _SESS_ID = "41039dbc-b689-4d0f-9803-65139e99c1db";
+        var _SERV_NM = "www.hira.or.kr";
+        var _SERV_PT = "80";
+        
+        var Navi = {
+	        path : 'HIRAA040000000000|HIRAA030069100000|HIRAA030023000000|HIRAA030023030000',
+	        furl : 'https://www.hira.or.kr/bbsDummy.do?pgmid=HIRAA030023030000',
+	        mnnm : '' + '|' +  '암질환 사용약제 및 요법',  
+	       
+	        contact : function (pgmid) { 
+	            if (pgmid == '') {
+	                return;
+	            }
+	            
+	            var sndData={pgmid : pgmid};
+	    		$.AjaxJSON(TOP_DIR+"/co/conn/getContactInfo.do", sndData, function callback(e, textStatus, jqXHR){
+	    			if (e.data.deptNm == '') {
+                        $('#contact-01-dept-nm').hide();
+                        $('#contact-02-dept-nm').hide();
+                    } else {
+                        $('#contact-02-dept-nm').text(decodeURIComponentEx(e.data.deptNm));
+                    }
+                    if (e.data.deptReprTelNo == '') {
+                        $('#contact-01-dept-tl').hide();
+                        $('#contact-02-dept-tl').hide();
+                    } else {
+                        $('#contact-02-dept-tl').text(e.data.deptReprTelNo);
+                    }
+                    if (e.data.deptFaxNo == '') {
+                        $('#contact-01-dept-fx').hide();
+                        $('#contact-02-dept-fx').hide();
+                    } else {
+                        $('#contact-02-dept-fx').text(e.data.deptFaxNo);
+                    }
+                    //하단 담당자 정보
+                    if (e.data.deptEmpNm == '' || e.data.chrgpUseYn != 'Y') {
+                        $('#contact-01-dept-em').hide();
+                        $('#contact-02-dept-em').hide();
+                    } else {
+                       	$('#contact-02-dept-em').text(decodeURIComponentEx(e.data.deptEmpNm));
+                    }
+                    //하단 수정일 정보
+                    if (e.data.useYn != 'Y') {
+                        $('#content-01-upda-dd').hide();
+                        $('#content-02-upda-dd').hide();
+                    } else {
+                    	if(e.data.rctUpdDd != null)  {
+                    		$('#content-02-upda-dd').text(String(e.data.rctUpdDd).substr(0, 4) + '.' + String(e.data.rctUpdDd).substr(4, 2) + '.' + String(e.data.rctUpdDd).substr(6, 2));
+                    	}
+                    }
+	            });
+	        },
+	        
+	        satis : function () { 
+	            if ($("#satisType").val() == "") {
+	                alert("만족도를 선택하세요.");
+	                return false;
+	            } else if ($("#rmk").val() == "") {
+	                alert("개선의견을 입력하세요.");
+	                $("#rmk").focus();
+	                return false;
+	            }
+	            
+	            var o = $('#satis-form');
+	            var e = Common.checkForm(o);
+	            
+	            if (e != '') {
+	                window.alert(e);
+	                return;
+	            }
+	            
+	            var sndData={satisType : $("#satisType").val(), menuUrl : location.protocol + '//' + location.host + location.pathname, rmk : encodeURIComponentEx($("#rmk").val()), pgmid : 'HIRAA030023030000'};
+	    		$.AjaxJSON("/rc/satis/create.do", sndData, function callback(e, textStatus, jqXHR){
+	    			try {
+                        window.alert('만족도 조사에 참여해 주셔서 감사합니다.');
+                        $("#satis-form input").val("");
+                        $("input[name=star]").prop("checked",false);
+                    } catch (e) {
+                        window.alert('예기치 않은 오류가 발생하였습니다.');
+                    }
+	            });
+	        },
+	        
+	        newSatis : function (oVal) { 
+	            $("#satisType").val(oVal);
+	            
+	            if ($("#satisType").val() == "" || $("#satisType").val() == null) {
+	                alert("만족도를 선택하세요.");
+	                return false;
+	            }
+	        },
+	        
+	        twitter : function () { 
+	            SNS.twitter(this.furl, this.mnnm);
+	        },
+	        
+	        facebook : function () { 
+	            SNS.facebook(this.furl, this.mnnm);
+	        },
+	        
+	        naverBlog : function () { 
+	            SNS.naverBlog(this.furl, this.mnnm);
+	        },
+	        
+	        kakao : function () { 
+	            SNS.kakao(this.furl, this.mnnm);
+	        },
+	        
+	        copyUrl : function () { 
+	        	var url = '';
+		        if (confirm('이 페이지의 URL을 클립보드에 복사하시겠습니까?')) {
+		        	var textarea = document.createElement("textarea");
+		        	document.body.appendChild(textarea);
+		        	url = window.document.location.href;
+		        	textarea.value = SNS.shorten(url);
+		        	textarea.select();
+		        	document.execCommand("copy");
+		        	document.body.removeChild(textarea);
+		        	
+		        	alert("페이지 URL 클립보드에 복사되었습니다.");
+	            }
+		        $('#urlCopy').focus();
+	        }
+	    };
+        //getPopkeyword('top','cmss'); 
+        //getPopkeyword('top','cmssudong');
+    //]]>
+    </script>
+	</head>
+	<body>
+		<!-- top include -->
+		
+ 
+
+
+
+
+
+
+<!-- 애니아이디 Any-ID anyidAdaptor.jsp -->
+
+
+
+<!DOCTYPE html>
+<html>
+<head>
+    <script>
+        var anyidAdaptor = anyidAdaptor || {};
+        
+        
+        
+        
+        
+        
+
+        /*이용기관 수정 영역 Start*/
+        anyidAdaptor.orgLogin = function(data){
+            //정부 통합인증SDK_연계가이드 4.4.1.3 이용기관 로그인(토글 off) 참조
+            //제공되는 라이브러리 메소드로 인증데이터 decrypt 이후 자체 로그인 로직 개발
+            const params = new URLSearchParams(location.search);
+            var obj ={
+                ssob : data.ssob
+                , tag : params.get("tx")
+            }
+
+            var xhr = new XMLHttpRequest();
+            xhr.open("POST", "/login/orgLogin.jsp", true);
+            xhr.setRequestHeader("Content-Type", "application/json");
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState === 4 && xhr.status === 200) {
+                	debugger;
+                    var response = JSON.parse(xhr.responseText);
+                    if (response.status == "success") {
+		alert("이용기관 자체 로그인!!!");
+                        console.log("response    >>>>>   ", JSON.stringify(response));
+                    } else {
+                    }
+                }
+            };
+            xhr.send(JSON.stringify(obj));
+            
+        }
+        /*이용기관 수정 영역 End*/
+        
+        
+        /*이용기관 문구수정 영역 Start*/
+        anyidAdaptor.JoinConfirm = function(portalJoinUri, memberData){
+            anyidAdaptor.receiveAnyIdJoin(portalJoinUri, memberData);
+        }
+        /*이용기관 문구수정 영역 End*/
+        
+        
+        
+
+
+//         anyidAdaptor.certData = null;
+
+
+        anyidAdaptor.agencyContextPath = "";
+        
+        
+        anyidAdaptor.success = function(data){
+            if(anyidAdaptor.ssoByPass != 0 || !data.useSso) {
+                anyidAdaptor.orgLogin(data);
+            } else {
+                anyidAdaptor.certData = data;
+                anyidAdaptor.userCheck();
+            }  
+        }
+        
+        anyidAdaptor.userCheck = function(){
+            var xhr = new XMLHttpRequest();
+            xhr.open("POST", anyidAdaptor.agencyContextPath + "/oidc/userCheck", true);
+            xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState === 4 && xhr.status === 200) {
+                    var response = JSON.parse(xhr.responseText);
+                    if (response.success) {
+                        anyidAdaptor.ssoLogin();
+                    } else {
+                        setTimeout(function() {
+                            anyidAdaptor.receiveAnyIdJoin(response.uri, response.data);
+                        }, 100);  
+                    }
+                }
+            };
+
+            let jsonObject = new Object();
+            jsonObject.txId = anyidAdaptor.certData.txId;
+            jsonObject.ssob = anyidAdaptor.certData.ssob;
+            jsonObject.userSeCd = anyidAdaptor.certData.userSeCd;
+            
+            let jsonStr = JSON.stringify(jsonObject);
+            let encodedString = btoa(jsonStr);
+            
+            var data = "data=" + encodedString + "&txId=" + anyidAdaptor.certData.txId;
+            xhr.send(data);
+            
+        }
+
+        //anyid가입
+        anyidAdaptor.receiveAnyIdJoin = function(portalJoinUri, memberData){
+        
+            var url = portalJoinUri+encodeURIComponent(memberData);
+            anyidAdaptor.popup(url,"openAnyIdRegistUserIdv",700,740);
+
+            window.addEventListener("message", function(event) {
+                var result;
+                try {
+                    result = JSON.parse(event.data);
+                } catch (error) {
+                    console.error("Received message is not valid JSON:", error);
+                    return;
+                }
+                
+                if(!result.funcName || (result.funcName !== "trmsAgreComplete" && result.funcName !== "registUserComplete")) {
+                    return;
+                }
+                if(result.status === "success") {
+                    
+                    anyidAdaptor.ssoLogin();
+                    
+                }else{
+                    
+                    anyidAdaptor.orgLogin(anyidAdaptor.certData);
+                }
+
+            }, false);
+        }
+
+        // 팝업 호출
+        anyidAdaptor.popup = function(url, name, width, height){
+            let left = (screen.width) ? (screen.width-width)/2 : 0;
+            let top = (screen.height) ? (screen.height-height)/2 : 0;
+            let popup=window.open(url, name ,"resizable=yes,toolbar=no,scrollbars=yes,location=no,top="+top+"px,left="+left+"px,width="+width+"px,height="+height+"px");
+            if(popup){
+                popup.focus();
+            }
+        }
+
+        anyidAdaptor.ssoLogin = function(){
+            let jsonObject = new Object();
+            jsonObject.txId = anyidAdaptor.certData.txId;
+            jsonObject.ssob = anyidAdaptor.certData.ssob;
+            jsonObject.userSeCd = anyidAdaptor.certData.userSeCd;
+            jsonObject.afData = anyidAdaptor.certData.afData;
+            let jsonStr = JSON.stringify(jsonObject);
+            
+            let encodedString = btoa(jsonStr);
+            var baseUrl = window.location.origin + "/anyid" + anyidAdaptor.agencyContextPath + "/oidc/ssoLogin";
+            var urlWithParams = baseUrl + "?data=" + encodedString;
+            window.location.href = urlWithParams;
+            
+        }
+        
+        anyidAdaptor.ssoLoginPageSub = function(baseUrl, endPoint, acrValues){
+            var subUrl = "";
+            
+            if (endPoint && endPoint.trim() !== "") {
+                subUrl = "?endPoint=" + encodeURIComponent(endPoint);
+            }
+            
+            if (!acrValues && acrValues.trim() == "") {
+                acrValues = "3";
+            }
+            
+            if (acrValues && acrValues.trim() !== "") {
+                if(subUrl == ""){
+                    subUrl = "?";
+                }else{
+                    subUrl = subUrl + "&";
+                }
+                subUrl = subUrl + "acrValues=" + acrValues;
+            }
+            
+            window.location.replace(baseUrl+subUrl);
+        }
+        
+        /**/
+        anyidAdaptor.ssoLogout = function(endPoint) {
+            endPoint = typeof endPoint !== 'undefined' ? endPoint : "/";
+            var baseUrl = window.location.origin + "/anyid" + anyidAdaptor.agencyContextPath + "/oidc/ssoLogout";
+            baseUrl = baseUrl + "?endPoint=" + encodeURIComponent(endPoint);
+            window.location.replace(baseUrl);
+        }
+        /**/
+        anyidAdaptor.reAuthLevel = function(endPoint, acrValues){
+            endPoint = typeof endPoint !== 'undefined' ? endPoint : "/";
+            var baseUrl = window.location.origin + "/anyid"  + anyidAdaptor.agencyContextPath + "/oidc/reAuthLevel";
+            anyidAdaptor.ssoLoginPageSub(baseUrl, endPoint, acrValues);
+
+        }
+        /**/
+        anyidAdaptor.ssoLoginPage = function(endPoint, acrValues){
+            endPoint = typeof endPoint !== 'undefined' ? endPoint : "/";
+            var baseUrl = window.location.origin + "/anyid" + anyidAdaptor.agencyContextPath + "/oidc/auth";
+            anyidAdaptor.ssoLoginPageSub(baseUrl, endPoint, acrValues);
+        }
+        
+        /**/
+        anyidAdaptor.ssoSvcToSvc = function(url, endPoint){
+            var baseUrl = url + "/oidc/svcToSvc?endPoint=" + encodeURIComponent(endPoint);
+            window.open(baseUrl, "_blank");
+        }
+
+
+    </script>
+</head>
+<body>
+
+</body>
+</html>
+
+
+<script type="text/javascript" src="/js/Header.js?t=2"></script>
+<script type="text/javascript" src="/js/AjaxJSON.js?t=2"></script>
+<script type="text/javascript" src="/js/search/commonSearchCms.js?t=2"></script>
+<script type="text/javascript" src="/js/search/commonSearch.js?t=2"></script>
+<script type="text/javascript" src="/js/ksignsso/jquery-migrate-1.4.1.min.js?t=2"></script>
+<script type="text/javascript" src="/js/ksignsso/KAccess_utf8.js?t=2"></script>
+<script type="text/javascript">
+	var TIMER_CHECK_LOGIN = 60 * 60;
+	var TOP_DIR = '';
+	var loginUrl = "https://ptl.hira.or.kr"+"/main.do?domain="+window.location.origin+"&uri="+btoa(encodeURIComponent(window.location.pathname+location.search));
+	var ssoClient = new KAccess();
+	var submitFlag = false;
+
+	// 전역 변수로 원래 포커스된 요소를 저장합니다.
+	let originalFocusElement = null;
+
+	$(function() {
+		//IE인 경우 예외처리
+		var agent = navigator.userAgent.toLowerCase();
+		if ((navigator.appName === 'Netscape' && agent.search('trident') !== -1) || (agent.indexOf('msie') !== -1)) {
+			$("a").each(function(e) {
+				if($(this).attr("href").indexOf("&WT.") != -1) {
+					//console.log($(this).attr("href").substring(0,$(this).attr("href").indexOf("&WT.")));
+					//console.log($(this).attr("href").substring($(this).attr("href").indexOf("&WT.")));
+					var wtUrl = $(this).attr("href").substring(0,$(this).attr("href").indexOf("&WT."));
+					var wtParam = $(this).attr("href").substring($(this).attr("href").indexOf("&WT."));
+					var name = wtParam.split("=")[0];
+					var target = wtParam.split("=")[1];	
+					//wtUrl + name+"="+encodeURIComponent(target);
+					//console.log(wtUrl + name+"="+encodeURIComponent(target));
+					$(this).attr("href", wtUrl + name+"="+encodeURIComponent(target));
+				}
+			});
+		}
+		
+		
+		//우클릭 방지 처리
+		document.oncontextmenu = function(){
+			return false;
+		}
+		//SSO CS용 설치프로그램 설치 시 레지스트리에 TOKEN SETTING
+		function ssoInitSuccess(ssoResult, resultJson) {
+            console.log("ssoInit Success" + resultJson);
+            saveTokenAX();                      
+        };
+        function ssoInitFail(ssoResult, resultJson) {
+            console.log("ssoInit Fail" + resultJson);
+        };
+        ssoClient.init(ssoInitSuccess, ssoInitFail);
+	});
+	//레지스트리 SSO토큰등록
+	var saveTokenAX = function(){
+        var token = "";
+        function setDataSuccess(ssoResult, resultJson) {
+            console.log("CheckVersion True" + resultJson);
+        };
+        function setDataFail(ssoResult, resultJson) {
+            console.log("CheckVersion Fail" + resultJson);
+        };
+        ssoClient.setPlainData(token, setDataSuccess, setDataFail);
+    }
+	
+	var loginPage = function() {
+		
+			 
+			
+				var pathName = window.location.pathname;
+				var searchName = window.location.search;
+				var endPoint = pathName + searchName;
+				anyidAdaptor.ssoLoginPage(endPoint,'2');
+			
+		
+	}
+	
+	var registPage = function() {
+		location.href = "https://ptl.hira.or.kr"+"/main.do?returnUrl="+document.URL+"&pageType=regist"; // 회원가입
+	}
+	
+	function loginForSSOSessionRemove(){
+        function logoutSuccess(ssoResult, resultJson) {
+            console.log("Logout Success" + resultJson);
+            top.document.location = "https://extsso.hira.or.kr:443/sso/pmi-logout-url.jsp?returl="+encodeURIComponent(loginUrl);
+        };
+        
+        function logoutFail(ssoResult, resultJson) {
+            console.log("ssoError : " + resultJson);
+            top.document.location = "https://extsso.hira.or.kr:443/sso/pmi-logout-url.jsp?returl="+encodeURIComponent(loginUrl);
+        };
+        
+         ssoClient.logout(logoutSuccess, logoutFail);
+    };
+
+	
+	var timeReset = function() {
+		var sndData={};
+		$.AjaxJSON(TOP_DIR+"/co/executeExtendLogin.do", sndData, function callback(e, textStatus, jqXHR){
+			if (e.data.failed) {
+				window.alert('로그인 시간이 만료되었습니다.\n\n다시 로그인을 해주시기 바랍니다.');
+				location.href = '/ra/login/logout.do';
+			}
+			TIMER_CHECK_LOGIN = 60 * 60;
+        });
+	}
+	
+	var searchFormSubmit = function(e) {
+		if(submitFlag) {
+			alert("처리중입니다.");
+			return;
+		}
+		
+		var type = $(e).attr("type");
+		var keyCode = event.keyCode;
+		var searchTxt;
+		
+		if(type == "text") { // keydown
+			if(keyCode == "13") {
+				searchTxt = $(e).val();
+				submitFlag = true;
+			}else {
+				return;
+			}
+		}else { // click
+			searchTxt = $(e).siblings("input").val();
+			submitFlag = true;
+		}
+		
+		if (searchTxt == '') {
+            window.alert('검색어를 입력하세요.');
+            $(e).siblings("input").focus();
+            return;
+        }
+		var tmpStr = goSearchCmsCrssFilter(searchTxt);
+		$("input[name=query]").val(tmpStr);
+        
+        $("#commonForm").submit();
+	}
+	
+	$(document).on("click", ".header-top .toggle-wrap .toggle-head .btn_nurizip", function() {
+	    var a = $(this).closest(".toggle-wrap");
+	    a.children(".toggle-body").slideUp();
+	    if (a.children(".toggle-body").is(":visible")) {
+	        a.children(".toggle-body").slideUp();
+	        a.removeClass("active");
+	    } else {
+	        a.addClass("active").children(".toggle-body").slideDown();
+	    }
+	});
+
+	$(document).on("click keydown", ".m-gnb-wrap .m-gnb-in .m-gnb-body .m-gnb-menu .submenu-wrap .sm", function(event) {
+	    if (event.type === 'keydown' && event.keyCode !== 13) {
+	        return;
+	    }
+	    if (event.type === 'keydown') {
+	        event.preventDefault();
+	    }
+	    
+	    var a = $(this).closest(".sm");
+	    var b = $(this).next("ul");
+	    
+	    if (b.hasClass("is-open")) {
+	        a.removeClass("active");
+	        b.removeClass("is-open");
+	        a.focus();
+	    } else {
+	        $(".m-gnb-wrap .m-gnb-in .m-gnb-body .m-gnb-menu .submenu-wrap a[title='선택됨']").removeAttr("title");	        
+	        $(".m-gnb-wrap .m-gnb-in .m-gnb-body .m-gnb-menu .submenu-wrap .dd").children().removeClass("active is-open");
+	        $(".m-gnb-wrap .m-gnb-in .m-gnb-body .m-gnb-menu .submenu-wrap .dd").children().css("text-decoration", "none");
+	        a.addClass("active");
+	        b.addClass("is-open");
+	        a.css("text-decoration", "underline");
+	        a.css("text-underline-position", "under");
+	        a.attr("title", "선택됨");
+	    }
+	});
+
+	// 모바일 메뉴 열기
+	$('#m-gnb-open').on('click', function() {
+		originalFocusElement = document.activeElement;
+		$("#m-gnb").addClass("is-open").show();
+		const menuContainer = document.getElementById('m-gnb');
+		const focusableElements = menuContainer.querySelectorAll('a, button, input, [tabindex="0"]');
+		if (focusableElements.length > 0) {
+		    focusableElements[0].focus();
+		}
+		menuContainer.addEventListener('keydown', trapFocus);
+	});
+	
+	// 모바일 메뉴 닫기
+	$(document).on("click keydown", "#m-gnb-close", function(event) {
+	    if (event.type === 'keydown' && event.keyCode !== 13) {
+	        return;
+	    }
+	    if (event.type === 'keydown') {
+	        event.preventDefault();
+	    }
+	    const menuContainer = document.getElementById('m-gnb');
+	    if (menuContainer.classList.contains('is-open')) {
+	        menuContainer.removeEventListener('keydown', trapFocus);
+	        $("#m-gnb").removeClass("is-open").hide();
+	    }
+	    $('#m-gnb-open').focus();
+	});
+
+// 	// '하루 동안 열지 않기' 라벨에 키다운 이벤트 추가
+// 	$(document).on('keydown', 'label[for="popupToday"]', function(event) {
+// 	    if (event.keyCode === 13) {
+// 	        event.preventDefault(); 
+// 	        var checkbox = $('#' + $(this).attr('for'));
+// 	        checkbox.prop('checked', !checkbox.prop('checked'));
+// 	    }
+// 	});
+
+	// 포커스 트랩
+	function trapFocus(e) {
+	    const isTabPressed = (e.key === 'Tab' || e.keyCode === 9);
+	    if (!isTabPressed) {
+	        return;
+	    }
+	    const menuContainer = e.currentTarget;
+	    const focusableElements = menuContainer.querySelectorAll('a, button, input, [tabindex="0"]');
+	    const firstFocusableEl = focusableElements[0];
+	    const lastFocusableEl = focusableElements[focusableElements.length - 1];
+	    if (e.shiftKey) {
+	        if (document.activeElement === firstFocusableEl) {
+	            lastFocusableEl.focus();
+	            e.preventDefault();
+	        }
+	    } else {
+	        if (document.activeElement === lastFocusableEl) {
+	            firstFocusableEl.focus();
+	            e.preventDefault();
+	        }
+	    }
+	}
+	
+	$(document).on("click", ".m-gnb-wrap .m-gnb-menu .menu-wrap .mn", function() {
+	    var a = $(this).closest(".mn");
+	    var b = $(this).parent().siblings().children();
+	    var c = $(this).parent().parent().parent().next("div").children();
+	    b.removeClass("active");
+	    a.addClass("active");
+		b.removeAttr("title");
+		a.attr("title", "선택됨");
+	    
+	    if(!a.hasClass("ico-go")){
+		    c.removeClass("active");  
+		    c.each(function(){
+		    	if($(this).attr('id')==a.attr('data-id')){
+		    		$(this).addClass("active");
+		    	}
+		    });
+	    } 
+	});
+	
+	$(document).on("click", "#m-gnb-open", function() {
+
+	    const originalFocusElement = document.activeElement;
+	    $("#m-gnb").show();
+	    const menuContainer = document.getElementById('m-gnb');
+	    const focusableElements = menuContainer.querySelectorAll('a, button, input, [tabindex="0"]');
+	    if (focusableElements.length > 0) {
+	        focusableElements[0].focus();
+	    }
+	    menuContainer.addEventListener('keydown', trapFocus);
+	    function trapFocus(e) {
+	        const isTabPressed = (e.key === 'Tab' || e.keyCode === 9);
+	        if (!isTabPressed) {
+	            return;
+	        }
+	        const menuContainer = e.currentTarget;
+	        const focusableElements = menuContainer.querySelectorAll('a, button, input, [tabindex="0"]');
+	        const firstFocusableEl = focusableElements[0];
+	        const lastFocusableEl = focusableElements[focusableElements.length - 1];
+	        if (e.shiftKey) { // Shift + Tab을 누른 경우
+	            if (document.activeElement === firstFocusableEl) {
+	                lastFocusableEl.focus();
+	                e.preventDefault();
+	            }
+	        } else { // Tab만 누른 경우
+	            if (document.activeElement === lastFocusableEl) {
+	                firstFocusableEl.focus();
+	                e.preventDefault();
+	            }
+	        }
+	    }
+	});
+
+	$(document).on("click", "#m-gnb-close", function() {
+	    const menuContainer = document.getElementById('m-gnb');
+	    menuContainer.removeEventListener('keydown', trapFocus);
+	    $("#m-gnb").hide();
+	    if (originalFocusElement) {
+	        originalFocusElement.focus();
+	    } else {
+	        $('#m-gnb-open').focus();
+	    }
+	});
+	
+	$(document).on("click", "#focusToMenu", function() {
+		$('#의료정보').focus();
+	});
+	$(document).on("click", "#focusToContHead", function() {
+		$.fn.fullpage.silentMoveTo(2);
+ 		$('#contFocus1').focus();
+	});
+	
+</script>
+	
+	<div id="skipToMenu">
+		
+		
+			<a href="#contHeadTitle">본문 바로가기</a>
+		
+		<a href="#gnb" class="phide2" id="focusToMenu">주메뉴 바로가기</a>
+    </div>
+	<div id="header2">
+		<div id="header-top" class="header-top" style="position:relative;">
+			<div class="toggle-wrap">
+				<div class="toggle-head">
+					<div class="inner">
+						<span>이 누리집은 건강보험심사평가원에서 운영하는 누리집입니다.</span>
+					</div>
+				</div>
+			</div>
+		</div>
+		
+		<div class="header-in">
+			<div class="header-body">
+				<div class="inner">
+					<div class="head-etc">
+						<ul class="etc-ul">
+							<li class="li"><a href="/re/certificate/userGbn.do?pgmid=HIRAC920003010000" class="btn btn-txt xsm">인증센터</a></li>
+							<li class="li"><a href="/dummy.do?pgmid=HIRAC920012000000" class="btn btn-txt xsm">개인정보 처리방침</a></li>
+							<li class="li">
+								<div class="krds-drop-wrap">
+									<button type="button" class="btn btn-txt ico-arr-down xsm drop-btn">Language</button>
+									<div class="drop-menu">
+										<div class="drop-in">
+											<ul class="drop-list">
+												<li><a href="/eng/main.do" class="item-link ico-go" target="_blank" onclick="dcsMultiTrack('DCS.dcssip', 'www.hira.or.kr/eng', 'DCS.dcsuri', 'www.hira.or.kr/eng', 'WT.ti', '외부_영문사이트')" title="영문사이트 새창열기">English</a></li>
+												<li><a href="/esp/main.do" class="item-link ico-go" target="_blank" onclick="dcsMultiTrack('DCS.dcssip', 'www.hira.or.kr/esp', 'DCS.dcsuri', 'www.hira.or.kr/esp', 'WT.ti', '외부_스페인어사이트')" title="스페인사이트 새창열기">Spanish</a></li>
+											</ul>
+										</div>
+									</div>
+								</div>
+							</li>
+						</ul>
+					</div>
+					<div class="head-in">
+						<h1 class="logo">
+							<a href="/"><img src="/images/icon/new/logo.svg" class="logo-im" alt="건강보험심사평가원" style="width:200px; height:60px;"></a>
+						</h1>
+						<div class="right">
+							<button type="button" class="btn-navi navi-row sch" title="통합검색 레이어"
+							        onclick="Common.popupEvent('#popTotalSch');">통합검색</button>
+							
+								
+								
+								
+									<button onClick="javascript:loginPage();" type="button" class="btn-navi navi-row login">로그인</button>
+									<button onClick="javascript:registPage();" type="button" class="btn-navi navi-row join">회원가입</button>
+								
+							
+							<button type="button" class="btn-navi all" id="m-gnb-open">전체메뉴</button>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	<form name="commonForm" id="commonForm" method="get" action="/co/search.do">
+		<input type="hidden" name="query"/>
+	</form>	
+	<div class="popup-wrap-full2" data-type="full" id="popTotalSch" tabindex="0">
+			<div class="popup-in">
+			<div class="popup">
+				<div class="popup-head sr-only">
+					<h1 class="pop-tit">통합검색</h1>
+				</div>
+				<div class="popup-body">
+					<div class="pop-total-search-wrap">
+						<div class="search-total-top">
+							<div class="search-tit">
+								<label for="search-total-input-id">검색어를 입력해주세요</label>
+							</div>
+							<div class="sch-form-wrap vert">
+								<div class="sch-input">
+									<input type="text" class="form-control xlg" id="searchKeyword" autocomplete="new-password" style="ime-mode: active;" placeholder="검색어를 입력해주세요" title="검색어를 입력해주세요" onkeydown="searchFormSubmit(this);">
+									<button type="button" class="btn btn-txt ico-sch" onclick="searchFormSubmit(this);"><span class="sr-only">검색</span></button>
+								</div>
+							</div>
+						</div>
+						<div class="search-text">
+							<ul class="sch-keyword-list"></ul>
+						</div>
+					</div>
+					<div id="ark_header2"></div>
+				</div>
+				<button type="button" class="popup-close" aria-label="통합검색 창 닫기"></button>
+			</div>
+		</div>
+	</div>
+	<!-- 메뉴 start-->
+	<div class="header-wrap2">
+	<div id="gnb2">
+		<div class="lnb-bg"></div>
+		<ul class="gnb-list2">
+							 
+        	
+        		        			  
+					<li> 
+						<a href="/ra/eval/getDiagEvlView.do?pgmid=HIRAA030004000100&WT.gnb=%EC%9D%98%EB%A3%8C%EC%A0%95%EB%B3%B4" id="의료정보" }><span>의료정보</span></a>
+						<ul>
+							
+								
+                        			
+                        			
+                        				<li><a href="/ra/eval/getDiagEvlView.do?pgmid=HIRAA030004000100&WT.gnb=%EC%9D%98%EB%A3%8C%ED%8F%89%EA%B0%80%EC%A0%95%EB%B3%B4"  >의료평가정보</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/ra/hosp/getHealthMap.do?pgmid=HIRAA030002010000&WT.gnb=%EB%B3%91%EC%9B%90+%C2%B7+%EC%95%BD%EA%B5%AD%EC%B0%BE%EA%B8%B0"   target="_blank" title="새창열림">병원 · 약국찾기<i class="icon-link"></i></a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/ra/spclMgtAdmInfm/spclMgtAdmInfm.do?pgmid=HIRAA030003000000&WT.gnb=%ED%8A%B9%EC%88%98%EC%9A%B4%EC%98%81%EA%B8%B0%EA%B4%80+%EC%A0%95%EB%B3%B4"  >특수운영기관 정보</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/ra/dtlCndHospSrch/dtlCndHospSrch.do?pgmid=HIRAA050200000000&WT.gnb=%EC%84%B8%EB%B6%80%EC%A1%B0%EA%B1%B4%EB%B3%84+%EC%9D%98%EB%A3%8C%EA%B8%B0%EA%B4%80+%EC%B0%BE%EA%B8%B0"  >세부조건별 의료기관 찾기</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/ra/medi/form.do?pgmid=HIRAA030029000000&WT.gnb=%EC%9D%98%EC%95%BD%ED%92%88%EC%A0%95%EB%B3%B4"  >의약품정보</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        				<!-- 2depth HIRA-Ebook,연구통계는 get parameter pgmid 만 허용 --> 
+                        				<li><a href="/ra/trend/study/getReportList.do?pgmid=HIRAA030095000000"  >연구 · 통계</a></li>
+                        			
+                        			
+                        		
+							
+								
+                        			
+                        				<!-- 2depth HIRA-Ebook,연구통계는 get parameter pgmid 만 허용 --> 
+                        				<li><a href="/ra/ebook/list.do?pgmid=HIRAA030402000000"  >HIRA 전자자료</a></li>
+                        			
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/ra/stcIlnsInfm/seasonslnsInfm.do?pgmid=HIRAA030502000000&WT.gnb=%EA%B1%B4%EA%B0%95%EC%A0%95%EB%B3%B4"  >건강정보</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/ra/autoInsurance/autoInsurance.do?pgmid=HIRAA050300000000&WT.gnb=%EC%9E%90%EB%8F%99%EC%B0%A8%EB%B3%B4%ED%97%98+%EC%A7%84%EB%A3%8C%28%EC%B2%AD%EA%B5%AC%29%EA%B8%B0%EA%B4%80+%EC%B0%BE%EA%B8%B0"  >자동차보험 진료(청구)기관 찾기</a></li>
+                        			
+                        		
+							
+						</ul>
+					</li>
+				 	
+			 
+        		        			  
+					<li> 
+						<a href="/rb/dur/form.do?pgmid=HIRAA050300000100&WT.gnb=%EC%A1%B0%ED%9A%8C%C2%B7%EC%8B%A0%EC%B2%AD" id="조회·신청" }><span>조회·신청</span></a>
+						<ul>
+							
+								
+                        			
+                        			
+                        				<li><a href="/rb/dur/form.do?pgmid=HIRAA050300000100&WT.gnb=%EB%82%B4%EA%B0%80+%EB%A8%B9%EB%8A%94+%EC%95%BD%21+%ED%95%9C%EB%88%88%EC%97%90"  >내가 먹는 약! 한눈에</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/npay/index.do?pgmid=HIRAA030009000000&WT.gnb=%EB%B9%84%EA%B8%89%EC%97%AC%EC%A7%84%EB%A3%8C%EB%B9%84%EC%A0%95%EB%B3%B4"   target="_blank" title="새창열림">비급여진료비정보<i class="icon-link"></i></a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/rb/npay/index.do?pgmid=HIRAA030009100000&WT.gnb=%EC%A7%84%EB%A3%8C%EB%B9%84+%ED%99%95%EC%9D%B8"  >진료비 확인</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/rb/dmt/npayinfo/dmtNpayInfoList.do?pgmid=HIRAA030009300000&WT.gnb=%EB%94%94%EC%A7%80%ED%84%B8%EC%9D%98%EB%A3%8C%EA%B8%B0%EC%88%A0+%EB%B9%84%EA%B8%89%EC%97%AC%EC%A0%95%EB%B3%B4"  >디지털의료기술 비급여정보</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/dummy.do?pgmid=HIRAA030009200000&WT.gnb=%EB%82%B4+%EC%A7%84%EB%A3%8C%EC%A0%95%EB%B3%B4+%EC%97%B4%EB%9E%8C"  >내 진료정보 열람</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/rb/cvapl/form.do?pgmid=HIRAA010037000100&WT.gnb=%EC%9E%90%EA%B8%B0%EA%B7%BC%EB%AC%B4%EC%9D%B4%EB%A0%A5"  >자기근무이력</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/rb/calc/form.do?pgmid=HIRAA030037000000&WT.gnb=%EC%95%BD%EA%B5%AD%EB%B9%84%EC%9A%A9+%EA%B3%84%EC%82%B0%EA%B8%B0"  >약국비용 계산기</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/rb/drg/drgAmtsList.do?pgmid=HIRAA030066050000&WT.gnb=7%EA%B0%9C%EC%A7%88%EB%B3%91%EA%B5%B0%28DRG%29+%EC%A7%84%EB%A3%8C%EB%B9%84+%ED%99%95%EC%9D%B8"  >7개질병군(DRG) 진료비 확인</a></li>
+                        			
+                        		
+							
+						</ul>
+					</li>
+				 	
+			 
+        		        			  
+					<li> 
+						<a href="/rc/insu/insuadtcrtr/InsuAdtCrtrList.do?pgmid=HIRAA030069000400&WT.gnb=%EC%A0%9C%EB%8F%84%C2%B7%EC%A0%95%EC%B1%85" id="제도·정책" }><span>제도·정책</span></a>
+						<ul>
+							
+								
+                        			
+                        			
+                        				<li><a href="/rc/insu/insuadtcrtr/InsuAdtCrtrList.do?pgmid=HIRAA030069000400&WT.gnb=%EB%B3%B4%ED%97%98%EC%9D%B8%EC%A0%95%EA%B8%B0%EC%A4%80"  >보험인정기준</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/bbsDummy.do?pgmid=HIRAA030023010000&WT.gnb=%EC%95%BD%EC%A0%9C%EA%B8%B0%EC%A4%80%EC%A0%95%EB%B3%B4"  >약제기준정보</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/dummy.do?pgmid=HIRAA030056010000&WT.gnb=%EB%B3%B8%EC%9D%B8%EB%B6%80%EB%8B%B4%EA%B8%B0%EC%A4%80"  >본인부담기준</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/rc/law/lawinfo/lawInfoList.do?pgmid=HIRAA030123000000&WT.gnb=%EB%B2%95%EB%A0%B9%EC%A0%95%EB%B3%B4"  >법령정보</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/dummy.do?pgmid=HIRAA020007000000&WT.gnb=%EC%A0%9C%EB%8F%84%EC%95%88%EB%82%B4"  >제도안내</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/bbsDummy.do?pgmid=HIRAA030406000000&WT.gnb=%EC%9B%B9%ED%88%B0%EC%9C%BC%EB%A1%9C+%EC%9D%B4%ED%95%B4%ED%95%98%EB%8A%94+%EC%A0%9C%EB%8F%84"  >웹툰으로 이해하는 제도</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/rc/term/getExplainList.do?pgmid=HIRAA030407000000&WT.gnb=%EC%89%BD%EA%B2%8C+%EC%9D%B4%ED%95%B4%ED%95%98%EB%8A%94+%EC%9A%A9%EC%96%B4%EC%84%A4%EB%AA%85"  >쉽게 이해하는 용어설명</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/bbsDummy.do?pgmid=HIRAA010003001000&WT.gnb=%EC%89%BD%EA%B2%8C+%EC%95%8C%EC%95%84%EB%B3%B4%EB%8A%94+%EC%A7%84%EB%A3%8C%EB%B9%84%EC%98%81%EC%88%98%EC%A6%9D"  >쉽게 알아보는 진료비영수증</a></li>
+                        			
+                        		
+							
+						</ul>
+					</li>
+				 	
+			 
+        		        			  
+					<li> 
+						<a href="/bbsDummy.do?pgmid=HIRAA010006011000&WT.gnb=%EA%B5%AD%EB%AF%BC%EC%86%8C%ED%86%B5" id="국민소통" }><span>국민소통</span></a>
+						<ul>
+							
+								
+                        			
+                        			
+                        				<li><a href="/bbsDummy.do?pgmid=HIRAA010006011000&WT.gnb=%EA%B3%A0%EA%B0%9D%EC%9D%98+%EC%86%8C%EB%A6%AC"  >고객의 소리</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/rd/paycrtr/auth1.do?pgmid=HIRAA060111000000&WT.gnb=%EA%B0%9C%EC%84%A0%EA%B1%B4%EC%9D%98"  >개선건의</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/rd/bfrInfo/bfrInfoList.do?pgmid=HIRAA070001000110&WT.gnb=%EC%82%AC%EC%A0%84%EC%A0%95%EB%B3%B4%EA%B3%B5%ED%91%9C"  >사전정보공표</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/dummy.do?pgmid=HIRAA070001000211&WT.gnb=%EC%A0%95%EB%B3%B4%EA%B3%B5%EA%B0%9C"  >정보공개</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/dummy.do?pgmid=HIRAA030051000002&WT.gnb=%EC%A0%84%EB%AC%B8%EC%9C%84%EC%9B%90%ED%9A%8C+%EC%9A%B4%EC%98%81"  >전문위원회 운영</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/dummy.do?pgmid=HIRAC920010300000&WT.gnb=%EC%BB%A4%EB%AE%A4%EB%8B%88%ED%8B%B0"  >커뮤니티</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/rd/cycvapl/badDmd.do?pgmid=HIRAA010016000000&WT.gnb=%EC%8B%A0%EA%B3%A0%EC%84%BC%ED%84%B0"  >신고센터</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/dummy.do?pgmid=HIRAA020050000001&WT.gnb=%EA%B3%B5%EC%8B%9C+%C2%B7+%EA%B3%B5%ED%91%9C"  >공시 · 공표</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/rd/ictCmm/joinForm.do?pgmid=HIRAA010043200001&WT.gnb=ICT+%EC%86%8C%ED%86%B5%EC%B1%84%EB%84%90"  >ICT 소통채널</a></li>
+                        			
+                        		
+							
+						</ul>
+					</li>
+				 	
+			 
+        		        			  
+					<li> 
+						<a href="/dummy.do?pgmid=HIRAA040006000000&WT.gnb=%EA%B8%B0%EA%B4%80%EC%86%8C%EC%8B%9D" id="기관소식" }><span>기관소식</span></a>
+						<ul>
+							
+								
+                        			
+                        			
+                        				<li><a href="/dummy.do?pgmid=HIRAA040006000000&WT.gnb=%EC%8B%AC%ED%8F%89%EC%9B%90+%EC%86%8C%EA%B0%9C"  >심평원 소개</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/dummy.do?pgmid=HIRAA040011000000&WT.gnb=%EC%A1%B0%EC%A7%81+%EB%B0%8F+%EC%9D%B8%EC%9B%90"  >조직 및 인원</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/bbsDummy.do?pgmid=HIRAA020002000100&WT.gnb=HIRA+%EC%86%8C%EC%8B%9D"  >HIRA 소식</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/dummy.do?pgmid=HIRAA040077000000&WT.gnb=%EC%B1%84%EC%9A%A9%EC%95%88%EB%82%B4"  >채용안내</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/re/coop/insertForm.do?pgmid=HIRAA010044000001&WT.gnb=%EC%83%81%EC%83%9D%ED%98%91%EB%A0%A5"  >상생협력</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/dummy.do?pgmid=HIRAA020003200100&WT.gnb=%EC%97%B4%EB%A6%B0+%EA%B2%BD%EC%98%81"  >열린 경영</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/bbsDummy.do?pgmid=HIRAA040055000000&WT.gnb=%EB%82%B4%EB%B6%80%EA%B7%9C%EC%A0%95"  >내부규정</a></li>
+                        			
+                        		
+							
+								
+                        			
+                        			
+                        				<li><a href="/dummy.do?pgmid=HIRAA010031010000&WT.gnb=%EA%B3%B5%EA%B3%B5%EC%9E%90%EC%9B%90+%EA%B0%9C%EB%B0%A9%EC%95%88%EB%82%B4+%EB%B0%8F+%EC%8B%A0%EC%B2%AD"  >공공자원 개방안내 및 신청</a></li>
+                        			
+                        		
+							
+						</ul>
+					</li>
+				 	
+			 
+        			
+			 
+		</ul>
+	</div>
+	</div>
+	<!-- 메뉴 end -->
+	<!-- 모바일 : 전체메뉴 -->
+	<div id="m-gnb" class="m-gnb-wrap">
+		<div class="m-gnb-in">
+			<div class="m-gnb-head">
+				<button type="button" class="btn btn-ico ico-close" id="m-gnb-close">
+					<span class="sr-only">전체메뉴 닫기</span>
+				</button>
+				<div class="m-gnb-top-etc">
+					<ul class="etc-ul">
+						<li class="li"><a href="/re/certificate/userGbn.do?pgmid=HIRAC920003010000" class="btn btn-txt xsm">인증센터</a></li>
+						<li class="li"><a href="/eng/main.do" class="btn btn-txt xsm" target="_blank" onclick="dcsMultiTrack('DCS.dcssip', 'www.hira.or.kr/eng', 'DCS.dcsuri', 'www.hira.or.kr/eng', 'WT.ti', '외부_영문사이트')" title="영문사이트 새창열기">English</a></li>
+						<li class="li"><a href="/esp/main.do" class="btn btn-txt xsm" target="_blank" onclick="dcsMultiTrack('DCS.dcssip', 'www.hira.or.kr/esp', 'DCS.dcsuri', 'www.hira.or.kr/esp', 'WT.ti', '외부_스페인어사이트')" title="스페인사이트 새창열기"">Spanish</a></li>	
+					</ul>
+				</div>
+				<div class="m-gnb-login">
+					
+						
+						
+						
+							<a href="javascript:loginPage();" class="btn-navi navi-row login">로그인을 해주세요.</a>						
+						
+					
+				</div>
+			</div>
+			
+			<div class="m-gnb-body">
+				<div class="m-gnb-menu">
+					<div class="menu-wrap">
+						<ul class="ul">
+											 
+        					
+        			     		        			  
+									<li><a href="#mGnb-anchor-HIRAA050000000000" class="mn">의료정보</a>
+									</li>
+								
+							
+        			     		        			  
+									<li><a href="#mGnb-anchor-HIRAA960001000000" class="mn">조회·신청</a>
+									</li>
+								
+							
+        			     		        			  
+									<li><a href="#mGnb-anchor-HIRAA040000000000" class="mn">제도·정책</a>
+									</li>
+								
+							
+        			     		        			  
+									<li><a href="#mGnb-anchor-HIRAA060000000000" class="mn">국민소통</a>
+									</li>
+								
+							
+        			     		        			  
+									<li><a href="#mGnb-anchor-HIRAA940001000000" class="mn">기관소식</a>
+									</li>
+								
+							
+        			     		
+							
+						</ul>
+					</div>	
+					<div class="submenu-wrap">
+						
+        				
+        			     	        			  
+								<div class="dl" id="mGnb-anchor-HIRAA050000000000">
+									<dl>
+										<dt class="dt">의료정보</dt>
+										
+											     
+											
+												
+												
+												
+												
+													<dd class="dd">
+														<a class="sm ico-arr" tabindex="0">의료평가정보</a>
+														<ul class="sub-ul">
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/ra/eval/getDiagEvlView.do?pgmid=HIRAA030004000100&WT.gnb=%EB%B3%91%EC%9B%90%ED%8F%89%EA%B0%80" class="subm">병원평가</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													 
+                       														<li><a href="https://khqa.kr/bk/main?pgmid=HIRAA030004000200&WT.gnb=%ED%8F%89%EA%B0%80%EC%A0%95%EB%B3%B4%EB%B1%85%ED%81%AC" class="subm ico-go"  target="_blank" title="새창열림">평가정보뱅크</a>
+                       													
+                       													 
+                       												
+																
+															
+														</ul>
+													</dd>
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+													
+                        								<dd class="dd"><a href="/ra/hosp/getHealthMap.do?pgmid=HIRAA030002010000&WT.gnb=%EB%B3%91%EC%9B%90+%C2%B7+%EC%95%BD%EA%B5%AD%EC%B0%BE%EA%B8%B0" class="sm ico-go" target="_blank" title="새창열림">병원 · 약국찾기</a></dd>
+                        							
+                        							
+												
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+													
+                        							
+                        								<dd class="dd"><a href="/ra/spclMgtAdmInfm/spclMgtAdmInfm.do?pgmid=HIRAA030003000000&WT.gnb=%ED%8A%B9%EC%88%98%EC%9A%B4%EC%98%81%EA%B8%B0%EA%B4%80+%EC%A0%95%EB%B3%B4" class="sm">특수운영기관 정보</a></dd>
+                        							
+												
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+													
+                        							
+                        								<dd class="dd"><a href="/ra/dtlCndHospSrch/dtlCndHospSrch.do?pgmid=HIRAA050200000000&WT.gnb=%EC%84%B8%EB%B6%80%EC%A1%B0%EA%B1%B4%EB%B3%84+%EC%9D%98%EB%A3%8C%EA%B8%B0%EA%B4%80+%EC%B0%BE%EA%B8%B0" class="sm">세부조건별 의료기관 찾기</a></dd>
+                        							
+												
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+												
+													<dd class="dd">
+														<a class="sm ico-arr" tabindex="0">의약품정보</a>
+														<ul class="sub-ul">
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/ra/medi/form.do?pgmid=HIRAA030029000000&WT.gnb=%EC%9D%98%EC%95%BD%ED%92%88+%EC%95%88%EC%A0%84%EC%82%AC%EC%9A%A9+%EC%84%9C%EB%B9%84%EC%8A%A4+%28DUR%29+%EA%B5%AD%EB%AF%BC+%EC%B2%B4%ED%97%98%EA%B4%80" class="subm">의약품 안전사용 서비스 (DUR) 국민 체험관</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/ra/medi/getHistoryList.do?pgmid=HIRAA030035020000&WT.gnb=%EC%9D%98%EC%95%BD%ED%92%88%ED%86%B5%ED%95%A9%EC%A0%95%EB%B3%B4" class="subm">의약품통합정보</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													 
+                       														<li><a href="https://biz.kpis.or.kr/kpis_biz/index.jsp?gvPage=msup&amp;pgmid=HIRAA030041000000&WT.gnb=%EC%9C%84%ED%95%B4%EC%9D%98%EC%95%BD%ED%92%88%ED%98%84%ED%99%A9%EC%A1%B0%ED%9A%8C" class="subm ico-go"  target="_blank" title="새창열림">위해의약품현황조회</a>
+                       													
+                       													 
+                       												
+																
+															
+														</ul>
+													</dd>
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+												
+													<dd class="dd">
+														<a class="sm ico-arr" tabindex="0">연구 · 통계</a>
+														<ul class="sub-ul">
+															
+																    
+																
+																	
+                       												<!-- 3depth 연구통계 연구보고서 get parameter pgmid만 허용  -->
+                       													
+                       													
+                       														<li><a href="/ra/trend/study/getReportList.do?pgmid=HIRAA030095000000" class="subm">연구보고서</a>
+                       													 
+                       													
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													 
+                       														<li><a href="http://opendata.hira.or.kr?pgmid=HIRAA020042000100&WT.gnb=%EC%9D%98%EB%A3%8C%ED%86%B5%EA%B3%84" class="subm ico-go"  target="_blank" title="새창열림">의료통계</a>
+                       													
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/bbsDummy.do?pgmid=HIRAA020045010000&WT.gnb=%ED%86%B5%EA%B3%84%EC%9E%90%EB%A3%8C%EC%8B%A4" class="subm">통계자료실</a>
+                       													 
+                       												
+																
+															
+														</ul>
+													</dd>
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+													
+                        							
+                        								<dd class="dd"><a href="/ra/ebook/list.do?pgmid=HIRAA030402000000&WT.gnb=HIRA+%EC%A0%84%EC%9E%90%EC%9E%90%EB%A3%8C" class="sm">HIRA 전자자료</a></dd>
+                        							
+												
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+												
+													<dd class="dd">
+														<a class="sm ico-arr" tabindex="0">건강정보</a>
+														<ul class="sub-ul">
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/ra/stcIlnsInfm/seasonslnsInfm.do?pgmid=HIRAA030502000000&WT.gnb=%ED%86%B5%EA%B3%84%EB%A1%9C+%EB%B3%B4%EB%8A%94+%EC%A7%88%EB%B3%91%EC%A0%95%EB%B3%B4" class="subm">통계로 보는 질병정보</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/ra/htmInfm/htmInfmList.do?pgmid=HIRAA050101000000&WT.gnb=%EC%83%9D%ED%99%9C%EC%86%8D+%EA%B1%B4%EA%B0%95%EC%A0%95%EB%B3%B4" class="subm">생활속 건강정보</a>
+                       													 
+                       												
+																
+															
+														</ul>
+													</dd>
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+													
+                        							
+                        								<dd class="dd"><a href="/ra/autoInsurance/autoInsurance.do?pgmid=HIRAA050300000000&WT.gnb=%EC%9E%90%EB%8F%99%EC%B0%A8%EB%B3%B4%ED%97%98+%EC%A7%84%EB%A3%8C%28%EC%B2%AD%EA%B5%AC%29%EA%B8%B0%EA%B4%80+%EC%B0%BE%EA%B8%B0" class="sm">자동차보험 진료(청구)기관 찾기</a></dd>
+                        							
+												
+												
+                        					
+                        				
+									</dl>
+								</div>
+							
+						
+        			     	        			  
+								<div class="dl" id="mGnb-anchor-HIRAA960001000000">
+									<dl>
+										<dt class="dt">조회·신청</dt>
+										
+											     
+											
+												
+												
+												
+													
+                        							
+                        								<dd class="dd"><a href="/rb/dur/form.do?pgmid=HIRAA050300000100&WT.gnb=%EB%82%B4%EA%B0%80+%EB%A8%B9%EB%8A%94+%EC%95%BD%21+%ED%95%9C%EB%88%88%EC%97%90" class="sm">내가 먹는 약! 한눈에</a></dd>
+                        							
+												
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+													
+                        								<dd class="dd"><a href="/npay/index.do?pgmid=HIRAA030009000000&WT.gnb=%EB%B9%84%EA%B8%89%EC%97%AC%EC%A7%84%EB%A3%8C%EB%B9%84%EC%A0%95%EB%B3%B4" class="sm ico-go" target="_blank" title="새창열림">비급여진료비정보</a></dd>
+                        							
+                        							
+												
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+												
+													<dd class="dd">
+														<a class="sm ico-arr" tabindex="0">진료비 확인</a>
+														<ul class="sub-ul">
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/rb/npay/index.do?pgmid=HIRAA070003000001&WT.gnb=%EC%84%9C%EB%B9%84%EC%8A%A4+%EC%95%88%EB%82%B4" class="subm">서비스 안내</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/bbsDummy.do?pgmid=HIRAA010002080200&WT.gnb=%EC%82%AC%EB%A1%80%EB%A1%9C+%EB%B3%B4%EB%8A%94+%EC%A7%84%EB%A3%8C%EB%B9%84+%ED%99%95%EC%9D%B8+%EC%84%9C%EB%B9%84%EC%8A%A4" class="subm">사례로 보는 진료비 확인 서비스</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/rb/npay/form.do?pgmid=HIRAA070003000003&WT.gnb=%EC%9A%94%EC%B2%AD%EC%84%9C+%EC%9E%91%EC%84%B1" class="subm">요청서 작성</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												<!-- 3depth 연구통계 연구보고서 get parameter pgmid만 허용  -->
+                       													
+                       													
+                       														<li><a href="/rb/npay/list.do?pgmid=HIRAA070003000004" class="subm">나의 민원조회</a>
+                       													 
+                       													
+                       												
+																
+															
+														</ul>
+													</dd>
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+													
+                        							
+                        								<dd class="dd"><a href="/rb/dmt/npayinfo/dmtNpayInfoList.do?pgmid=HIRAA030009300000&WT.gnb=%EB%94%94%EC%A7%80%ED%84%B8%EC%9D%98%EB%A3%8C%EA%B8%B0%EC%88%A0+%EB%B9%84%EA%B8%89%EC%97%AC%EC%A0%95%EB%B3%B4" class="sm">디지털의료기술 비급여정보</a></dd>
+                        							
+												
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+													
+                        							
+                        								<dd class="dd"><a href="/dummy.do?pgmid=HIRAA030009200000&WT.gnb=%EB%82%B4+%EC%A7%84%EB%A3%8C%EC%A0%95%EB%B3%B4+%EC%97%B4%EB%9E%8C" class="sm">내 진료정보 열람</a></dd>
+                        							
+												
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+													
+                        							
+                        								<dd class="dd"><a href="/rb/cvapl/form.do?pgmid=HIRAA010037000100&WT.gnb=%EC%9E%90%EA%B8%B0%EA%B7%BC%EB%AC%B4%EC%9D%B4%EB%A0%A5" class="sm">자기근무이력</a></dd>
+                        							
+												
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+													
+                        							
+                        								<dd class="dd"><a href="/rb/calc/form.do?pgmid=HIRAA030037000000&WT.gnb=%EC%95%BD%EA%B5%AD%EB%B9%84%EC%9A%A9+%EA%B3%84%EC%82%B0%EA%B8%B0" class="sm">약국비용 계산기</a></dd>
+                        							
+												
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+													
+                        							
+                        								<dd class="dd"><a href="/rb/drg/drgAmtsList.do?pgmid=HIRAA030066050000&WT.gnb=7%EA%B0%9C%EC%A7%88%EB%B3%91%EA%B5%B0%28DRG%29+%EC%A7%84%EB%A3%8C%EB%B9%84+%ED%99%95%EC%9D%B8" class="sm">7개질병군(DRG) 진료비 확인</a></dd>
+                        							
+												
+												
+                        					
+                        				
+									</dl>
+								</div>
+							
+						
+        			     	        			  
+								<div class="dl" id="mGnb-anchor-HIRAA040000000000">
+									<dl>
+										<dt class="dt">제도·정책</dt>
+										
+											     
+											
+												
+												
+												
+												
+													<dd class="dd">
+														<a class="sm ico-arr" tabindex="0">보험인정기준</a>
+														<ul class="sub-ul">
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/rc/insu/insuadtcrtr/InsuAdtCrtrList.do?pgmid=HIRAA030069000400&WT.gnb=%EB%B3%B4%ED%97%98%EC%9D%B8%EC%A0%95%EA%B8%B0%EC%A4%80" class="subm">보험인정기준</a>
+                       													 
+                       												
+																
+															
+														</ul>
+													</dd>
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+												
+													<dd class="dd">
+														<a class="sm ico-arr" tabindex="0">약제기준정보</a>
+														<ul class="sub-ul">
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/bbsDummy.do?pgmid=HIRAA030023010000&WT.gnb=%EC%95%94%EC%A7%88%ED%99%98+%EC%82%AC%EC%9A%A9%EC%95%BD%EC%A0%9C+%EB%B0%8F+%EC%9A%94%EB%B2%95" class="subm">암질환 사용약제 및 요법</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/bbsDummy.do?pgmid=HIRAA030019000000&WT.gnb=%EB%AA%A9%EB%A1%9D%ED%91%9C" class="subm">목록표</a>
+                       													 
+                       												
+																
+															
+														</ul>
+													</dd>
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+												
+													<dd class="dd">
+														<a class="sm ico-arr" tabindex="0">본인부담기준</a>
+														<ul class="sub-ul">
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA030056010000&WT.gnb=%EA%B1%B4%EA%B0%95%EB%B3%B4%ED%97%98+%EB%B3%B8%EC%9D%B8%EB%B6%80%EB%8B%B4%EA%B8%B0%EC%A4%80+%EC%95%88%EB%82%B4" class="subm">건강보험 본인부담기준 안내</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA030057010000&WT.gnb=%EC%9D%98%EB%A3%8C%EA%B8%89%EC%97%AC+%EB%B3%B8%EC%9D%B8%EB%B6%80%EB%8B%B4%EA%B8%B0%EC%A4%80+%EC%95%88%EB%82%B4" class="subm">의료급여 본인부담기준 안내</a>
+                       													 
+                       												
+																
+															
+														</ul>
+													</dd>
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+												
+													<dd class="dd">
+														<a class="sm ico-arr" tabindex="0">법령정보</a>
+														<ul class="sub-ul">
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/rc/law/lawinfo/lawInfoList.do?pgmid=HIRAA030123000000&WT.gnb=%EA%B4%80%EB%A0%A8%EB%B2%95%EB%A0%B9" class="subm">관련법령</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/bbsDummy.do?pgmid=HIRAA030124000000&WT.gnb=%EC%86%8C%EC%86%A1+%EB%B0%8F+%EC%9E%90%EB%AC%B8%ED%98%84%ED%99%A9" class="subm">소송 및 자문현황</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/bbsDummy.do?pgmid=HIRAA030125000000&WT.gnb=%EC%A3%BC%EC%9A%94%ED%8C%90%EA%B2%B0" class="subm">주요판결</a>
+                       													 
+                       												
+																
+															
+														</ul>
+													</dd>
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+												
+													<dd class="dd">
+														<a class="sm ico-arr" tabindex="0">제도안내</a>
+														<ul class="sub-ul">
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA020007000000&WT.gnb=%EC%82%AC%ED%9A%8C%EB%B3%B4%EC%9E%A5%EC%A0%9C%EB%8F%84" class="subm">사회보장제도</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA020011000000&WT.gnb=%EA%B1%B4%EA%B0%95%EB%B3%B4%EC%9E%A5%EC%A0%9C%EB%8F%84" class="subm">건강보장제도</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA020014000000&WT.gnb=%EA%B5%AD%EB%AF%BC%EA%B1%B4%EA%B0%95%EB%B3%B4%ED%97%98%EC%A0%9C%EB%8F%84" class="subm">국민건강보험제도</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA020020000000&WT.gnb=%EA%B8%B0%ED%83%80%EC%A0%9C%EB%8F%84" class="subm">기타제도</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA020028000000&WT.gnb=%EC%9A%B0%EB%A6%AC%EB%82%98%EB%9D%BC+%EC%A7%84%EB%A3%8C%EB%B9%84+%EC%A7%80%EB%B6%88+%EC%A0%9C%EB%8F%84" class="subm">우리나라 진료비 지불 제도</a>
+                       													 
+                       												
+																
+															
+														</ul>
+													</dd>
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+													
+                        							
+                        								<dd class="dd"><a href="/bbsDummy.do?pgmid=HIRAA030406000000&WT.gnb=%EC%9B%B9%ED%88%B0%EC%9C%BC%EB%A1%9C+%EC%9D%B4%ED%95%B4%ED%95%98%EB%8A%94+%EC%A0%9C%EB%8F%84" class="sm">웹툰으로 이해하는 제도</a></dd>
+                        							
+												
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+													
+                        							
+                        								<dd class="dd"><a href="/rc/term/getExplainList.do?pgmid=HIRAA030407000000&WT.gnb=%EC%89%BD%EA%B2%8C+%EC%9D%B4%ED%95%B4%ED%95%98%EB%8A%94+%EC%9A%A9%EC%96%B4%EC%84%A4%EB%AA%85" class="sm">쉽게 이해하는 용어설명</a></dd>
+                        							
+												
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+													
+                        							
+                        								<dd class="dd"><a href="/bbsDummy.do?pgmid=HIRAA010003001000&WT.gnb=%EC%89%BD%EA%B2%8C+%EC%95%8C%EC%95%84%EB%B3%B4%EB%8A%94+%EC%A7%84%EB%A3%8C%EB%B9%84%EC%98%81%EC%88%98%EC%A6%9D" class="sm">쉽게 알아보는 진료비영수증</a></dd>
+                        							
+												
+												
+                        					
+                        				
+									</dl>
+								</div>
+							
+						
+        			     	        			  
+								<div class="dl" id="mGnb-anchor-HIRAA060000000000">
+									<dl>
+										<dt class="dt">국민소통</dt>
+										
+											     
+											
+												
+												
+												
+												
+													<dd class="dd">
+														<a class="sm ico-arr" tabindex="0">고객의 소리</a>
+														<ul class="sub-ul">
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/bbsDummy.do?pgmid=HIRAA010006011000&WT.gnb=%EC%83%81%EB%8B%B4%EB%AC%B8%EC%9D%98" class="subm">상담문의</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/rd/customer/listNew.do?pgmid=HIRAA010006030000&WT.gnb=%EC%8B%AC%ED%8F%89%EC%9B%90+%EC%A7%81%EC%9B%90+%EC%B9%9C%EC%A0%88%2F%EB%B6%88%EC%B9%9C%EC%A0%88" class="subm">심평원 직원 친절/불친절</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/rd/customer/listNew.do?pgmid=HIRAA010006040000&WT.gnb=%EB%82%98%EC%9D%98%EB%AF%BC%EC%9B%90" class="subm">나의민원</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/rd/customer/listNew.do?pgmid=HIRAA010006050000&WT.gnb=%EA%B5%AD%EB%AF%BC%EC%A0%9C%EC%95%88" class="subm">국민제안</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/rd/customer/listNew.do?pgmid=HIRAA010006060000&WT.gnb=%EB%82%98%EC%9D%98%EC%A0%9C%EC%95%88" class="subm">나의제안</a>
+                       													 
+                       												
+																
+															
+														</ul>
+													</dd>
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+												
+													<dd class="dd">
+														<a class="sm ico-arr" tabindex="0">개선건의</a>
+														<ul class="sub-ul">
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/rd/paycrtr/auth1.do?pgmid=HIRAA060111000000&WT.gnb=%EC%9D%98%EB%A3%8C%ED%96%89%EC%9C%84%EA%B8%B0%EC%A4%80+%EA%B0%9C%EC%84%A0%EA%B1%B4%EC%9D%98" class="subm">의료행위기준 개선건의</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/rd/paycrtr/authMat.do?pgmid=HIRAA060112000000&WT.gnb=%EC%B9%98%EB%A3%8C%EC%9E%AC%EB%A3%8C%EA%B8%B0%EC%A4%80+%EA%B0%9C%EC%84%A0%EA%B1%B4%EC%9D%98" class="subm">치료재료기준 개선건의</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/rd/paycrtr/authDrAmtStdExamAply.do?pgmid=HIRAA060113000000&WT.gnb=%EC%95%BD%EC%A0%9C%EA%B8%B0%EC%A4%80+%EA%B0%9C%EC%84%A0%EA%B1%B4%EC%9D%98" class="subm">약제기준 개선건의</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/rd/paycrtr/useInfoList.do?pgmid=HIRAA010012000000&WT.gnb=%ED%8F%89%EA%B0%80%EA%B0%9C%EC%84%A0%EC%9D%98%EA%B2%AC%EC%88%98%EB%A0%B4" class="subm">평가개선의견수렴</a>
+                       													 
+                       												
+																
+															
+														</ul>
+													</dd>
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+												
+													<dd class="dd">
+														<a class="sm ico-arr" tabindex="0">사전정보공표</a>
+														<ul class="sub-ul">
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/rd/bfrInfo/bfrInfoList.do?pgmid=HIRAA070001000110&WT.gnb=%EC%82%AC%EC%A0%84%EC%A0%95%EB%B3%B4%EA%B3%B5%ED%91%9C%EB%AA%A9%EB%A1%9D" class="subm">사전정보공표목록</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/rd/preinfo/infoopen/imptDoc/list.do?pgmid=HIRAA070001000230&WT.gnb=%EC%A3%BC%EC%9A%94%EB%AC%B8%EC%84%9C%EB%AA%A9%EB%A1%9D%EC%97%B4%EB%9E%8C" class="subm">주요문서목록열람</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/bbsDummy.do?pgmid=HIRAA070001000630&WT.gnb=%EC%A0%95%EB%B3%B4%EA%B3%B5%EA%B0%9C%EA%B2%8C%EC%8B%9C%ED%8C%90" class="subm">정보공개게시판</a>
+                       													 
+                       												
+																
+															
+														</ul>
+													</dd>
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+												
+													<dd class="dd">
+														<a class="sm ico-arr" tabindex="0">정보공개</a>
+														<ul class="sub-ul">
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA070001000211&WT.gnb=%EC%A0%95%EB%B3%B4%EA%B3%B5%EA%B0%9C%EC%95%88%EB%82%B4" class="subm">정보공개안내</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA070001000250&WT.gnb=%EC%A0%95%EB%B3%B4%EA%B3%B5%EA%B0%9C+%EC%B2%AD%EA%B5%AC" class="subm">정보공개 청구</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA070001000270&WT.gnb=%EB%B9%84%EA%B3%B5%EA%B0%9C%C2%B7%EB%B6%80%EC%A1%B4%EC%9E%AC+%EC%A0%95%EB%B3%B4+%EC%B2%AD%EA%B5%AC+%EC%82%AC%EB%A1%80" class="subm">비공개·부존재 정보 청구 사례</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA070001000430&WT.gnb=%EA%B3%B5%EA%B3%B5%EB%8D%B0%EC%9D%B4%ED%84%B0+%EA%B0%9C%EB%B0%A9" class="subm">공공데이터 개방</a>
+                       													 
+                       												
+																
+															
+														</ul>
+													</dd>
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+												
+													<dd class="dd">
+														<a class="sm ico-arr" tabindex="0">전문위원회 운영</a>
+														<ul class="sub-ul">
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA030051000002&WT.gnb=%EC%9C%84%EC%9B%90%ED%9A%8C%EB%B3%84+%EC%9C%84%EC%9B%90%EB%AA%85%EB%8B%A8" class="subm">위원회별 위원명단</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/bbsDummy.do?pgmid=HIRAA030051000009&WT.gnb=%ED%9A%8C%EC%9D%98%EA%B2%B0%EA%B3%BC+%EA%B3%B5%EA%B0%9C" class="subm">회의결과 공개</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/bbsDummy.do?pgmid=HIRAA030051000025&WT.gnb=%EC%9D%98%EB%A3%8C%ED%8F%89%EA%B0%80%EC%9C%84%EC%9B%90%ED%9A%8C" class="subm">의료평가위원회</a>
+                       													 
+                       												
+																
+															
+														</ul>
+													</dd>
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+												
+													<dd class="dd">
+														<a class="sm ico-arr" tabindex="0">커뮤니티</a>
+														<ul class="sub-ul">
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAC920010300000&WT.gnb=%EC%BB%A4%EB%AE%A4%EB%8B%88%ED%8B%B0" class="subm">커뮤니티</a>
+                       													 
+                       												
+																
+															
+														</ul>
+													</dd>
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+												
+													<dd class="dd">
+														<a class="sm ico-arr" tabindex="0">신고센터</a>
+														<ul class="sub-ul">
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/rd/cycvapl/badDmd.do?pgmid=HIRAA010016000000&WT.gnb=%EB%B6%88%EA%B3%B5%EC%A0%95%EC%8B%A0%EA%B3%A0" class="subm">불공정신고</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA010033000000&WT.gnb=%EA%B3%B5%EC%9D%B5%EC%8B%A0%EA%B3%A0" class="subm">공익신고</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													 
+                       														<li><a href="https://www.redwhistle.org/report/reportCheck.asp?organ=176&amp;pgmid=HIRAA010032000000&WT.gnb=%ED%97%AC%ED%94%84%EB%9D%BC%EC%9D%B8%EC%9D%B5%EB%AA%85%EC%8B%A0%EA%B3%A0" class="subm ico-go"  target="_blank" title="새창열림">헬프라인익명신고</a>
+                       													
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA010010000000&WT.gnb=%EB%B6%80%EC%A0%95%EC%B2%AD%ED%83%81+%EB%B0%8F+%EC%88%98%EC%88%98%EA%B8%88%EC%A7%80%EA%B8%88%ED%92%88+%EB%93%B1+%EC%8B%A0%EA%B3%A0" class="subm">부정청탁 및 수수금지금품 등 신고</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA010045000000&WT.gnb=%EB%8C%80%EB%A6%AC%EC%9D%B8+%EC%95%88%EC%8B%AC%EC%8B%A0%EA%B3%A0+%EC%A0%9C%EB%8F%84" class="subm">대리인 안심신고 제도</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/rd/customer/list.do?pgmid=HIRAA010036000000&WT.gnb=%EC%98%88%EC%82%B0%EB%82%AD%EB%B9%84%EC%8B%A0%EA%B3%A0" class="subm">예산낭비신고</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA010027100001&WT.gnb=%EA%B8%B0%EC%97%85%EC%84%B1%EC%9E%A5%EC%9D%91%EB%8B%B5%EC%84%BC%ED%84%B0" class="subm">기업성장응답센터</a>
+                       													 
+                       												
+																
+															
+														</ul>
+													</dd>
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+												
+													<dd class="dd">
+														<a class="sm ico-arr" tabindex="0">공시 · 공표</a>
+														<ul class="sub-ul">
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA020050000001&WT.gnb=%EA%B3%B5%EC%8B%9C%EC%86%A1%EB%8B%AC" class="subm">공시송달</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA020047010000&WT.gnb=%EA%B1%B0%EC%A7%93%EC%B2%AD%EA%B5%AC%EC%9A%94%EC%96%91%EA%B8%B0%EA%B4%80" class="subm">거짓청구요양기관</a>
+                       													 
+                       												
+																
+															
+														</ul>
+													</dd>
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+												
+													<dd class="dd">
+														<a class="sm ico-arr" tabindex="0">ICT 소통채널</a>
+														<ul class="sub-ul">
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/rd/ictCmm/joinForm.do?pgmid=HIRAA010043200001&WT.gnb=%EC%A0%95%EB%B3%B4%ED%99%94%EC%82%AC%EC%97%85+%EC%86%8C%ED%86%B5%EC%B1%84%EB%84%90" class="subm">정보화사업 소통채널</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/rd/techpps/techppsIntro.do?pgmid=HIRAA010043100000&WT.gnb=ICT%EA%B8%B0%EC%88%A0%EC%A0%9C%EC%95%88" class="subm">ICT기술제안</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/rd/cloudCnfc/cloudCnfcEntryReqList.do?pgmid=HIRAA010043300000&WT.gnb=%EB%94%94%EC%A7%80%ED%84%B8%ED%81%B4%EB%9D%BC%EC%9A%B0%EB%93%9C%EC%84%BC%ED%84%B0+%EC%B6%9C%EC%9E%85+%EC%9A%94%EC%B2%AD" class="subm">디지털클라우드센터 출입 요청</a>
+                       													 
+                       												
+																
+															
+														</ul>
+													</dd>
+												
+                        					
+                        				
+									</dl>
+								</div>
+							
+						
+        			     	        			  
+								<div class="dl" id="mGnb-anchor-HIRAA940001000000">
+									<dl>
+										<dt class="dt">기관소식</dt>
+										
+											     
+											
+												
+												
+												
+												
+													<dd class="dd">
+														<a class="sm ico-arr" tabindex="0">심평원 소개</a>
+														<ul class="sub-ul">
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA040006000000&WT.gnb=%EC%9B%90%EC%9E%A5%EC%86%8C%EA%B0%9C" class="subm">원장소개</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA040003000100&WT.gnb=%EC%A0%84%EB%9E%B5%EC%B2%B4%EA%B3%84+%EB%B0%8F+CI" class="subm">전략체계 및 CI</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA040075000000&WT.gnb=%EC%9D%B8%EC%9E%AC%EC%83%81" class="subm">인재상</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/bbsDummy.do?pgmid=HIRAA040083000000&WT.gnb=%EC%88%98%EC%83%81%EB%82%B4%EC%97%AD" class="subm">수상내역</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA040090000100&WT.gnb=%EC%97%B0%ED%98%81" class="subm">연혁</a>
+                       													 
+                       												
+																
+															
+														</ul>
+													</dd>
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+												
+													<dd class="dd">
+														<a class="sm ico-arr" tabindex="0">조직 및 인원</a>
+														<ul class="sub-ul">
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA040011000000&WT.gnb=%EC%A1%B0%EC%A7%81+%EB%B0%8F+%EB%B6%80%EC%84%9C%EC%95%88%EB%82%B4" class="subm">조직 및 부서안내</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/re/org/staffSearchList.do?pgmid=HIRAA040002001000&WT.gnb=%EC%97%B0%EB%9D%BD%EC%B2%98+%EC%B0%BE%EA%B8%B0" class="subm">연락처 찾기</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA030090100000&WT.gnb=%EC%8B%AC%EC%82%AC%ED%8F%89%EA%B0%80%EC%A0%95%EC%B1%85%EC%97%B0%EA%B5%AC%EC%86%8C" class="subm">심사평가정책연구소</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA040101000000&WT.gnb=%EB%B3%B8%EB%B6%80%EC%86%8C%EA%B0%9C" class="subm">본부소개</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA040095000000&WT.gnb=%EC%B0%BE%EC%95%84%EC%98%A4%EC%8B%9C%EB%8A%94+%EA%B8%B8" class="subm">찾아오시는 길</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA990001000500&WT.gnb=%EC%97%85%EB%AC%B4%EC%95%88%EB%82%B4" class="subm">업무안내</a>
+                       													 
+                       												
+																
+															
+														</ul>
+													</dd>
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+												
+													<dd class="dd">
+														<a class="sm ico-arr" tabindex="0">HIRA 소식</a>
+														<ul class="sub-ul">
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/bbsDummy.do?pgmid=HIRAA020002000100&WT.gnb=%EA%B3%B5%EC%A7%80%EC%82%AC%ED%95%AD" class="subm">공지사항</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/bbsDummy.do?pgmid=HIRAA020041000100&WT.gnb=%EB%B3%B4%EB%8F%84%EC%9E%90%EB%A3%8C" class="subm">보도자료</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/bbsDummy.do?pgmid=HIRAA020049000100&WT.gnb=%EC%8B%AC%ED%8F%89%EC%A0%95%EB%B3%B4%ED%86%B5" class="subm">심평정보통</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													 
+                       														<li><a href="http://www.hirasabo.or.kr/?pgmid=HIRAA020049000200&WT.gnb=Hira+%EC%82%AC%EB%B3%B4%28%EA%B1%B4%EA%B0%80%EC%82%AC%29" class="subm ico-go"  target="_blank" title="새창열림">Hira 사보(건가사)</a>
+                       													
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/bbsDummy.do?pgmid=HIRAA040002200200&WT.gnb=HIRA+%ED%99%8D%EB%B3%B4%EA%B4%80" class="subm">HIRA 홍보관</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/re/news/getPopUpZoneList.do?pgmid=HIRAA020048000100&WT.gnb=%EB%B0%B0%EB%84%88%EC%A1%B4" class="subm">배너존</a>
+                       													 
+                       												
+																
+															
+														</ul>
+													</dd>
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+												
+													<dd class="dd">
+														<a class="sm ico-arr" tabindex="0">채용안내</a>
+														<ul class="sub-ul">
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA040077000000&WT.gnb=%EC%B1%84%EC%9A%A9%EC%A0%95%EB%B3%B4" class="subm">채용정보</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/re/recruit/recruitAdList.do?pgmid=HIRAA040078000000&WT.gnb=%EC%B1%84%EC%9A%A9%EA%B3%B5%EA%B3%A0" class="subm">채용공고</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/re/recruit/recruitResultList.do?pgmid=HIRAA040079000000&WT.gnb=%ED%95%A9%EA%B2%A9%EC%9E%90%EC%A1%B0%ED%9A%8C" class="subm">합격자조회</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/bbsDummy.do?pgmid=HIRAA040086000000&WT.gnb=%EC%B9%9C%EC%9D%B8%EC%B2%99+%EC%B1%84%EC%9A%A9%EC%9D%B8%EC%9B%90+%EA%B3%B5%EA%B0%9C" class="subm">친인척 채용인원 공개</a>
+                       													 
+                       												
+																
+															
+														</ul>
+													</dd>
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+												
+													<dd class="dd">
+														<a class="sm ico-arr" tabindex="0">상생협력</a>
+														<ul class="sub-ul">
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/re/coop/insertForm.do?pgmid=HIRAA010044000001&WT.gnb=%ED%98%91%EB%A0%A5%EC%97%85%EC%B2%B4+%EC%A0%95%EB%B3%B4+%EB%93%B1%EB%A1%9D" class="subm">협력업체 정보 등록</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/bbsDummy.do?pgmid=HIRAA020004000000&WT.gnb=%EA%B3%84%EC%95%BD%EC%A0%95%EB%B3%B4" class="subm">계약정보</a>
+                       													 
+                       												
+																
+															
+														</ul>
+													</dd>
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+												
+													<dd class="dd">
+														<a class="sm ico-arr" tabindex="0">열린 경영</a>
+														<ul class="sub-ul">
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA020003200101&WT.gnb=ESG+%EA%B2%BD%EC%98%81" class="subm">ESG 경영</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA940002000001&WT.gnb=%EC%95%88%EC%A0%84%EC%A4%91%EC%8B%AC%EA%B2%BD%EC%98%81" class="subm">안전중심경영</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA040062000100&WT.gnb=%EC%82%AC%ED%9A%8C%EA%B3%B5%ED%97%8C" class="subm">사회공헌</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA010035000100&WT.gnb=%EA%B3%A0%EA%B0%9D%EB%A7%8C%EC%A1%B1%EA%B2%BD%EC%98%81" class="subm">고객만족경영</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA040070000000&WT.gnb=%EC%9C%A4%EB%A6%AC%C2%B7%EC%9D%B8%EA%B6%8C%EA%B2%BD%EC%98%81" class="subm">윤리·인권경영</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA040098000000&WT.gnb=%EA%B2%BD%EC%98%81%EC%A0%95%EB%B3%B4%EA%B3%B5%EA%B0%9C" class="subm">경영정보공개</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA070002001000&WT.gnb=%EC%82%AC%EC%97%85%EC%8B%A4%EB%AA%85%EC%A0%9C" class="subm">사업실명제</a>
+                       													 
+                       												
+																
+															
+														</ul>
+													</dd>
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+												
+													<dd class="dd">
+														<a class="sm ico-arr" tabindex="0">내부규정</a>
+														<ul class="sub-ul">
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/bbsDummy.do?pgmid=HIRAA040055000000&WT.gnb=%EC%8B%AC%EC%82%AC%ED%8F%89%EA%B0%80%EC%9B%90%EB%82%B4%EB%B6%80%EA%B7%9C%EC%A0%95" class="subm">심사평가원내부규정</a>
+                       													 
+                       												
+																
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/bbsDummy.do?pgmid=HIRAA010034001000&WT.gnb=%EB%82%B4%EB%B6%80%EA%B7%9C%EC%A0%95+%EC%A0%9C%C2%B7%EA%B0%9C%EC%A0%95%EC%98%88%EA%B3%A0" class="subm">내부규정 제·개정예고</a>
+                       													 
+                       												
+																
+															
+														</ul>
+													</dd>
+												
+                        					
+                        				
+											     
+											
+												
+												
+												
+												
+													<dd class="dd">
+														<a class="sm ico-arr" tabindex="0">공공자원 개방안내 및 신청</a>
+														<ul class="sub-ul">
+															
+																    
+																
+																	
+                       												
+                       													
+                       													
+                       														<li><a href="/dummy.do?pgmid=HIRAA010031010000&WT.gnb=%EA%B0%9C%EB%B0%A9%EC%95%88%EB%82%B4" class="subm">개방안내</a>
+                       													 
+                       												
+																
+															
+														</ul>
+													</dd>
+												
+                        					
+                        				
+									</dl>
+								</div>
+							
+						
+        			     	
+						
+					</div>
+				</div>
+				<div class="m-gnb-body-btm">
+					<a href="/dummy.do?pgmid=HIRAC920012000000" class="btn btn-txt sm">개인정보 처리방침</a>
+				</div>
+			</div>
+		</div>
+	</div>
+	<!-- //모바일 : 전체메뉴 -->
+	</div>
+	
+		<div id="container">
+			<!-- left include -->
+			
+
+ 
+
+
+
+
+
+		<div id="snb">
+			<h2 class="tit">제도·정책</h2>
+			<ul class="snb-list">
+				
+				 
+        			   
+        				     			  
+        			    
+        			    	
+                            
+                            
+                             
+                            	<li class="dept"><a href="#a">보험인정기준</a> 
+                            
+                            
+        			   <!-- <a  href="/rc/insu/insuadtcrtr/InsuAdtCrtrList.do?pgmid=HIRAA030069000400"  >
+        			    -->
+        			   <ul> <!-- 3depth -->
+        			   
+        			   		     		
+        			        
+	                            
+	                             <li> 
+	                         
+	                         
+                       			
+                       			
+                       				<a href="/rc/insu/insuadtcrtr/InsuAdtCrtrList.do?pgmid=HIRAA030069000400&WT.gnb=%EB%B3%B4%ED%97%98%EC%9D%B8%EC%A0%95%EA%B8%B0%EC%A4%80"  >
+                       			
+                       				    
+        			    	보험인정기준</a></li>
+        			   
+        			    </ul>        			    
+						</li>	
+					   
+        				     			  
+        			    
+        			    	
+                             
+                            	<li class="dept current"><a href="#a"  title="선택됨">약제기준정보</a>
+                            
+                            
+                            
+                            
+        			   <!-- <a  href="/bbsDummy.do?pgmid=HIRAA030023010000"  >
+        			    -->
+        			   <ul> <!-- 3depth -->
+        			   
+        			   		     		
+        			        
+	                             <li class="current"> 
+	                            
+	                         
+	                         
+                       			
+                       			
+                       				<a href="/bbsDummy.do?pgmid=HIRAA030023010000&WT.gnb=%EC%95%94%EC%A7%88%ED%99%98+%EC%82%AC%EC%9A%A9%EC%95%BD%EC%A0%9C+%EB%B0%8F+%EC%9A%94%EB%B2%95"  title="선택됨" >
+                       			
+                       				    
+        			    	암질환 사용약제 및 요법</a></li>
+        			   
+        			   		     		
+        			        
+	                            
+	                             <li> 
+	                         
+	                         
+                       			
+                       			
+                       				<a href="/bbsDummy.do?pgmid=HIRAA030019000000&WT.gnb=%EB%AA%A9%EB%A1%9D%ED%91%9C"  >
+                       			
+                       				    
+        			    	목록표</a></li>
+        			   
+        			    </ul>        			    
+						</li>	
+					   
+        				     			  
+        			    
+        			    	
+                            
+                            
+                             
+                            	<li class="dept"><a href="#a">본인부담기준</a> 
+                            
+                            
+        			   <!-- <a  href="/dummy.do?pgmid=HIRAA030056010000"  >
+        			    -->
+        			   <ul> <!-- 3depth -->
+        			   
+        			   		     		
+        			        
+	                            
+	                             <li> 
+	                         
+	                         
+                       			
+                       			
+                       				<a href="/dummy.do?pgmid=HIRAA030056010000&WT.gnb=%EA%B1%B4%EA%B0%95%EB%B3%B4%ED%97%98+%EB%B3%B8%EC%9D%B8%EB%B6%80%EB%8B%B4%EA%B8%B0%EC%A4%80+%EC%95%88%EB%82%B4"  >
+                       			
+                       				    
+        			    	건강보험 본인부담기준 안내</a></li>
+        			   
+        			   		     		
+        			        
+	                            
+	                             <li> 
+	                         
+	                         
+                       			
+                       			
+                       				<a href="/dummy.do?pgmid=HIRAA030057010000&WT.gnb=%EC%9D%98%EB%A3%8C%EA%B8%89%EC%97%AC+%EB%B3%B8%EC%9D%B8%EB%B6%80%EB%8B%B4%EA%B8%B0%EC%A4%80+%EC%95%88%EB%82%B4"  >
+                       			
+                       				    
+        			    	의료급여 본인부담기준 안내</a></li>
+        			   
+        			    </ul>        			    
+						</li>	
+					   
+        				     			  
+        			    
+        			    	
+                            
+                            
+                             
+                            	<li class="dept"><a href="#a">법령정보</a> 
+                            
+                            
+        			   <!-- <a  href="/rc/law/lawinfo/lawInfoList.do?pgmid=HIRAA030123000000"  >
+        			    -->
+        			   <ul> <!-- 3depth -->
+        			   
+        			   		     		
+        			        
+	                            
+	                             <li> 
+	                         
+	                         
+                       			
+                       			
+                       				<a href="/rc/law/lawinfo/lawInfoList.do?pgmid=HIRAA030123000000&WT.gnb=%EA%B4%80%EB%A0%A8%EB%B2%95%EB%A0%B9"  >
+                       			
+                       				    
+        			    	관련법령</a></li>
+        			   
+        			   		     		
+        			        
+	                            
+	                             <li> 
+	                         
+	                         
+                       			
+                       			
+                       				<a href="/bbsDummy.do?pgmid=HIRAA030124000000&WT.gnb=%EC%86%8C%EC%86%A1+%EB%B0%8F+%EC%9E%90%EB%AC%B8%ED%98%84%ED%99%A9"  >
+                       			
+                       				    
+        			    	소송 및 자문현황</a></li>
+        			   
+        			   		     		
+        			        
+	                            
+	                             <li> 
+	                         
+	                         
+                       			
+                       			
+                       				<a href="/bbsDummy.do?pgmid=HIRAA030125000000&WT.gnb=%EC%A3%BC%EC%9A%94%ED%8C%90%EA%B2%B0"  >
+                       			
+                       				    
+        			    	주요판결</a></li>
+        			   
+        			    </ul>        			    
+						</li>	
+					   
+        				     			  
+        			    
+        			    	
+                            
+                            
+                             
+                            	<li class="dept"><a href="#a">제도안내</a> 
+                            
+                            
+        			   <!-- <a  href="/dummy.do?pgmid=HIRAA020007000000"  >
+        			    -->
+        			   <ul> <!-- 3depth -->
+        			   
+        			   		     		
+        			        
+	                            
+	                             <li> 
+	                         
+	                         
+                       			
+                       			
+                       				<a href="/dummy.do?pgmid=HIRAA020007000000&WT.gnb=%EC%82%AC%ED%9A%8C%EB%B3%B4%EC%9E%A5%EC%A0%9C%EB%8F%84"  >
+                       			
+                       				    
+        			    	사회보장제도</a></li>
+        			   
+        			   		     		
+        			        
+	                            
+	                             <li> 
+	                         
+	                         
+                       			
+                       			
+                       				<a href="/dummy.do?pgmid=HIRAA020011000000&WT.gnb=%EA%B1%B4%EA%B0%95%EB%B3%B4%EC%9E%A5%EC%A0%9C%EB%8F%84"  >
+                       			
+                       				    
+        			    	건강보장제도</a></li>
+        			   
+        			   		     		
+        			        
+	                            
+	                             <li> 
+	                         
+	                         
+                       			
+                       			
+                       				<a href="/dummy.do?pgmid=HIRAA020014000000&WT.gnb=%EA%B5%AD%EB%AF%BC%EA%B1%B4%EA%B0%95%EB%B3%B4%ED%97%98%EC%A0%9C%EB%8F%84"  >
+                       			
+                       				    
+        			    	국민건강보험제도</a></li>
+        			   
+        			   		     		
+        			        
+	                            
+	                             <li> 
+	                         
+	                         
+                       			
+                       			
+                       				<a href="/dummy.do?pgmid=HIRAA020020000000&WT.gnb=%EA%B8%B0%ED%83%80%EC%A0%9C%EB%8F%84"  >
+                       			
+                       				    
+        			    	기타제도</a></li>
+        			   
+        			   		     		
+        			        
+	                            
+	                             <li> 
+	                         
+	                         
+                       			
+                       			
+                       				<a href="/dummy.do?pgmid=HIRAA020028000000&WT.gnb=%EC%9A%B0%EB%A6%AC%EB%82%98%EB%9D%BC+%EC%A7%84%EB%A3%8C%EB%B9%84+%EC%A7%80%EB%B6%88+%EC%A0%9C%EB%8F%84"  >
+                       			
+                       				    
+        			    	우리나라 진료비 지불 제도</a></li>
+        			   
+        			    </ul>        			    
+						</li>	
+					   
+        				     			  
+        			    
+        			    	
+                            
+                            
+                            	
+                        			
+                        			
+                        				<li><a href="/bbsDummy.do?pgmid=HIRAA030406000000&WT.gnb=%EC%9B%B9%ED%88%B0%EC%9C%BC%EB%A1%9C+%EC%9D%B4%ED%95%B4%ED%95%98%EB%8A%94+%EC%A0%9C%EB%8F%84" >웹툰으로 이해하는 제도
+                        			
+                        		
+                            	 
+                            	 	
+                            	 </a>
+                            
+                            
+                            
+        			   <!-- <a  href="/bbsDummy.do?pgmid=HIRAA030406000000"  >
+        			    -->
+        			   <ul> <!-- 3depth -->
+        			   
+        			    </ul>        			    
+						</li>	
+					   
+        				     			  
+        			    
+        			    	
+                            
+                            
+                            	
+                        			
+                        			
+                        				<li><a href="/rc/term/getExplainList.do?pgmid=HIRAA030407000000&WT.gnb=%EC%89%BD%EA%B2%8C+%EC%9D%B4%ED%95%B4%ED%95%98%EB%8A%94+%EC%9A%A9%EC%96%B4%EC%84%A4%EB%AA%85" >쉽게 이해하는 용어설명
+                        			
+                        		
+                            	 
+                            	 	
+                            	 </a>
+                            
+                            
+                            
+        			   <!-- <a  href="/rc/term/getExplainList.do?pgmid=HIRAA030407000000"  >
+        			    -->
+        			   <ul> <!-- 3depth -->
+        			   
+        			    </ul>        			    
+						</li>	
+					   
+        				     			  
+        			    
+        			    	
+                            
+                            
+                            	
+                        			
+                        			
+                        				<li><a href="/bbsDummy.do?pgmid=HIRAA010003001000&WT.gnb=%EC%89%BD%EA%B2%8C+%EC%95%8C%EC%95%84%EB%B3%B4%EB%8A%94+%EC%A7%84%EB%A3%8C%EB%B9%84%EC%98%81%EC%88%98%EC%A6%9D" >쉽게 알아보는 진료비영수증
+                        			
+                        		
+                            	 
+                            	 	
+                            	 </a>
+                            
+                            
+                            
+        			   <!-- <a  href="/bbsDummy.do?pgmid=HIRAA010003001000"  >
+        			    -->
+        			   <ul> <!-- 3depth -->
+        			   
+        			    </ul>        			    
+						</li>	
+									
+			 	
+			   </ul>
+		</div>
+		<div id="contHead">
+			<h3 class="main-title"> 암질환 사용약제 및 요법</h3>
+			<ul id="util">
+				<li id="favorite">
+					<button type="button" class="btn-favorite " onclick="Header.favorite('01', '제도·정책 > 약제기준정보 > 암질환 사용약제 및 요법 > 항암화학요법', '/bbsDummy.do?pgmid=HIRAA030023030000','HIRAA030023030000', '',this);">
+						<i class="icon-util-favorite" title="즐겨찾기 추가" aria-label="즐겨찾기 추가"></i>
+					</button>
+				</li>
+				<li><button type="button" class="btn-share-open"><i class="icon-util-share" title="공유" aria-label="공유"></i></button>
+					<ul class="utilshare-list">
+						<li><a href="#none" title="새창열림" onclick="Navi.naverBlog(); return false;"><i class="icon-sns2-blog"></i>블로그</a></li>
+						<li><a href="#none" title="새창열림" onclick="Navi.facebook(); return false;"><i class="icon-sns2-facebook"></i>페이스북</a></li>
+						<li><a href="#none" title="새창열림" onclick="Navi.twitter(); return false;"><i class="icon-sns2-twitter"></i>트위터</a></li>
+						<li><a href="#none" title="새창열림" onclick="Navi.kakao(); return false;"><i class="icon-sns2-kakaotalk"></i>카카오스토리</a></li>
+						<li><a href="#none" onclick="Navi.copyUrl(); return false;" id="urlCopy"><i class="icon-sns2-url"></i>경로복사</a></li>
+					</ul>
+					<button type="button" class="btn-share-close"><i class="icon-util-close" title="닫기" aria-label="닫기"></i></button>
+				</li>
+				<li class="thide"><button type="button" class="btn-print" title="새창열림" onclick="Header.goPrint(); return false;"><i class="icon-util-print" aria-label="인쇄"></i></button></li>
+			</ul>
+		</div>
+			<div id="cont" class="content">
+				
+
+ 
+<ol id="nav">
+	
+	
+	<li><a href="/main.do" id="contHeadTitle">홈</a></li>
+	
+		
+		
+		<li><a href="/rc/insu/insuadtcrtr/InsuAdtCrtrList.do?pgmid=HIRAA030069000400">제도·정책</a></li>                             
+	
+		
+		
+		<li><a href="/bbsDummy.do?pgmid=HIRAA030023010000">약제기준정보</a></li>                             
+	
+		
+		
+		<li><a href="/bbsDummy.do?pgmid=HIRAA030023010000">암질환 사용약제 및 요법</a></li>                             
+	
+		
+		
+			
+		
+		<li><a href="#">항암화학요법</a></li>                             
+	 
+</ol>
+				<div class="bbsTopCont">
+				   <div class="wrap_tab usebox_tab usebox-tab4">
+			           <ul>
+			              <li><a href="/bbsDummy.do?pgmid=HIRAA030023010000"><span>공고</span></a></li>
+	                      <li><a href="/rc/drug/anticancer/antiCncrAnnceList.do?pgmid=HIRAA030023020000"><span>공고예고</span></a></li>
+	                      <li class="on"><a href="/bbsDummy.do?pgmid=HIRAA030023030000"><span>항암화학요법</span></a></li>
+	                      <li><a href="/bbsDummy.do?pgmid=HIRAA030023080000"><span>FAQ</span></a></li>
+			           </ul>
+				   </div>
+				</div>
+				<!-- wrap_cont -->
+				<div class="wrap_cont">
+					<div class="renew-top-introduce renew-intorduce-btn-ok">
+						<div class="renew-introduce-text">
+							<strong class="renew-lord-text">건강보험심사평가원에서는 암질환심의위원회를 거쳐 보험급여가 되는 항암화학요법에 대한 유익한 정보를 제공하고 있습니다.</strong>
+							<p class="renew-small-text">건강보험심사평가원장이 공고한 항암화학요법 등에서 참고한 외국 가이드라인을 보시려면 해당 가이드라인을 선택 하세요.</p>
+						</div>
+						<p class="blt01 mt10">외국 암관련정보 사이트</p>
+						<div class="renew-intorduce-btn">
+							<a href="https://www.nccn.org/guidelines/category_1" class="btn_nor2 type2 link" target="_blank" title="새창"><span>NCCN</span></a>
+							<a href="https://www.esmo.org/" class="btn_nor2 type2 link" target="_blank" title="새창"><span>ESMO</span></a>
+							<a href="https://www.asco.org/" class="btn_nor2 type2 link" target="_blank" title="새창"><span>ASCO</span></a>
+						</div>
+					</div>
+			    	
+
+
+
+
+
+
+
+<script type="text/javascript">
+/* pagination 페이지 링크 function */
+
+/* 
+ * 페이지 갯수 변경 후 submit
+ */
+function pageSizeChange(){
+	$("#selPageSize").val(document.listForm.selPageSize.value);
+	document.listForm.action = "";
+   	document.listForm.submit();
+}
+/*
+ * 화면 로드시 페이지 갯수 설정
+ */
+window.onload = function(){
+	$("#selPageSize").val('10');
+}
+$(function() {
+	if('' != '')
+		$("#selSearchCondition").val('');
+});
+</script>
+
+
+ <!-- 관련서식 -->
+
+
+
+
+
+
+
+
+		<form id="bbsEngineThreadVO" name="listForm" action="/bbsDummy.do?pgmid=HIRAA030023030000" method="post">
+            <input type="hidden" id="admin" name="admin" value="user" />
+             <!-- 검색 영역 -->
+	            <div class="search-wrap txtType">
+	                <input type="hidden" id="selSearchCondition" name="searchCondition" value="TXT12" /> <!-- 관련서식은 제목으로 검색 -->
+	                <input autocomplete="off" type="text" class="inptype" name="searchKeyword" value="" placeholder="검색어를 입력하세요" title="검색어 입력" />
+	                <a href="javascript:goPage(1)" type="button" class="btn-search">검색<i class="icon-search"></i></a>
+	            </div><!-- 검색 영역 끝-->
+            <p class="total-txt"><i class="icon-total"></i>전체 : <span class="fcO">2</span>건 [1/1페이지]</p>
+            
+            <div class="bbsCnt">
+                <select id="selPageSize" name="pageUnit" class="opt01" title="게시글 수량">
+                    <option value="10">10개씩 보기</option>
+                    <option value="20">20개씩 보기</option>
+                    <option value="30">30개씩 보기</option>
+                </select>
+                <a id="btnSubmit" href="javascript:pageSizeChange()" class="inp_btn"><span>확인</span></a>
+            </div>
+            
+           
+            <div class="tb-type01 downType">
+            <table>
+                <caption>관련서식 게시판으로 번호, 제목, 첨부를 나타내는 표</caption>
+				<colgroup>
+				<col style="width: 76px">
+				<col>
+				<col style="width: 176px">
+				</colgroup>
+				<thead>
+					<tr>
+						<th scope="col">번호</th>
+						<th scope="col">제목</th>
+						<th scope="col">첨부</th>
+					</tr>
+				</thead>
+				<tbody>
+				
+                
+                    
+                    
+                
+                
+                
+                
+                    <tr>
+                        <td class="col-num">2</td>
+                    
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        <td  class="col-tit">허가초과 항암요법</td>
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                    
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                    
+                        
+	                        <td class="col-file">
+		                        
+		                        	<a href="#none" onclick="downLoadBbs('1','8','5','487');" class="btn_file">다운로드</a>
+		                        
+	                        </td>
+                        
+                    </tr>
+                
+                    <tr>
+                        <td class="col-num">1</td>
+                    
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        <td  class="col-tit">항암화학요법 등 공고내용 전문</td>
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                    
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                    
+                        
+	                        <td class="col-file">
+		                        
+		                        	<a href="#none" onclick="downLoadBbs('1','7','5','487');" class="btn_file">다운로드</a>
+		                        
+	                        </td>
+                        
+                    </tr>
+                
+                
+                 
+            </tbody>
+        </table>
+        </div>
+        <div class="pagination" id="pagingPc">
+            <ul><li class="on"><a href="#none" title="선택됨" onclick="goPage(1); return false;">1</a></li></ul>
+            <input id="pageIndex" name="pageIndex" type="hidden" value="1"/>
+        </div>
+        <div class="pagination" id="pagingM">
+            <ul><li class="on"><a href="#none" title="선택됨" onclick="goPage(1); return false;">1</a></li></ul>
+            <input id="pageIndex2" name="pageIndex2" type="hidden" value="1"/>
+        </div>
+        <!-- 공공누리 제4유형 -->  
+<!-- 		<div class="callList04"> -->
+
+<!-- 			&nbsp;본 저작물은 "공공누리" <a href="http://www.kogl.or.kr/info/licenseType4.do" target="_blank">제4유형:출처표시+상업적 이용금지+변경금지</a> 조건에 따라 이용 할 수 있습니다.</p> -->
+<!-- 		</div> -->
+    </form>
+
+
+
+				</div>
+				<!-- wrap_cont 끝 -->
+				<!-- satisfaction include -->
+				
+<script type="text/javascript">
+	var s = setTimeout(function() {
+		Navi.contact('HIRAA030023030000'); 	
+	}, 100);
+</script>
+<div class="satisfaction-wrap">
+  
+	<form name="satis-form" id="satis-form" action="/co/satis/create.do" onsubmit="return false;">
+		<input type="hidden" name="menuUrl" value="/bbsDummy.do" />
+		<input type="hidden" name="pgmid" value="HIRAA030023030000" />
+		<input type="hidden" id="satisType" name="satisType" />
+		
+	    <div class="satisfaction-survey">
+	        <p><i class="icon-survey"></i>열람하신 정보에 대해 만족하십니까?</p>
+	        <div class="satisfaction-star">
+	            <div class="radio">
+	            	<input type="radio" name="star" id="star01" onclick="Navi.newSatis('5');">
+	            	<label for="star01" class="radio">매우 만족</label>
+	            </div>
+	            <div class="radio">
+	            	<input type="radio" name="star" id="star02" onclick="Navi.newSatis('4');">
+	            	<label for="star02" class="radio">만족</label>
+	            </div>
+	            <div class="radio">
+	            	<input type="radio" name="star" id="star03" onclick="Navi.newSatis('3');">
+	            	<label for="star03" class="radio">보통</label>
+	            </div>
+	            <div class="radio">
+	            	<input type="radio" name="star" id="star04" onclick="Navi.newSatis('2');">
+	            	<label for="star04" class="radio">불만족</label>
+	            </div>
+	            <div class="radio">
+	            	<input type="radio" name="star" id="star05" onclick="Navi.newSatis('1');">
+	            	<label for="star05" class="radio">매우 불만족</label>
+	            </div>
+	        </div>
+	        <div class="satisfaction-opinion">
+	            <input type="text" id="rmk" name="rmk" maxlength="50" placeholder="의견을 입력해 주세요" title="만족도 의견 입력란">
+	            <button type="button" onclick=" Navi.satis();" class="btn-confirm">의견등록</button>
+	        </div>
+	    </div>
+	</form>
+    <dl class="satisfaction-info">
+		<dt id="contact-01-dept-nm">담당부서</dt>
+		<dd id="contact-02-dept-nm"></dd>
+		<dt id="contact-01-dept-tl">문의전화</dt>
+		<dd id="contact-02-dept-tl"></dd>
+		<dt id="contact-01-dept-fx">팩스</dt>
+		<dd id="contact-02-dept-fx"></dd>
+		
+		
+		<dt id="contact-01-dept-em">담당자</dt>
+		<dd id="contact-02-dept-em"></dd>
+		
+		
+		<dt id="content-01-upda-dd">수정일</dt>
+		<dd id="content-02-upda-dd"></dd>
+    </dl>
+</div>
+
+			</div>
+		</div>
+		<!-- footer include -->
+		
+
+	<footer id="footer2">
+	<div class="foot-quick">
+		<div class="inner">
+			<button type="button" class="link" title="주요연계업무 사이트" onclick="Common.popupEvent('#popFootLink1');">주요연계업무 사이트</button>
+			<button type="button" class="link" title="관련 사이트" onclick="Common.popupEvent('#popFootLink2');">관련 사이트</button>
+		</div>
+	</div>
+	<div class="popup-wrap-full2" data-type="full" id="popFootLink1" tabindex="0">
+		<div class="popup-in">
+			<div class="popup">
+				<div class="popup-head">
+					<h1 class="pop-tit">주요연계업무 사이트</h1>
+				</div>
+				<div class="popup-body">
+					<ul class-"pop-foot-links">
+						
+							<li><a href="https://biz.hira.or.kr" target="_blank" title="새창열림">요양기관업무포털</a></li>
+						
+							<li><a href="http://www.hurb.or.kr" target="_blank" title="새창열림">보건의료자원 통합신고포털</a></li>
+						
+							<li><a href="https://khqa.kr" target="_blank" title="새창열림">병원평가통합포털</a></li>
+						
+							<li><a href="https://opendata.hira.or.kr/home.do" target="_blank" title="새창열림">보건의료 빅데이터개방시스템</a></li>
+						
+							<li><a href="https://biz.kpis.or.kr" target="_blank" title="새창열림">의약품관리종합정보센터</a></li>
+						
+							<li><a href="https://www.hira.or.kr/kops" target="_blank" title="새창열림">지출보고서 관리시스템</a></li>
+						
+							<li><a href="https://rcsbc.hira.or.kr" target="_blank" title="새창열림">비대면 심사자문 업무포털 시스템</a></li>
+						
+							<li><a href="https://repository.hira.or.kr" target="_blank" title="새창열림">HIRA OAK 리포지터리</a></li>
+						
+							<li><a href="https://hira-research.or.kr" target="_blank" title="새창열림">건강보험심사평가원 학술지 HIRA Research</a></li>
+						
+							<li><a href="https://www.redwhistle.org/main" target="_blank" title="새창열림">헬프라인 익명신고</a></li>
+						
+							<li><a href="http://rulesvc.hira.or.kr" target="_blank" title="새창열림">청구방법 및 급여기준 조회시스템</a></li>
+						
+							<li><a href="/dummy.do?pgmid=HIRAA020047010000" target="_blank" title="새창열림">거짓청구요양기관명단</a></li>
+						
+							<li><a href="https://ndsd.hira.or.kr/auth-service/api/auth/ssoFilter" target="_blank" title="새창열림">대체조제정보시스템</a></li>
+						
+							<li><a href="https://library.hira.or.kr" target="_blank" title="새창열림">건강보험심사평가원 도서관</a></li>
+						
+					</ul>
+				</div>
+				<button type="button" class="popup-close" aria-label="주요연계업무 사이트 창 닫기"></button>
+			</div>
+		</div>
+	</div>
+	<div class="popup-wrap-full2" data-type="full" id="popFootLink2" tabindex="0">
+		<div class="popup-in">
+			<div class="popup">
+				<div class="popup-head">
+					<h1 class="pop-tit">관련 사이트</h1>
+				</div>
+				<div class="popup-body">
+					<ul class-"pop-foot-links">
+						<li><a href="https://mohw.go.kr/react/index.jsp" target="_blank" title="새창열림">보건복지부</a></li>
+						<li><a href="https://www.nhis.or.kr/nhis/index.do" target="_blank" title="새창열림">국민건강보험공단</a></li>
+						<li><a href="http://www.mfds.go.kr/index.jsp" target="_blank" title="새창열림">식품의약품안전처</a></li>
+						<li><a href="https://health.kdca.go.kr/healthinfo/index.jsp" target="_blank" title="새창열림">국가건강정보포털</a></li>
+						<li><a href="http://www.e-health.go.kr" target="_blank" title="새창열림">e보건소</a></li>
+						<li><a href="http://cancer.go.kr" target="_blank" title="새창열림">국가암정보센터</a></li>
+						<li><a href="http://www.e-gen.or.kr/egen/main.do" target="_blank" title="새창열림">응급의료정보 E-Gen</a></li>
+						<li><a href="http://u119.nema.go.kr/web/index.jsp" target="_blank" title="새창열림">119 안전신고센터</a></li>
+						<li><a href="https://www.pharm114.or.kr" target="_blank" title="새창열림">휴일지킴이약국</a></li>
+						<li><a href="https://www.car365.go.kr" target="_blank" title="새창열림">자동차365</a></li>
+						<li><a href="http://kssc.kostat.go.kr/ksscNew_web/kssc/common/selectIntroduce.do?gubun=2&amp;bbsId=kcd_ug" target="_blank" title="새창열림">한국표준질병사인분류</a></li>
+						<li><a href="https://vdi.hira.or.kr" target="_blank" title="새창열림">원격근무시스템</a></li>
+						<li><a href="http://extravc.hira.or.kr/guest/" target="_blank" title="새창열림">영상회의</a></li>
+					</ul>
+				</div>
+				<button type="button" class="popup-close" aria-label="관련 사이트 창 닫기"></button>
+			</div>
+		</div>
+	</div>
+	<div class="inner">
+		<div class="f-logo">
+			<img src="/images/icon/new/logo.svg" class="logo-im" alt="건강보험심사평가원">
+		</div>
+		<div class="f-cnt">
+			<div class="f-info">
+				<p class="info-addr">(26465) 강원특별자치도 원주시 혁신로 60(반곡동) 건강보험심사평가원</p>
+				<ul class="info-cs">
+					<li><strong class="strong">대표전화 1644-2000</strong><span class="span">&nbsp;(유료, 평일 09시~18시)</span></li>
+				</ul>
+			</div>
+			<div class="f-link">
+				<div class="link-go">
+					<a href="/dummy.do?pgmid=HIRAA040095000000" class="btn btn-txt sm ico-arr">찾아오시는 길</a>
+				</div>
+				<div class="link-sns">
+					<a href="https://www.instagram.com/ok_hira" class="instagram" target="_blank" title="인스타그램 새창열기"></a>
+					<a href="https://www.youtube.com/c/okyeshira" class="youtube" target="_blank" title="유투브 새창열기"></a>
+					<a href="https://www.facebook.com/hirakorea" class="facebook" target="_blank" title="페이스북 새창열기"></a>
+					<a href="https://blog.naver.com/ok_hira" class="blog" target="_blank" title="블로그 새창열기"></a>
+				</div>
+			</div>
+		</div>
+
+		<div class="f-btm">
+			<div class="f-btm-text">
+				<div class="f-menu">
+					<a href="/dummy.do?pgmid=HIRAC920008010000">고객지원</a>
+					<a href="/dummy.do?pgmid=HIRAC920016000000">이용약관</a>
+					<a href="/dummy.do?pgmid=HIRAC920012000000" class="point2">개인정보처리방침</a>
+					<a href="/dummy.do?pgmid=HIRAC920012100000">고정형·이동형 영상정보처리기기 운영·관리 방침</a>
+					<a href="/dummy.do?pgmid=HIRAC920013100000">저작권 정책</a>
+					<a href="/dummy.do?pgmid=HIRAC920017000000">설치프로그램</a>
+					<a href="http://rs.hira.or.kr/" target="_blank" title="원격지원 새창열기">원격지원</a>
+					<a href="https://www.mois.go.kr/frt/sub/popup/p_taegugki_banner/screen.do" target="_blank" title="국가상징알아보기 새창열기"><img src="/images/icon/new/flag_ko.png" alt="국가상징 알아보기 마크"></a>
+					<a href="/dummy.do?pgmid=HIRAC920008050000"><img src="/images/common/cert_acc.png" class="wa" alt="(사)한국장애인단체총연합회 한국웹접근성인증평가원 웹 접근성 우수사이트 인증마크(WA인증마크)"></a>
+					<a href="/images/isms.pdf" target="_blank" title="새창으로 다운로드 열기"><img src="/images/common/isms.png" alt="isms 마크"></a>
+					<a href="/images/ISO27001_27701.pdf" target="_blank" title="새창으로 다운로드 열기"><img src="/images/common/ISO_IEC_27001_WEO_27701_col.png" alt="ISO27701 마크"></a>
+				</div>
+			</div>
+			<div class="f-copy">© HEALTH INSURANCE REVIEW & ASSESSMENT SERVICE. All rights reserved.</div>
+			<div class="f-btm-ban">
+				<span class="ban-txt">이 누리집은 건강보험심사평가원에서 운영하는 누리집입니다.</span>
+			</div>
+		</div>
+	</div>
+	</footer>
+	<div class="dimm"></div>
+	</body>
+</html>

@@ -1,0 +1,48 @@
+{
+  "mechanism": "unknown",
+  "mechanism_label": "미분류",
+  "reason": "아필리부주의 약가 변동(-14.86%)은 2025.11.01을 기준으로 발생했으며, 이 시점 전후로 데일리팜 기사에서 아필리부 판매 재개 및 매출 회복이 보도되었습니다. 그러나 약가 변동의 직접적인 사유는 명확히 언급되지 않았습니다. 추정컨대, 자진인하와 실거래가 연동 가능성이 있으나, 공식적인 고시나 명확한 기전 설명은 확인되지 않았습니다.",
+  "evidence_summary": "데일리팜(2026.01.27): 아필리부 2025년 초 판매 중단 후 12월 법원 가처분 취소로 판매 재개, 두달 만 16억 매출[1].",
+  "confidence": "medium",
+  "window": {
+    "from": "2025.05",
+    "to": "2026.05",
+    "months": 6
+  },
+  "references": [
+    {
+      "title": "두달만에 16억…삼일제약 아필리부 판매 정상화",
+      "url": "https://dailypharm.com/user/news/335182",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "published_at": "2026.01.27"
+    }
+  ],
+  "notes": "판매 중단·재개 관련 특허 분쟁 보도 있으나 약가 변동 직접 연계 증거 없음. 윈도우 내 약가 사유 보도 부족. · [enforce] published_at 누락/불량 2건 제거 · [enforce] published_at 누락/불량 1건 제거",
+  "_source": "perplexity-sonar-pro",
+  "analysis_meta": {
+    "source": "perplexity-sonar-pro",
+    "total_articles": 1,
+    "tier_a_count": 1,
+    "tier_b_count": 0,
+    "tier_c_count": 0,
+    "detected_mechanisms": [
+      "미분류"
+    ],
+    "top_media": [
+      {
+        "media": "데일리팜",
+        "weight": 3.0
+      }
+    ]
+  },
+  "deep_research": {
+    "source": "perplexity-sonar-pro-research",
+    "model": "sonar-pro",
+    "citations": [
+      "https://www.dailypharm.com/user/news/336743"
+    ],
+    "created_at": "2026-04-18T15:50:12.471492Z"
+  },
+  "cached": false
+}

@@ -1,0 +1,76 @@
+{
+  "updated_at": "2026-04-20T07:43:42.388447",
+  "markdown": "- **상급종합병원 규칙 개정**: 보건복지부는 상급종합병원이 중증 및 응급 의료에 집중하도록 유도하는 규칙 개정안을 발표했다.\n- **의료기기 심사 완화**: 식품의약품안전처는 혁신 의료기기의 시장 진입을 가속화하기 위해 심사 및 자료요건을 완화하고, 비급여로 즉시 진입할 수 있는 품목을 확대한다고 밝혔다.\n- **중동발 의약품 수급 대응**: 건강보험심사평가원과 국민건강보험공단은 중동발 원료 수급 차질에 대비해 전담 조직을 구성하고 수급 모니터링을 강화하고 있다.\n\n**함의**: 상급종합병원의 역할 강화와 의료기기 시장 진입 가속화는 제약 및 의료기기 산업의 성장 기회를 제공할 것으로 보인다. 또한, 원료 수급 안정화 조치는 의약품 공급망의 신뢰성을 높일 것으로 예상된다.",
+  "reviewers": [
+    "openai:gpt-4o-mini",
+    "gemini:gemini-2.5-flash"
+  ],
+  "sources": [
+    {
+      "title": "[부산ㆍ경남 대학 브리핑 모음(4월20일)] 동아대 간호대학, 제29회 나이...",
+      "url": "https://www.dnews.co.kr/uhtml/view.jsp?idxno=202604191011582250741",
+      "source": "dco",
+      "date": "2026-04-20"
+    },
+    {
+      "title": "오늘부터 특별 단속…\"사재기 했다간 엄정 조치\"",
+      "url": "https://news.sbs.co.kr/news/endPage.do?news_id=N1008524096&plink=ORI&cooper=NAVER",
+      "source": "sbs",
+      "date": "2026-04-20"
+    },
+    {
+      "title": "[연합뉴스 이 시각 헤드라인] - 07:30",
+      "url": "https://www.yna.co.kr/view/AKR20260420011600011?input=1195m",
+      "source": "yna",
+      "date": "2026-04-20"
+    },
+    {
+      "title": "[와글와글 플러스] 액상형 전자담배도 '똑같이' 규제",
+      "url": "https://imnews.imbc.com/replay/2026/nwtoday/article/6816491_37012.html",
+      "source": "imimbc",
+      "date": "2026-04-20"
+    },
+    {
+      "title": "오세훈 조선·동아 인터뷰 \"정원오되면 서울시 좌파 ATM돼\"",
+      "url": "https://www.mediatoday.co.kr/news/articleView.html?idxno=333873",
+      "source": "mediatoday",
+      "date": "2026-04-20"
+    },
+    {
+      "title": "[더벨]원격의료 기업 솔닥, IPO 추진…주관사 선정 착수",
+      "url": "https://www.thebell.co.kr/free/content/ArticleView.asp?key=202604161001274760101353",
+      "source": "thebell",
+      "date": "2026-04-20"
+    },
+    {
+      "title": "[장애인의 날]“일하면 더 가난해진다”…'시소의 굴레' 장애인 복지",
+      "url": "https://www.asiatoday.co.kr/view.php?key=20260419010005783",
+      "source": "asiatoday",
+      "date": "2026-04-20"
+    },
+    {
+      "title": "[단독] ‘쓰레기집’에 자녀 방치해놓고… 하나같이 “부모 역할 다했다...",
+      "url": "https://www.segye.com/newsView/20260419508770?OutUrl=naver",
+      "source": "segye",
+      "date": "2026-04-20"
+    },
+    {
+      "title": "원주시, 2026년 혁신도시 문화미식회 ‘버스킹 공연’ 운영",
+      "url": "https://www.sportsseoul.com/news/read/1603894?ref=naver",
+      "source": "sportsseoul",
+      "date": "2026-04-20"
+    },
+    {
+      "title": "[HIT 포커스] 약 없는 환자… '다카바진 단종'이 남긴 퇴방약 과제",
+      "url": "https://www.hitnews.co.kr/news/articleView.html?idxno=75538",
+      "source": "hitco",
+      "date": "2026-04-20"
+    }
+  ],
+  "keywords": [
+    "보건복지부",
+    "건강보험심사평가원",
+    "건강보험공단",
+    "식품의약품안전처"
+  ]
+}

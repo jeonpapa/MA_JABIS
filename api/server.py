@@ -9,22 +9,33 @@
 import asyncio
 import logging
 import re
+import sqlite3
 import sys
 from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
 
 # 프로젝트 루트를 sys.path에 추가
 BASE_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from agents.db import DrugPriceDB
+from agents.db.users import UsersDB
 from agents.foreign_price_agent import ForeignPriceAgent, AVAILABLE_COUNTRIES
 from agents.market_intelligence import MarketIntelligenceAgent, MI_RULES_TEXT
 from agents.review_agent import ReviewAgent
 from agents.drug_enrichment_agent import DrugEnrichmentAgent
+from api.auth import build_auth_blueprint, require_auth
+from agents.ingest.market_share import ingest as ingest_market_share
+from agents import media_intelligence as _media_intel
 
 app = Flask(__name__)
+CORS(
+    app,
+    resources={r"/api/*": {"origins": ["http://localhost:3000", "http://127.0.0.1:3000"]}},
+    supports_credentials=False,
+)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -33,6 +44,8 @@ logger = logging.getLogger(__name__)
 
 db = DrugPriceDB(BASE_DIR / "data" / "db" / "drug_prices.db")
 foreign_agent = ForeignPriceAgent(BASE_DIR)
+users_db = UsersDB(BASE_DIR / "data" / "db" / "users.db")
+app.register_blueprint(build_auth_blueprint(users_db))
 
 
 def _check_calibration_age() -> None:
@@ -155,6 +168,17 @@ def _parse_product(name: str) -> dict:
     dosage_form = dose_m.group(1) if dose_m else ""
 
     return {"brand": brand, "ingredient": ingredient, "dosage_form": dosage_form}
+
+
+def _extract_dose_unit(product_name: str) -> str:
+    """product_name_kr 에서 제형 단위를 추출.
+    예) '키트루다주' → '주', '글리벡정' → '정', '자누비아캡슐' → '캡슐'.
+    실패 시 빈 문자열 반환.
+    """
+    if not product_name:
+        return ""
+    m = re.search(r"(정|주|캡슐|시럽|액|연고|겔|패취|산|과립|분무제|분말|필름|좌제)", product_name)
+    return m.group(1) if m else ""
 
 
 def _build_price_changes(rows: list) -> list:
@@ -342,6 +366,9 @@ def price_changes():
         p["status_detail"] = status_detail
         p.pop("_apply_date", None)
 
+    # 5) drug_enrichment LEFT JOIN — 허가일·용법용량·투약비 계산
+    _enrich_products(products)
+
     # 제형 기준 정렬
     products.sort(key=lambda x: x["dosage_form"])
 
@@ -352,6 +379,114 @@ def price_changes():
         "products": products,
         "dosage_forms": dosage_forms,
     })
+
+
+def _enrich_products(products: list[dict]) -> None:
+    """각 product 에 drug_enrichment + coverage_start 를 붙인다.
+
+    추가 필드:
+      - approval_date      (drug_enrichment.approval_date)
+      - usage_text         (drug_enrichment.usage_text)
+      - coverage_start     (drug_prices.coverage_start 의 earliest non-null, 없으면 first_date)
+      - daily_cost         (int | None, 계산식 아래 참고)
+      - monthly_cost       (= daily_cost * 30, 있을 때만)
+      - yearly_cost        (= daily_cost * 365, 있을 때만)
+      - enrichment_confidence (text)
+
+    daily_cost 계산:
+      - schedule='continuous' & daily_dose_units: price * daily_dose_units
+      - schedule='cycle' & cycle_days & doses_per_cycle:
+          cost_per_cycle = price * doses_per_cycle  → daily = cost_per_cycle / cycle_days
+      - 기타: None
+    """
+    if not products:
+        return
+    norm_keys = {p.get("normalized_name") for p in products if p.get("normalized_name")}
+    if not norm_keys:
+        for p in products:
+            p.update({"approval_date": None, "usage_text": None, "coverage_start": None,
+                      "daily_cost": None, "monthly_cost": None, "yearly_cost": None,
+                      "enrichment_confidence": None})
+        return
+
+    enrich_map: dict[str, dict] = {}
+    try:
+        placeholders = ",".join(["?"] * len(norm_keys))
+        with db._connect() as conn:
+            rows = conn.execute(
+                f"SELECT normalized_name, approval_date, usage_text, daily_dose_units, "
+                f"       dose_schedule, cycle_days, doses_per_cycle, confidence "
+                f"FROM drug_enrichment WHERE normalized_name IN ({placeholders})",
+                tuple(norm_keys),
+            ).fetchall()
+            for r in rows:
+                enrich_map[r[0]] = {
+                    "approval_date":   r[1],
+                    "usage_text":      r[2],
+                    "daily_dose_units": r[3],
+                    "schedule":        r[4],
+                    "cycle_days":      r[5],
+                    "doses_per_cycle": r[6],
+                    "confidence":      r[7],
+                }
+            # coverage_start: 보험코드별 earliest non-null
+            all_codes = []
+            for p in products:
+                all_codes.extend(p.get("merged_codes") or [p["insurance_code"]])
+            if all_codes:
+                cov_placeholders = ",".join(["?"] * len(all_codes))
+                cov_rows = conn.execute(
+                    f"SELECT insurance_code, MIN(coverage_start) FROM drug_prices "
+                    f"WHERE insurance_code IN ({cov_placeholders}) "
+                    f"AND coverage_start IS NOT NULL AND coverage_start != '' "
+                    f"GROUP BY insurance_code",
+                    tuple(all_codes),
+                ).fetchall()
+                coverage_by_code = {r[0]: r[1] for r in cov_rows}
+            else:
+                coverage_by_code = {}
+    except Exception as e:
+        logger.warning("enrichment join 실패: %s", e)
+        enrich_map = {}
+        coverage_by_code = {}
+
+    for p in products:
+        norm = p.get("normalized_name")
+        e = enrich_map.get(norm) if norm else None
+        current_price = p.get("current_price") or 0
+        approval_date = e["approval_date"] if e else None
+        usage_text = e["usage_text"] if e else None
+
+        daily_cost = None
+        if e and current_price > 0:
+            sched = (e.get("schedule") or "").lower()
+            if sched == "continuous" and e.get("daily_dose_units"):
+                daily_cost = int(round(current_price * float(e["daily_dose_units"])))
+            elif sched == "cycle" and e.get("cycle_days") and e.get("doses_per_cycle"):
+                per_cycle = current_price * float(e["doses_per_cycle"])
+                try:
+                    daily_cost = int(round(per_cycle / float(e["cycle_days"])))
+                except ZeroDivisionError:
+                    daily_cost = None
+
+        monthly_cost = daily_cost * 30 if daily_cost is not None else None
+        yearly_cost  = daily_cost * 365 if daily_cost is not None else None
+
+        # coverage_start: merged_codes 중 earliest non-null, 없으면 first_date
+        cov = None
+        for code in (p.get("merged_codes") or [p["insurance_code"]]):
+            if code in coverage_by_code:
+                cov = coverage_by_code[code] if cov is None or coverage_by_code[code] < cov else cov
+        if not cov:
+            cov = p.get("first_date")
+
+        p["approval_date"]          = approval_date
+        p["usage_text"]             = usage_text
+        p["coverage_start"]         = cov
+        p["daily_cost"]             = daily_cost
+        p["monthly_cost"]           = monthly_cost
+        p["yearly_cost"]            = yearly_cost
+        p["enrichment_confidence"]  = e.get("confidence") if e else None
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -840,6 +975,31 @@ def foreign_drug_list():
     반환: [{"query_name", "last_searched_at", "country_count", "has_price"}]
     """
     return jsonify(db.get_foreign_drug_list())
+
+
+@app.delete("/api/foreign/drugs/<query_name>")
+def foreign_drug_delete(query_name: str):
+    """검색 이력 삭제. DELETE /api/foreign/drugs/<query_name>
+    A8 가격·HTA·허가 모든 캐시를 함께 지운다. 복구 불가.
+    """
+    from urllib.parse import unquote
+    qn = unquote(query_name).strip()
+    if not qn:
+        return jsonify({"error": "empty query_name"}), 400
+    deleted = db.delete_foreign_drug(qn)
+    # HTA / 허가 캐시도 alias 전부 정리 (있을 때만)
+    try:
+        from agents.db.drug_aliases import aliases as _aliases
+        names = _aliases(qn)
+        placeholders = ",".join(["?"] * len(names))
+        with db._connect() as conn:
+            conn.execute(
+                f"DELETE FROM hta_approvals_cache WHERE LOWER(drug_query) IN ({placeholders})",
+                tuple(names),
+            )
+    except Exception:
+        pass
+    return jsonify({"ok": True, "deleted": deleted, "query_name": qn})
 
 
 @app.get("/api/foreign/available_countries")
@@ -1406,6 +1566,1912 @@ def workbench_export():
         )
     except Exception as e:
         logger.error("workbench export 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 한국MSD 요약 (Home 카드용)
+# ──────────────────────────────────────────────────────────────────────────────
+
+DISEASE_KR = {
+    "NSCLC": "비소세포폐암", "MEL": "흑색종", "HNSCC": "두경부암",
+    "cHL": "호지킨림프종", "UC": "요로상피암", "GC": "위암/위식도접합부암",
+    "ESC": "식도암", "EC": "자궁내막암", "CC": "자궁경부암", "TNBC": "삼중음성유방암",
+    "RCC": "신세포암", "HCC": "간세포암", "CRC": "대장암", "MCC": "메르켈세포암",
+    "BTC": "담도암", "MPM": "악성흉막중피종", "PMBCL": "원발성종격동B세포림프종",
+    "cSCC": "피부편평세포암", "OC": "난소암", "SOLID": "고형암(MSI-H/TMB-H)",
+}
+
+LINE_KR = {
+    "1L": "1차", "2L": "2차", "3L+": "3차 이상", "3L": "3차",
+    "adjuvant": "보조요법", "neoadjuvant": "신보조요법",
+    "perioperative": "수술 전후 요법", "maintenance": "유지요법",
+}
+
+
+@app.get("/api/msd/summary")
+def msd_summary():
+    """Home 카드용 — MSD 급여 품목 수 (최신 고시일 기준) + Keytruda 적응증 현황."""
+    try:
+        with db._connect() as conn:
+            # 최신 고시일 (apply_date) — drug_prices 기준
+            latest_row = conn.execute(
+                "SELECT MAX(apply_date) FROM drug_prices"
+            ).fetchone()
+            latest_apply_date = latest_row[0] if latest_row and latest_row[0] else None
+
+            if latest_apply_date:
+                row = conn.execute(
+                    "SELECT COUNT(DISTINCT product_name_kr) FROM drug_prices "
+                    "WHERE company LIKE ? AND apply_date = ? AND max_price > 0",
+                    ("%엠에스디%", latest_apply_date),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT COUNT(DISTINCT product_name_kr) FROM drug_latest "
+                    "WHERE company LIKE ?",
+                    ("%엠에스디%",),
+                ).fetchone()
+            reimbursed_product_count = int(row[0]) if row else 0
+
+            ind_rows = conn.execute(
+                """
+                SELECT m.indication_id, m.disease, m.line_of_therapy, m.stage,
+                       m.biomarker_class,
+                       (SELECT approval_date FROM indications_by_agency
+                         WHERE indication_id = m.indication_id AND agency='MFDS') AS mfds_date,
+                       (SELECT approval_date FROM indications_by_agency
+                         WHERE indication_id = m.indication_id AND agency='FDA') AS fda_date,
+                       r.is_reimbursed, r.effective_date, r.criteria_text,
+                       r.notice_date, r.notice_url,
+                       m.pivotal_trial
+                FROM indications_master m
+                LEFT JOIN indication_reimbursement r
+                    ON r.indication_id = m.indication_id
+                WHERE m.product = 'keytruda'
+                ORDER BY COALESCE(mfds_date, fda_date, '0000') DESC
+                """
+            ).fetchall()
+
+        total = len(ind_rows)
+        mfds_approved = sum(1 for r in ind_rows if r[5])
+        reimbursed_count = sum(1 for r in ind_rows if r[7])
+        items = []
+        for r in ind_rows:
+            disease = r[1] or ""
+            lot = r[2] or ""
+            stage = r[3] or ""
+            bio = r[4] or ""
+            disease_kr = DISEASE_KR.get(disease, disease)
+            lot_kr = LINE_KR.get(lot, lot) if lot else ""
+            parts = [disease_kr]
+            if lot_kr:
+                parts.append(lot_kr)
+            if stage and stage not in ("metastatic", "advanced"):
+                parts.append(stage)
+            if bio and bio != "all_comers":
+                parts.append(bio.replace("_", " "))
+            title = " · ".join(parts)
+            items.append({
+                "id": r[0],
+                "disease": disease,
+                "disease_kr": disease_kr,
+                "line_of_therapy": lot,
+                "stage": stage,
+                "biomarker_class": bio,
+                "title": title,
+                "pivotal_trial": r[12] if len(r) > 12 else None,
+                "mfds_approved": bool(r[5]),
+                "mfds_date": r[5],
+                "fda_date": r[6],
+                "is_reimbursed": bool(r[7]) if r[7] is not None else False,
+                "reimbursement_effective_date": r[8],
+                "reimbursement_criteria": r[9],
+                "reimbursement_notice_date": r[10],
+                "reimbursement_notice_url": r[11],
+            })
+
+        return jsonify({
+            "reimbursed_product_count": reimbursed_product_count,
+            "latest_apply_date": latest_apply_date,
+            "keytruda": {
+                "total_indications": total,
+                "mfds_approved": mfds_approved,
+                "pending_mfds": total - mfds_approved,
+                "reimbursed_indications": reimbursed_count,
+                "pending_reimbursement": total - reimbursed_count,
+                "items": items,
+            },
+        })
+    except Exception as e:
+        logger.error("MSD summary 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/home/media-intelligence")
+def home_media_intelligence():
+    """Home 미디어 인텔리전스 카드 — 1개월 브랜드별 트래픽 + 최신뉴스.
+    `refresh=1` 쿼리로 캐시 무시 강제 재수집.
+    """
+    try:
+        days_param = request.args.get("days")
+        days = int(days_param) if days_param else None  # None → 달력 기반 1개월
+        refresh = request.args.get("refresh", "0") == "1"
+        data = _media_intel.get_brand_traffic(days=days, refresh=refresh)
+        return jsonify(data)
+    except Exception as e:
+        logger.error("media-intelligence 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/home/brand-news")
+def home_brand_news():
+    """브랜드 클릭 시 — 오늘 기준 최신 뉴스."""
+    brand = request.args.get("brand", "").strip()
+    if not brand:
+        return jsonify({"error": "brand 파라미터 필요"}), 400
+    try:
+        limit = int(request.args.get("limit", "10"))
+        items = _media_intel.get_latest_brand_news(brand, limit=limit)
+        return jsonify({"brand": brand, "count": len(items), "items": items})
+    except Exception as e:
+        logger.error("brand-news 실패 (%s): %s", brand, e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/home/government-keyword-summary")
+def home_government_summary():
+    """정부 기관 키워드 (보건복지부/건보공단/심평원/식약처) 최근 1개월 AI 요약.
+    OpenAI + Gemini 독립 호출 → 결과 병합. 일자별 cache.
+    """
+    try:
+        from agents.government_keyword_summary import get_government_summary
+        refresh = request.args.get("refresh", "0") == "1"
+        data = get_government_summary(refresh=refresh)
+        return jsonify(data)
+    except Exception as e:
+        logger.error("government summary 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/home/top-price-changes")
+def home_top_price_changes():
+    """Home — 최신 고시일 vs 직전 고시일 약가 변동 Top N.
+    abs(delta_pct) 기준 정렬. 변동사유는 reason_cache 에 있을 때만 포함.
+    """
+    try:
+        limit = int(request.args.get("limit", "10"))
+        with db._connect() as conn:
+            dates = [r[0] for r in conn.execute(
+                "SELECT DISTINCT apply_date FROM drug_prices "
+                "ORDER BY apply_date DESC LIMIT 2"
+            ).fetchall()]
+            if len(dates) < 2:
+                return jsonify({"latest": None, "prev": None, "items": []})
+            latest, prev = dates[0], dates[1]
+
+            # 최신 고시일 레코드 중 직전에도 존재하고 가격이 변한 것만
+            rows = conn.execute(
+                """
+                SELECT c.insurance_code, c.product_name_kr, c.ingredient,
+                       c.company, c.dosage_form, c.max_price, p.max_price
+                FROM drug_prices c
+                JOIN drug_prices p
+                  ON p.insurance_code = c.insurance_code AND p.apply_date = ?
+                WHERE c.apply_date = ? AND c.max_price IS NOT NULL
+                  AND p.max_price IS NOT NULL AND p.max_price > 0
+                  AND c.max_price != p.max_price
+                """,
+                (prev, latest),
+            ).fetchall()
+
+        # 1) 개별 variant 수집
+        variants = []
+        for r in rows:
+            curr, prev_price = int(r[5]), int(r[6])
+            delta = curr - prev_price
+            pct = (delta / prev_price) * 100
+            parsed = _parse_product(r[1] or "")
+            variants.append({
+                "insurance_code": r[0],
+                "product_name": r[1] or "",
+                "brand_name": parsed["brand"],
+                "ingredient": r[2] or parsed["ingredient"],
+                "company": r[3] or "",
+                "dosage_form": r[4] or parsed["dosage_form"],
+                "prev_price": prev_price,
+                "curr_price": curr,
+                "delta": delta,
+                "delta_pct": round(pct, 2),
+            })
+
+        # 2) 제품명 base (= brand_name) 으로 그룹화 — 동일 브랜드는 함량/포장 variant 합치기
+        groups: dict[str, dict] = {}
+        for v in variants:
+            key = v["brand_name"] or v["product_name"]
+            g = groups.get(key)
+            if g is None:
+                groups[key] = {
+                    **v,
+                    "variant_count": 1,
+                    "variants": [v],
+                }
+            else:
+                g["variant_count"] += 1
+                g["variants"].append(v)
+                # 대표 variant: 변동률 절댓값 최대
+                if abs(v["delta_pct"]) > abs(g["delta_pct"]):
+                    for k in ("insurance_code", "product_name", "ingredient", "company",
+                             "dosage_form", "prev_price", "curr_price", "delta", "delta_pct"):
+                        g[k] = v[k]
+
+        # 3) 비고 ("외 N정") 생성 + 변동률 절댓값 내림차순 정렬
+        items = []
+        for g in groups.values():
+            cnt = g["variant_count"]
+            # 제형 단위 (정 / 주 / 캡슐 / 시럽 등) — 대표 variant 의 dosage_form 또는 product_name 에서 유추
+            unit = _extract_dose_unit(g["product_name"]) or "건"
+            remark = f"외 {cnt - 1}{unit}" if cnt > 1 else ""
+            items.append({
+                "insurance_code": g["insurance_code"],
+                "product_name": g["product_name"],
+                "brand_name": g["brand_name"],
+                "ingredient": g["ingredient"],
+                "company": g["company"],
+                "dosage_form": g["dosage_form"],
+                "prev_price": g["prev_price"],
+                "curr_price": g["curr_price"],
+                "delta": g["delta"],
+                "delta_pct": g["delta_pct"],
+                "variant_count": cnt,
+                "remark": remark,
+            })
+        items.sort(key=lambda x: abs(x["delta_pct"]), reverse=True)
+        items = items[:limit]
+
+        return jsonify({
+            "latest_apply_date": latest,
+            "prev_apply_date": prev,
+            "count": len(items),
+            "items": items,
+        })
+    except Exception as e:
+        logger.error("home top price changes 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/msd/reimbursed-products")
+def msd_reimbursed_products():
+    """MSD 급여 등재 품목 상세 목록 — 최신 고시일 기준.
+    Home 카드 클릭 시 팝업용.
+    """
+    try:
+        with db._connect() as conn:
+            latest_row = conn.execute(
+                "SELECT MAX(apply_date) FROM drug_prices"
+            ).fetchone()
+            latest_apply_date = latest_row[0] if latest_row and latest_row[0] else None
+            if not latest_apply_date:
+                return jsonify({"latest_apply_date": None, "count": 0, "items": []})
+
+            rows = conn.execute(
+                """
+                SELECT insurance_code, product_name_kr, ingredient,
+                       dosage_form, dosage_strength, max_price, coverage_start
+                FROM drug_prices
+                WHERE company LIKE ? AND apply_date = ? AND max_price > 0
+                ORDER BY product_name_kr, dosage_strength
+                """,
+                ("%엠에스디%", latest_apply_date),
+            ).fetchall()
+
+            # product_name_kr 기준 중복 제거 (함량·포장 병합) + parse 로 성분/제형 추출
+            seen: dict = {}
+            for r in rows:
+                key = r[1] or ""
+                if key not in seen:
+                    parsed = _parse_product(key)
+                    seen[key] = {
+                        "insurance_code": r[0],
+                        "product_name": r[1],
+                        "brand_name": parsed["brand"],
+                        "ingredient": r[2] or parsed["ingredient"],
+                        "dosage_form": r[3] or parsed["dosage_form"],
+                        "dosage_strength": r[4] or "",
+                        "max_price": int(r[5]) if r[5] else 0,
+                        "coverage_start": r[6] or "",
+                    }
+
+            items = sorted(seen.values(), key=lambda x: x["product_name"])
+            return jsonify({
+                "latest_apply_date": latest_apply_date,
+                "count": len(items),
+                "items": items,
+            })
+    except Exception as e:
+        logger.error("MSD reimbursed products 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Market Share (국내 IQVIA NSA-E)
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _ms_latest_quarter(conn) -> str | None:
+    row = conn.execute(
+        "SELECT quarter FROM market_share_quarterly ORDER BY quarter DESC LIMIT 1"
+    ).fetchone()
+    return row[0] if row else None
+
+
+def _ms_all_quarters(conn) -> list[str]:
+    rows = conn.execute(
+        "SELECT DISTINCT quarter FROM market_share_quarterly ORDER BY quarter ASC"
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
+@app.get("/api/market-share/search")
+def market_share_search():
+    """제품명/성분명 검색 — brand 단위 (product_name+atc4_code) 그룹, 최신 분기 값 포함."""
+    q = (request.args.get("q") or "").strip()
+    limit = min(int(request.args.get("limit", 30)), 100)
+    if not q:
+        return jsonify({"quarter": None, "items": []})
+    try:
+        with db._connect() as conn:
+            latest = _ms_latest_quarter(conn)
+            like = f"%{q.lower()}%"
+            sql = """
+                SELECT p.product_name, p.molecule_desc, p.mfr_name,
+                       p.atc4_code, p.atc4_desc,
+                       COUNT(DISTINCT p.product_id) AS pack_count,
+                       COALESCE(SUM(q.values_lc), 0) AS values_lc,
+                       COALESCE(SUM(q.dosage_units), 0) AS dosage_units
+                FROM market_share_products p
+                LEFT JOIN market_share_quarterly q
+                       ON q.product_id = p.product_id AND q.quarter = ?
+                WHERE LOWER(p.product_name) LIKE ?
+                   OR LOWER(p.molecule_desc) LIKE ?
+                GROUP BY p.product_name, p.molecule_desc, p.mfr_name, p.atc4_code, p.atc4_desc
+                ORDER BY values_lc DESC
+                LIMIT ?
+            """
+            rows = conn.execute(sql, (latest, like, like, limit)).fetchall()
+
+            items = [
+                {
+                    "product_name": r[0],
+                    "molecule_desc": r[1],
+                    "mfr_name": r[2],
+                    "atc4_code": r[3],
+                    "atc4_desc": r[4],
+                    "pack_count": int(r[5] or 0),
+                    "values_lc": float(r[6] or 0.0),
+                    "dosage_units": float(r[7] or 0.0),
+                }
+                for r in rows
+            ]
+        return jsonify({"quarter": latest, "items": items})
+    except Exception as e:
+        logger.error("market_share_search 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/market-share/atc4/<atc4_code>")
+def market_share_atc4(atc4_code: str):
+    """ATC4 시장 — 특정 분기의 브랜드별 값/점유율."""
+    quarter = request.args.get("quarter")
+    try:
+        with db._connect() as conn:
+            quarters = _ms_all_quarters(conn)
+            if not quarters:
+                return jsonify({"error": "no data"}), 404
+            if quarter not in quarters:
+                quarter = quarters[-1]
+
+            meta = conn.execute(
+                "SELECT atc4_desc FROM market_share_products WHERE atc4_code=? LIMIT 1",
+                (atc4_code,),
+            ).fetchone()
+            if not meta:
+                return jsonify({"error": f"atc4 {atc4_code} 없음"}), 404
+            atc4_desc = meta[0]
+
+            rows = conn.execute(
+                """
+                SELECT p.product_name, p.molecule_desc, p.mfr_name,
+                       COUNT(DISTINCT p.product_id) AS pack_count,
+                       COALESCE(SUM(q.values_lc), 0) AS values_lc,
+                       COALESCE(SUM(q.dosage_units), 0) AS dosage_units
+                FROM market_share_products p
+                LEFT JOIN market_share_quarterly q
+                       ON q.product_id = p.product_id AND q.quarter = ?
+                WHERE p.atc4_code = ?
+                GROUP BY p.product_name, p.molecule_desc, p.mfr_name
+                ORDER BY values_lc DESC
+                """,
+                (quarter, atc4_code),
+            ).fetchall()
+
+            total_values = sum(float(r[4] or 0.0) for r in rows)
+            total_units = sum(float(r[5] or 0.0) for r in rows)
+
+            products = []
+            for r in rows:
+                v = float(r[4] or 0.0)
+                u = float(r[5] or 0.0)
+                products.append({
+                    "product_name": r[0],
+                    "molecule_desc": r[1],
+                    "mfr_name": r[2],
+                    "pack_count": int(r[3] or 0),
+                    "values_lc": v,
+                    "dosage_units": u,
+                    "values_share_pct": (v / total_values * 100.0) if total_values > 0 else 0.0,
+                    "units_share_pct": (u / total_units * 100.0) if total_units > 0 else 0.0,
+                })
+
+        return jsonify({
+            "atc4_code": atc4_code,
+            "atc4_desc": atc4_desc,
+            "quarter": quarter,
+            "quarters": quarters,
+            "totals": {"values_lc": total_values, "dosage_units": total_units},
+            "products": products,
+        })
+    except Exception as e:
+        logger.error("market_share_atc4 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/market-share/export")
+def market_share_export():
+    """ATC4 시장 — Market Share / Unit Trend / Revenue Trend 3개 시트 xlsx.
+    GET /api/market-share/export?atc4=L01G5&quarter=2025Q1&top=8
+    """
+    atc4_code = (request.args.get("atc4") or "").strip()
+    quarter_arg = (request.args.get("quarter") or "").strip()
+    top_n = min(int(request.args.get("top", 8)), 15)
+    if not atc4_code:
+        return jsonify({"error": "atc4 필수"}), 400
+
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment
+    except ImportError:
+        return jsonify({"error": "openpyxl 미설치"}), 500
+
+    try:
+        with db._connect() as conn:
+            quarters = _ms_all_quarters(conn)
+            if not quarters:
+                return jsonify({"error": "no data"}), 404
+            quarter = quarter_arg if quarter_arg in quarters else quarters[-1]
+
+            meta = conn.execute(
+                "SELECT atc4_desc FROM market_share_products WHERE atc4_code=? LIMIT 1",
+                (atc4_code,),
+            ).fetchone()
+            atc4_desc = meta[0] if meta else atc4_code
+
+            # Sheet 1: Market Share (선택 분기)
+            share_rows = conn.execute(
+                """
+                SELECT p.product_name, p.molecule_desc, p.mfr_name,
+                       COALESCE(SUM(q.values_lc), 0)  AS values_lc,
+                       COALESCE(SUM(q.dosage_units), 0) AS units
+                FROM market_share_products p
+                LEFT JOIN market_share_quarterly q
+                       ON q.product_id = p.product_id AND q.quarter = ?
+                WHERE p.atc4_code = ?
+                GROUP BY p.product_name, p.molecule_desc, p.mfr_name
+                ORDER BY values_lc DESC
+                """,
+                (quarter, atc4_code),
+            ).fetchall()
+            tot_v = sum(float(r[3] or 0.0) for r in share_rows) or 1.0
+            tot_u = sum(float(r[4] or 0.0) for r in share_rows) or 1.0
+
+            # Sheet 2 & 3: Unit / Revenue Trend (top-N)
+            top_rows = conn.execute(
+                """
+                SELECT p.product_name
+                FROM market_share_products p
+                LEFT JOIN market_share_quarterly q
+                       ON q.product_id = p.product_id AND q.quarter = ?
+                WHERE p.atc4_code = ?
+                GROUP BY p.product_name
+                ORDER BY COALESCE(SUM(q.values_lc), 0) DESC
+                LIMIT ?
+                """,
+                (quarter, atc4_code, top_n),
+            ).fetchall()
+            top_brands = [r[0] for r in top_rows]
+
+            trend_rows = conn.execute(
+                """
+                SELECT q.quarter, p.product_name,
+                       COALESCE(SUM(q.values_lc), 0)   AS v,
+                       COALESCE(SUM(q.dosage_units), 0) AS u
+                FROM market_share_products p
+                JOIN market_share_quarterly q ON q.product_id = p.product_id
+                WHERE p.atc4_code = ?
+                GROUP BY q.quarter, p.product_name
+                """,
+                (atc4_code,),
+            ).fetchall()
+
+            q_tot = conn.execute(
+                """
+                SELECT q.quarter,
+                       COALESCE(SUM(q.values_lc),0)   AS v,
+                       COALESCE(SUM(q.dosage_units),0) AS u
+                FROM market_share_products p
+                JOIN market_share_quarterly q ON q.product_id = p.product_id
+                WHERE p.atc4_code = ?
+                GROUP BY q.quarter
+                """,
+                (atc4_code,),
+            ).fetchall()
+            qu = {r[0]: float(r[2] or 0.0) for r in q_tot}
+
+            unit_share: dict[str, dict[str, float]] = {b: {} for b in top_brands}
+            rev_series: dict[str, dict[str, float]] = {b: {} for b in top_brands}
+            for qtr, name, v, u in trend_rows:
+                if name not in unit_share:
+                    continue
+                unit_share[name][qtr] = (float(u or 0.0) / qu[qtr] * 100.0) if qu.get(qtr) else 0.0
+                rev_series[name][qtr]  = float(v or 0.0) / 1_000_000.0
+
+        wb = Workbook()
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill("solid", fgColor="1A56DB")
+
+        def _style_header(ws):
+            for cell in ws[1]:
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal="center")
+
+        # ── Sheet 1: Market Share
+        ws1 = wb.active
+        ws1.title = "Market Share"
+        ws1.append(["Product", "Molecule", "Manufacturer",
+                    "Values LC", "Dosage Units",
+                    "Values Share (%)", "Units Share (%)"])
+        for pn, mol, mfr, v, u in share_rows:
+            v = float(v or 0.0); u = float(u or 0.0)
+            ws1.append([pn, mol, mfr,
+                        round(v, 2), round(u, 2),
+                        round(v / tot_v * 100.0, 2),
+                        round(u / tot_u * 100.0, 2)])
+        _style_header(ws1)
+
+        # ── Sheet 2: Unit Trend (점유율 %)
+        ws2 = wb.create_sheet("Unit Trend")
+        ws2.append(["Quarter", *top_brands])
+        for qtr in quarters:
+            row = [qtr]
+            for b in top_brands:
+                row.append(round(unit_share[b].get(qtr, 0.0), 2))
+            ws2.append(row)
+        _style_header(ws2)
+
+        # ── Sheet 3: Revenue Trend (M KRW)
+        ws3 = wb.create_sheet("Revenue Trend")
+        ws3.append(["Quarter", *[f"{b} (M KRW)" for b in top_brands]])
+        for qtr in quarters:
+            row = [qtr]
+            for b in top_brands:
+                row.append(round(rev_series[b].get(qtr, 0.0), 2))
+            ws3.append(row)
+        _style_header(ws3)
+
+        # 폭 자동
+        for ws in (ws1, ws2, ws3):
+            for col_idx, cell in enumerate(ws[1], start=1):
+                values = [str(r[col_idx - 1]) for r in ws.iter_rows(values_only=True)]
+                max_len = max([len(v or "") for v in values] + [10]) + 2
+                ws.column_dimensions[cell.column_letter].width = min(max_len, 30)
+
+        import io
+        from datetime import datetime
+        from urllib.parse import quote
+        from flask import Response
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        fname = f"MarketShare_{atc4_code}_{atc4_desc}_{quarter}_{stamp}.xlsx"
+        safe = re.sub(r"[^\w\-.]", "_", fname)[:120]
+        return Response(
+            buf.read(),
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(safe)}"},
+        )
+    except Exception as e:
+        logger.error("market_share_export 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/market-share/atc4/<atc4_code>/trend")
+def market_share_atc4_trend(atc4_code: str):
+    """ATC4 시장 — 브랜드별 분기 트렌드 (top-N)."""
+    top_n = min(int(request.args.get("top", 6)), 15)
+    try:
+        with db._connect() as conn:
+            quarters = _ms_all_quarters(conn)
+            if not quarters:
+                return jsonify({"error": "no data"}), 404
+            latest = quarters[-1]
+
+            meta = conn.execute(
+                "SELECT atc4_desc FROM market_share_products WHERE atc4_code=? LIMIT 1",
+                (atc4_code,),
+            ).fetchone()
+            if not meta:
+                return jsonify({"error": f"atc4 {atc4_code} 없음"}), 404
+            atc4_desc = meta[0]
+
+            top_rows = conn.execute(
+                """
+                SELECT p.product_name,
+                       COALESCE(SUM(q.values_lc), 0) AS values_lc
+                FROM market_share_products p
+                LEFT JOIN market_share_quarterly q
+                       ON q.product_id = p.product_id AND q.quarter = ?
+                WHERE p.atc4_code = ?
+                GROUP BY p.product_name
+                ORDER BY values_lc DESC
+                LIMIT ?
+                """,
+                (latest, atc4_code, top_n),
+            ).fetchall()
+            top_names = [r[0] for r in top_rows]
+
+            # 분기 × 브랜드 집계 (values & units)
+            trend_rows = conn.execute(
+                """
+                SELECT q.quarter, p.product_name,
+                       SUM(q.values_lc) AS v,
+                       SUM(q.dosage_units) AS u
+                FROM market_share_products p
+                JOIN market_share_quarterly q ON q.product_id = p.product_id
+                WHERE p.atc4_code = ?
+                GROUP BY q.quarter, p.product_name
+                """,
+                (atc4_code,),
+            ).fetchall()
+
+            # 분기별 전체 합계
+            quarter_totals = conn.execute(
+                """
+                SELECT q.quarter,
+                       SUM(q.values_lc) AS v,
+                       SUM(q.dosage_units) AS u
+                FROM market_share_products p
+                JOIN market_share_quarterly q ON q.product_id = p.product_id
+                WHERE p.atc4_code = ?
+                GROUP BY q.quarter
+                """,
+                (atc4_code,),
+            ).fetchall()
+            tot_v = {r[0]: float(r[1] or 0.0) for r in quarter_totals}
+            tot_u = {r[0]: float(r[2] or 0.0) for r in quarter_totals}
+
+            series: dict[str, dict] = {
+                n: {"values": {}, "units": {}, "values_share": {}, "units_share": {}}
+                for n in top_names
+            }
+            for r in trend_rows:
+                qtr, name, v, u = r[0], r[1], float(r[2] or 0.0), float(r[3] or 0.0)
+                if name not in series:
+                    continue
+                series[name]["values"][qtr] = v
+                series[name]["units"][qtr] = u
+                series[name]["values_share"][qtr] = (v / tot_v[qtr] * 100.0) if tot_v.get(qtr) else 0.0
+                series[name]["units_share"][qtr] = (u / tot_u[qtr] * 100.0) if tot_u.get(qtr) else 0.0
+
+        return jsonify({
+            "atc4_code": atc4_code,
+            "atc4_desc": atc4_desc,
+            "quarters": quarters,
+            "top_brands": top_names,
+            "series": series,
+        })
+    except Exception as e:
+        logger.error("market_share_atc4_trend 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/market-share/brand")
+def market_share_brand():
+    """브랜드 상세 — (product_name, atc4_code) 기준. 패키지별 내역 + 분기 시계열."""
+    name = (request.args.get("name") or "").strip()
+    atc4 = (request.args.get("atc4") or "").strip()
+    if not name or not atc4:
+        return jsonify({"error": "name, atc4 쿼리 필수"}), 400
+    try:
+        with db._connect() as conn:
+            quarters = _ms_all_quarters(conn)
+            latest = quarters[-1] if quarters else None
+
+            pack_rows = conn.execute(
+                """
+                SELECT product_id, product_name, molecule_desc, mfr_name, corp, mnc13,
+                       pack, pack_desc, strength, pack_launch_date,
+                       atc4_code, atc4_desc
+                FROM market_share_products
+                WHERE product_name = ? AND atc4_code = ?
+                """,
+                (name, atc4),
+            ).fetchall()
+            if not pack_rows:
+                return jsonify({"error": "brand not found"}), 404
+
+            pack_ids = [r[0] for r in pack_rows]
+            placeholders = ",".join(["?"] * len(pack_ids))
+            qrows = conn.execute(
+                f"""
+                SELECT quarter, SUM(values_lc), SUM(dosage_units)
+                FROM market_share_quarterly
+                WHERE product_id IN ({placeholders})
+                GROUP BY quarter
+                ORDER BY quarter ASC
+                """,
+                pack_ids,
+            ).fetchall()
+            quarterly = [
+                {"quarter": r[0], "values_lc": float(r[1] or 0.0), "dosage_units": float(r[2] or 0.0)}
+                for r in qrows
+            ]
+
+            # ATC4 내 순위 / 점유율 (최신 분기)
+            rank_sql = """
+                SELECT p.product_name, COALESCE(SUM(q.values_lc), 0) AS v
+                FROM market_share_products p
+                LEFT JOIN market_share_quarterly q
+                       ON q.product_id = p.product_id AND q.quarter = ?
+                WHERE p.atc4_code = ?
+                GROUP BY p.product_name
+                ORDER BY v DESC
+            """
+            ranked = conn.execute(rank_sql, (latest, atc4)).fetchall()
+            total = sum(float(r[1] or 0.0) for r in ranked)
+            rank = next((i for i, r in enumerate(ranked) if r[0] == name), -1) + 1
+            brand_v = next((float(r[1] or 0.0) for r in ranked if r[0] == name), 0.0)
+            share_pct = (brand_v / total * 100.0) if total > 0 else 0.0
+
+            packs = [
+                {
+                    "product_id": r[0],
+                    "pack": r[6],
+                    "pack_desc": r[7],
+                    "strength": r[8],
+                    "pack_launch_date": r[9],
+                }
+                for r in pack_rows
+            ]
+            first = pack_rows[0]
+
+        return jsonify({
+            "product_name": first[1],
+            "molecule_desc": first[2],
+            "mfr_name": first[3],
+            "corp": first[4],
+            "mnc13": first[5],
+            "atc4_code": first[10],
+            "atc4_desc": first[11],
+            "quarter": latest,
+            "quarters": quarters,
+            "market_rank": rank if rank > 0 else None,
+            "market_share_pct": share_pct,
+            "market_total_values_lc": total,
+            "packs": packs,
+            "quarterly": quarterly,
+        })
+    except Exception as e:
+        logger.error("market_share_brand 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Market Share 관리자 업로드
+# ──────────────────────────────────────────────────────────────────────────────
+
+import os  # noqa: E402
+import tempfile  # noqa: E402
+import json as _json  # noqa: E402
+
+
+@app.post("/api/admin/market-share/upload")
+@require_auth(role="admin")
+def admin_market_share_upload():
+    """IQVIA NSA-E 분기 Excel 업로드 → 적재."""
+    if "file" not in request.files:
+        return jsonify({"error": "file 필드 누락", "code": "NO_FILE"}), 400
+    file = request.files["file"]
+    if not file.filename or not file.filename.lower().endswith(".xlsx"):
+        return jsonify({"error": "xlsx 파일만 허용", "code": "BAD_EXT"}), 400
+    sheet = request.form.get("sheet") or "NSA"
+    user_email = getattr(request, "user", {}).get("sub") if hasattr(request, "user") else None
+
+    tmp_path: Path | None = None
+    try:
+        fd, tmp = tempfile.mkstemp(suffix=".xlsx")
+        os.close(fd)
+        tmp_path = Path(tmp)
+        file.save(str(tmp_path))
+
+        result = ingest_market_share(
+            xlsx_path=tmp_path,
+            db_path=db.db_path,
+            sheet_name=sheet,
+            uploaded_by=user_email,
+        )
+        result["filename"] = file.filename
+        return jsonify(result)
+    except ValueError as e:
+        return jsonify({"error": str(e), "code": "BAD_SHEET"}), 400
+    except Exception as e:
+        logger.error("market_share_upload 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e), "code": "INGEST_FAIL"}), 500
+    finally:
+        if tmp_path and tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+
+
+@app.get("/api/admin/market-share/uploads")
+@require_auth(role="admin")
+def admin_market_share_uploads():
+    """최근 업로드 이력 (최대 50건)."""
+    try:
+        with db._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, uploaded_at, uploaded_by, filename, rows_ingested, quarters_json
+                FROM market_share_upload_log
+                ORDER BY id DESC LIMIT 50
+                """
+            ).fetchall()
+            total_products = conn.execute(
+                "SELECT COUNT(*) FROM market_share_products"
+            ).fetchone()[0]
+            total_points = conn.execute(
+                "SELECT COUNT(*) FROM market_share_quarterly"
+            ).fetchone()[0]
+            quarters = _ms_all_quarters(conn)
+        uploads = [
+            {
+                "id": r[0],
+                "uploaded_at": r[1],
+                "uploaded_by": r[2],
+                "filename": r[3],
+                "rows_ingested": r[4],
+                "quarters": _json.loads(r[5]) if r[5] else [],
+            }
+            for r in rows
+        ]
+        return jsonify({
+            "uploads": uploads,
+            "totals": {
+                "products": total_products,
+                "quarterly_points": total_points,
+                "quarters_available": quarters,
+            },
+        })
+    except Exception as e:
+        logger.error("market_share_uploads 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# MSD Korea 파이프라인
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _pipeline_row_to_dict(r) -> dict:
+    return {
+        "id": r[0],
+        "name": r[1],
+        "phase": r[2],
+        "indication": r[3],
+        "expected_year": r[4],
+        "status": r[5],
+        "note": r[6],
+        "created_at": r[7],
+        "updated_at": r[8],
+    }
+
+
+@app.get("/api/msd/pipeline")
+@require_auth()
+def msd_pipeline_list():
+    """전체 파이프라인 (인증 사용자 공통). status/year 로 필터 가능."""
+    status = request.args.get("status")
+    year = request.args.get("year")
+    try:
+        with db._connect() as conn:
+            sql = "SELECT id, name, phase, indication, expected_year, status, note, created_at, updated_at FROM msd_pipeline"
+            params: list = []
+            conds: list[str] = []
+            if status in ("current", "upcoming"):
+                conds.append("status = ?")
+                params.append(status)
+            if year:
+                try:
+                    conds.append("expected_year = ?")
+                    params.append(int(year))
+                except ValueError:
+                    pass
+            if conds:
+                sql += " WHERE " + " AND ".join(conds)
+            sql += " ORDER BY expected_year ASC, name ASC"
+            rows = conn.execute(sql, params).fetchall()
+        return jsonify({"items": [_pipeline_row_to_dict(r) for r in rows]})
+    except Exception as e:
+        logger.error("msd_pipeline_list 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/admin/msd/pipeline")
+@require_auth(role="admin")
+def msd_pipeline_create():
+    body = request.get_json(silent=True) or {}
+    name = (body.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "name 필수", "code": "INVALID"}), 400
+    phase = body.get("phase") or None
+    indication = body.get("indication") or None
+    year = body.get("expected_year")
+    try:
+        year_int = int(year) if year not in (None, "") else None
+    except (TypeError, ValueError):
+        return jsonify({"error": "expected_year must be integer", "code": "INVALID"}), 400
+    status = body.get("status") or "upcoming"
+    if status not in ("current", "upcoming"):
+        return jsonify({"error": "status must be current|upcoming", "code": "INVALID"}), 400
+    note = body.get("note") or None
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        with db._connect() as conn:
+            cur = conn.execute(
+                "INSERT INTO msd_pipeline (name, phase, indication, expected_year, status, note, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (name, phase, indication, year_int, status, note, now, now),
+            )
+            new_id = cur.lastrowid
+            conn.commit()
+            row = conn.execute(
+                "SELECT id, name, phase, indication, expected_year, status, note, created_at, updated_at "
+                "FROM msd_pipeline WHERE id=?",
+                (new_id,),
+            ).fetchone()
+        return jsonify({"item": _pipeline_row_to_dict(row)}), 201
+    except Exception as e:
+        logger.error("msd_pipeline_create 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.patch("/api/admin/msd/pipeline/<int:item_id>")
+@require_auth(role="admin")
+def msd_pipeline_update(item_id: int):
+    body = request.get_json(silent=True) or {}
+    updatable = {"name", "phase", "indication", "expected_year", "status", "note"}
+    fields = {k: v for k, v in body.items() if k in updatable}
+    if not fields:
+        return jsonify({"error": "변경할 필드 없음", "code": "INVALID"}), 400
+    if "status" in fields and fields["status"] not in ("current", "upcoming"):
+        return jsonify({"error": "status must be current|upcoming", "code": "INVALID"}), 400
+    if "expected_year" in fields and fields["expected_year"] not in (None, ""):
+        try:
+            fields["expected_year"] = int(fields["expected_year"])
+        except (TypeError, ValueError):
+            return jsonify({"error": "expected_year must be integer", "code": "INVALID"}), 400
+    elif "expected_year" in fields:
+        fields["expected_year"] = None
+    from datetime import datetime, timezone
+    fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+    set_clause = ", ".join(f"{k} = ?" for k in fields.keys())
+    params = list(fields.values()) + [item_id]
+    try:
+        with db._connect() as conn:
+            res = conn.execute(
+                f"UPDATE msd_pipeline SET {set_clause} WHERE id = ?", params
+            )
+            if res.rowcount == 0:
+                return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+            conn.commit()
+            row = conn.execute(
+                "SELECT id, name, phase, indication, expected_year, status, note, created_at, updated_at "
+                "FROM msd_pipeline WHERE id=?",
+                (item_id,),
+            ).fetchone()
+        return jsonify({"item": _pipeline_row_to_dict(row)})
+    except Exception as e:
+        logger.error("msd_pipeline_update 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.delete("/api/admin/msd/pipeline/<int:item_id>")
+@require_auth(role="admin")
+def msd_pipeline_delete(item_id: int):
+    try:
+        with db._connect() as conn:
+            res = conn.execute("DELETE FROM msd_pipeline WHERE id = ?", (item_id,))
+            if res.rowcount == 0:
+                return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+            conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.error("msd_pipeline_delete 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 브랜드 미디어 트래픽 (Home — 브랜드 언급 Top 10)
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _brand_traffic_row_to_dict(r) -> dict:
+    import json as _json
+    return {
+        "id": r[0],
+        "rank": r[1],
+        "brand": r[2],
+        "company": r[3],
+        "category": r[4],
+        "color": r[5],
+        "trafficIndex": r[6],
+        "change": r[7],
+        "sparkline": _json.loads(r[8]) if r[8] else [],
+        "news": _json.loads(r[9]) if r[9] else [],
+        "created_at": r[10],
+        "updated_at": r[11],
+    }
+
+
+_BRAND_TRAFFIC_COLS = "id, rank, brand, company, category, color, traffic_index, change_pct, sparkline_json, news_json, created_at, updated_at"
+
+
+@app.get("/api/brand-traffic")
+@require_auth()
+def brand_traffic_list():
+    try:
+        with db._connect() as conn:
+            rows = conn.execute(
+                f"SELECT {_BRAND_TRAFFIC_COLS} FROM brand_traffic ORDER BY rank ASC"
+            ).fetchall()
+        return jsonify({"items": [_brand_traffic_row_to_dict(r) for r in rows]})
+    except Exception as e:
+        logger.error("brand_traffic_list 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+def _coerce_brand_traffic_input(body: dict) -> dict | tuple[dict, str]:
+    import json as _json
+    out: dict = {}
+    if "rank" in body:
+        try:
+            out["rank"] = int(body["rank"])
+        except (TypeError, ValueError):
+            return ({}, "rank must be integer")
+    if "brand" in body:
+        brand = (body.get("brand") or "").strip()
+        if not brand:
+            return ({}, "brand required")
+        out["brand"] = brand
+    for k in ("company", "category", "color"):
+        if k in body:
+            v = body.get(k)
+            out[k] = v.strip() if isinstance(v, str) else v
+    if "trafficIndex" in body:
+        try:
+            out["traffic_index"] = int(body["trafficIndex"])
+        except (TypeError, ValueError):
+            return ({}, "trafficIndex must be integer")
+    if "change" in body:
+        try:
+            out["change_pct"] = float(body["change"])
+        except (TypeError, ValueError):
+            return ({}, "change must be number")
+    if "sparkline" in body:
+        spark = body.get("sparkline") or []
+        if not isinstance(spark, list):
+            return ({}, "sparkline must be array")
+        try:
+            spark = [float(x) for x in spark]
+        except (TypeError, ValueError):
+            return ({}, "sparkline must contain numbers")
+        out["sparkline_json"] = _json.dumps(spark, ensure_ascii=False)
+    if "news" in body:
+        news = body.get("news") or []
+        if not isinstance(news, list):
+            return ({}, "news must be array")
+        out["news_json"] = _json.dumps(news, ensure_ascii=False)
+    return out
+
+
+@app.post("/api/admin/brand-traffic")
+@require_auth(role="admin")
+def brand_traffic_create():
+    body = request.get_json(silent=True) or {}
+    if not (body.get("brand") or "").strip():
+        return jsonify({"error": "brand required", "code": "INVALID"}), 400
+    result = _coerce_brand_traffic_input(body)
+    if isinstance(result, tuple):
+        _, msg = result
+        return jsonify({"error": msg, "code": "INVALID"}), 400
+    fields = result
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        with db._connect() as conn:
+            if "rank" not in fields:
+                row = conn.execute("SELECT COALESCE(MAX(rank),0)+1 FROM brand_traffic").fetchone()
+                fields["rank"] = row[0]
+            fields.setdefault("traffic_index", 0)
+            fields.setdefault("change_pct", 0.0)
+            fields.setdefault("sparkline_json", "[]")
+            fields.setdefault("news_json", "[]")
+            fields["created_at"] = now
+            fields["updated_at"] = now
+            cols = ", ".join(fields.keys())
+            placeholders = ", ".join("?" for _ in fields)
+            cur = conn.execute(
+                f"INSERT INTO brand_traffic ({cols}) VALUES ({placeholders})",
+                list(fields.values()),
+            )
+            conn.commit()
+            new_id = cur.lastrowid
+            row = conn.execute(
+                f"SELECT {_BRAND_TRAFFIC_COLS} FROM brand_traffic WHERE id=?", (new_id,)
+            ).fetchone()
+        return jsonify({"item": _brand_traffic_row_to_dict(row)}), 201
+    except Exception as e:
+        logger.error("brand_traffic_create 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.patch("/api/admin/brand-traffic/<int:item_id>")
+@require_auth(role="admin")
+def brand_traffic_update(item_id: int):
+    body = request.get_json(silent=True) or {}
+    result = _coerce_brand_traffic_input(body)
+    if isinstance(result, tuple):
+        _, msg = result
+        return jsonify({"error": msg, "code": "INVALID"}), 400
+    fields = result
+    if not fields:
+        return jsonify({"error": "변경할 필드 없음", "code": "INVALID"}), 400
+    from datetime import datetime, timezone
+    fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+    set_clause = ", ".join(f"{k} = ?" for k in fields.keys())
+    params = list(fields.values()) + [item_id]
+    try:
+        with db._connect() as conn:
+            res = conn.execute(
+                f"UPDATE brand_traffic SET {set_clause} WHERE id = ?", params
+            )
+            if res.rowcount == 0:
+                return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+            conn.commit()
+            row = conn.execute(
+                f"SELECT {_BRAND_TRAFFIC_COLS} FROM brand_traffic WHERE id=?", (item_id,)
+            ).fetchone()
+        return jsonify({"item": _brand_traffic_row_to_dict(row)})
+    except Exception as e:
+        logger.error("brand_traffic_update 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.delete("/api/admin/brand-traffic/<int:item_id>")
+@require_auth(role="admin")
+def brand_traffic_delete(item_id: int):
+    try:
+        with db._connect() as conn:
+            res = conn.execute("DELETE FROM brand_traffic WHERE id = ?", (item_id,))
+            if res.rowcount == 0:
+                return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+            conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.error("brand_traffic_delete 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Daily Mailing — 구독 설정 (사용자별 CRUD + 테스트 발송)
+# ──────────────────────────────────────────────────────────────────────────────
+
+from agents.notify.mailer import (  # noqa: E402
+    send_email as _mail_send,
+    smtp_configured as _mail_smtp_configured,
+)
+from agents.notify.digest import render_daily_digest as _mail_render_digest  # noqa: E402
+
+
+def _mail_sub_row_to_dict(r) -> dict:
+    import json as _json
+    return {
+        "id": r[0],
+        "name": r[1],
+        "keywords": _json.loads(r[2]) if r[2] else [],
+        "media": _json.loads(r[3]) if r[3] else [],
+        "schedule": r[4],
+        "time": r[5],
+        "weekDay": r[6],
+        "emails": _json.loads(r[7]) if r[7] else [],
+        "active": bool(r[8]),
+        "created_at": r[9],
+        "updated_at": r[10],
+        "last_sent_at": r[11],
+    }
+
+
+_MAIL_SUB_COLS = "id, name, keywords_json, media_json, schedule, time, week_day, emails_json, active, created_at, updated_at, last_sent_at"
+
+
+def _coerce_mail_sub_input(body: dict) -> dict | tuple[dict, str]:
+    import json as _json
+    out: dict = {}
+    if "name" in body:
+        name = (body.get("name") or "").strip()
+        if not name:
+            return ({}, "name required")
+        out["name"] = name
+    if "keywords" in body:
+        kws = body.get("keywords") or []
+        if not isinstance(kws, list):
+            return ({}, "keywords must be array")
+        out["keywords_json"] = _json.dumps([str(x) for x in kws], ensure_ascii=False)
+    if "media" in body:
+        media = body.get("media") or []
+        if not isinstance(media, list):
+            return ({}, "media must be array")
+        out["media_json"] = _json.dumps([str(x) for x in media], ensure_ascii=False)
+    if "schedule" in body:
+        sched = body.get("schedule")
+        if sched not in ("Daily", "Weekly"):
+            return ({}, "schedule must be Daily|Weekly")
+        out["schedule"] = sched
+    if "time" in body:
+        t = (body.get("time") or "").strip()
+        if not t:
+            return ({}, "time required")
+        out["time"] = t
+    if "weekDay" in body:
+        wd = body.get("weekDay")
+        out["week_day"] = wd if wd else None
+    if "emails" in body:
+        emails = body.get("emails") or []
+        if not isinstance(emails, list):
+            return ({}, "emails must be array")
+        cleaned = [e.strip() for e in emails if isinstance(e, str) and e.strip()]
+        if not cleaned:
+            return ({}, "at least one email required")
+        out["emails_json"] = _json.dumps(cleaned, ensure_ascii=False)
+    if "active" in body:
+        out["active"] = 1 if body.get("active") else 0
+    return out
+
+
+@app.get("/api/mail-subscriptions")
+@require_auth()
+def mail_sub_list():
+    owner = request.user["sub"]  # type: ignore[attr-defined]
+    try:
+        with db._connect() as conn:
+            rows = conn.execute(
+                f"SELECT {_MAIL_SUB_COLS} FROM mail_subscription WHERE owner_email=? ORDER BY created_at DESC",
+                (owner,),
+            ).fetchall()
+        return jsonify({
+            "items": [_mail_sub_row_to_dict(r) for r in rows],
+            "smtp_configured": _mail_smtp_configured(),
+        })
+    except Exception as e:
+        logger.error("mail_sub_list 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/mail-subscriptions")
+@require_auth()
+def mail_sub_create():
+    owner = request.user["sub"]  # type: ignore[attr-defined]
+    body = request.get_json(silent=True) or {}
+    required = ("name", "keywords", "media", "schedule", "time", "emails")
+    for k in required:
+        if k not in body:
+            return jsonify({"error": f"{k} required", "code": "INVALID"}), 400
+    result = _coerce_mail_sub_input(body)
+    if isinstance(result, tuple):
+        _, msg = result
+        return jsonify({"error": msg, "code": "INVALID"}), 400
+    fields = result
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    fields["owner_email"] = owner
+    fields.setdefault("active", 1)
+    fields.setdefault("week_day", None)
+    fields["created_at"] = now
+    fields["updated_at"] = now
+    try:
+        with db._connect() as conn:
+            cols = ", ".join(fields.keys())
+            placeholders = ", ".join("?" for _ in fields)
+            cur = conn.execute(
+                f"INSERT INTO mail_subscription ({cols}) VALUES ({placeholders})",
+                list(fields.values()),
+            )
+            conn.commit()
+            row = conn.execute(
+                f"SELECT {_MAIL_SUB_COLS} FROM mail_subscription WHERE id=?", (cur.lastrowid,),
+            ).fetchone()
+        return jsonify({"item": _mail_sub_row_to_dict(row)}), 201
+    except Exception as e:
+        logger.error("mail_sub_create 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.patch("/api/mail-subscriptions/<int:item_id>")
+@require_auth()
+def mail_sub_update(item_id: int):
+    owner = request.user["sub"]  # type: ignore[attr-defined]
+    body = request.get_json(silent=True) or {}
+    result = _coerce_mail_sub_input(body)
+    if isinstance(result, tuple):
+        _, msg = result
+        return jsonify({"error": msg, "code": "INVALID"}), 400
+    fields = result
+    if not fields:
+        return jsonify({"error": "변경할 필드 없음", "code": "INVALID"}), 400
+    from datetime import datetime, timezone
+    fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+    set_clause = ", ".join(f"{k} = ?" for k in fields.keys())
+    params = list(fields.values()) + [item_id, owner]
+    try:
+        with db._connect() as conn:
+            res = conn.execute(
+                f"UPDATE mail_subscription SET {set_clause} WHERE id = ? AND owner_email = ?",
+                params,
+            )
+            if res.rowcount == 0:
+                return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+            conn.commit()
+            row = conn.execute(
+                f"SELECT {_MAIL_SUB_COLS} FROM mail_subscription WHERE id=?", (item_id,),
+            ).fetchone()
+        return jsonify({"item": _mail_sub_row_to_dict(row)})
+    except Exception as e:
+        logger.error("mail_sub_update 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.delete("/api/mail-subscriptions/<int:item_id>")
+@require_auth()
+def mail_sub_delete(item_id: int):
+    owner = request.user["sub"]  # type: ignore[attr-defined]
+    try:
+        with db._connect() as conn:
+            res = conn.execute(
+                "DELETE FROM mail_subscription WHERE id = ? AND owner_email = ?",
+                (item_id, owner),
+            )
+            if res.rowcount == 0:
+                return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+            conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.error("mail_sub_delete 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/mailing/preview")
+def mail_preview():
+    """Daily Mailing 프리뷰 — 실데이터로 렌더된 HTML 반환.
+
+    Query:
+      - name: 구독 이름 (default "Daily Dossier")
+      - keywords: 콤마 구분
+      - media: 콤마 구분
+      - format: "html" (default) → text/html, "json" → {subject, html, text}
+    """
+    name = (request.args.get("name") or "Daily Dossier").strip()
+    keywords = [s for s in (request.args.get("keywords") or "").split(",") if s.strip()]
+    media = [s for s in (request.args.get("media") or "").split(",") if s.strip()]
+    fmt = request.args.get("format", "html")
+    dashboard_url = request.host_url.rstrip("/").replace(":5001", ":3000")
+    try:
+        subject, body_html, body_text = _mail_render_digest(
+            name=name, dashboard_url=dashboard_url, keywords=keywords, media=media,
+        )
+        if fmt == "json":
+            return jsonify({"subject": subject, "html": body_html, "text": body_text})
+        from flask import Response
+        return Response(body_html, mimetype="text/html")
+    except Exception as e:
+        logger.error("mail preview 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/mail-subscriptions/<int:item_id>/preview")
+@require_auth()
+def mail_sub_preview(item_id: int):
+    """저장된 구독에 대한 프리뷰 JSON ({subject, html, text})."""
+    owner = request.user["sub"]  # type: ignore[attr-defined]
+    try:
+        with db._connect() as conn:
+            row = conn.execute(
+                f"SELECT {_MAIL_SUB_COLS} FROM mail_subscription WHERE id=? AND owner_email=?",
+                (item_id, owner),
+            ).fetchone()
+        if row is None:
+            return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+        item = _mail_sub_row_to_dict(row)
+        dashboard_url = request.host_url.rstrip("/").replace(":5001", ":3000")
+        subject, body_html, body_text = _mail_render_digest(
+            name=item["name"], dashboard_url=dashboard_url,
+            keywords=item["keywords"], media=item["media"],
+        )
+        return jsonify({"subject": subject, "html": body_html, "text": body_text})
+    except Exception as e:
+        logger.error("mail sub preview 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/mail-subscriptions/<int:item_id>/test-send")
+@require_auth()
+def mail_sub_test_send(item_id: int):
+    owner = request.user["sub"]  # type: ignore[attr-defined]
+    try:
+        with db._connect() as conn:
+            row = conn.execute(
+                f"SELECT {_MAIL_SUB_COLS} FROM mail_subscription WHERE id=? AND owner_email=?",
+                (item_id, owner),
+            ).fetchone()
+            if row is None:
+                return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+            item = _mail_sub_row_to_dict(row)
+            dashboard_url = request.host_url.rstrip("/").replace(":5001", ":3000")
+            subject, body_html, body_text = _mail_render_digest(
+                name=item["name"],
+                dashboard_url=dashboard_url,
+                keywords=item["keywords"],
+                media=item["media"],
+            )
+            result = _mail_send(item["emails"], subject, body_html, body_text=body_text)
+            if result.get("ok") and result.get("mode") == "smtp":
+                from datetime import datetime, timezone
+                now = datetime.now(timezone.utc).isoformat()
+                conn.execute(
+                    "UPDATE mail_subscription SET last_sent_at=? WHERE id=?",
+                    (now, item_id),
+                )
+                conn.commit()
+        return jsonify(result)
+    except Exception as e:
+        logger.error("mail_sub_test_send 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Competitor Trends — 경쟁사 동향 카드 (CRUD)
+# ──────────────────────────────────────────────────────────────────────────────
+
+_COMPETITOR_COLS = "id, company, logo, color, badge, badge_color, headline, detail, date, source, url, created_at, updated_at"
+
+_COMPETITOR_BADGES = ("신규 출시", "가격 변동", "임상 진행", "급여 등재", "파이프라인", "전략 변화")
+
+
+def _competitor_row_to_dict(r) -> dict:
+    return {
+        "id": r[0],
+        "company": r[1],
+        "logo": r[2],
+        "color": r[3],
+        "badge": r[4],
+        "badgeColor": r[5],
+        "headline": r[6],
+        "detail": r[7],
+        "date": r[8],
+        "source": r[9],
+        "url": r[10],
+        "created_at": r[11],
+        "updated_at": r[12],
+    }
+
+
+def _coerce_competitor_input(body: dict) -> dict | tuple[dict, str]:
+    out: dict = {}
+    for k in ("company", "headline", "detail"):
+        if k in body:
+            v = (body.get(k) or "").strip()
+            if not v:
+                return ({}, f"{k} required")
+            out[k] = v
+    if "badge" in body:
+        badge = (body.get("badge") or "").strip()
+        if badge not in _COMPETITOR_BADGES:
+            return ({}, f"badge must be one of {_COMPETITOR_BADGES}")
+        out["badge"] = badge
+    if "date" in body:
+        d = (body.get("date") or "").strip()
+        if not d:
+            return ({}, "date required")
+        out["date"] = d
+    for k in ("logo", "color", "source", "url"):
+        if k in body:
+            v = body.get(k)
+            out[k] = v.strip() if isinstance(v, str) else v
+    if "badgeColor" in body:
+        v = body.get("badgeColor")
+        out["badge_color"] = v.strip() if isinstance(v, str) else v
+    return out
+
+
+@app.get("/api/competitor-trends")
+@require_auth()
+def competitor_list():
+    try:
+        with db._connect() as conn:
+            rows = conn.execute(
+                f"SELECT {_COMPETITOR_COLS} FROM competitor_trend ORDER BY date DESC, id DESC"
+            ).fetchall()
+        return jsonify({"items": [_competitor_row_to_dict(r) for r in rows]})
+    except Exception as e:
+        logger.error("competitor_list 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/admin/competitor-trends")
+@require_auth(role="admin")
+def competitor_create():
+    body = request.get_json(silent=True) or {}
+    for req_key in ("company", "badge", "headline", "detail", "date"):
+        if not (body.get(req_key) or "").strip() if isinstance(body.get(req_key), str) else not body.get(req_key):
+            return jsonify({"error": f"{req_key} required", "code": "INVALID"}), 400
+    result = _coerce_competitor_input(body)
+    if isinstance(result, tuple):
+        _, msg = result
+        return jsonify({"error": msg, "code": "INVALID"}), 400
+    fields = result
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    fields["created_at"] = now
+    fields["updated_at"] = now
+    cols = ", ".join(fields.keys())
+    placeholders = ", ".join("?" for _ in fields)
+    try:
+        with db._connect() as conn:
+            cur = conn.execute(
+                f"INSERT INTO competitor_trend ({cols}) VALUES ({placeholders})",
+                list(fields.values()),
+            )
+            conn.commit()
+            new_id = cur.lastrowid
+            row = conn.execute(
+                f"SELECT {_COMPETITOR_COLS} FROM competitor_trend WHERE id=?", (new_id,)
+            ).fetchone()
+        return jsonify({"item": _competitor_row_to_dict(row)}), 201
+    except Exception as e:
+        logger.error("competitor_create 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.patch("/api/admin/competitor-trends/<int:item_id>")
+@require_auth(role="admin")
+def competitor_update(item_id: int):
+    body = request.get_json(silent=True) or {}
+    result = _coerce_competitor_input(body)
+    if isinstance(result, tuple):
+        _, msg = result
+        return jsonify({"error": msg, "code": "INVALID"}), 400
+    fields = result
+    if not fields:
+        return jsonify({"error": "변경할 필드 없음", "code": "INVALID"}), 400
+    from datetime import datetime, timezone
+    fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+    set_clause = ", ".join(f"{k} = ?" for k in fields.keys())
+    params = list(fields.values()) + [item_id]
+    try:
+        with db._connect() as conn:
+            res = conn.execute(
+                f"UPDATE competitor_trend SET {set_clause} WHERE id = ?", params
+            )
+            if res.rowcount == 0:
+                return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+            conn.commit()
+            row = conn.execute(
+                f"SELECT {_COMPETITOR_COLS} FROM competitor_trend WHERE id=?", (item_id,)
+            ).fetchone()
+        return jsonify({"item": _competitor_row_to_dict(row)})
+    except Exception as e:
+        logger.error("competitor_update 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.delete("/api/admin/competitor-trends/<int:item_id>")
+@require_auth(role="admin")
+def competitor_delete(item_id: int):
+    try:
+        with db._connect() as conn:
+            res = conn.execute("DELETE FROM competitor_trend WHERE id = ?", (item_id,))
+            if res.rowcount == 0:
+                return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+            conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.error("competitor_delete 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/admin/competitor-trends/refresh")
+@require_auth(role="admin")
+def competitor_refresh():
+    """경쟁사 뉴스 수동 크롤 트리거 (주 1회 cron 과 동일 로직)."""
+    body = request.get_json(silent=True) or {}
+    days = int(body.get("days", 7))
+    dry_run = bool(body.get("dry_run", False))
+    model = body.get("model") or "gpt-4o-mini"
+    try:
+        from agents.competitor_trends_agent import run as _ct_run
+        result = _ct_run(days=days, dry_run=dry_run, model=model)
+        return jsonify(result)
+    except Exception as e:
+        logger.error("competitor_refresh 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e), "code": "REFRESH_FAIL"}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Keyword Cloud — Home 워드클라우드 (CRUD)
+# ──────────────────────────────────────────────────────────────────────────────
+
+_KEYWORD_COLS = "id, text, weight, color, created_at, updated_at"
+
+
+def _keyword_row_to_dict(r) -> dict:
+    return {
+        "id": r[0],
+        "text": r[1],
+        "weight": r[2],
+        "color": r[3],
+        "created_at": r[4],
+        "updated_at": r[5],
+    }
+
+
+def _coerce_keyword_input(body: dict) -> dict | tuple[dict, str]:
+    out: dict = {}
+    if "text" in body:
+        t = (body.get("text") or "").strip()
+        if not t:
+            return ({}, "text required")
+        out["text"] = t
+    if "weight" in body:
+        try:
+            w = int(body["weight"])
+        except (TypeError, ValueError):
+            return ({}, "weight must be integer")
+        if w < 0 or w > 1000:
+            return ({}, "weight out of range")
+        out["weight"] = w
+    if "color" in body:
+        v = body.get("color")
+        out["color"] = v.strip() if isinstance(v, str) else v
+    return out
+
+
+@app.get("/api/keyword-cloud")
+@require_auth()
+def keyword_list():
+    try:
+        with db._connect() as conn:
+            rows = conn.execute(
+                f"SELECT {_KEYWORD_COLS} FROM keyword_cloud ORDER BY weight DESC, id ASC"
+            ).fetchall()
+        return jsonify({"items": [_keyword_row_to_dict(r) for r in rows]})
+    except Exception as e:
+        logger.error("keyword_list 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/admin/keyword-cloud")
+@require_auth(role="admin")
+def keyword_create():
+    body = request.get_json(silent=True) or {}
+    if not (body.get("text") or "").strip():
+        return jsonify({"error": "text required", "code": "INVALID"}), 400
+    result = _coerce_keyword_input(body)
+    if isinstance(result, tuple):
+        _, msg = result
+        return jsonify({"error": msg, "code": "INVALID"}), 400
+    fields = result
+    fields.setdefault("weight", 50)
+    fields.setdefault("color", "#8B9BB4")
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    fields["created_at"] = now
+    fields["updated_at"] = now
+    cols = ", ".join(fields.keys())
+    placeholders = ", ".join("?" for _ in fields)
+    try:
+        with db._connect() as conn:
+            try:
+                cur = conn.execute(
+                    f"INSERT INTO keyword_cloud ({cols}) VALUES ({placeholders})",
+                    list(fields.values()),
+                )
+            except sqlite3.IntegrityError:
+                return jsonify({"error": "duplicate text", "code": "CONFLICT"}), 409
+            conn.commit()
+            new_id = cur.lastrowid
+            row = conn.execute(
+                f"SELECT {_KEYWORD_COLS} FROM keyword_cloud WHERE id=?", (new_id,)
+            ).fetchone()
+        return jsonify({"item": _keyword_row_to_dict(row)}), 201
+    except Exception as e:
+        logger.error("keyword_create 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.patch("/api/admin/keyword-cloud/<int:item_id>")
+@require_auth(role="admin")
+def keyword_update(item_id: int):
+    body = request.get_json(silent=True) or {}
+    result = _coerce_keyword_input(body)
+    if isinstance(result, tuple):
+        _, msg = result
+        return jsonify({"error": msg, "code": "INVALID"}), 400
+    fields = result
+    if not fields:
+        return jsonify({"error": "변경할 필드 없음", "code": "INVALID"}), 400
+    from datetime import datetime, timezone
+    fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+    set_clause = ", ".join(f"{k} = ?" for k in fields.keys())
+    params = list(fields.values()) + [item_id]
+    try:
+        with db._connect() as conn:
+            res = conn.execute(
+                f"UPDATE keyword_cloud SET {set_clause} WHERE id = ?", params
+            )
+            if res.rowcount == 0:
+                return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+            conn.commit()
+            row = conn.execute(
+                f"SELECT {_KEYWORD_COLS} FROM keyword_cloud WHERE id=?", (item_id,)
+            ).fetchone()
+        return jsonify({"item": _keyword_row_to_dict(row)})
+    except Exception as e:
+        logger.error("keyword_update 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.delete("/api/admin/keyword-cloud/<int:item_id>")
+@require_auth(role="admin")
+def keyword_delete(item_id: int):
+    try:
+        with db._connect() as conn:
+            res = conn.execute("DELETE FROM keyword_cloud WHERE id = ?", (item_id,))
+            if res.rowcount == 0:
+                return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+            conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.error("keyword_delete 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 적응증별 한국 급여 상태 (HIRA) — admin 체크리스트 CRUD
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _reimbursement_row_to_dict(r) -> dict:
+    return {
+        "indication_id": r[0],
+        "product": r[1],
+        "disease": r[2],
+        "line_of_therapy": r[3],
+        "stage": r[4],
+        "biomarker_class": r[5],
+        "title": r[6],
+        "is_reimbursed": bool(r[7]) if r[7] is not None else False,
+        "effective_date": r[8],
+        "criteria_text": r[9],
+        "notice_date": r[10],
+        "notice_url": r[11],
+        "updated_by": r[12],
+        "updated_at": r[13],
+    }
+
+
+@app.get("/api/admin/reimbursement")
+@require_auth(role="admin")
+def admin_reimbursement_list():
+    """product 별 적응증 목록 + 급여 상태 (LEFT JOIN)."""
+    product = (request.args.get("product") or "").strip().lower()
+    try:
+        with db._connect() as conn:
+            sql = """
+                SELECT m.indication_id, m.product, m.disease, m.line_of_therapy,
+                       m.stage, m.biomarker_class, m.title,
+                       r.is_reimbursed, r.effective_date, r.criteria_text,
+                       r.notice_date, r.notice_url, r.updated_by, r.updated_at
+                FROM indications_master m
+                LEFT JOIN indication_reimbursement r
+                    ON r.indication_id = m.indication_id
+            """
+            params: list = []
+            if product:
+                sql += " WHERE m.product = ?"
+                params.append(product)
+            sql += " ORDER BY m.product, m.disease, m.line_of_therapy, m.indication_id"
+            rows = conn.execute(sql, params).fetchall()
+        return jsonify({"items": [_reimbursement_row_to_dict(r) for r in rows]})
+    except Exception as e:
+        logger.error("reimbursement_list 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.put("/api/admin/reimbursement/<indication_id>")
+@require_auth(role="admin")
+def admin_reimbursement_upsert(indication_id: str):
+    """indication_id 단위 upsert. body: {is_reimbursed, effective_date, criteria_text, notice_date, notice_url}."""
+    body = request.get_json(silent=True) or {}
+    is_reimbursed = 1 if body.get("is_reimbursed") else 0
+    effective_date = (body.get("effective_date") or "").strip() or None
+    criteria_text = (body.get("criteria_text") or "").strip() or None
+    notice_date = (body.get("notice_date") or "").strip() or None
+    notice_url = (body.get("notice_url") or "").strip() or None
+    user_email = getattr(request, "user", {}).get("sub") if hasattr(request, "user") else None
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    try:
+        with db._connect() as conn:
+            exists = conn.execute(
+                "SELECT 1 FROM indications_master WHERE indication_id = ?",
+                (indication_id,),
+            ).fetchone()
+            if not exists:
+                return jsonify({"error": "indication_id not found", "code": "NOT_FOUND"}), 404
+            conn.execute(
+                """
+                INSERT INTO indication_reimbursement
+                    (indication_id, is_reimbursed, effective_date, criteria_text,
+                     notice_date, notice_url, updated_by, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(indication_id) DO UPDATE SET
+                    is_reimbursed = excluded.is_reimbursed,
+                    effective_date = excluded.effective_date,
+                    criteria_text = excluded.criteria_text,
+                    notice_date = excluded.notice_date,
+                    notice_url = excluded.notice_url,
+                    updated_by = excluded.updated_by,
+                    updated_at = excluded.updated_at
+                """,
+                (indication_id, is_reimbursed, effective_date, criteria_text,
+                 notice_date, notice_url, user_email, now),
+            )
+            conn.commit()
+            row = conn.execute(
+                """
+                SELECT m.indication_id, m.product, m.disease, m.line_of_therapy,
+                       m.stage, m.biomarker_class, m.title,
+                       r.is_reimbursed, r.effective_date, r.criteria_text,
+                       r.notice_date, r.notice_url, r.updated_by, r.updated_at
+                FROM indications_master m
+                LEFT JOIN indication_reimbursement r
+                    ON r.indication_id = m.indication_id
+                WHERE m.indication_id = ?
+                """,
+                (indication_id,),
+            ).fetchone()
+        return jsonify({"item": _reimbursement_row_to_dict(row)})
+    except Exception as e:
+        logger.error("reimbursement_upsert 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 

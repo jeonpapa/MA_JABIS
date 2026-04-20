@@ -268,12 +268,16 @@ class DeRoteListeScraper(BaseScraper):
         # ── 가격 추출 ─────────────────────────────────────────────────────
         # 로그인 후 PACKUNGSANGABEN 섹션에 테이블 형태로 가격이 표시됨
         # 패턴: "N1  12345678  1.234,56  5.678,90" 또는 "€ 1.234,56"
+        # 독일 숫자: 천단위 "." + 소수점 ","  (예: 17.830,31)
+        # negative lookbehind 로 앞자리 절단 방지
+        DE_NUMBER = r"(?<![\d\.,])\d{1,3}(?:\.\d{3})*,\d{2}(?![\d\.])"
+
         price = None
         all_prices = []
 
-        # 테이블 행 파싱: PZN (8자리) + 가격 패턴
+        # 테이블 행 파싱: PZN (8자리) + 독일식 가격 패턴
         pack_rows = re.findall(
-            r"(\d+\s+[^\d\n]{5,60}?)\s+(N[123])?\s+(\d{8})\s+([\d]{1,5}[,\.]\d{2})\s*([\d]{1,6}[,\.]\d{2})?",
+            rf"(\d+\s+[^\d\n]{{5,60}}?)\s+(N[123])?\s+(\d{{8}})\s+({DE_NUMBER})\s*({DE_NUMBER})?",
             text,
         )
         for row in pack_rows:
@@ -299,8 +303,8 @@ class DeRoteListeScraper(BaseScraper):
             dosage = all_prices[0]["dosage_strength"] or dosage
             pzn    = all_prices[0]["pzn"] or pzn
         else:
-            # 폴백: 단순 유로 가격 패턴
-            euro_prices = re.findall(r"(\d{1,6}[,\.]\d{2})\s*€", text)
+            # 폴백: 단순 유로 가격 패턴 — 독일식 천단위 구분자 보존
+            euro_prices = re.findall(rf"({DE_NUMBER})\s*€", text)
             for ep in euro_prices:
                 try:
                     p = float(ep.replace(".", "").replace(",", "."))
@@ -378,6 +382,7 @@ class DeRoteListeScraper(BaseScraper):
 
         results = []
         for item in raw_results:
+            form_type = self._resolve_form_type(item)
             results.append({
                 "searched_at":         searched_at,
                 "query_name":          query,
@@ -399,6 +404,7 @@ class DeRoteListeScraper(BaseScraper):
                 "source_url":          item.get("source_url", ""),
                 "source_label":        self.SOURCE_LABEL,
                 "raw_data":            json.dumps(item.get("extra", {}), ensure_ascii=False),
+                "form_type":           form_type,
             })
 
         return results
