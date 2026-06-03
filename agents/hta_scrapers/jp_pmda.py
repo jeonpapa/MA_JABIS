@@ -222,7 +222,7 @@ def _split_indications(section_text: str) -> list[PMDAIndication]:
         out.append(PMDAIndication(
             code=f"pmda_{idx}",
             label=label[:120],
-            body=body[:2000],
+            body=body,
             keywords=[],   # 일본어 키워드는 LLM 단계에서 영어로 정규화
         ))
     return out

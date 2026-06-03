@@ -182,7 +182,11 @@ def parse_keb_excel(excel_path: Path) -> dict[str, float]:
         try:
             rate = float(raw_rate.replace(",", ""))
             if rate > 0:
-                rates[cur] = rate
+                # KEB 는 JPY 를 "100엔당" 으로 고시 (예: 924.75 = 100 JPY 기준 KRW).
+                # local_price * rate 가 KRW 가 되려면 per-1-unit 로 정규화 필요.
+                # raw_cur 에 "100" 이 있으면 divisor=100 적용.
+                per_unit_divisor = 100.0 if "100" in raw_cur else 1.0
+                rates[cur] = rate / per_unit_divisor
         except ValueError:
             continue
 
@@ -259,73 +263,101 @@ class ExchangeRateFetcher:
 
 
 class PriceCalculator:
-    """HIRA 기준 해외약가 조정가 계산기."""
+    """A8 조정가 계산기 — 한국 재정영향분석 표준 (per-tablet/per-vial KRW).
 
+    공식 (2025.3 기준, MSD 재정영향분석서 표준):
+        A8_adj_per_unit_KRW =
+            per_unit_local                          ← listed_price / pack_count
+            × exchange_rate                         ← KEB 36mo 평균 (JPY per-1 정규화)
+            × factory_ratio(country, source_type)   ← 국가별 공장도 출하 비율
+            × (1 + KR_VAT = 0.10)                   ← 한국 부가가치세 10% 가산
+            × (1 + KR_DIST_MARGIN = 0.0869)         ← 한국 유통거래폭 8.69% 가산
+
+    **한국 VAT/유통거래폭은 국가별이 아닌 Korean A8 기준 상수** — foreign ex-factory 를
+    한국 retail 등가로 환산하기 위한 uplift. 국가별 VAT(DE 19%, JP 10% 등) 과 혼동 금지.
+
+    반환 adjusted_price_krw 는 **per-unit (tablet/vial) KRW** — pack 단위 아님.
+    """
+
+    # Korean A8 상수 (모든 국가 공통 uplift)
+    KR_VAT = 0.10
+    KR_DIST_MARGIN = 0.0869
+
+    # 국가별 factory_ratio (local retail → 해당국 ex-factory, 한국 재정영향분석 표준)
     FACTORY_RATIO = {
-        "US": 0.74, "UK": 0.73, "DE": None,
+        "US": 0.74, "UK": 0.73, "DE": 0.6955,
         "FR": 0.77, "IT": 0.93, "CH": 0.73,
         "JP": 0.79, "CA": 0.81,
     }
-    VAT_RATE = {
-        "US": 0.00, "UK": 0.00, "DE": 0.19,
-        "FR": 0.055, "IT": 0.10, "CH": 0.077,
-        "JP": 0.10, "CA": 0.00,
+
+    # source-specific 오버라이드 (공시가 체계가 다른 경우)
+    SOURCE_OVERRIDES = {
+        "aifa_exfactory": 1.0,    # IT Class H: 이미 ex-factory
+        "ch_compendium":  0.65,   # CH Compendium
+        "fr_vidal":       0.65,   # FR Vidal (BDPM 사용 시는 SOURCE_TYPE=None → 기본 0.77)
     }
-    DISTRIBUTION_MARGIN = {k: 0.0 for k in ["US","UK","DE","FR","IT","CH","JP","CA"]}
+
     CURRENCY = COUNTRY_CURRENCY
 
-    def calculate_factory_price(self, country: str, listed_price: float,
-                                source_type: str = None) -> float:
-        if source_type == "aifa_exfactory":
-            return listed_price
-        ratio = self.FACTORY_RATIO.get(country)
-        if ratio is None:   # 독일 특수 계산
-            factory = listed_price / (1.19 * 1.0315) - 8.35 - 0.7
-            return max(factory * (1 - 0.07), 0)
-        if country == "CH" and source_type == "compendium":
-            ratio = 0.65
-        elif country == "FR" and source_type == "vidal":
-            ratio = 0.65
-        return listed_price * ratio
+    def resolve_factory_ratio(self, country: str, source_type: str = None):
+        """source_type 우선, 없으면 국가별 기본값."""
+        if source_type and source_type in self.SOURCE_OVERRIDES:
+            return self.SOURCE_OVERRIDES[source_type]
+        return self.FACTORY_RATIO.get(country)
 
-    def calculate_adjusted_price(self, country: str, listed_price: float,
-                                  exchange_rate: float, source_type: str = None) -> dict:
-        factory_price = self.calculate_factory_price(country, listed_price, source_type)
-        vat    = self.VAT_RATE.get(country, 0)
-        margin = self.DISTRIBUTION_MARGIN.get(country, 0)
-        krw_converted = listed_price * exchange_rate
-        factory_krw = factory_price * exchange_rate
-        vat_applied = factory_krw * (1 + vat)
-        adjusted = int(vat_applied * (1 + margin))
+    def calculate_adjusted_price(
+        self,
+        country: str,
+        listed_price: float,
+        exchange_rate: float,
+        pack_count: int = None,
+        source_type: str = None,
+    ) -> dict:
+        """A8 조정가 계산. 반환 `adjusted_price_krw` 는 per-unit KRW.
 
-        if source_type == "aifa_exfactory":
-            ratio_used = None
-            ratio_label = "Ex-factory (직접)"
-        elif country == "CH" and source_type == "compendium":
-            ratio_used = 0.65
-            ratio_label = "Compendium 0.65"
-        elif country == "FR" and source_type == "vidal":
-            ratio_used = 0.65
-            ratio_label = "Vidal 0.65"
-        elif country == "DE":
-            ratio_used = None
-            ratio_label = "독일 특수공식"
+        pack_count: listed_price 가 pack 가격이면 tablet/vial 수. None/1 이면 per-unit 취급.
+        """
+        # JPY per-100 safeguard (KEB 레거시 캐시 호환)
+        if country == "JP" and exchange_rate and exchange_rate > 100:
+            exchange_rate = exchange_rate / 100.0
+
+        if pack_count and pack_count > 1:
+            per_unit_listed = listed_price / pack_count
         else:
-            ratio_used = self.FACTORY_RATIO.get(country)
-            ratio_label = f"HIRA 기준 {ratio_used}" if ratio_used else "—"
+            per_unit_listed = listed_price
+            pack_count = 1
+
+        ratio = self.resolve_factory_ratio(country, source_type)
+        if ratio is None:
+            raise ValueError(
+                f"factory_ratio 정의 없음: country={country} source_type={source_type}"
+            )
+
+        per_unit_raw_krw     = per_unit_listed * exchange_rate
+        per_unit_factory_krw = per_unit_raw_krw * ratio
+        per_unit_vat_krw     = per_unit_factory_krw * (1 + self.KR_VAT)
+        per_unit_adj_krw     = per_unit_vat_krw * (1 + self.KR_DIST_MARGIN)
+
+        ratio_label = (
+            f"source:{source_type}={ratio}"
+            if source_type and source_type in self.SOURCE_OVERRIDES
+            else f"{country} factory_ratio={ratio}"
+        )
 
         return {
             "listed_price":        listed_price,
-            "factory_ratio":       ratio_used,
+            "pack_count":          pack_count,
+            "per_unit_listed":     round(per_unit_listed, 4),
+            "factory_ratio":       ratio,
             "factory_ratio_label": ratio_label,
-            "factory_price":       round(factory_price, 2),
+            "factory_price":       round(per_unit_listed * ratio, 4),
             "exchange_rate":       exchange_rate,
-            "krw_converted":       int(krw_converted),
-            "factory_price_krw":   int(factory_krw),
-            "vat_rate":            vat,
-            "vat_applied_krw":     int(vat_applied),
-            "distribution_margin": margin,
-            "adjusted_price_krw":  adjusted,
+            "krw_converted":       int(per_unit_raw_krw),
+            "factory_price_krw":   int(per_unit_factory_krw),
+            "vat_rate":            self.KR_VAT,
+            "vat_applied_krw":     int(per_unit_vat_krw),
+            "distribution_margin": self.KR_DIST_MARGIN,
+            "adjusted_price_krw":  int(per_unit_adj_krw),   # per-unit KRW
         }
 
 

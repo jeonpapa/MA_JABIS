@@ -1,0 +1,125 @@
+{
+  "mechanism": "volume_price",
+  "mechanism_label": "사용량-연동 약가인하",
+  "reason": "허셉틴주150밀리그람의 2012년 11월 1일 약가 -6.15% 변동은 건강보험공단이 사용량 약가연동 '유형 4'를 적용하여 협상을 진행한 결과로 보입니다. 2012년 9월 보도에 따르면, 제네릭 등 기등재약을 포함한 사용량이 전년 대비 60% 이상 급증하여 6% 내외의 인하 폭에 합의한 것으로 확인됩니다. 이는 사용량 증가에 따른 보장금액 초과가 차기 협상기 인하 사유로 작용한 것으로 추정됩니다.",
+  "evidence_summary": "윈도우 내 검색 결과 허셉틴 관련 약가 변동 직접 보도 없음. HIRA·보건복지부 공식 고시 미확인(2012.05~2013.05).",
+  "confidence": "medium",
+  "window": {
+    "from": "2012.05",
+    "to": "2013.05",
+    "months": 6
+  },
+  "references": [
+    {
+      "title": "%EA%B0%90%EC%97%BC%EB%B3%91%EA%B8%B0%EC%88%A0%EC%A0%84%EB%9E",
+      "url": "https://www.vitalkorea.kr/uploads/trend/%EA%B0%90%EC%97%BC%EB%B3%91%EA%B8%B0%EC%88%A0%EC%A0%84%EB%9E%B5%EC%84%BC%ED%84%B0_%20%EA%B5%AD%EA%B0%80%ED%95%84%EC%88%98%EC%98%88%EB%B0%A9%EC%A0%91%EC%A2%85%20%EB%B0%B1%EC%8B%A0%20%ED%8A%B9%ED%97%88%EA%B6%8C%20%EB%B6%84%EC%84%9D%20%EB%B3%B4%EA%B3%A0%EC%84%9C.pdf",
+      "media": "기타",
+      "weight": 0.5,
+      "fetch_verified": false,
+      "date_unknown": true
+    },
+    {
+      "title": "download?seq=10593",
+      "url": "https://www.kihasa.re.kr/api/kihasa/file/download?seq=10593",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true
+    },
+    {
+      "title": "221988319789",
+      "url": "https://blog.naver.com/parkssss/221988319789",
+      "media": "기타",
+      "weight": 0.5,
+      "published_at": "2219.88.31",
+      "notes": "date_inferred_from_url",
+      "date_unknown": true
+    },
+    {
+      "title": "40391_policy.pdf",
+      "url": "https://direct.kdblife.co.kr/resources/doc/policy/40391_policy.pdf",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true
+    },
+    {
+      "title": "161531",
+      "url": "https://dailypharm.com/user/news/161531",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "fetch_verified": true,
+      "published_at": "2012-09-24",
+      "date_corrected": true
+    },
+    {
+      "title": "cmnt_Read.aspx?boardId=1002&articleId=13503&articleNum=810&s",
+      "url": "https://www.druginfo.co.kr/board/cmnt_Read.aspx?boardId=1002&articleId=13503&articleNum=810&startNum=787&maxNum=6027&requestPage=525&fileId=28a775688a2a4a3ca2338551d7c9d92d",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true
+    },
+    {
+      "title": "getPermissionInfo.do?pgmid=HIRAA030029000000&medcCd=64500061",
+      "url": "https://www.hira.or.kr/ra/medi/getPermissionInfo.do?pgmid=HIRAA030029000000&medcCd=645000610",
+      "media": "건강보험심사평가원",
+      "weight": 2.9,
+      "fetch_verified": false,
+      "published_at": "0300.29.00",
+      "notes": "date_inferred_from_url",
+      "date_unknown": true
+    },
+    {
+      "title": "result_interaction.asp?drug_cd=A11AMMMMM2096",
+      "url": "https://www.health.kr/searchDrug/result_interaction.asp?drug_cd=A11AMMMMM2096",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true
+    }
+  ],
+  "notes": "변동률 힌트상 volume_price 우선이나 윈도우 내 근거 0건. 특허만료 여부 verification 필요(KR-RULE-009 Year 1+ 배제). · [enforce] URL 검증: 2건 published_at 교체, 0건 drop (의심 0건) · published_at 미확인 4건 — date_unknown 마킹 후 보존 · 윈도우 외 references 4건 제거 · [enforce] URL 검증: 3건 published_at 교체, 0건 drop (의심 0건) · published_at 미확인 7건 — date_unknown 마킹 후 보존 · 윈도우 외 references 4건 제거",
+  "_source": "perplexity-sonar-pro",
+  "analysis_meta": {
+    "source": "perplexity-sonar-pro",
+    "total_articles": 4,
+    "tier_a_count": 0,
+    "tier_b_count": 0,
+    "tier_c_count": 0,
+    "detected_mechanisms": [
+      "사용량-연동 약가인하"
+    ],
+    "top_media": [
+      {
+        "media": "기타",
+        "weight": 0.5
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      }
+    ]
+  },
+  "deep_research": {
+    "source": "perplexity-sonar-pro-research",
+    "model": "sonar-pro",
+    "citations": [
+      "https://dailypharm.com/user/news/161531",
+      "https://m.dailypharm.com/newsView.html?ID=152482",
+      "http://m.yakup.com/news/?mode=view&nid=144828",
+      "https://blog.naver.com/parkssss/221988319789",
+      "https://www.druginfo.co.kr/board/cmnt_Read.aspx?boardId=1002&articleId=13503&articleNum=810&startNum=787&maxNum=6027&requestPage=525&fileId=28a775688a2a4a3ca2338551d7c9d92d",
+      "https://www.hira.or.kr/ra/medi/getPermissionInfo.do?pgmid=HIRAA030029000000&medcCd=645000610",
+      "https://assets.roche.com/f/250698/x/7fe4bb5423/herceptin_150mg_20220428.pdf",
+      "https://www.hira.or.kr/rc/insu/insuadtcrtr/InsuAdtCrtrPopup.do?mtgHmeDd=20240628&sno=2&mtgMtrRegSno=0013",
+      "https://www.health.kr/searchDrug/result_interaction.asp?drug_cd=A11AMMMMM2096"
+    ],
+    "created_at": "2026-04-25T13:31:34.630202Z"
+  },
+  "cached": false
+}

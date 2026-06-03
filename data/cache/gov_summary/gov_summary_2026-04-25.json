@@ -1,0 +1,76 @@
+{
+  "updated_at": "2026-04-25T04:07:11.385300",
+  "markdown": "- **외국인 환자 유치 증가**: 보건복지부에 따르면 2025년 외국인 환자 수가 201만 명을 초과하며, K의료관광이 매년 2배씩 성장하고 있다.\n- **신약 등재 및 급여기준 설정**: 건강보험심사평가원은 신약을 100일 내에 등재하고 1개월 내에 급여기준을 설정할 계획을 밝혔다. 제약사와 학회의 준비가 필수적이다.\n- **디지털 치료제 시장 성장**: 경과원 보고서에 따르면, 디지털 치료제 시장이 2030년까지 약 173억 달러로 성장할 것으로 예상되며, 식약처 허가 제품이 증가하고 있다.\n\n**함의**: 외국인 환자 유치와 디지털 치료제의 성장은 한국 의료 시장의 글로벌 경쟁력을 높일 수 있으며, 신약 등재의 신속화는 제약사에게 새로운 기회를 제공할 것이다.",
+  "reviewers": [
+    "openai:gpt-4o-mini",
+    "gemini:gemini-2.5-flash"
+  ],
+  "sources": [
+    {
+      "title": "“교회가 치매 예방부터 치유까지 징검다리 역할을”",
+      "url": "https://www.kmib.co.kr/article/view.asp?arcid=1776839466&code=23111111&cp=nv",
+      "source": "kmib",
+      "date": "2026-04-25"
+    },
+    {
+      "title": "외국인 환자 200만명 돌파… K의료관광, 매년 2배씩 컸다",
+      "url": "https://www.chosun.com/national/welfare-medical/2026/04/25/BZZYFTQJRBHOBLW3WT6MGE4PIU/?utm_source=naver&utm_medium=referral&utm_campaign=naver-news",
+      "source": "chosun",
+      "date": "2026-04-25"
+    },
+    {
+      "title": "한국 병원 찾은 외국인 200만명 첫 돌파…미용 과목 편중",
+      "url": "http://www.yonhapnewstv.co.kr/MYH20260425004047vXd",
+      "source": "yonhapnewstv",
+      "date": "2026-04-25"
+    },
+    {
+      "title": "첨단재생의료 치료 1호 ‘여의도성모병원’ …2025년 제도 시행 이후 첫...",
+      "url": "https://medicalworldnews.co.kr/news/view.php?idx=1510974303",
+      "source": "medicalworldco",
+      "date": "2026-04-25"
+    },
+    {
+      "title": "경과원, 디지털치료제 보고서 발간…의료·산업 연계 전략 제시",
+      "url": "https://www.webeconomy.co.kr/news/articleView.html?idxno=2153989",
+      "source": "webeconomy",
+      "date": "2026-04-25"
+    },
+    {
+      "title": "양동이째 들이켠다… ‘1.5L 아아’ 시대",
+      "url": "https://www.chosun.com/national/weekend/2026/04/25/HY3IBOCEJVHKPOHQMDPJXHO7XA/?utm_source=naver&utm_medium=referral&utm_campaign=naver-news",
+      "source": "chosun",
+      "date": "2026-04-25"
+    },
+    {
+      "title": "[알쏭달쏭 유통] 야쿠르트에 담긴 프로바이오틱스, 어떻게 나왔을까?",
+      "url": "https://news.tf.co.kr/read/economy/2316969.htm",
+      "source": "tf",
+      "date": "2026-04-25"
+    },
+    {
+      "title": "동대문구, 취약계층 즉시지원 ‘그냥드림’ 5월 본격 운영",
+      "url": "https://biz.heraldcorp.com/article/10725314?ref=naver",
+      "source": "biz",
+      "date": "2026-04-24"
+    },
+    {
+      "title": "환자단체, 의료분쟁조정법 통과 유감‥\"피해자 권리 보완해야\"",
+      "url": "https://www.medipana.com/news/articleView.html?idxno=410350",
+      "source": "medipana",
+      "date": "2026-04-24"
+    },
+    {
+      "title": "의료분쟁조정법 국회 통과…의료사고 안전망 강화",
+      "url": "https://medicalworldnews.co.kr/news/view.php?idx=1510974308",
+      "source": "medicalworldco",
+      "date": "2026-04-24"
+    }
+  ],
+  "keywords": [
+    "보건복지부",
+    "건강보험심사평가원",
+    "건강보험공단",
+    "식품의약품안전처"
+  ]
+}

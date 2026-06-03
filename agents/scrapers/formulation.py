@@ -36,9 +36,12 @@ INJECTION_KEYWORDS = [
     "ampule", "powder for solution for infusion", "powder for concentrate",
     "solution for infusion", "parenteral", "syringe", "prefilled",
     "subcutaneous", "sc ", "intramuscular", "im ",
-    # FR
+    # FR — BDPM 공식 원문 + 의사처방 축약형
+    # 예: "KEYTRUDA 25 mg/ml sol diluer p perf" (축약), "sol inj", "lyoph p us parent"
     "solution pour perfusion", "solution injectable", "poudre pour solution",
-    "pour perfusion", "flacon",
+    "pour perfusion", "flacon", "lyophilisat", "ampoule",
+    "sol diluer", "sol inj", "sol p perf", "p perf", "p us parent",
+    "us parent", "seringue préremplie", "poudre pour perf", "poudre pour inj",
     # DE
     "injektion", "infusion", "infusionslösung", "infusionskonzentrat",
     "durchstechflasche", "pulver zur herstellung", "konzentrat zur",

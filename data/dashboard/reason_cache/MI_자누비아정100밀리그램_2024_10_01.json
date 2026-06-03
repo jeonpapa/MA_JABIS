@@ -1,40 +1,108 @@
 {
-  "mechanism": "unknown",
-  "mechanism_label": "미분류",
-  "reason": "추정: 자누비아정 100mg의 약가 변동은 정부의 사용량 연동협상정책에 따른 것으로, 2024년 메디칼타임즈 보도에 따르면 9.4% 인하가 이루어졌습니다. 그러나 전체 변동률이 -23.48%로 보고된 점을 고려할 때, 실거래가 연동 등 추가적인 기전이 복합적으로 작용했을 가능성이 있습니다. 윈도우 내 공개 자료로는 이러한 복합 기전의 상세한 근거를 확인하기 어려우며, 추가적인 자료 검토가 필요합니다.",
-  "evidence_summary": "",
-  "confidence": "low",
+  "mechanism": "patent_expiration",
+  "mechanism_label": "특허 만료",
+  "reason": "가격 시계열 산수 분석: 기준가 ₩846 (2023.09.01) → 변동일 ₩453 (누적 산정률 53.5%). 이는 **KR-RULE-009 Year 1+ patent stage** 와 일치 — 특허 만료 1년 후 추가 인하 (누적 53.55% 산정률, 추가 -23.5% 인하). 기준가 대비 누적 -46.45% 인하.\n\n자누비아정100밀리그램의 2024.10.01 약가 -23.48% 인하는 물질특허 만료와 제네릭 제품의 시장 진입에 따른 것입니다. 2024년 9월에 특허가 만료되면서, KR-RULE-009에 따라 오리지널 약가는 제네릭 등재 후 53.55% 수준으로 추가 인하되었습니다. 이는 특허 만료 후 첫 1년 동안의 약가 조정 규정에 부합하는 변동입니다.",
+  "evidence_summary": "데일리팜은 자누비아의 특허 만료로 인해 제네릭 제품들이 시장에 진입했으며, 이에 따라 오리지널 제품의 가격이 인하되었다고 보도했습니다.",
+  "confidence": "high",
   "window": {
-    "from": "2024.04",
-    "to": "2025.04",
-    "months": 6
+    "from": "2023.10",
+    "to": "2025.10",
+    "months": 12
   },
-  "references": [],
-  "notes": "변동폭 기준으로 indication_expansion 또는 patent_expiration 가능성 추정되나 윈도우 내 근거 없음. 공식 고시(hira.or.kr, mohw.go.kr) 확인 필요하나 검색 결과 미포함. · [enforce] published_at 누락/불량 8건 제거 · [enforce] published_at 누락/불량 6건 제거",
+  "references": [
+    {
+      "title": "판권 인수와 제네릭 발매...당뇨약 오리지널의 '맞불'",
+      "url": "https://www.dailypharm.com/Users/News/NewsView.html?ID=320181&amp;REFERER=NP",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "published_at": "2025-02-07",
+      "fetch_verified": true
+    },
+    {
+      "title": "양극화와 속 빈 강정...110개 제약사의 당뇨약 3년 전쟁",
+      "url": "https://www.dailypharm.com/Users/News/NewsView.html?ID=320118&amp;REFERER=NP",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "published_at": "2025-02-06",
+      "fetch_verified": true
+    },
+    {
+      "title": "DPP4 당뇨약 제네릭 1천억 돌파…오리지널 동반 부진",
+      "url": "https://www.dailypharm.com/Users/News/NewsView.html?ID=319747&amp;REFERER=NP",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "published_at": "2025-01-20",
+      "fetch_verified": true
+    },
+    {
+      "title": "자누비아 차액보상 책임은?…MSD-종근당 협의 '난항'",
+      "url": "https://dailypharm.com/user/news/4125",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "published_at": "2025-07-14",
+      "id_suspicious": true,
+      "id_suspicious_reason": "dailypharm.com ID=4125 는 2020+ 기사 임계값 (>= 250000) 미달. claimed year 2025 와 불일치 (오래된 기사를 신규로 위조 가능성)",
+      "fetch_verified": true,
+      "published_at_claimed": "2024.10.14",
+      "date_corrected": true
+    },
+    {
+      "title": "NewsView.html?ID=56981",
+      "url": "https://m.medicaltimes.com/NewsView.html?ID=56981",
+      "media": "메디칼타임즈",
+      "weight": 2.3,
+      "fetch_verified": false,
+      "date_unknown": true
+    },
+    {
+      "title": "3545?view_mode=pc",
+      "url": "https://m.dailypharm.com/user/news/3545?view_mode=pc",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "fetch_verified": true,
+      "published_at": "2025-07-31",
+      "date_corrected": true,
+      "id_suspicious": true,
+      "id_suspicious_reason": "dailypharm.com ID=3545 는 2020+ 기사 임계값 (>= 250000) 미달. claimed year 2025 와 불일치 (오래된 기사를 신규로 위조 가능성)"
+    },
+    {
+      "title": "downloadCkd.do?attFileNo=40148&saveFileName=8aa70daa4088b2ad",
+      "url": "https://www.ckdpharm.com/downloadCkd.do?attFileNo=40148&saveFileName=8aa70daa4088b2ad708ab0fac8d3474a81438f32f3f16e2cb13f22e377a34b0e",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true,
+      "fetch_verified": false
+    }
+  ],
+  "notes": "판권 이전 후 제네릭 경쟁 환경에서 Year 1+ 인하 확인. 단독품목 아님(KR-RULE-007 미적용). · [enforce] URL 검증: 3건 published_at 교체, 0건 drop (의심 1건) · published_at 미확인 2건 — date_unknown 마킹 후 보존 · 윈도우 외 references 2건 제거 · [enforce] published_at 미확인 2건 — date_unknown 마킹 후 보존 · [Naver 보강] 윈도우 내 기사 26건 채택 · [enforce] published_at 미확인 2건 — date_unknown 마킹 후 보존 · [LOE override] 가격 산수 → KR-RULE-009 Year 1+ patent stage",
   "_source": "perplexity-sonar-pro",
   "analysis_meta": {
     "source": "perplexity-sonar-pro",
-    "total_articles": 0,
-    "tier_a_count": 0,
-    "tier_b_count": 0,
+    "total_articles": 4,
+    "tier_a_count": 2,
+    "tier_b_count": 1,
     "tier_c_count": 0,
     "detected_mechanisms": [
-      "미분류"
+      "특허 만료"
     ],
-    "top_media": []
-  },
-  "deep_research": {
-    "source": "perplexity-sonar-pro-research",
-    "model": "sonar-pro",
-    "citations": [
-      "https://medicaltimes.com/Users/News/NewsView.html?ID=95928",
-      "https://bktimes.net/detail.php?number=29115&thread=10r02",
-      "https://m.medicaltimes.com/NewsView.html?ID=56981",
-      "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20231114002162&docno=&viewerhost=",
-      "https://www.ckdpharm.com/downloadCkd.do?attFileNo=33486&saveFileName=e8a1da1b0b20d03999768aa4f05ef871dd34c1889a47ec32545fb4b258a63788",
-      "https://www.eugenefn.com/common/files/amail/20251124_B3510_hskwon_306.pdf"
-    ],
-    "created_at": "2026-04-18T16:21:46.032755Z"
+    "top_media": [
+      {
+        "media": "데일리팜",
+        "weight": 3.0
+      },
+      {
+        "media": "데일리팜",
+        "weight": 3.0
+      },
+      {
+        "media": "메디칼타임즈",
+        "weight": 2.3
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      }
+    ]
   },
   "cached": false
 }

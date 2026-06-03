@@ -18,6 +18,22 @@ export interface DomesticAnalogue {
   coverageStart: string | null;
   usageText: string | null;
   dosageForm: string | null;
+  /** 'direct' | 'inherited_generic:<donor>' | 'default_heuristic' | null */
+  enrichmentSource?: string | null;
+  normalizedName?: string;
+  insuranceCode?: string;
+  bsaCalc?: {
+    method: 'weight' | 'bsa';
+    rationale: string;
+    intervalDays: number;
+    perDoseMg: number;
+  } | null;
+  usageUnverified?: boolean;
+  /** RSA (위험분담제) 정보 — 1=대상, 0=해당 없음, null=확인 필요. 표시가 ≠ 실제가 */
+  isRsa?: 0 | 1 | null;
+  rsaType?: 'refund' | 'expenditure_cap' | 'utilization' | 'conditional' | 'combined' | null;
+  rsaNote?: string | null;
+  rsaSource?: string | null;
 }
 
 export interface DomesticProduct {
@@ -52,6 +68,77 @@ export interface DomesticProduct {
   monthlyCost: number | null;
   yearlyCost: number | null;
   enrichmentConfidence: string | null;
+  enrichmentSource: string | null;
+  bsaCalc?: {
+    method: 'weight' | 'bsa';
+    rationale: string;
+    intervalDays: number;
+    perDoseMg: number;
+  } | null;
+  usageUnverified?: boolean;
+  /** RSA (위험분담제) — 1=대상 (표시가 ≠ 실제가), 0=해당 없음, null=확인 필요 */
+  isRsa?: 0 | 1 | null;
+  rsaType?: 'refund' | 'expenditure_cap' | 'utilization' | 'conditional' | 'combined' | null;
+  rsaNote?: string | null;
+  rsaSource?: string | null;
+
+  /** 특허 상태 — '만료' | '유효' | null. MFDS 공공데이터 API 실측 또는 가격 history 추정 */
+  patentStatus?: '만료' | '유효' | null;
+  /** 등록 상태 물질특허의 가장 늦은 만료일 (YYYY-MM-DD). MFDS 실측 시에만 채워짐 */
+  patentExpiryDate?: string | null;
+  /** LOE 직전 가격 시점 (YYYY.MM.DD). 가격 history 추정 시에만 채워짐 */
+  patentLoeDateInferred?: string | null;
+  /** 데이터 출처: 'mfds_api' (실측) | 'price_history' (추정) | null */
+  patentSource?: 'mfds_api' | 'price_history' | null;
+  /** 출처/근거 설명 문구 */
+  patentSourceNote?: string | null;
+  /** 물질특허 상세 — MFDS 실측 시 노출 */
+  patentSubstancePatents?: Array<{
+    patent_no: string | null;
+    patent_status: string;
+    patent_end_date: string | null;
+    patent_gb_code: string;
+    invn_name: string | null;
+    patentee: string | null;
+  }>;
+  /** 후속 특허 (ADC/조성/용도/제법 등) — LOE 결정 무관, 참고용 */
+  patentSecondaryPatents?: Array<{
+    patent_no: string | null;
+    patent_status: string;
+    patent_end_date: string | null;
+    patent_gb_code: string;
+    invn_name: string | null;
+    patentee: string | null;
+    reclassified_reason?: string;
+  }>;
+  /** 식약처 의약품 제품 허가정보 — DrugPrdtPrmsnInfoService07 실측 */
+  mfdsPermit?: {
+    itemSeq: string | null;
+    itemEngName: string | null;
+    permitHolder: string | null;
+    permitDate: string | null;
+    cancelStatus: string | null;
+    etcOtc: string | null;
+    atcCode: string | null;
+    mainIngr: string | null;
+    mainIngrEng: string | null;
+    materialName: string | null;
+    chart: string | null;
+    packUnit: string | null;
+    validTerm: string | null;
+    storageMethod: string | null;
+    rareDrugYn: string | null;
+    newdrugClass: string | null;
+    reexamTarget: string | null;
+    reexamDate: string | null;
+    changeDate: string | null;
+    permitKind: string | null;
+    effectText: string | null;
+    cautionText: string | null;
+    udDocUrl: string | null;
+    eeDocUrl: string | null;
+    nbDocUrl: string | null;
+  } | null;
 
   // 기타 — 현재 서버 미제공
   category: string | null;
@@ -92,6 +179,69 @@ interface RawProduct {
   monthly_cost?: number | null;
   yearly_cost?: number | null;
   enrichment_confidence?: string | null;
+  enrichment_source?: string | null;
+  bsa_calc?: {
+    daily_cost: number;
+    method: 'weight' | 'bsa';
+    rationale: string;
+    interval_days: number;
+    per_dose_mg: number;
+  } | null;
+  usage_unverified?: boolean;
+  is_rsa?: 0 | 1 | null;
+  rsa_type?: 'refund' | 'expenditure_cap' | 'utilization' | 'conditional' | 'combined' | null;
+  rsa_note?: string | null;
+  rsa_source?: string | null;
+  patent_status?: '만료' | '유효' | null;
+  patent_expiry_date?: string | null;
+  patent_loe_date_inferred?: string | null;
+  patent_source?: 'mfds_api' | 'price_history' | null;
+  patent_source_note?: string | null;
+  patent_substance_patents?: Array<{
+    patent_no: string | null;
+    patent_status: string;
+    patent_end_date: string | null;
+    patent_gb_code: string;
+    invn_name: string | null;
+    patentee: string | null;
+  }>;
+  patent_secondary_patents?: Array<{
+    patent_no: string | null;
+    patent_status: string;
+    patent_end_date: string | null;
+    patent_gb_code: string;
+    invn_name: string | null;
+    patentee: string | null;
+    reclassified_reason?: string;
+  }>;
+  mfds_permit?: {
+    item_seq: string | null;
+    item_eng_name: string | null;
+    permit_holder: string | null;
+    permit_date: string | null;
+    cancel_status: string | null;
+    etc_otc: string | null;
+    atc_code: string | null;
+    main_ingr: string | null;
+    main_ingr_eng: string | null;
+    material_name: string | null;
+    chart: string | null;
+    pack_unit: string | null;
+    valid_term: string | null;
+    storage_method: string | null;
+    rare_drug_yn: string | null;
+    newdrug_class: string | null;
+    reexam_target: string | null;
+    reexam_date: string | null;
+    change_date: string | null;
+    permit_kind: string | null;
+    effect_text: string | null;
+    caution_text: string | null;
+    ud_doc_url: string | null;
+    ee_doc_url: string | null;
+    nb_doc_url: string | null;
+    source: string | null;
+  } | null;
 }
 
 interface RawResponse {
@@ -153,6 +303,20 @@ function mapProduct(raw: RawProduct, allRaw: RawProduct[]): DomesticProduct {
       coverageStart: p.coverage_start ?? null,
       usageText: p.usage_text ?? null,
       dosageForm: p.dosage_form ?? null,
+      enrichmentSource: p.enrichment_source ?? null,
+      normalizedName: p.normalized_name,
+      insuranceCode: p.insurance_code,
+      bsaCalc: p.bsa_calc ? {
+        method: p.bsa_calc.method,
+        rationale: p.bsa_calc.rationale,
+        intervalDays: p.bsa_calc.interval_days,
+        perDoseMg: p.bsa_calc.per_dose_mg,
+      } : null,
+      usageUnverified: p.usage_unverified ?? false,
+      isRsa: p.is_rsa ?? null,
+      rsaType: p.rsa_type ?? null,
+      rsaNote: p.rsa_note ?? null,
+      rsaSource: p.rsa_source ?? null,
     }));
 
   return {
@@ -186,6 +350,53 @@ function mapProduct(raw: RawProduct, allRaw: RawProduct[]): DomesticProduct {
     monthlyCost: raw.monthly_cost ?? null,
     yearlyCost: raw.yearly_cost ?? null,
     enrichmentConfidence: raw.enrichment_confidence ?? null,
+    enrichmentSource: raw.enrichment_source ?? null,
+    bsaCalc: raw.bsa_calc ? {
+      method: raw.bsa_calc.method,
+      rationale: raw.bsa_calc.rationale,
+      intervalDays: raw.bsa_calc.interval_days,
+      perDoseMg: raw.bsa_calc.per_dose_mg,
+    } : null,
+    usageUnverified: raw.usage_unverified ?? false,
+    isRsa: raw.is_rsa ?? null,
+    rsaType: raw.rsa_type ?? null,
+    rsaNote: raw.rsa_note ?? null,
+    rsaSource: raw.rsa_source ?? null,
+
+    patentStatus: raw.patent_status ?? null,
+    patentExpiryDate: raw.patent_expiry_date ?? null,
+    patentLoeDateInferred: raw.patent_loe_date_inferred ?? null,
+    patentSource: raw.patent_source ?? null,
+    patentSourceNote: raw.patent_source_note ?? null,
+    patentSubstancePatents: raw.patent_substance_patents ?? [],
+    patentSecondaryPatents: raw.patent_secondary_patents ?? [],
+    mfdsPermit: raw.mfds_permit ? {
+      itemSeq: raw.mfds_permit.item_seq,
+      itemEngName: raw.mfds_permit.item_eng_name,
+      permitHolder: raw.mfds_permit.permit_holder,
+      permitDate: raw.mfds_permit.permit_date,
+      cancelStatus: raw.mfds_permit.cancel_status,
+      etcOtc: raw.mfds_permit.etc_otc,
+      atcCode: raw.mfds_permit.atc_code,
+      mainIngr: raw.mfds_permit.main_ingr,
+      mainIngrEng: raw.mfds_permit.main_ingr_eng,
+      materialName: raw.mfds_permit.material_name,
+      chart: raw.mfds_permit.chart,
+      packUnit: raw.mfds_permit.pack_unit,
+      validTerm: raw.mfds_permit.valid_term,
+      storageMethod: raw.mfds_permit.storage_method,
+      rareDrugYn: raw.mfds_permit.rare_drug_yn,
+      newdrugClass: raw.mfds_permit.newdrug_class,
+      reexamTarget: raw.mfds_permit.reexam_target,
+      reexamDate: raw.mfds_permit.reexam_date,
+      changeDate: raw.mfds_permit.change_date,
+      permitKind: raw.mfds_permit.permit_kind,
+      effectText: raw.mfds_permit.effect_text,
+      cautionText: raw.mfds_permit.caution_text,
+      udDocUrl: raw.mfds_permit.ud_doc_url,
+      eeDocUrl: raw.mfds_permit.ee_doc_url,
+      nbDocUrl: raw.mfds_permit.nb_doc_url,
+    } : null,
 
     category: null,
     hasRSA: null,
@@ -230,6 +441,20 @@ export async function searchAnalogues(
       coverageStart: p.coverage_start ?? null,
       usageText: p.usage_text ?? null,
       dosageForm: p.dosage_form ?? null,
+      enrichmentSource: p.enrichment_source ?? null,
+      bsaCalc: p.bsa_calc ? {
+        method: p.bsa_calc.method,
+        rationale: p.bsa_calc.rationale,
+        intervalDays: p.bsa_calc.interval_days,
+        perDoseMg: p.bsa_calc.per_dose_mg,
+      } : null,
+      usageUnverified: p.usage_unverified ?? false,
+      isRsa: p.is_rsa ?? null,
+      rsaType: p.rsa_type ?? null,
+      rsaNote: p.rsa_note ?? null,
+      rsaSource: p.rsa_source ?? null,
+      normalizedName: p.normalized_name,
+      insuranceCode: p.insurance_code,
     });
   }
   return out;
@@ -239,15 +464,76 @@ export function exportDomesticPriceChangesUrl(query: string, format: 'xlsx' | 'c
   return `/api/domestic/price-changes/export?q=${encodeURIComponent(query)}&format=${format}`;
 }
 
+export interface EnrichmentResult {
+  normalized_name: string;
+  is_failure?: boolean;
+  approval_date?: string | null;
+  usage_text?: string;
+  daily_dose_units?: number | null;
+  dose_schedule?: string | null;
+  cycle_days?: number | null;
+  doses_per_cycle?: number | null;
+  confidence?: string;
+  notes?: string;
+  treatment_cost?: { daily?: number | null; monthly?: number | null; annual?: number | null; note?: string };
+  cache_source?: string;
+}
+
+export interface EnrichmentRequestItem {
+  normalized_name: string;
+  product_name?: string;
+  ingredient?: string;
+  current_price?: number;
+  code?: string;
+  codes?: string[];
+}
+
+/** 기준약제 + 비교약제들을 한 번에 enrich. 허가일·용법·정확한 daily_cost 비동기 채움. */
+export async function enrichBulk(items: EnrichmentRequestItem[]): Promise<Record<string, EnrichmentResult>> {
+  if (items.length === 0) return {};
+  const res = await api.post<{ enrichments: Record<string, EnrichmentResult> }>(
+    '/api/domestic/enrichment-bulk',
+    { items: items.slice(0, 10) },
+  );
+  return res.enrichments || {};
+}
+
+export interface ChangeReasonReference {
+  title?: string;
+  url: string;
+  media?: string;
+  journal?: string;         // v1 호환
+  weight?: number;
+  published_at?: string;
+  date_unknown?: boolean;
+  notes?: string;
+}
+
+export interface ChangeReasonAnalysisMeta {
+  source?: string;
+  total_articles?: number;
+  tier_a_count?: number;
+  tier_b_count?: number;
+  tier_c_count?: number;
+  pubmed_count?: number;          // v1 호환
+  kr_count?: number;              // v1 호환
+  ma_journal_count?: number;      // v1 호환
+  detected_mechanisms?: string[];
+  top_media?: { media: string; weight: number }[];
+}
+
 export interface ChangeReasonResult {
   mechanism: string;
   mechanism_label: string;
   reason: string;
   confidence: string;
   evidence_summary?: string;
-  references?: { title: string; url: string; media: string; published_at?: string }[];
+  references?: ChangeReasonReference[];
+  analysis_meta?: ChangeReasonAnalysisMeta;
+  notes?: string;
   cached?: boolean;
-  review?: { approved?: boolean };
+  window?: { from?: string; to?: string; months?: number };
+  review?: { approved?: boolean; final_verdict?: string };
 }
 
 export async function fetchChangeReason(params: {

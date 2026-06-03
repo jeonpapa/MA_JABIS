@@ -63,7 +63,8 @@ export default function AnalogueCompareModal({
 
   if (!open) return null;
 
-  const maxReached = selected.length >= 2;
+  const MAX_ANALOGUES = 5;
+  const maxReached = selected.length >= MAX_ANALOGUES;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -76,7 +77,7 @@ export default function AnalogueCompareModal({
           </button>
         </div>
         <p className="text-[#8B9BB4] text-xs mb-3">
-          최대 2개까지 선택 (기준 약제 포함 3개). <span className="text-[#4A5568]">성분이 달라도 검색으로 추가 가능.</span>
+          최대 {MAX_ANALOGUES}개까지 선택 (기준 약제 포함 {MAX_ANALOGUES + 1}개). <span className="text-[#4A5568]">성분이 달라도 검색으로 추가 가능.</span>
         </p>
 
         {/* Search */}
@@ -145,15 +146,30 @@ export default function AnalogueCompareModal({
                       {isSelected && <i className="ri-check-line text-white text-xs"></i>}
                     </div>
                     <div>
-                      <p className="text-white text-sm font-medium">{a.name}</p>
-                      <p className="text-[#8B9BB4] text-xs">{a.ingredient} · {a.company}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-white text-sm font-medium">{a.name}</p>
+                        {a.enrichmentSource === 'direct' && (
+                          <span className="text-[9px] px-1 py-[1px] rounded bg-sky-400/10 text-sky-300 border border-sky-400/20">직접</span>
+                        )}
+                        {a.enrichmentSource && a.enrichmentSource.startsWith('inherited_generic') && (
+                          <span className="text-[9px] px-1 py-[1px] rounded bg-amber-400/10 text-amber-300 border border-amber-400/20" title={a.enrichmentSource}>상속</span>
+                        )}
+                      </div>
+                      <p className="text-[#8B9BB4] text-xs">{a.ingredient || '성분 미상'} · {a.company || '—'}</p>
+                      {(a.approvalDate || a.usageText) && (
+                        <p className="text-[#4A5568] text-[10px] mt-0.5 line-clamp-1" title={a.usageText || ''}>
+                          {a.approvalDate && `허가 ${a.approvalDate}`}
+                          {a.approvalDate && a.usageText && ' · '}
+                          {a.usageText && a.usageText.slice(0, 30)}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="text-right">
                     <p className="text-white text-sm font-semibold">₩{a.price.toLocaleString()}</p>
-                    {a.dailyCost && (
-                      <p className="text-[#8B9BB4] text-xs">일치료비 ₩{a.dailyCost.toLocaleString()}</p>
-                    )}
+                    <p className={`text-xs ${a.dailyCost != null ? 'text-[#8B9BB4]' : 'text-[#4A5568]'}`}>
+                      일치료비 {a.dailyCost != null ? `₩${a.dailyCost.toLocaleString()}` : '—'}
+                    </p>
                   </div>
                 </div>
               </button>

@@ -115,3 +115,98 @@ class ForeignApprovalAgent(_BuildersMixin, _MergerMixin, _MatrixMixin):
             )
             c.execute("DELETE FROM indications_master WHERE product=?", (product_slug,))
             c.commit()
+
+    # ──────────────────────────────────────────────────────────
+    # Auto-sync: 가격 파이프라인(query-driven) ↔ 허가 파이프라인(list-driven) 비대칭 해소
+    # ──────────────────────────────────────────────────────────
+    def list_coverage_gaps(self) -> list[str]:
+        """foreign_drug_prices 에 있지만 indications_master 에 없는 product slug 반환.
+
+        slug 는 `LOWER(query_name)` 기준. 브랜드/성분 중복 제거는 brand_slug 별칭 맵 참조.
+        """
+        with sqlite3.connect(str(self.db_path)) as c:
+            c.row_factory = sqlite3.Row
+            price_slugs = {
+                (r[0] or "").strip().lower()
+                for r in c.execute(
+                    "SELECT DISTINCT query_name FROM foreign_drug_prices WHERE query_name IS NOT NULL"
+                ).fetchall()
+                if r[0]
+            }
+            approval_slugs = {
+                (r[0] or "").strip().lower()
+                for r in c.execute("SELECT DISTINCT product FROM indications_master").fetchall()
+                if r[0]
+            }
+        # brand ↔ generic 쌍 alias 처리 (예: keytruda ↔ pembrolizumab)
+        aliases: dict[str, str] = {
+            "pembrolizumab": "keytruda",
+            "belzutifan": "welireg",
+            "olaparib": "lynparza",
+            "lenvatinib": "lenvima",
+            "sitagliptin": "januvia",
+            "letermovir": "prevymis",
+        }
+        normalized = {aliases.get(s, s) for s in price_slugs}
+        gaps = sorted(normalized - approval_slugs)
+        return gaps
+
+    def sync_from_prices(
+        self,
+        *,
+        wipe: bool = False,
+        agencies: tuple[str, ...] | list[str] = SUPPORTED,
+    ) -> dict:
+        """가격 DB 에 있는 모든 drug 에 대해 허가 pipeline 을 자동 실행.
+
+        실패(ID 미확인 등) 는 수집 후 반환 — 호출자가 deviation_log 에 기록 가능.
+        반환: {"built": [slugs], "failed": [{slug, reason}], "skipped": [slugs]}
+        """
+        gaps = self.list_coverage_gaps()
+        logger.info("[auto-sync] 허가 커버리지 gap: %d건 (%s)", len(gaps), gaps)
+        out = {"built": [], "failed": [], "skipped": []}
+
+        # slug → (drug 검색어, brand_slug) 매핑. product_alias_map 우선, 미등록 slug 은 그대로.
+        # 2026-04-27: hardcoded SLUG_HINTS 폐기, product_alias_map 의 INN 을 drug 으로 사용.
+        def _resolve_hint(slug: str) -> dict:
+            try:
+                row = self.db.get_product_alias(slug)
+            except Exception:
+                row = None
+            inn = (row or {}).get("inn") or slug
+            return {"drug": inn, "brand_slug": slug}
+
+        for slug in gaps:
+            hint = _resolve_hint(slug)
+            logger.info("[auto-sync] build 시작: %s (drug=%s)", slug, hint["drug"])
+            try:
+                summary = self.build(
+                    drug=hint["drug"],
+                    product_slug=slug,
+                    brand_slug=hint.get("brand_slug"),
+                    agencies=agencies,
+                    wipe=wipe,
+                )
+                total_indications = sum(a.ok for a in summary.agencies)
+                if total_indications == 0:
+                    out["failed"].append({
+                        "slug": slug,
+                        "reason": "모든 기관에서 indication 0건 — ID/검색어 확인 필요",
+                        "errors": [
+                            {"agency": a.agency, "err": e}
+                            for a in summary.agencies
+                            for e in (a.errors or [])
+                        ],
+                    })
+                else:
+                    out["built"].append({"slug": slug, "indications": total_indications})
+                    logger.info("[auto-sync] ✓ %s — %d indications", slug, total_indications)
+            except Exception as e:
+                logger.exception("[auto-sync] %s build 예외", slug)
+                out["failed"].append({"slug": slug, "reason": str(e)})
+
+        logger.info(
+            "[auto-sync] 완료 — built=%d failed=%d skipped=%d",
+            len(out["built"]), len(out["failed"]), len(out["skipped"]),
+        )
+        return out

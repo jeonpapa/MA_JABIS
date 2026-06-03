@@ -1,0 +1,136 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN" "http://www.w3.org/TR/REC-html40/loose.dtd"><html><head><script>const areCookiesEnabledKey = "cookiesAreEnabled";let storedCookiesEnabled = null;try {storedCookiesEnabled = sessionStorage.getItem(areCookiesEnabledKey);} catch (e) {storedCookiesEnabled = null;}if (!storedCookiesEnabled) {function areCookiesEnabled() {const testCookie = "testcookie";document.cookie = testCookie + "=1";const cookiesEnabled = document.cookie.indexOf(testCookie + "=") !== -1;document.cookie = testCookie + "=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";return cookiesEnabled;}if (!areCookiesEnabled() && !window.location.href.includes("pf.CookiesDisabled")) {window.location.replace("/home/dispatch/PFActionId/pf.CookiesDisabled");} else {try {sessionStorage.setItem(areCookiesEnabledKey, true);} catch (e) {}}}</script>
+<title>Micromedex Products: Please Login</title><meta name="ROBOTS" content="NOARCHIVE"><meta name="GOOGLEBOT" content="NOARCHIVE"><meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes"><meta name="Pragma" content="no-cache"><meta name="Expires" content="-1"><meta name="ROBOTS" content="NOARCHIVE"><meta name="GOOGLEBOT" content="NOARCHIVE"><meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes"><link href="/home/100.1.0.286/presentation/scripts/styles/page/loginpage.css" type="text/css" rel="stylesheet"><meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes"></head><body marginwidth="5" leftmargin="5" bgcolor="#ffffff" topmargin="5" marginheight="5" onload="pfFocusFirstInput()">
+
+
+
+
+
+
+
+<script language="JavaScript1.2" src="/home/100.1.0.286/presentation/scripts/pfFocusInput.js"></script>
+<script>
+    const commonComponentReduxPath = "persist:root:pwa"
+    const commonComponentGlobalFilterStatePath = "mdx_pwa.iv_compatibility.filter_panel.states"
+    const commonComponentIvConfigPath = "ivConfig";
+    localStorage.removeItem(commonComponentReduxPath)
+    localStorage.removeItem(commonComponentGlobalFilterStatePath)
+    localStorage.removeItem(commonComponentIvConfigPath)
+
+    sessionStorage.removeItem(commonComponentReduxPath)
+    sessionStorage.removeItem(commonComponentGlobalFilterStatePath)
+    sessionStorage.removeItem(commonComponentIvConfigPath)
+</script>
+
+
+<link rel="stylesheet" type="text/css" href="/home/100.1.0.286/presentation/scripts/styles/common/colorpalette.css">
+<link rel="stylesheet" type="text/css" href="/home/100.1.0.286/presentation/scripts/styles/theme/lighttheme.css">
+
+
+
+<!-- ***************** start Navigation Component  ************** -->
+
+<link rel="stylesheet" type="text/css" href="/home/100.1.0.286/presentation/scripts/styles/component/header.css">
+<div id="wrapper">
+<header id="wrapper-headerbar" class="logo-header" role="banner" aria-label="Merative Micromedex">
+	<h1 class="announced-only">Micromedex heading</h1>
+	<div id="headerbarbrand">
+		<img src="/home/100.1.0.286/presentation/images/theme/light/brand/Micromedex-logotype_320.svg" "="" id="micromedex-logo" alt="Micromedex">
+	</div>
+</header>
+<!-- ************************************************************ -->
+
+<!-- ********** Main Content Component goes here ***************** -->
+
+
+<div id="main-content" role="main">
+    <div id="wrapper-contentmask">
+        <div id="content" class="content-gateway">
+            <section id="section-01" role="region">
+                  <form method="post" action="https://www.micromedexsolutions.com/home/dispatch/PFDefaultActionId/pf.LoginAction" name="login"><input type="hidden" name="CS" id="CS" value="7B3F73" style=""><input type="hidden" name="ND_CPR" id="ND_CPR" value="Login" style=""><input type="hidden" name="DUPLICATIONSHIELDSYNC" id="DUPLICATIONSHIELDSYNC" value="EBAEC3" style="">
+<div id="react-login-form">
+<fieldset id="submit-login" data-role="controlgroup">
+    <h2> Log in </h2>
+    <p>Log in to continue to Micromedex.</p>
+		       <strong></strong>    <div id="formcontrols">
+        <label for="login.username_index_0">Username</label>
+        <input type="text" name="login.username_index_0" id="login.username_index_0" maxlength="50" tabindex="1" style="">
+        <label for="login.username_index_0">Password</label>
+        <input type="password" name="login.password_index_0" id="login.password_index_0" maxlength="50" tabindex="2" style="">
+        <div class="checkbox-group">
+            <input type="checkbox" name="login.rememberMe_index_0" id="Yes" value="Yes" tabindex="4" style="">
+            <label for="login.rememberMe_index_0">Remember password</label>
+        </div>
+        <button type="submit" name="Submit" id="Submit" title="Click to log in" tabindex="3">
+        <span>Log in</span>
+        <span class="arrow-right">
+        </span></button>
+        <a class="link" href="#contact-support01">
+			<label>Help</label>
+		</a>
+                <p class="grouping">
+            <a target="_blank" href="https://www.micromedexsolutions.com/home/dispatch/PFActionId/pf.LinkBasedLogin">OpenAthens Login</a>
+        </p>
+            </div>
+    </fieldset></div>
+
+
+
+  <input type="hidden" name="PFActionEventMethod" id="PFActionEventMethod" value="showStartPage" style=""><input type="hidden" name="resourceloader" id="resourceloader" value="com.thc.ids.presentation.services.resource.ClassPathResourceLoader" style=""><input type="hidden" name="PFActionChain" id="PFActionChain" value="pf.HomePage" style=""><input type="hidden" name="properties" id="properties" value="/WEB-INF/conf/PF.properties" style=""><input type="hidden" name="resources" id="resources" value="com.thc.ids.presentation.services.resource.PfResourceService" style=""><input type="hidden" name="app_properties" id="app_properties" value="/WEB-INF/conf/home.properties" style=""><input type="hidden" name="PF_LgnAttmpt" id="PF_LgnAttmpt" value="F" style=""><input type="hidden" name="ReloginAction" id="ReloginAction" value="pf.HomePage" style="">  </form>
+            </section>
+            <!-- /section-01 -->
+        </div>
+        <!-- /content -->
+        <aside id="wrapper-aside" class="aside-gateway" role="complementary" aria-label="Local Navigation">
+            <article id="marketingmessage">
+                <!-- ********** Marketing Messages go here ***************** -->
+                                <script language="JavaScript" src="/notification.js"></script><span class="darkgray">	<strong>Product update and notifications:</strong></span><br><br><span class="darkgray">	<strong>		<span style="font-size:13px">MDX Pharmaceutical Knowledge: </span>	</strong></span><br><span class="darkgray">- Your application access has been updated to include additional resources of the Micromedex home page: the latest news, a training and support center, as well as quick link resources.<br>- You can access the main Micromedex search engine on the same page. The advanced search tool can now be accessed via the "Advanced Drug Search" tab on the navigation bar.<br>	</span><br><br><span class="darkgray">	<strong>		<span style="font-size:13px">Clinical Knowledge: </span>		<br> Medication, Disease and Toxicology Management</strong></span><br><span class="darkgray">- Evidence based clinical resources to support informed diagnosis and treatment decisions.<br>- Unbiased, referenced Clinical Decision Support (CDS) for medication, toxicology, disease, and alternative medicine.<br>- Safely and reliably manage drug therapy for pediatric and neonatal patients with NeoFax and Pediatrics evidence-based drug information.<br>- RED BOOK for drug pricing, drug data, and manufacturer information.<br>	</span><br><br><span class="darkgray">	<strong>		<span style="font-size:13px">Formulary: </span>		<br> Facility wide Formulary Management</strong></span><br><span class="darkgray">- Easy-to-use online tool to effectively manage and update hospital formulary and communicate the most current information facility-wide.</span><br><br><span class="darkgray">	<strong>		<span style="font-size:13px">Patient Connect: </span>		<br>CareNotes</strong></span><br><span class="darkgray">- Provides patients with complete, easy-to-understand patient education handouts.<br>- Patient education for conditions and diagnoses, labs, and procedures, written for every stage of care.<br>- Medication Instructions deliver a single source of evidence-based patient education.<br>- Documents are written at a 5<sup>th</sup>-7<sup>th</sup> grade reading level, and are available in up to 15 languages</span><br><br><span class="darkgray">	<strong>Medication Essential Fact Sheets</strong></span><br><span class="darkgray">- Short and to-the-point drug information that supports better patient understanding and adherence.<br>- Helps improve medication-related Hospital Consumer Assessment of Healthcare Providers and Systems (HCAHPS) scores. <br>	</span><br><br><span class="darkgray"><strong><span style="font-size:13px">Pharmaceutical Knowledge: </span><br> A Role-Based Solution for Pharmaceutical Professionals</strong></span><br><span class="darkgray">- A tailored interface providing trusted evidence and global guidance with a Pharmaceutical perspective.<br>- Enhanced for advanced searching, ability to compare drug results, and aggregation with other information resources.<br></span><br>
+                            </article>
+            <!-- /marketingmessage -->
+            <article class="support">
+				<div id="contact-support01" class="flex-container">
+					<div class="flex-item-left">
+						<p>Looking for information on purchasing Micromedex solutions?</p> <p>Contact Merative today:<br>
+						<a target="_blank" href="
+						https://www.merative.com/contact?utm_source=referral&amp;utm_medium=other&amp;utm_campaign=MDX-solutions-domain">Contact us</a></p>
+					</div>
+					<div class="flex-item-right">
+						<p>24 x 7 technical support and <span>call center access:</span> 
+							<a target="_blank" href="https://merative.my.site.com/mysupport/s/micromedex-support-request">Micromedex support</a><br>
+						   Mobile app access related queries: <a target="_blank" href="https://merative.my.site.com/mysupport/s/micromedex-mobile-support-request">Micromedex mobile support</a></p>
+                		<p>Or Telephone:<br> U.S. and Canada: 1.877.843.6796<br> Global: +1.734.768.1510</p>
+					</div>
+				</div>
+                
+                
+            </article>
+            <!-- /support -->
+            <article class="legal-01">
+                <span>Merative provides its products AS IS. All users should read each product's complete Warranty &amp; Disclaimer for special terms and conditions prior to using a product. All information is intended for use only by competent healthcare and safety professionals and should be utilized in conjunction with pertinent clinical or situational data. As between you and Merative, you assume full responsibility for ensuring the appropriate use and reliance upon the information. This product is subject to restricted rights for U.S. government users. None of the content may be stored in a retrieval system, transmitted, distributed, or resold, nor may any portion of the content be reproduced in any form.</span> 
+            </article>
+            <!-- /legal-01 -->
+        </aside>
+        <!-- /content-secondary or "wrapper-aside" -->
+    </div>
+    <!-- /wrapper-contentmask -->
+</div>
+
+<!-- ********************** End Content Component ************** -->
+
+<!-- ***************** start Navigation Component  ************** -->
+
+<link rel="stylesheet" type="text/css" href="/home/100.1.0.286/presentation/scripts/styles/component/footer.css">
+<footer id="wrapper-footer" role="contentinfo">
+	<h1 class="announced-only">Footer</h1>
+	<div class="container">
+		<input type="button" onclick="location.href=&quot;https://www.merative.com/privacy&quot;" value="Privacy Policy" style="">
+		<div class="textnav">
+			<img src="/home/100.1.0.286/presentation/images/theme/light/brand/Merative-m-arch_footer.svg" id="footer-logo2" alt="Merative">
+			<span class="copyright">©&nbsp;Merative US L.P. 1973,&nbsp;2026</span>
+		</div>
+	</div>
+</footer>
+</div>
+
+<!-- ************************************************************ -->
+
+</body></html>

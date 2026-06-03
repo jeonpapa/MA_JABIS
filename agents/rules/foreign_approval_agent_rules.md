@@ -228,3 +228,51 @@ slug = <product>_<disease>_<line_of_therapy>_<stage>_<bio>_<combo>_<trial>
 - 신규 약물의 MFDS itemSeq 자동 해결 (nedrug 검색 API/HTML 분석)
 - `DISEASE_KR` / `COMBO_KR` / `BIOMARKER_KR` 누락 키워드 LLM 자동 제안 + 검증 로그
 - `apply_mfds_official_dates` 가 확정 못 한 `unverified_estimate` row 는 QualityGuard 큐에 적재하여 다음 사이클 재시도
+
+---
+
+## §Cross-national reimbursement (2026-04-27 신설)
+
+해외 급여 결정(NICE/PBAC/CMS/일본 中医協)을 자동 수집하여 `reimbursement_xnational` 에 적재. axis = `indication_id × country × body`. 한국(HIRA)은 기존 `indication_reimbursement` 보존, API 레벨에서 union.
+
+### 수집 대상 4개 body
+| 국가 | body | 진입점 | scraper |
+|---|---|---|---|
+| UK | NICE | `/search?q=<drug>` → /guidance/TA*** | `agents/hta_scrapers/uk_nice.py:search_reimbursement()` |
+| AU | PBAC | `/medicine/item/search?term=<drug>` | `agents/hta_scrapers/au_pbs.py` |
+| US | CMS | NCD/LCD search | `agents/hta_scrapers/us_cms.py` |
+| JP | CHUIKYO | 후생노동성 약가기준 | `agents/hta_scrapers/jp_chuikyo.py` |
+
+### 운영
+- 단일 product sync: `python -m agents.foreign_approval.reimbursement_sync --product keytruda`
+- 전체 sync: `python -m agents.foreign_approval.reimbursement_sync` (분기 1회 권장)
+- alias_map 기반 INN 검색 (드러그명은 영문 INN 우선 — `keytruda` → `pembrolizumab`)
+- 빈 결과는 `decision_type='not_listed'` / `'not_applicable'` 명시 row 로 기록 — UI 가 "미등재" 안내 가능
+
+### `decision_type` 정규화
+- `recommend` — 무조건 권고/등재
+- `restrict` — managed access / authority required / 조건부
+- `optimised` — 좁힌 인구만 (NICE optimised population)
+- `reject` — not recommended / not covered
+- `not_listed` — 등재 절차 진행 중 또는 미등재
+- `not_applicable` — drug-specific 결정 부재 (CMS NCD 미매칭)
+
+### `indication_id` 매칭 정책
+- scraper 의 criteria_text 안에 `disease` 키워드가 있으면 매칭 시도 (`reimbursement_sync._attach_indication_id`)
+- 미매칭 시 product 의 첫 번째 indication 에 attach (UI fallback)
+- UI 카드는 indication 단위 detail expand 가능 — 정확 매칭이 핵심
+
+### Coverage 모니터링
+- `agents/rule_compliance/checks.py:check_xnational_reimbursement` (90일 신선도)
+- `agents/rule_compliance/checks.py:check_foreign_price_coverage` (가격 백필)
+
+### API
+- `GET /api/foreign/country-overview?query=<brand>` — 6 국가 카드 통합 응답
+- 응답 shape: `{product, inn, countries: [{country, agency, body, approval_count, indications, reimbursement_summary, price_summary}]}`
+
+### 신규 약 추가 흐름
+1. `scripts/seed_product_alias_map.py` 의 SEED 에 brand_aliases + INN + agency_overrides 추가
+2. `python -m scripts.seed_product_alias_map` 실행
+3. `python -m agents.foreign_approval.reimbursement_sync --product <slug>` 로 NICE/PBAC/CMS/CHUIKYO 수집
+4. 가격은 별도 `python -m agents.foreign_price_agent` (8개국 스크레이퍼)
+5. 검증: `curl 'http://127.0.0.1:5001/api/foreign/country-overview?query=<brand>' | jq`

@@ -133,7 +133,7 @@ def _split_indications(section_text: str) -> list[MHRAIndication]:
             result.append(MHRAIndication(
                 code=f"mhra_{idx}",
                 label=label[:200],
-                body=para[:2000],
+                body=para,
             ))
 
     return result

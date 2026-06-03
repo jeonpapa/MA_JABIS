@@ -1,0 +1,82 @@
+{
+  "mechanism": "volume_price",
+  "mechanism_label": "사용량-연동 약가인하",
+  "reason": "2013년 10월 1일 허셉틴주150밀리그램의 약가가 -5.55% 변동된 것은 사용량-연동 약가인하 기전이 작용한 결과로 보입니다. 이는 2013년 3월에 이미 사용량 증가에 따른 약가 인하가 이루어졌으며, 변동률이 공단과의 재협상 결과와 일치하는 것으로 추정됩니다. 윈도우 내 다른 기전이나 관련 보도는 확인되지 않았습니다.",
+  "evidence_summary": "데일리팜은 허셉틴주150mg이 2010년 대비 2011년 청구량이 60% 이상 증가하여 약가협상이 이루어졌다고 보도했습니다.",
+  "confidence": "medium",
+  "window": {
+    "from": "2013.04",
+    "to": "2014.04",
+    "months": 6
+  },
+  "references": [
+    {
+      "title": "article.html?no=130725",
+      "url": "https://www.medifonews.com/news/article.html?no=130725",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true
+    },
+    {
+      "title": "article.html?no=14842",
+      "url": "https://www.mdon.co.kr/news/article.html?no=14842",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true
+    },
+    {
+      "title": "count_view_d.asp?product_code=645000611",
+      "url": "https://www.drugd.co.kr/product/count_view_d.asp?product_code=645000611",
+      "media": "기타",
+      "weight": 0.5,
+      "published_at": "6450.00.61",
+      "notes": "date_inferred_from_url",
+      "date_unknown": true
+    }
+  ],
+  "notes": "허셉틴은 2013년 10월 당시 이미 등재 후 다년간 경과한 기존 품목. 변동률 -5.55%는 중간 수준으로 KR-RULE-025(사용량-약가 연동, 최대 15% 인하) 또는 KR-RULE-026(급여확대 시 공단 협상 인하)의 트리거 가능성이 있으나, 당시 공식 보도자료·약평위 결정문·HIRA 공시 등에서 구체 사유 미확인. 추가 정보 필요: (1) 2013년 9월~10월 HIRA/MOHW 고시 원문, (2) 당시 약평위 회의록, (3) 공단 협상 기록. · [enforce] URL 검증: 4건 published_at 교체, 0건 drop (의심 0건) · published_at 미확인 4건 — date_unknown 마킹 후 보존 · 윈도우 외 references 5건 제거 · reason 문장 1개 삭제(윈도우 외 연도) · [enforce] URL 검증: 4건 published_at 교체, 0건 drop (의심 0건) · published_at 미확인 6건 — date_unknown 마킹 후 보존 · 윈도우 외 references 5건 제거 · [Naver 보강] 윈도우 내 기사 26건 채택 · [enforce] URL 검증: 4건 published_at 교체, 0건 drop (의심 0건) · published_at 미확인 3건 — date_unknown 마킹 후 보존 · 윈도우 외 references 4건 제거",
+  "_source": "perplexity-sonar-pro",
+  "analysis_meta": {
+    "source": "perplexity-sonar-pro",
+    "total_articles": 4,
+    "tier_a_count": 0,
+    "tier_b_count": 0,
+    "tier_c_count": 0,
+    "detected_mechanisms": [
+      "미분류"
+    ],
+    "top_media": [
+      {
+        "media": "기타",
+        "weight": 0.5
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      }
+    ]
+  },
+  "deep_research": {
+    "source": "perplexity-sonar-pro-research",
+    "model": "sonar-pro",
+    "citations": [
+      "https://m.dailypharm.com/newsView.html?ID=152482",
+      "https://assets.roche.com/f/250698/x/7fe4bb5423/herceptin_150mg_20220428.pdf",
+      "https://www.drugd.co.kr/product/count_view_d.asp?product_code=645000611",
+      "http://m.yakup.com/news/index.html?nid=142684&mode=view",
+      "https://www.newsthevoice.com/news/articleView.html?idxno=10830",
+      "https://www.hira.or.kr/rc/insu/insuadtcrtr/InsuAdtCrtrPopup.do?mtgHmeDd=20240628&sno=2&mtgMtrRegSno=13&brdScnBltNo=4&brdBltNo=",
+      "https://www.medicaltimes.com/newMobile/News/NewsView.html?ID=49737"
+    ],
+    "created_at": "2026-04-25T13:32:33.819803Z"
+  },
+  "cached": false
+}

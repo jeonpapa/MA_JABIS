@@ -1,0 +1,76 @@
+{
+  "updated_at": "2026-04-21T02:54:22.918845",
+  "markdown": "- **비대면 진료 제도 개선안**: 보건복지부가 비대면 진료 제도 개선안을 마련했으나, 환자 수요가 반영되지 않아 의료계의 우려가 제기됨.\n- **상급종합병원 규제 강화**: 보건복지부가 중증환자 수 기준 미달 시 상급종합병원 지정 취소를 예고, 고난도 의료 행위 집중 유도.\n- **도수치료 관리급여 전환**: 7월부터 도수치료가 비급여에서 관리급여로 전환, 연간 시행 건수와 수가 상한 설정 예정.\n\n**함의**: 비대면 진료와 도수치료 관리급여 전환은 의료 접근성을 높일 수 있으나, 환자 수요 반영 부족과 규제 강화가 시장에 미치는 영향에 주목해야 함.",
+  "reviewers": [
+    "openai:gpt-4o-mini",
+    "gemini:gemini-2.5-flash"
+  ],
+  "sources": [
+    {
+      "title": "중앙대광명병원 이원주 보험심사팀장, 보건복지부 장관 표창 수상 外",
+      "url": "http://www.newsmp.com/news/articleView.html?idxno=252804",
+      "source": "newsmp",
+      "date": "2026-04-21"
+    },
+    {
+      "title": "영등포구 '청년 1인가구 급식 지원' 사업 확대 운영 개시",
+      "url": "http://www.lawissue.co.kr/view.php?ud=202604200810297534edd30pn2gj_12",
+      "source": "lawissue",
+      "date": "2026-04-21"
+    },
+    {
+      "title": "액상형 전자담배도 '담배'로 규제한다...금연구역 흡연시 과태료는?",
+      "url": "https://www.gukjenews.com/news/articleView.html?idxno=3561967",
+      "source": "gukjecom",
+      "date": "2026-04-21"
+    },
+    {
+      "title": "[취재수첩] 의료계 입장만 대변한 비대면 진료 방안",
+      "url": "https://www.hankyung.com/article/2026042037761",
+      "source": "hankyung",
+      "date": "2026-04-21"
+    },
+    {
+      "title": "강원 장애인 10명 중 6명 고령… 중증·돌봄 부담 '이중고'",
+      "url": "https://www.kado.net/news/articleView.html?idxno=2045903",
+      "source": "kado",
+      "date": "2026-04-21"
+    },
+    {
+      "title": "의사 없는 보건지소 현실화…공보의 공백에 간호사 투입",
+      "url": "https://www.kado.net/news/articleView.html?idxno=2045884",
+      "source": "kado",
+      "date": "2026-04-21"
+    },
+    {
+      "title": "의왕 최초 종합병원 첫삽…'해밀리병원' 기공, 의료 공백 해소 기대",
+      "url": "http://www.hansbiz.co.kr/news/articleView.html?idxno=834201",
+      "source": "hansbiz",
+      "date": "2026-04-21"
+    },
+    {
+      "title": "중증환자 38% 미달땐 상급종합병원 취소",
+      "url": "https://www.ksilbo.co.kr/news/articleView.html?idxno=1054612",
+      "source": "ksilbo",
+      "date": "2026-04-21"
+    },
+    {
+      "title": "원주시, ‘혁신도시 문화미식회’",
+      "url": "https://www.kwnews.co.kr/page/view/2026042050091500000",
+      "source": "kwco",
+      "date": "2026-04-21"
+    },
+    {
+      "title": "[투데이 窓]AI 기반 예방 의료, 한국이 선도할 수 있는 이유",
+      "url": "https://www.mt.co.kr/opinion/2026/04/21/2026042010301427475",
+      "source": "mt",
+      "date": "2026-04-21"
+    }
+  ],
+  "keywords": [
+    "보건복지부",
+    "건강보험심사평가원",
+    "건강보험공단",
+    "식품의약품안전처"
+  ]
+}

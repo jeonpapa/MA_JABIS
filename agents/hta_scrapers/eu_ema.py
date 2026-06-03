@@ -187,7 +187,7 @@ def _split_indications(section_text: str, brand: str = "KEYTRUDA") -> list[EMAIn
         result.append(EMAIndication(
             code=f"ema_{idx}",
             label=label[:200],
-            body=body[:2000],
+            body=body,
             keywords=_extract_keywords(label + " " + body[:400]),
         ))
     return result

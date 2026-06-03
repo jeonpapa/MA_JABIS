@@ -1,0 +1,24 @@
+{
+  "mechanism": "unknown",
+  "mechanism_label": "미분류",
+  "reason": "추정: 자동 분석 불가 — 아래 기사를 직접 확인하세요.",
+  "evidence_summary": "수동 검토 필요",
+  "confidence": "low",
+  "references": [],
+  "notes": "OpenAI API 오류로 규칙 기반 결과 반환",
+  "analysis_meta": {
+    "source": "naver+gpt-4o",
+    "total_articles": 0,
+    "tier_a_count": 0,
+    "tier_b_count": 0,
+    "tier_c_count": 0,
+    "detected_mechanisms": [],
+    "top_media": []
+  },
+  "window": {
+    "from": "2024.01",
+    "to": "2025.01",
+    "months": 6
+  },
+  "cached": false
+}

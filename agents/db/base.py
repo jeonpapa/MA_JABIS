@@ -53,6 +53,14 @@ class _DbBase:
                 )
                 logger.info("Migrated: indications_master.biomarker_class added")
 
+            # indications_by_agency: label_full_text (허가 원문 전문)
+            iba_cols = {row[1] for row in conn.execute("PRAGMA table_info(indications_by_agency)")}
+            if "label_full_text" not in iba_cols:
+                conn.execute(
+                    "ALTER TABLE indications_by_agency ADD COLUMN label_full_text TEXT"
+                )
+                logger.info("Migrated: indications_by_agency.label_full_text added")
+
             # competitor_trend: source_type / importance 컬럼 (auto 크롤 지원)
             ct_cols = {row[1] for row in conn.execute("PRAGMA table_info(competitor_trend)")}
             if "source_type" not in ct_cols:
@@ -65,6 +73,30 @@ class _DbBase:
                     "ALTER TABLE competitor_trend ADD COLUMN importance TEXT"
                 )
                 logger.info("Migrated: competitor_trend.importance added")
+
+            # foreign_drug_dosing: default_pack_count (pack pricing 국가 fallback)
+            fd_cols = {row[1] for row in conn.execute("PRAGMA table_info(foreign_drug_dosing)")}
+            if "default_pack_count" not in fd_cols:
+                conn.execute(
+                    "ALTER TABLE foreign_drug_dosing ADD COLUMN default_pack_count INTEGER"
+                )
+                logger.info("Migrated: foreign_drug_dosing.default_pack_count added")
+
+            # foreign_drug_prices: A8 per-unit 재구조화 (2026-04-21)
+            # adjusted_price_krw 를 per-unit KRW 로 재정의. pack_count + daily_cost_krw 를 DB 에 저장.
+            fp_cols = {row[1] for row in conn.execute("PRAGMA table_info(foreign_drug_prices)")}
+            for col, ddl in (
+                ("pack_count",      "ALTER TABLE foreign_drug_prices ADD COLUMN pack_count INTEGER"),
+                ("per_unit_local",  "ALTER TABLE foreign_drug_prices ADD COLUMN per_unit_local REAL"),
+                ("total_pkg_mg",    "ALTER TABLE foreign_drug_prices ADD COLUMN total_pkg_mg REAL"),
+                ("daily_dose_mg",   "ALTER TABLE foreign_drug_prices ADD COLUMN daily_dose_mg REAL"),
+                ("daily_cost_krw",  "ALTER TABLE foreign_drug_prices ADD COLUMN daily_cost_krw INTEGER"),
+                ("daily_cost_note", "ALTER TABLE foreign_drug_prices ADD COLUMN daily_cost_note TEXT"),
+                ("form_type",       "ALTER TABLE foreign_drug_prices ADD COLUMN form_type TEXT"),
+            ):
+                if col not in fp_cols:
+                    conn.execute(ddl)
+                    logger.info("Migrated: foreign_drug_prices.%s added", col)
 
     def _migrate_search_tables(self) -> None:
         """drug_latest / FTS 인덱스 최초 1회 초기화."""

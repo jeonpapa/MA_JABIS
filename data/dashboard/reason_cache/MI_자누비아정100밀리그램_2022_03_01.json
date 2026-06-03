@@ -1,42 +1,85 @@
 {
-  "mechanism": "unknown",
-  "mechanism_label": "미분류",
-  "reason": "추정: 자누비아정100밀리그램의 2022년 3월 1일 약가 변동은 -6.04%로, 이는 실거래가 연동 약가인하 기전과 부합하는 것으로 보입니다. 2022년 상반기 DPP-4 억제제 시장의 성장 정체로 인해, 적응증 확대보다는 기존 약제의 실거래가 기반 재협상이 이루어졌을 가능성이 높습니다. 윈도우 내 공개된 구체적인 기사나 고시는 확인되지 않았으나, 실거래가 조사 결과에 따른 상한금액 하향 조정이 주요 원인으로 추정됩니다.",
-  "evidence_summary": "",
-  "confidence": "low",
+  "mechanism": "volume_price",
+  "mechanism_label": "사용량-연동 약가인하",
+  "reason": "자누비아정100밀리그램의 2022년 3월 1일 약가 변동은 건강보험공단과의 사용량-약가연동 협상 결과로, 약가가 -6.04% 인하되었습니다. 이는 사용량이 예상치를 초과했을 때 약가가 인하되는 기전(KR-RULE-025)에 해당하며, 윈도우 내 관련 보도가 확인되었습니다. 특허 만료나 적응증 확대와는 관련이 없는 중간 수준의 인하입니다.",
+  "evidence_summary": "데일리팜은 자누비아가 출시 후 13년 동안 사용량-연동 약가인하가 2번 발생했다고 보도했다.",
+  "confidence": "medium",
   "window": {
     "from": "2021.09",
     "to": "2022.09",
     "months": 6
   },
-  "references": [],
-  "notes": "변동률 -6.04%는 중간 수준이나 윈도우 내 tier 매체(데일리팜 등) 확인 자료 없음. 공식 고시(mohw/hira) 검색 결과 미포함. · [enforce] published_at 누락/불량 4건 제거 · [enforce] published_at 누락/불량 8건 제거",
+  "references": [
+    {
+      "title": "제미글로 5번·트라젠타 1번 인하…사용량연동제 모순",
+      "url": "http://www.dailypharm.com/Users/News/NewsView.html?ID=280209&amp;REFERER=NP",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "published_at": "2021-09-11",
+      "fetch_verified": true
+    },
+    {
+      "title": "복지위 국감전야…'약가 사후제도·병원지원금' 집중질의",
+      "url": "http://www.dailypharm.com/Users/News/NewsView.html?ID=280807&amp;REFERER=NP",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "published_at": "2021-10-05",
+      "fetch_verified": true
+    },
+    {
+      "title": "NewsView.html?ID=56981",
+      "url": "https://m.medicaltimes.com/NewsView.html?ID=56981",
+      "media": "메디칼타임즈",
+      "weight": 2.3,
+      "fetch_verified": false,
+      "date_unknown": true
+    },
+    {
+      "title": "downloadCkd.do?attFileNo=40148&saveFileName=8aa70daa4088b2ad",
+      "url": "https://www.ckdpharm.com/downloadCkd.do?attFileNo=40148&saveFileName=8aa70daa4088b2ad708ab0fac8d3474a81438f32f3f16e2cb13f22e377a34b0e",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true,
+      "fetch_verified": false
+    },
+    {
+      "title": "downloadCkd.do?attFileNo=34017&saveFileName=975bb314959d2df4",
+      "url": "https://www.ckd-holdings.com/downloadCkd.do?attFileNo=34017&saveFileName=975bb314959d2df411142ac4a9224daa0959ffea44b951e7ab234a8bf84705d5",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true,
+      "fetch_verified": false
+    }
+  ],
+  "notes": "KR-RULE-025 적용 확인. 공식 고시(mohw/hira) 윈도우 내 직접 보도 미확인으로 confidence medium. · [enforce] URL 검증: 4건 published_at 교체, 0건 drop (의심 2건) · published_at 미확인 4건 — date_unknown 마킹 후 보존 · 윈도우 외 references 5건 제거 · [enforce] URL 검증: 1건 published_at 교체, 0건 drop (의심 0건) · published_at 미확인 3건 — date_unknown 마킹 후 보존 · 윈도우 외 references 1건 제거 · [Naver 보강] 윈도우 내 기사 34건 채택 · [enforce] published_at 미확인 3건 — date_unknown 마킹 후 보존",
   "_source": "perplexity-sonar-pro",
   "analysis_meta": {
     "source": "perplexity-sonar-pro",
-    "total_articles": 0,
+    "total_articles": 4,
     "tier_a_count": 0,
-    "tier_b_count": 0,
+    "tier_b_count": 1,
     "tier_c_count": 0,
     "detected_mechanisms": [
-      "미분류"
+      "사용량-연동 약가인하"
     ],
-    "top_media": []
-  },
-  "deep_research": {
-    "source": "perplexity-sonar-pro-research",
-    "model": "sonar-pro",
-    "citations": [
-      "https://dailypharm.com/user/news?group=%EC%9D%B8%EB%AC%BC%C2%B7%EC%97%B0%EC%9E%AC&category=%EB%82%98%EB%8A%94+%EA%B8%B0%EC%9E%90%EB%8B%A4&name=%EC%9D%B4%ED%83%81%EC%88%9C&view_mode=pc&page=3",
-      "https://securities.miraeasset.com/bbs/maildownload/20230220140011553_154.pdf",
-      "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20260319000925&rcpno=20260319000691&orgid=F&tran=Y&langTpCd=0",
-      "https://repository.hira.or.kr/bitstream/2019.oak/728/2/%EC%99%B8%EA%B5%AD%EC%95%BD%EA%B0%80%20%EC%B0%B8%EC%A1%B0%EA%B8%B0%EC%A4%80%20%EA%B0%9C%EC%84%A0%EB%B0%A9%EC%95%88%20%EC%97%B0%EA%B5%AC.pdf",
-      "https://www.ckdpharm.com/downloadCkd.do?attFileNo=40148&saveFileName=8aa70daa4088b2ad708ab0fac8d3474a81438f32f3f16e2cb13f22e377a34b0e",
-      "https://www.eugenefn.com/common/files/amail/20250107_B3510_hskwon_235.pdf",
-      "https://www.vitalkorea.kr/uploads/trend/%ED%95%9C%EA%B5%AD%EB%B3%B4%EA%B1%B4%EC%82%B0%EC%97%85%EC%A7%84%ED%9D%A5%EC%9B%90%202023%20%EB%B3%B4%EA%B1%B4%EC%82%B0%EC%97%85%EB%B0%B1%EC%84%9C(%EC%B5%9C%EC%A2%85).pdf",
-      "https://m.medicaltimes.com/NewsView.html?ID=56981"
-    ],
-    "created_at": "2026-04-18T16:21:48.357639Z"
+    "top_media": [
+      {
+        "media": "메디칼타임즈",
+        "weight": 2.3
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      }
+    ]
   },
   "cached": false
 }

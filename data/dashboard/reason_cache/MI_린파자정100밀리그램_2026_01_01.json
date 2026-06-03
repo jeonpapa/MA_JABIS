@@ -1,0 +1,95 @@
+{
+  "mechanism": "actual_transaction",
+  "mechanism_label": "실거래가 연동 약가인하",
+  "reason": "린파자정100밀리그램의 약가 변동률 -0.01%는 실거래가 연동 약가인하 가능성을 시사합니다. 그러나 2026.01~2026.07 윈도우 내 린파자 관련 약가 변동에 대한 공개 보도나 고시는 확인되지 않았으며, 공식 출처에서도 해당 약가 조정 사실이 없습니다. 따라서 변동률이 소폭임에도 불구하고 구체적인 근거는 부족한 상황입니다.",
+  "evidence_summary": "윈도우 내 검색 결과(2025.07~2026.07)에서 린파자정100밀리그램 약가 변동 관련 구체 보도 없음. AstraZeneca 허가사항 변경(적응증 추가)은 확인되나 약가 연계 기사 미확인.",
+  "confidence": "medium",
+  "window": {
+    "from": "2025.07",
+    "to": "2026.07",
+    "months": 6
+  },
+  "references": [
+    {
+      "title": "3486",
+      "url": "https://www.brpinsight.com/contents-center/3486",
+      "media": "기타",
+      "weight": 0.5,
+      "fetch_verified": true,
+      "published_at": "2026-04-11",
+      "date_corrected": true
+    },
+    {
+      "title": "20260107_B3510_hskwon_313.pdf",
+      "url": "https://www.eugenefn.com/common/files/amail/20260107_B3510_hskwon_313.pdf",
+      "media": "기타",
+      "weight": 0.5,
+      "published_at": "2026.01.07",
+      "notes": "date_inferred_from_url"
+    },
+    {
+      "title": "bbsView.do?pgmid=HIRAA030069000400&brdScnBltNo=4&brdBltNo=53",
+      "url": "https://www.hira.or.kr/rc/drug/insuadtcrtr/bbsView.do?pgmid=HIRAA030069000400&brdScnBltNo=4&brdBltNo=53096",
+      "media": "건강보험심사평가원",
+      "weight": 2.9,
+      "fetch_verified": true,
+      "published_at": "2026-02-27",
+      "date_corrected": true
+    },
+    {
+      "title": "bbsDummy.do?pgmid=HIRAA020041000100&brdScnBltNo=4&brdBltNo=1",
+      "url": "https://www.hira.or.kr/bbsDummy.do?pgmid=HIRAA020041000100&brdScnBltNo=4&brdBltNo=11576",
+      "media": "건강보험심사평가원",
+      "weight": 2.9,
+      "fetch_verified": true,
+      "published_at": "2025-09-03",
+      "date_corrected": true
+    },
+    {
+      "title": "%EC%9D%98%EC%95%BD%ED%92%88%20%EB%B3%80%EA%B2%BD%ED%97%88%EA",
+      "url": "https://common.health.kr/shared/docs/healthkr/approval_result/%EC%9D%98%EC%95%BD%ED%92%88%20%EB%B3%80%EA%B2%BD%ED%97%88%EA%B0%80%20%EB%B3%B4%EA%B3%A0%EC%84%9C_%EB%A6%B0%ED%8C%8C%EC%9E%90%EC%A0%95100%EB%B0%80%EB%A6%AC%EA%B7%B8%EB%9E%A8%20%EC%99%B8%201%ED%92%88%EB%AA%A9.pdf",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true
+    },
+    {
+      "title": "%ED%8F%89%EA%B0%80%EA%B2%B0%EA%B3%BC_%EB%A6%B0%ED%8C%8C%EC%9",
+      "url": "https://common.health.kr/shared/docs/healthkr/boh_result/%ED%8F%89%EA%B0%80%EA%B2%B0%EA%B3%BC_%EB%A6%B0%ED%8C%8C%EC%9E%90%EC%A0%95(%ED%95%9C%EA%B5%AD%EC%95%84%EC%8A%A4%ED%8A%B8%EB%9D%BC%EC%A0%9C%EB%84%A4%EC%B9%B4(%EC%A3%BC)).pdf",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true
+    }
+  ],
+  "notes": "[enforce] URL 검증: 2건 published_at 교체, 0건 drop (의심 0건) · 윈도우 외 references 1건 제거 · [enforce] URL 검증: 3건 published_at 교체, 0건 drop (의심 0건) · published_at 미확인 2건 — date_unknown 마킹 후 보존 · 윈도우 외 references 1건 제거",
+  "_source": "perplexity-sonar-pro",
+  "analysis_meta": {
+    "source": "perplexity-sonar-pro",
+    "total_articles": 1,
+    "tier_a_count": 0,
+    "tier_b_count": 0,
+    "tier_c_count": 0,
+    "detected_mechanisms": [
+      "실거래가 연동 약가인하"
+    ],
+    "top_media": [
+      {
+        "media": "기타",
+        "weight": 0.5
+      }
+    ]
+  },
+  "deep_research": {
+    "source": "perplexity-sonar-pro-research",
+    "model": "sonar-pro",
+    "citations": [
+      "https://dailypharm.com/user/news/76374",
+      "https://www.eugenefn.com/common/files/amail/20260107_B3510_hskwon_313.pdf",
+      "https://www.hira.or.kr/rc/drug/insuadtcrtr/bbsView.do?pgmid=HIRAA030069000400&brdScnBltNo=4&brdBltNo=53096",
+      "https://www.hira.or.kr/bbsDummy.do?pgmid=HIRAA020041000100&brdScnBltNo=4&brdBltNo=11576",
+      "https://common.health.kr/shared/docs/healthkr/approval_result/%EC%9D%98%EC%95%BD%ED%92%88%20%EB%B3%80%EA%B2%BD%ED%97%88%EA%B0%80%20%EB%B3%B4%EA%B3%A0%EC%84%9C_%EB%A6%B0%ED%8C%8C%EC%9E%90%EC%A0%95100%EB%B0%80%EB%A6%AC%EA%B7%B8%EB%9E%A8%20%EC%99%B8%201%ED%92%88%EB%AA%A9.pdf",
+      "https://common.health.kr/shared/docs/healthkr/boh_result/%ED%8F%89%EA%B0%80%EA%B2%B0%EA%B3%BC_%EB%A6%B0%ED%8C%8C%EC%9E%90%EC%A0%95(%ED%95%9C%EA%B5%AD%EC%95%84%EC%8A%A4%ED%8A%B8%EB%9D%BC%EC%A0%9C%EB%84%A4%EC%B9%B4(%EC%A3%BC)).pdf"
+    ],
+    "created_at": "2026-04-25T13:41:00.245471Z"
+  },
+  "cached": false
+}

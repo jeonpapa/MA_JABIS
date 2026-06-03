@@ -1,0 +1,74 @@
+{
+  "mechanism": "actual_transaction",
+  "mechanism_label": "실거래가 연동 약가인하",
+  "reason": "추정: 실거래가 연동 약가인하과 관련된 약가 변동으로 보입니다.",
+  "evidence_summary": "수동 검토 필요",
+  "confidence": "low",
+  "references": [
+    {
+      "title": "도네린 약가 42%↓…3920개 약제 실거래가 인하",
+      "url": "http://www.dailypharm.com/Users/News/NewsView.html?ID=260202&amp;REFERER=NP",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "published_at": "2019.12.21",
+      "fetch_verified": true
+    },
+    {
+      "title": "청구실적 급증 스텔라라 3.3% 인하…도네린 약가 42%↓",
+      "url": "http://www.dailypharm.com/Users/News/NewsView.html?ID=260125&amp;REFERER=NP",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "published_at": "2019.12.19",
+      "fetch_verified": true
+    },
+    {
+      "title": "'리피오돌' 등 126품목 사용량-약가연동협상 대상에",
+      "url": "http://www.dailypharm.com/Users/News/NewsView.html?ID=257799&amp;REFERER=NP",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "published_at": "2019.10.16",
+      "fetch_verified": true
+    }
+  ],
+  "notes": "OpenAI API 오류로 규칙 기반 결과 반환",
+  "analysis_meta": {
+    "source": "naver+gpt-4o",
+    "total_articles": 5,
+    "tier_a_count": 4,
+    "tier_b_count": 0,
+    "tier_c_count": 0,
+    "detected_mechanisms": [
+      "실거래가 연동 약가인하",
+      "특허 만료",
+      "사용량-연동 약가인하"
+    ],
+    "top_media": [
+      {
+        "media": "데일리팜",
+        "weight": 3.0
+      },
+      {
+        "media": "데일리팜",
+        "weight": 3.0
+      },
+      {
+        "media": "데일리팜",
+        "weight": 3.0
+      },
+      {
+        "media": "메디파나뉴스",
+        "weight": 2.8
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      }
+    ]
+  },
+  "window": {
+    "from": "2019.07",
+    "to": "2020.07",
+    "months": 6
+  },
+  "cached": false
+}

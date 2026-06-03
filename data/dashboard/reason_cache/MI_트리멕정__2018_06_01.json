@@ -1,0 +1,141 @@
+{
+  "mechanism": "unknown",
+  "mechanism_label": "미분류",
+  "reason": "트리멕정의 약가 변동(-6.06%)에 대한 구체적인 사유는 2018년 윈도우 내에서 확인되지 않았습니다. 사용량-연동 약가인하 또는 적응증 확대 가능성이 추정되지만, 이를 뒷받침할 공식 고시나 공개 보도가 발견되지 않았습니다. 따라서, 변동 사유는 명확히 분류되지 않았으며, 추가적인 자료 조사가 필요합니다.",
+  "evidence_summary": "제공된 검색 결과에서 트리멕정_의 2018년 6월 약가 변동에 대한 직접적 근거 없음. HIRA 자료는 외국 약가 참조기준 개선방안(2015년 기준) 및 급여적정성 재평가 관련 일반 연구로, 해당 약제의 구체적 변동 사유 미기재.",
+  "confidence": "medium",
+  "window": {
+    "from": "2017.12",
+    "to": "2018.12",
+    "months": 6
+  },
+  "references": [
+    {
+      "title": "%EC%99%B8%EA%B5%AD%EC%95%BD%EA%B0%80%20%EC%B0%B8%EC%A1%B0%EA",
+      "url": "https://repository.hira.or.kr/bitstream/2019.oak/728/2/%EC%99%B8%EA%B5%AD%EC%95%BD%EA%B0%80%20%EC%B0%B8%EC%A1%B0%EA%B8%B0%EC%A4%80%20%EA%B0%9C%EC%84%A0%EB%B0%A9%EC%95%88%20%EC%97%B0%EA%B5%AC.pdf",
+      "media": "건강보험심사평가원",
+      "weight": 2.9,
+      "date_unknown": true
+    },
+    {
+      "title": "download?id=4414&view_mode=pc",
+      "url": "https://dailypharm.com/user/news/pds/download?id=4414&view_mode=pc",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "date_unknown": true
+    },
+    {
+      "title": "%EC%95%BD%EC%A0%9C%20%EA%B8%89%EC%97%AC%EC%A0%81%EC%A0%95%EC",
+      "url": "https://repository.hira.or.kr/bitstream/2019.oak/3227/2/%EC%95%BD%EC%A0%9C%20%EA%B8%89%EC%97%AC%EC%A0%81%EC%A0%95%EC%84%B1%20%EC%9E%AC%ED%8F%89%EA%B0%80%20%ED%95%A9%EB%A6%AC%ED%99%94%20%EB%B0%A9%EC%95%88%20%EC%97%B0%EA%B5%AC.pdf",
+      "media": "건강보험심사평가원",
+      "weight": 2.9,
+      "date_unknown": true
+    },
+    {
+      "title": "201503689",
+      "url": "https://www.munyak.co.kr/product/detail/201503689",
+      "media": "기타",
+      "weight": 0.5,
+      "published_at": "2015.03.68",
+      "notes": "date_inferred_from_url",
+      "date_unknown": true
+    },
+    {
+      "title": "42655",
+      "url": "https://www.dailypharm.com/user/news/42655",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "date_unknown": true
+    },
+    {
+      "title": "%ED%8A%B8%EB%A6%AC%EB%9E%8C%EC%A0%95-0.25mg",
+      "url": "https://doctornow.co.kr/medicine-dictionary/241783056e2143bcb3cf939e5bfa8b3e/%ED%8A%B8%EB%A6%AC%EB%9E%8C%EC%A0%95-0.25mg",
+      "media": "기타",
+      "weight": 0.5,
+      "published_at": "2417.83.05",
+      "notes": "date_inferred_from_url",
+      "date_unknown": true
+    },
+    {
+      "title": "%ED%8A%B8%EB%A6%AC%EB%A9%95%EC%A0%95",
+      "url": "https://doctornow.co.kr/medicine-dictionary/6bec9be091cb42958f3f3a67b17c08d8/%ED%8A%B8%EB%A6%AC%EB%A9%95%EC%A0%95",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true
+    },
+    {
+      "title": "222139841199",
+      "url": "https://blog.naver.com/subin2676/222139841199",
+      "media": "기타",
+      "weight": 0.5,
+      "published_at": "2221.39.84",
+      "notes": "date_inferred_from_url",
+      "date_unknown": true
+    },
+    {
+      "title": "index.html?mode=view&nid=1376&num_start=1200",
+      "url": "http://m.yakup.com/drugprice/index.html?mode=view&nid=1376&num_start=1200",
+      "media": "약업신문",
+      "weight": 2.9,
+      "date_unknown": true
+    },
+    {
+      "title": "202313",
+      "url": "https://dailypharm.com/News/202313",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "date_unknown": true
+    },
+    {
+      "title": "839",
+      "url": "https://okheesblog.tistory.com/839",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true
+    }
+  ],
+  "notes": "변동률 -6.06%는 중간 수준으로 사용량-연동(volume_price) 또는 실거래가 연동(actual_transaction) 기전이 우선 검토 대상이나, 윈도우 내 확인 가능한 공개 기사·고시 부재로 기전 특정 불가. 보건복지부·심사평가원·약업신문 등 공식 매체의 추가 검색 필요. · [enforce] published_at 미확인 3건 — date_unknown 마킹 후 보존 · [enforce] published_at 미확인 11건 — date_unknown 마킹 후 보존 · 윈도우 외 references 2건 제거 · [enforce] published_at 미확인 11건 — date_unknown 마킹 후 보존",
+  "_source": "perplexity-sonar-pro",
+  "analysis_meta": {
+    "source": "perplexity-sonar-pro",
+    "total_articles": 3,
+    "tier_a_count": 1,
+    "tier_b_count": 0,
+    "tier_c_count": 2,
+    "detected_mechanisms": [
+      "미분류"
+    ],
+    "top_media": [
+      {
+        "media": "데일리팜",
+        "weight": 3.0
+      },
+      {
+        "media": "건강보험심사평가원",
+        "weight": 2.9
+      },
+      {
+        "media": "건강보험심사평가원",
+        "weight": 2.9
+      }
+    ]
+  },
+  "deep_research": {
+    "source": "perplexity-sonar-pro-research",
+    "model": "sonar-pro",
+    "citations": [
+      "https://www.munyak.co.kr/product/detail/201503689",
+      "https://www.dailypharm.com/user/news/42655",
+      "https://doctornow.co.kr/medicine-dictionary/241783056e2143bcb3cf939e5bfa8b3e/%ED%8A%B8%EB%A6%AC%EB%9E%8C%EC%A0%95-0.25mg",
+      "https://doctornow.co.kr/medicine-dictionary/6bec9be091cb42958f3f3a67b17c08d8/%ED%8A%B8%EB%A6%AC%EB%A9%95%EC%A0%95",
+      "https://www.health.kr/searchDrug/result_drug.asp?drug_cd=2015061500040",
+      "https://health.kr/searchDrug/result_drug.asp?drug_cd=2015061500040",
+      "https://blog.naver.com/subin2676/222139841199",
+      "http://m.yakup.com/drugprice/index.html?mode=view&nid=1376&num_start=1200",
+      "https://dailypharm.com/News/202313",
+      "https://okheesblog.tistory.com/839"
+    ],
+    "created_at": "2026-04-23T12:11:46.644786Z"
+  },
+  "cached": false
+}

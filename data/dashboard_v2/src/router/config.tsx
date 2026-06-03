@@ -9,6 +9,7 @@ import AdminBrandTrafficPage from '@/pages/admin/brand-traffic/page';
 import AdminCompetitorTrendsPage from '@/pages/admin/competitor-trends/page';
 import AdminKeywordCloudPage from '@/pages/admin/keyword-cloud/page';
 import AdminReimbursementPage from '@/pages/admin/reimbursement/page';
+import AdminApprovalDocumentsPage from '@/pages/admin/approval-documents/page';
 import CompetitorTrendsPage from '@/pages/competitor-trends/page';
 import DailyMailingPage from '@/pages/daily-mailing/page';
 import WorkbenchPage from '@/pages/workbench/page';
@@ -29,6 +30,7 @@ const routes: RouteObject[] = [
   { path: '/admin/competitor-trends', element: <AdminCompetitorTrendsPage /> },
   { path: '/admin/keyword-cloud', element: <AdminKeywordCloudPage /> },
   { path: '/admin/reimbursement', element: <AdminReimbursementPage /> },
+  { path: '/admin/approval-documents', element: <AdminApprovalDocumentsPage /> },
   { path: '/daily-mailing', element: <DailyMailingPage /> },
   { path: '/workbench', element: <WorkbenchPage /> },
   { path: '/admin/workbench-settings', element: <AdminWorkbenchSettingsPage /> },

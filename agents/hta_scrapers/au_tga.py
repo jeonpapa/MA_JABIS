@@ -175,7 +175,7 @@ def _split_indications(section_text: str, brand: str = "KEYTRUDA") -> list[TGAIn
             result.append(TGAIndication(
                 code=f"tga_{idx}",
                 label=label[:200],
-                body=para[:2000],
+                body=para,
             ))
 
     return result

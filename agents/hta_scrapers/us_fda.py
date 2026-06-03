@@ -93,7 +93,7 @@ def _split_indications(text: str, brand: str = "") -> list[FDAIndication]:
     # 3-level 코드 우선 매칭: 1.1.2 같은 것을 1.1 로 잘라먹지 않도록.
     matches = list(re.finditer(r"(?<!\()\b(\d+(?:\.\d+){1,2})\s+(?!\))", text))
     if not matches:
-        return [FDAIndication(code="1", label="Indication", body=text.strip()[:1500],
+        return [FDAIndication(code="1", label="Indication", body=text.strip(),
                               keywords=_extract_keywords(text))]
 
     by_code: dict[str, tuple[str, str]] = {}  # code -> (label, body)
@@ -137,14 +137,14 @@ def _split_indications(text: str, brand: str = "") -> list[FDAIndication]:
         sub_bodies = _split_subindications(body, brand)
         if len(sub_bodies) <= 1:
             out.append(FDAIndication(
-                code=code, label=label[:200], body=body[:1500],
+                code=code, label=label[:200], body=body,
                 keywords=_extract_keywords(label + " " + body[:300]),
             ))
         else:
             for idx, sb in enumerate(sub_bodies):
                 sub_code = f"{code}_{chr(ord('a') + idx)}"
                 out.append(FDAIndication(
-                    code=sub_code, label=label[:200], body=sb[:1500],
+                    code=sub_code, label=label[:200], body=sb,
                     keywords=_extract_keywords(label + " " + sb[:300]),
                 ))
     return out

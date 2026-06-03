@@ -30,6 +30,13 @@ export interface A8Pricing {
   productName?: string;
   dosageStrength?: string;
   dosageForm?: string;
+  dosageStrengthMg?: number;
+  dailyDoseMg?: number;
+  dailyCostKrw?: number;
+  dosingScheduleLabel?: string;
+  packCount?: number;
+  perUnitLocal?: number;
+  packageUnit?: string;
 }
 
 export interface HtaRecord {
@@ -42,11 +49,31 @@ export interface HtaRecord {
   detailUrl?: string;
 }
 
+export type ApprovalDateSource = 'official' | 'unverified' | null;
+
+export interface ApprovalIndicationBlock {
+  title: string;
+  approvalDate: string | null;
+  dateSource?: ApprovalDateSource;
+  biomarkerLabel: string | null;
+  combinationLabel: string | null;
+  labelUrl: string | null;
+  body: string;
+  /** anchor chips — disease + stage + LoT + biomarker_class (카드 헤더 스캔용) */
+  disease?: string | null;
+  stage?: string | null;
+  lineOfTherapy?: string | null;
+  biomarkerClass?: string | null;
+  indicationId?: string;
+}
+
 export interface ApprovalRecord {
   approved: boolean;
   date: string | null;
+  dateSource?: ApprovalDateSource;
   indication: string | null;
   fullIndication: string | null;
+  indicationBlocks?: ApprovalIndicationBlock[];
 }
 
 export interface ForeignDrugDetail {
@@ -61,6 +88,8 @@ export interface ForeignDrugDetail {
   a8PricingByForm: Record<string, A8Pricing[]>;
   htaStatus: Record<string, HtaRecord | undefined>;
   approvalStatus: Record<string, ApprovalRecord | undefined>;
+  /** 국가별 빈 결과의 정책 메타 (예: FR PPH 비공개 / CA pCPA) */
+  coverageNotes?: Record<string, CoverageNote>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -91,11 +120,33 @@ interface RawPricingEntry {
   form_type?: string | null;
   dosage_strength?: string | null;
   dosage_form?: string | null;
+  dosage_strength_mg?: number | null;
+  daily_dose_mg?: number | null;
+  daily_cost_krw?: number | null;
+  dosing_schedule_label?: string | null;
+  pack_count?: number | null;
+  per_unit_local?: number | null;
+  package_unit?: string | null;
+}
+
+interface RawCoverageNote {
+  policy: string;
+  public_db_has_price?: boolean | string;
+  source_hint?: string;
+  requires_auth?: boolean;
 }
 
 interface RawForeignCachedResponse {
   query: string;
   results: Record<string, RawPricingEntry[]>;
+  coverage_notes?: Record<string, RawCoverageNote>;
+}
+
+export interface CoverageNote {
+  policy: string;
+  publicDbHasPrice?: boolean | string;
+  sourceHint?: string;
+  requiresAuth?: boolean;
 }
 
 interface RawHtaResult {
@@ -135,6 +186,28 @@ interface RawApprovalMatrix {
   by_disease: Array<Record<string, number | string>>;
 }
 
+interface RawApprovalFullTextRow {
+  indication_id: string;
+  disease: string | null;
+  stage: string | null;
+  line_of_therapy: string | null;
+  biomarker_class: string | null;
+  title: string | null;
+  agency: string;
+  approval_date: string | null;
+  date_source: string | null;
+  label_excerpt: string | null;
+  label_full_text: string | null;
+  label_url: string | null;
+  biomarker_label: string | null;
+  combination_label: string | null;
+}
+
+interface RawApprovalFullTextResponse {
+  product: string;
+  by_agency: Record<string, RawApprovalFullTextRow[]>;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // country key ↔ server country code 매핑
 // ─────────────────────────────────────────────────────────────────────────────
@@ -146,14 +219,14 @@ const PRICING_COUNTRY_CODE: Record<string, string> = {
 };
 
 // UI key → approval agency
+// EU centralized procedure 는 EMA 1회 허가로 DE/FR/IT 공통 → `eu` 단일 키로 통합
 const APPROVAL_AGENCY: Record<string, string | null> = {
   usa: 'FDA',
   uk: 'MHRA',
-  germany: 'EMA',
-  france: 'EMA',
-  italy: 'EMA',
+  eu: 'EMA',
   canada: null,      // Health Canada — 데이터 소스 미구현
   japan: 'PMDA',
+  korea: 'MFDS',
   switzerland: null, // Swissmedic — 데이터 소스 미구현
   australia: 'TGA',
   scotland: 'MHRA',
@@ -227,6 +300,13 @@ function mapPricingEntry(raw: RawPricingEntry): A8Pricing | undefined {
     productName: raw.product_name,
     dosageStrength: raw.dosage_strength || undefined,
     dosageForm: raw.dosage_form || undefined,
+    dosageStrengthMg: raw.dosage_strength_mg ?? undefined,
+    dailyDoseMg: raw.daily_dose_mg ?? undefined,
+    dailyCostKrw: raw.daily_cost_krw ?? undefined,
+    dosingScheduleLabel: raw.dosing_schedule_label ?? undefined,
+    packCount: raw.pack_count ?? undefined,
+    perUnitLocal: raw.per_unit_local ?? undefined,
+    packageUnit: raw.package_unit || undefined,
   };
 }
 
@@ -249,16 +329,16 @@ export async function fetchForeignDrugList(): Promise<ForeignDrugListItem[]> {
     }));
 }
 
-async function fetchPricing(query: string): Promise<{
+async function fetchPricing(query: string, useCache: boolean = true): Promise<{
   a8Pricing: Record<string, A8Pricing | undefined>;
   a8PricingByForm: Record<string, A8Pricing[]>;
   productName: string;
   ingredient: string;
   lastSearchedAt: string;
+  coverageNotes: Record<string, CoverageNote>;
 }> {
-  const res = await api.get<RawForeignCachedResponse>(
-    `/api/foreign/cached?q=${encodeURIComponent(query)}`,
-  );
+  const url = `/api/foreign/cached?q=${encodeURIComponent(query)}&use_cache=${useCache}`;
+  const res = await api.get<RawForeignCachedResponse>(url);
   const a8Pricing: Record<string, A8Pricing | undefined> = {};
   const a8PricingByForm: Record<string, A8Pricing[]> = {};
   let productName = query;
@@ -289,9 +369,25 @@ async function fetchPricing(query: string): Promise<{
     // 기본 view: oral → injection → unknown 순으로 첫 비어있지 않은 것
     a8Pricing[uiKey] = forms[0];
   }
+  // coverage_notes 를 code(ISO-2) → uiKey 로 변환해 컴포넌트에서 바로 사용 가능하게 함
+  const coverageNotes: Record<string, CoverageNote> = {};
+  const codeToUiKey: Record<string, string> = {};
+  for (const [uiKey, code] of Object.entries(PRICING_COUNTRY_CODE)) {
+    codeToUiKey[code] = uiKey;
+  }
+  for (const [code, note] of Object.entries(res.coverage_notes || {})) {
+    const uiKey = codeToUiKey[code] || code.toLowerCase();
+    coverageNotes[uiKey] = {
+      policy: note.policy,
+      publicDbHasPrice: note.public_db_has_price,
+      sourceHint: note.source_hint,
+      requiresAuth: note.requires_auth,
+    };
+  }
   return {
     a8Pricing, a8PricingByForm, productName, ingredient,
     lastSearchedAt: toIsoDate(lastSearchedAt),
+    coverageNotes,
   };
 }
 
@@ -334,35 +430,78 @@ async function fetchApprovalByCountry(
 ): Promise<Record<string, ApprovalRecord | undefined>> {
   const out: Record<string, ApprovalRecord | undefined> = {};
   try {
-    const res = await api.get<RawApprovalMatrix>(
-      `/api/approval/matrix?product=${encodeURIComponent(query)}`,
+    // 원문 허가 문구 (agency 별) 우선 시도 — 카드에 실제 라벨 원문 노출용
+    const ft = await api.get<RawApprovalFullTextResponse>(
+      `/api/approval/full_text?product=${encodeURIComponent(query)}`,
     );
-    // 각 agency 가 커버하는 disease + rows 수
-    const byAgency: Record<string, { diseases: Set<string>; rows: number }> = {};
-    for (const row of res.rows || []) {
-      for (const agency of row.agencies || []) {
-        const entry = byAgency[agency] || { diseases: new Set(), rows: 0 };
-        entry.diseases.add(row.disease);
-        entry.rows += 1;
-        byAgency[agency] = entry;
-      }
-    }
+    const byAgency = ft.by_agency || {};
     for (const [uiKey, agency] of Object.entries(APPROVAL_AGENCY)) {
       if (!agency) {
         out[uiKey] = undefined;
         continue;
       }
-      const entry = byAgency[agency];
-      if (!entry || entry.rows === 0) {
-        out[uiKey] = { approved: false, date: null, indication: null, fullIndication: null };
+      const rows = byAgency[agency] || [];
+      if (rows.length === 0) {
+        out[uiKey] = { approved: false, date: null, dateSource: null, indication: null, fullIndication: null, indicationBlocks: [] };
         continue;
       }
-      const diseases = Array.from(entry.diseases).sort();
+      // 승인일 최신순 정렬 — null(미상) 은 맨 뒤
+      const sortedRows = [...rows].sort((a, b) => {
+        const da = a.approval_date || '';
+        const db = b.approval_date || '';
+        if (!da && !db) return 0;
+        if (!da) return 1;
+        if (!db) return -1;
+        return db.localeCompare(da);
+      });
+      // 최초 허가일 = 가장 이른 approval_date
+      const dates = sortedRows.map(r => r.approval_date).filter((d): d is string => !!d).sort();
+      const firstDate = dates[0] || null;
+      const latestDate = dates[dates.length - 1] || null;
+      const diseases = Array.from(new Set(sortedRows.map(r => r.disease).filter(Boolean) as string[])).sort();
+      const normalizeDateSource = (raw: string | null, ag: string): ApprovalDateSource => {
+        const v = (raw || '').toLowerCase();
+        if (v === 'mfds_official' || v === 'official') return 'official';
+        if (v === 'unverified_estimate' || v === 'unverified') return 'unverified';
+        // MFDS 는 date_source 필수: null 이면 '추정'으로 간주
+        if (ag === 'MFDS') return 'unverified';
+        // 나머지 agency 는 공식 소스에서 직접 수집 → 'official'
+        return 'official';
+      };
+      const indicationBlocks: ApprovalIndicationBlock[] = sortedRows.map(r => ({
+        title: r.title || r.disease || '(제목 없음)',
+        approvalDate: r.approval_date ? toIsoDate(r.approval_date) : null,
+        dateSource: normalizeDateSource(r.date_source, r.agency),
+        biomarkerLabel: r.biomarker_label || null,
+        combinationLabel: r.combination_label || null,
+        labelUrl: r.label_url || null,
+        body: r.label_full_text || r.label_excerpt || '(원문 없음)',
+        disease: r.disease || null,
+        stage: r.stage || null,
+        lineOfTherapy: r.line_of_therapy || null,
+        biomarkerClass: r.biomarker_class || null,
+        indicationId: r.indication_id,
+      }));
+      const recordDateSource: ApprovalDateSource = indicationBlocks.some(b => b.dateSource === 'unverified')
+        ? (indicationBlocks.every(b => b.dateSource === 'unverified') ? 'unverified' : 'unverified')
+        : (indicationBlocks.some(b => b.dateSource === 'official') ? 'official' : null);
+      const fullIndicationText = indicationBlocks.map(b => {
+        const header = [
+          b.title,
+          b.approvalDate ? `승인 ${b.approvalDate}` : null,
+          b.biomarkerLabel,
+          b.combinationLabel,
+          b.labelUrl,
+        ].filter(Boolean).join(' · ');
+        return `■ ${header}\n${b.body}`;
+      }).join('\n\n');
       out[uiKey] = {
         approved: true,
-        date: null, // matrix 에 per-agency 최초 허가일 없음 — detail API 필요. Phase 3 확장
-        indication: `${entry.rows}개 적응증 (${diseases.slice(0, 3).join(', ')}${diseases.length > 3 ? ' 외' : ''})`,
-        fullIndication: `${agency} 승인 적응증 ${entry.rows}건 — ${diseases.join(', ')}`,
+        date: latestDate ? toIsoDate(latestDate) : (firstDate ? toIsoDate(firstDate) : null),
+        dateSource: recordDateSource,
+        indication: `${sortedRows.length}개 적응증 (${diseases.slice(0, 3).join(', ')}${diseases.length > 3 ? ' 외' : ''})`,
+        fullIndication: fullIndicationText,
+        indicationBlocks,
       };
     }
   } catch {
@@ -373,9 +512,9 @@ async function fetchApprovalByCountry(
   return out;
 }
 
-export async function fetchForeignDrugDetail(query: string): Promise<ForeignDrugDetail> {
+export async function fetchForeignDrugDetail(query: string, useCache: boolean = true): Promise<ForeignDrugDetail> {
   const [pricing, hta, approval] = await Promise.all([
-    fetchPricing(query),
+    fetchPricing(query, useCache),
     fetchHta(query),
     fetchApprovalByCountry(query),
   ]);
@@ -389,6 +528,7 @@ export async function fetchForeignDrugDetail(query: string): Promise<ForeignDrug
     a8PricingByForm: pricing.a8PricingByForm,
     htaStatus: hta,
     approvalStatus: approval,
+    coverageNotes: pricing.coverageNotes,
   };
 }
 
@@ -406,5 +546,68 @@ export async function searchForeignLive(
 export async function deleteForeignDrug(queryName: string): Promise<{ ok: boolean; deleted: number }> {
   return api.delete<{ ok: boolean; deleted: number; query_name: string }>(
     `/api/foreign/drugs/${encodeURIComponent(queryName)}`,
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// /api/foreign/country-overview — 국가별 카드 그리드 (pure-napping-goose Phase 5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type ReimbursementSummary =
+  | 'recommend' | 'restrict' | 'optimised'
+  | 'reject' | 'not_listed' | 'not_applicable' | 'none';
+
+export interface CountryOverviewIndication {
+  indication_id: string;
+  title: string | null;
+  disease: string | null;
+  line_of_therapy: string | null;
+  biomarker: string | null;
+  approval_date: string | null;
+  label_excerpt: string | null;
+  label_url: string | null;
+  reimbursement: {
+    decision_type: string | null;
+    decision_id: string | null;
+    decision_date: string | null;
+    criteria_text: string | null;
+    source_url: string | null;
+    body: string | null;
+  } | null;
+  price: {
+    currency: string | null;
+    local_price: number | null;
+    adjusted_price_krw: number | null;
+    daily_cost_krw: number | null;
+    form_type: string | null;
+    dosage_strength: string | null;
+    package_unit: string | null;
+    source_label: string | null;
+    searched_at: string | null;
+  } | null;
+}
+
+export interface CountryOverviewCard {
+  country: 'US' | 'EU' | 'UK' | 'JP' | 'AU' | 'KR';
+  agency: string | null;        // FDA / EMA / MHRA / PMDA / TGA / MFDS
+  body: string | null;          // CMS / NICE / CHUIKYO / PBAC / HIRA
+  currency_hint: string | null;
+  approval_count: number;
+  indications: CountryOverviewIndication[];
+  reimbursement_summary: ReimbursementSummary;
+  reimbursement_count: number;
+  price_summary: CountryOverviewIndication['price'];
+}
+
+export interface CountryOverviewResponse {
+  product: string;
+  inn: string | null;
+  query: string;
+  countries: CountryOverviewCard[];
+}
+
+export async function fetchCountryOverview(query: string): Promise<CountryOverviewResponse> {
+  return api.get<CountryOverviewResponse>(
+    `/api/foreign/country-overview?query=${encodeURIComponent(query.trim())}`,
   );
 }

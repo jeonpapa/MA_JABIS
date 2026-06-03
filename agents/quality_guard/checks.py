@@ -150,6 +150,79 @@ def validate_keytruda(results: list[dict], country: str) -> bool:
     return True
 
 
+# ──────────────────────────────────────────────────────────────────────────
+# 해외 약가 최소단위 원칙 회귀 체커 (2026-04-22 추가)
+# foreign_agent_rules.md §최소단위(minimum unit) 원칙, CLAUDE.md 절대 금지
+# ──────────────────────────────────────────────────────────────────────────
+
+_AWP_DIRECT_ASSIGN = re.compile(r"local_price\s*=\s*awp_\w+", re.IGNORECASE)
+_RATIO_PACK_COUNT  = re.compile(r"total_mg\s*/\s*unit_mg|total_pkg_mg\s*/\s*unit_mg")
+_UNIT_MG_EXTRACT   = re.compile(r"unit_mg\s*=\s*[\w\.]*_extract_mg\s*\(")
+
+
+def _check_foreign_minimum_unit(file_path: Path, code: str, issues: list[str]) -> None:
+    """form_type 기반 최소단위 원칙 회귀 탐지 — agents/ 하위 전체에서 스캔."""
+    rel_name = file_path.name
+
+    # (a) US Micromedex: local_price = awp_* 직접 대입 — WAC 우선 없으면 double-count.
+    if rel_name == "us_micromedex.py":
+        for m in _AWP_DIRECT_ASSIGN.finditer(code):
+            snippet = code[max(0, m.start() - 60): m.end()]
+            # WAC fallback 패턴(`wac_pkg_val if ... else awp_pkg_val`)은 허용.
+            if "wac_" in snippet.lower() and "if" in snippet.lower():
+                continue
+            issues.append(f"US AWP 를 local_price 로 직접 사용: {rel_name}")
+            _write_deviation({
+                "severity": "ERROR",
+                "agent": "Developer",
+                "file": str(file_path),
+                "deviation_type": "us_awp_as_local_price",
+                "description": f"{rel_name}: local_price 에 AWP 직접 대입 (WAC 우선 누락)",
+                "expected": "local_price = wac_pkg_val if wac_pkg_val is not None else awp_pkg_val",
+                "actual": m.group(0),
+                "corrective_action": "WAC 우선 + AWP fallback 패턴 복원 (foreign_agent_rules.md §국가별 소스)",
+            })
+            break
+
+    # (b) injection pack_count ratio 추론 — form_type=='oral' guard 없이 사용 금지.
+    for m in _RATIO_PACK_COUNT.finditer(code):
+        pre = code[max(0, m.start() - 400): m.start()]
+        if re.search(r'form_type\s*==\s*["\']oral["\']', pre):
+            continue
+        issues.append(f"injection ratio pack_count 추론 가능 경로: {rel_name}")
+        _write_deviation({
+            "severity": "ERROR",
+            "agent": "Developer",
+            "file": str(file_path),
+            "deviation_type": "injection_ratio_pack_count",
+            "description": f"{rel_name}: total_mg/unit_mg ratio 를 pack_count 로 사용 "
+                           f"(form_type=='oral' guard 없음)",
+            "expected": "if form_type == 'oral': ... ratio = total_mg / unit_mg",
+            "actual": m.group(0),
+            "corrective_action": "oral 분기 안으로 이동 — injection 은 농도×volume/농도=volume 이라 pack count 아님",
+        })
+
+    # (c) _populate_daily_cost 내부에서 unit_mg = _extract_mg(...) 사용 금지
+    #     (per-mL 농도가 분모로 들어가 injection 에서 daily_cost 왜곡).
+    if "def _populate_daily_cost" in code:
+        func_match = re.search(
+            r"def\s+_populate_daily_cost\b[\s\S]*?(?=\n\s{0,4}def\s|\Z)", code
+        )
+        if func_match and _UNIT_MG_EXTRACT.search(func_match.group(0)):
+            issues.append(f"daily_cost 분모로 _extract_mg 사용: {rel_name}")
+            _write_deviation({
+                "severity": "ERROR",
+                "agent": "Developer",
+                "file": str(file_path),
+                "deviation_type": "daily_cost_uses_extract_mg",
+                "description": f"{rel_name}: _populate_daily_cost 가 unit_mg 에 "
+                               f"_extract_mg 사용 (per-mL 농도 → injection 에서 왜곡)",
+                "expected": "unit_mg = self._extract_per_unit_mg(form_type, ...)",
+                "actual": "unit_mg = self._extract_mg(...)",
+                "corrective_action": "_extract_per_unit_mg(form_type, dosage_strength, package_unit) 로 교체",
+            })
+
+
 def check_code_pattern(file_path: Path) -> list[str]:
     """파이썬 파일에서 금지 패턴 탐지. 발견된 문제 목록 반환."""
     if not file_path.exists():
@@ -226,6 +299,12 @@ def check_code_pattern(file_path: Path) -> list[str]:
             "actual": str(cred_pattern[:2]),
             "corrective_action": "환경변수로 이동",
         })
+
+    # 3-pre) 해외 약가 최소단위 원칙 회귀 (2026-04-22 추가)
+    #   (a) US Micromedex: AWP 를 local_price 로 직접 사용 금지 — factory_ratio 0.74 와 중복
+    #   (b) injection 에서 total_mg/unit_mg ratio 로 pack_count 추론 금지
+    #   (c) _populate_daily_cost 에서 _extract_per_unit_mg 대신 _extract_mg 사용 금지
+    _check_foreign_minimum_unit(file_path, code, issues)
 
     # 3) BaseScraper 미상속 — 해외 가격 스크레이퍼(agents/scrapers/) 한정.
     #    HTA 승인 스크레이퍼(agents/hta_scrapers/) 는 BaseScraper 상속 대상 아님.

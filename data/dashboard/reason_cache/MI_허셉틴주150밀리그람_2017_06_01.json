@@ -1,0 +1,105 @@
+{
+  "mechanism": "patent_expiration",
+  "mechanism_label": "특허 만료",
+  "reason": "허셉틴주150밀리그람의 2017.06.01 약가 20% 인하는 사용량 초과에 따른 추가 연동 인하로 판단됩니다. 2017.03.01에 이미 6% 인하가 있었으며, 셀트리온의 허쥬마가 2017.04에 등재된 이후 시장에 영향을 미쳤으나, 제네릭 산정률에 따른 단계적 인하가 아닌 중간 변동률로 결정되었습니다. 적응증 확대나 실거래가 연동에 대한 근거는 확인되지 않았습니다.",
+  "evidence_summary": "약업신문은 허셉틴의 물질특허 만료와 셀트리온의 바이오시밀러 출시를 보도하며, 특허 만료 이후 바이오시밀러의 등재가 약가 인하에 영향을 미쳤음을 시사합니다.",
+  "confidence": "high",
+  "window": {
+    "from": "2016.06",
+    "to": "2018.06",
+    "months": 12
+  },
+  "references": [
+    {
+      "title": "삼성바이오에피스, 허셉틴 바이오시밀러 유럽 첫 판매 허가 승인",
+      "url": "http://www.yakup.com/news/index.html?mode=view&cat=12&nid=212149",
+      "media": "약업신문",
+      "weight": 2.9,
+      "published_at": "2017-11-20",
+      "fetch_verified": true
+    },
+    {
+      "title": "WHO, 바이오시밀러 사전심사 파일럿 프로젝트",
+      "url": "http://www.yakup.com/news/index.html?mode=view&cat=16&nid=205742",
+      "media": "약업신문",
+      "weight": 2.9,
+      "published_at": "2017-05-09",
+      "fetch_verified": true
+    },
+    {
+      "title": "[데일리팜] 임핀지·벤클렉스타·빌다글 신규등재…허셉틴 약가↓",
+      "url": "https://oldm.dailypharm.com/News/263055",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "published_at": "2017.01.01",
+      "fetch_verified": false
+    },
+    {
+      "title": "count_view_d.asp?product_code=645000611",
+      "url": "https://www.drugd.co.kr/product/count_view_d.asp?product_code=645000611",
+      "media": "기타",
+      "weight": 0.5,
+      "published_at": "6450.00.61",
+      "notes": "date_inferred_from_url",
+      "date_unknown": true,
+      "fetch_verified": false
+    },
+    {
+      "title": "%EA%B0%90%EC%97%BC%EB%B3%91%EA%B8%B0%EC%88%A0%EC%A0%84%EB%9E",
+      "url": "https://www.vitalkorea.kr/uploads/trend/%EA%B0%90%EC%97%BC%EB%B3%91%EA%B8%B0%EC%88%A0%EC%A0%84%EB%9E%B5%EC%84%BC%ED%84%B0_%20%EA%B5%AD%EA%B0%80%ED%95%84%EC%88%98%EC%98%88%EB%B0%A9%EC%A0%91%EC%A2%85%20%EB%B0%B1%EC%8B%A0%20%ED%8A%B9%ED%97%88%EA%B6%8C%20%EB%B6%84%EC%84%9D%20%EB%B3%B4%EA%B3%A0%EC%84%9C.pdf",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true,
+      "fetch_verified": false
+    },
+    {
+      "title": "download?seq=10593",
+      "url": "https://www.kihasa.re.kr/api/kihasa/file/download?seq=10593",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true
+    },
+    {
+      "title": "40391_policy.pdf",
+      "url": "https://direct.kdblife.co.kr/resources/doc/policy/40391_policy.pdf",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true
+    }
+  ],
+  "notes": "허쥬마 2017.4 등재가 volume_price 협상 트리거 가능성 있으나 단독 기전으로 volume_price 분류(KR-RULE-025 우선). · [enforce] URL 검증: 3건 published_at 교체, 0건 drop (의심 0건) · published_at 미확인 5건 — date_unknown 마킹 후 보존 · 윈도우 외 references 4건 제거 · [enforce] URL 검증: 1건 published_at 교체, 0건 drop (의심 0건) · published_at 미확인 4건 — date_unknown 마킹 후 보존 · 윈도우 외 references 1건 제거 · [Naver 보강] 윈도우 내 기사 36건 채택 · [enforce] published_at 미확인 4건 — date_unknown 마킹 후 보존",
+  "_source": "perplexity-sonar-pro",
+  "analysis_meta": {
+    "source": "perplexity-sonar-pro",
+    "total_articles": 6,
+    "tier_a_count": 1,
+    "tier_b_count": 0,
+    "tier_c_count": 0,
+    "detected_mechanisms": [
+      "사용량-연동 약가인하"
+    ],
+    "top_media": [
+      {
+        "media": "데일리팜",
+        "weight": 3.0
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      }
+    ]
+  },
+  "cached": false
+}

@@ -48,25 +48,27 @@ class _IndicationsMixin:
 
         rec 필수: indication_id, agency
         rec 선택: biomarker_label, combination_label, approval_date,
-                 label_excerpt, label_url, restriction_note, raw_source
+                 label_excerpt, label_full_text, label_url, restriction_note, raw_source
         """
         rec.setdefault("fetched_at", datetime.now().isoformat())
         for key in ("biomarker_label", "combination_label", "approval_date",
-                    "label_excerpt", "label_url", "restriction_note", "raw_source"):
+                    "label_excerpt", "label_full_text", "label_url",
+                    "restriction_note", "raw_source"):
             rec.setdefault(key, None)
         sql = """
             INSERT INTO indications_by_agency
                 (indication_id, agency, biomarker_label, combination_label,
-                 approval_date, label_excerpt, label_url, restriction_note,
-                 raw_source, fetched_at)
+                 approval_date, label_excerpt, label_full_text, label_url,
+                 restriction_note, raw_source, fetched_at)
             VALUES (:indication_id, :agency, :biomarker_label, :combination_label,
-                    :approval_date, :label_excerpt, :label_url, :restriction_note,
-                    :raw_source, :fetched_at)
+                    :approval_date, :label_excerpt, :label_full_text, :label_url,
+                    :restriction_note, :raw_source, :fetched_at)
             ON CONFLICT(indication_id, agency) DO UPDATE SET
                 biomarker_label = excluded.biomarker_label,
                 combination_label = excluded.combination_label,
                 approval_date = excluded.approval_date,
                 label_excerpt = excluded.label_excerpt,
+                label_full_text = excluded.label_full_text,
                 label_url = excluded.label_url,
                 restriction_note = excluded.restriction_note,
                 raw_source = excluded.raw_source,
@@ -168,3 +170,203 @@ class _IndicationsMixin:
             ).fetchall()
             d["agencies"] = [dict(v) for v in variants]
         return d
+
+    # ── Approval documents (PDF 업로드) ───────────────────────────────────
+
+    def insert_approval_document(self, rec: dict) -> int:
+        """approval_documents 신규 row. 반환: id."""
+        rec.setdefault("uploaded_at", datetime.now().isoformat(timespec="seconds"))
+        for k in ("original_filename", "file_size", "content_type",
+                  "approval_date", "label_excerpt", "label_url",
+                  "notes", "uploaded_by"):
+            rec.setdefault(k, None)
+        sql = """
+            INSERT INTO approval_documents
+                (indication_id, agency, file_path, original_filename, file_size,
+                 content_type, approval_date, label_excerpt, label_url, notes,
+                 uploaded_by, uploaded_at)
+            VALUES
+                (:indication_id, :agency, :file_path, :original_filename, :file_size,
+                 :content_type, :approval_date, :label_excerpt, :label_url, :notes,
+                 :uploaded_by, :uploaded_at)
+        """
+        with self._connect() as conn:
+            cur = conn.execute(sql, rec)
+        return cur.lastrowid or 0
+
+    def list_approval_documents(self, indication_id: str | None = None,
+                                 agency: str | None = None,
+                                 product: str | None = None) -> list[dict]:
+        """업로드된 PDF 메타 리스트. indication_id/agency/product 로 필터."""
+        sql = """
+            SELECT ad.*, m.product, m.disease, m.title
+              FROM approval_documents ad
+              JOIN indications_master m ON ad.indication_id = m.indication_id
+        """
+        clauses = []
+        params: list = []
+        if indication_id:
+            clauses.append("ad.indication_id = ?")
+            params.append(indication_id)
+        if agency:
+            clauses.append("ad.agency = ?")
+            params.append(agency)
+        if product:
+            clauses.append("m.product = ?")
+            params.append(product.lower())
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY ad.uploaded_at DESC"
+        with self._connect() as conn:
+            return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+    def get_approval_document(self, doc_id: int) -> Optional[dict]:
+        with self._connect() as conn:
+            r = conn.execute(
+                "SELECT * FROM approval_documents WHERE id = ?", (doc_id,)
+            ).fetchone()
+        return dict(r) if r else None
+
+    def delete_approval_document(self, doc_id: int) -> Optional[str]:
+        """row 삭제 + file_path 반환 (호출자가 파일 unlink). 없으면 None."""
+        with self._connect() as conn:
+            r = conn.execute(
+                "SELECT file_path FROM approval_documents WHERE id = ?", (doc_id,)
+            ).fetchone()
+            if not r:
+                return None
+            file_path = r[0]
+            conn.execute("DELETE FROM approval_documents WHERE id = ?", (doc_id,))
+        return file_path
+
+    def get_approval_grid(self, product: str) -> list[dict]:
+        """
+        product 의 적응증 grid — 각 적응증 row + 6국 agency 별 PDF count + approval_date.
+        UI 매트릭스용 (row=indication, col=agency).
+        """
+        with self._connect() as conn:
+            indications = [dict(r) for r in conn.execute(
+                """
+                SELECT m.indication_id, m.title, m.disease, m.line_of_therapy,
+                       m.stage, m.biomarker_class
+                  FROM indications_master m
+                 WHERE m.product = ?
+                 ORDER BY m.disease, m.line_of_therapy, m.indication_id
+                """,
+                (product.lower(),),
+            ).fetchall()]
+
+            # 각 indication × agency 의 by_agency row + PDF count 집계
+            agency_data: dict[tuple[str, str], dict] = {}
+            for r in conn.execute(
+                """
+                SELECT m.indication_id, ia.agency, ia.approval_date,
+                       ia.label_url, ia.label_excerpt
+                  FROM indications_master m
+                  JOIN indications_by_agency ia ON m.indication_id = ia.indication_id
+                 WHERE m.product = ?
+                """,
+                (product.lower(),),
+            ).fetchall():
+                agency_data[(r[0], r[1])] = {
+                    "approval_date": r[2],
+                    "label_url":     r[3],
+                    "label_excerpt": (r[4] or "")[:200],
+                }
+
+            doc_counts: dict[tuple[str, str], int] = {}
+            for r in conn.execute(
+                """
+                SELECT m.indication_id, ad.agency, COUNT(*)
+                  FROM approval_documents ad
+                  JOIN indications_master m ON ad.indication_id = m.indication_id
+                 WHERE m.product = ?
+                 GROUP BY m.indication_id, ad.agency
+                """,
+                (product.lower(),),
+            ).fetchall():
+                doc_counts[(r[0], r[1])] = r[2]
+
+        agencies = ["FDA", "EMA", "MHRA", "PMDA", "TGA", "MFDS"]
+        out = []
+        for ind in indications:
+            cells = {}
+            for ag in agencies:
+                cell = dict(agency_data.get((ind["indication_id"], ag), {}))
+                cell["doc_count"] = doc_counts.get((ind["indication_id"], ag), 0)
+                cells[ag] = cell
+            ind["agencies"] = cells
+            out.append(ind)
+        return out
+
+    def get_indication_pricing(self, indication_id: str) -> dict:
+        """
+        한 적응증의 다국가 가격 dict.
+        indications_master.product → product_alias_map.brand_aliases (또는 in-memory aliases)
+        → foreign_drug_prices LATEST per (country, form_type) join.
+
+        Returns: {country: [price_row, ...], ...}
+        """
+        with self._connect() as conn:
+            mrow = conn.execute(
+                "SELECT product FROM indications_master WHERE indication_id = ?",
+                (indication_id,),
+            ).fetchone()
+            if not mrow:
+                return {}
+            product = mrow[0]
+
+            # product_alias_map 조회 — 없으면 in-memory aliases() fallback
+            alias_row = conn.execute(
+                "SELECT brand_aliases_json, inn FROM product_alias_map "
+                "WHERE product_slug = ?",
+                (product.lower(),),
+            ).fetchone()
+
+        import json as _json
+        candidate_names: set[str] = {product.lower()}
+        if alias_row:
+            try:
+                ba = _json.loads(alias_row[0] or "[]")
+                for x in ba:
+                    if x:
+                        candidate_names.add(str(x).lower())
+            except Exception:
+                pass
+            if alias_row[1]:
+                candidate_names.add(str(alias_row[1]).lower())
+        else:
+            # fallback: in-memory aliases (drug_aliases.py)
+            try:
+                from .drug_aliases import aliases as _aliases
+                for x in _aliases(product):
+                    candidate_names.add(x.lower())
+            except Exception:
+                pass
+
+        if not candidate_names:
+            return {}
+
+        placeholders = ",".join(["?"] * len(candidate_names))
+        sql = f"""
+            SELECT f.*
+            FROM foreign_drug_prices f
+            INNER JOIN (
+                SELECT country, form_type, MAX(searched_at) AS latest
+                FROM foreign_drug_prices
+                WHERE LOWER(query_name) IN ({placeholders})
+                GROUP BY country, form_type
+            ) m ON f.country = m.country
+                  AND COALESCE(f.form_type,'') = COALESCE(m.form_type,'')
+                  AND f.searched_at = m.latest
+            WHERE LOWER(f.query_name) IN ({placeholders})
+            ORDER BY f.country
+        """
+        params = tuple(candidate_names) * 2
+        with self._connect() as conn:
+            rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+        out: dict[str, list[dict]] = {}
+        for r in rows:
+            out.setdefault(r["country"], []).append(r)
+        return out

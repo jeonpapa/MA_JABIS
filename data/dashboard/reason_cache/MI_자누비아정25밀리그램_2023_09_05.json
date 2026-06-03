@@ -1,0 +1,82 @@
+{
+  "mechanism": "patent_expiration",
+  "mechanism_label": "특허 만료",
+  "reason": "가격 시계열 산수 분석: 기준가 ₩374 (2023.09.01) → 변동일 ₩261 (누적 산정률 69.8%). 이는 **KR-RULE-009 Year 1 patent stage** 와 일치 — 특허 만료 직후 첫 1년 (70% 산정률, -30% 인하). 기준가 대비 누적 -30.21% 인하.\n\n자누비아정25밀리그램의 가격은 2023년 9월 시타글립틴의 특허 만료와 함께 다수의 제네릭 제품이 급여 목록에 등재되면서 약 30.21% 인하되었습니다. 이는 KR-RULE-009에 따라 첫 제네릭 출시 후 오리지널 약가가 1년 동안 70% 수준으로 조정된 결과입니다. 특히, 종근당의 제네릭 '당이자누정'이 등재되면서 자누비아 패밀리의 다른 품목들도 동시에 가격이 인하되었습니다.",
+  "evidence_summary": "데일리팜은 2023년 9월 시타글립틴의 특허 만료 이후 자누비아의 가격이 인하되었음을 보도했습니다.",
+  "confidence": "high",
+  "window": {
+    "from": "2022.09",
+    "to": "2024.09",
+    "months": 12
+  },
+  "references": [
+    {
+      "title": "물량확보와 불순물...1400억 시타글립틴 경쟁 이중고",
+      "url": "https://www.dailypharm.com/Users/News/NewsView.html?ID=309117&amp;REFERER=NP",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "published_at": "2024-02-23",
+      "fetch_verified": true
+    },
+    {
+      "title": "오리지널 동반 약세...6천억 DPP-4 당뇨약 시장 들썩",
+      "url": "http://www.dailypharm.com/Users/News/NewsView.html?ID=308117&amp;REFERER=NP",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "published_at": "2024-01-22",
+      "fetch_verified": true
+    },
+    {
+      "title": "전문약 허가 '뚝'·급여약 4년만에 최저...고강도 규제 여파",
+      "url": "http://www.dailypharm.com/Users/News/NewsView.html?ID=307924&amp;REFERER=NP",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "published_at": "2024-01-16",
+      "fetch_verified": true
+    },
+    {
+      "title": "헷갈리는 9월 약가조정...일자별 인하품목 총정리",
+      "url": "https://dailypharm.com/user/news/24974",
+      "media": "dailypharm.com",
+      "weight": 3.0,
+      "published_at": "2023-08-28",
+      "id_suspicious": true,
+      "id_suspicious_reason": "dailypharm.com ID=24974 는 2020+ 기사 임계값 (>= 250000) 미달. claimed year 2023 와 불일치 (오래된 기사를 신규로 위조 가능성)",
+      "fetch_verified": true,
+      "published_at_claimed": "2023.09.05",
+      "date_corrected": true
+    },
+    {
+      "title": "articleView.html?idxno=224049",
+      "url": "http://www.doctorstimes.com/news/articleView.html?idxno=224049",
+      "media": "기타",
+      "weight": 0.5,
+      "fetch_verified": true,
+      "published_at": "2023-09-05",
+      "date_corrected": true
+    }
+  ],
+  "notes": "KR-RULE-007 단독품목 아님. Year 1 70% 인하 확인(추가 Year 1+ 53.55% 인하는 별도 시점). · [enforce] URL 검증: 4건 published_at 교체, 0건 drop (의심 2건) · 윈도우 외 references 2건 제거 · [Naver 보강] 윈도우 내 기사 38건 채택 · [LOE override] 가격 산수 → KR-RULE-009 Year 1 patent stage",
+  "_source": "perplexity-sonar-pro",
+  "analysis_meta": {
+    "source": "perplexity-sonar-pro",
+    "total_articles": 2,
+    "tier_a_count": 1,
+    "tier_b_count": 0,
+    "tier_c_count": 0,
+    "detected_mechanisms": [
+      "특허 만료"
+    ],
+    "top_media": [
+      {
+        "media": "dailypharm.com",
+        "weight": 3.0
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      }
+    ]
+  },
+  "cached": false
+}

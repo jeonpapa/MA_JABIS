@@ -34,6 +34,15 @@ def main() -> None:
     mp.add_argument("product_slug")
     mp.add_argument("--format", choices=["json", "table"], default="table")
 
+    sp = sub.add_parser(
+        "sync-from-prices",
+        help="foreign_drug_prices 에 있지만 indications_master 에 없는 product 자동 빌드",
+    )
+    sp.add_argument("--wipe", action="store_true", help="기존 indication 삭제 후 재빌드")
+    sp.add_argument("--agencies", default="FDA,EMA,PMDA,MFDS,MHRA,TGA")
+    sp.add_argument("--dry-run", action="store_true",
+                    help="gap 만 나열, 빌드 미실행")
+
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -64,6 +73,28 @@ def main() -> None:
         for d in result["details"]:
             print(f"  {d['src'][:30]:30} → {d['dst'][:30]:30}  "
                   f"({d['reason']}) src=[{','.join(d['src_agencies'])}]")
+
+    elif args.cmd == "sync-from-prices":
+        gaps = agent.list_coverage_gaps()
+        print(f"\n[gap] foreign_drug_prices 에 있지만 indications_master 없음: {len(gaps)}건")
+        for s in gaps:
+            print(f"  • {s}")
+        if args.dry_run:
+            return
+        if not gaps:
+            print("모든 제품이 이미 동기화됨.")
+            return
+        result = agent.sync_from_prices(
+            wipe=args.wipe,
+            agencies=tuple(a.strip().upper() for a in args.agencies.split(",")),
+        )
+        print(f"\n[sync-from-prices] built={len(result['built'])} failed={len(result['failed'])}")
+        for b in result["built"]:
+            print(f"  ✓ {b['slug']} — {b['indications']} indications")
+        for f in result["failed"]:
+            print(f"  ✗ {f['slug']}: {f['reason']}")
+            for err in (f.get("errors") or [])[:3]:
+                print(f"      [{err['agency']}] {err['err']}")
 
     elif args.cmd == "matrix":
         m = agent.matrix(args.product_slug)

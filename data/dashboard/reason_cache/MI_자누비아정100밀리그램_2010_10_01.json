@@ -1,8 +1,8 @@
 {
   "mechanism": "volume_price",
   "mechanism_label": "사용량-연동 약가인하",
-  "reason": "자누비아정100밀리그램의 2010.10.01 약가 9.41% 인하는 정부의 사용량 연동협상정책에 따른 것이다. 한국MSD가 예상 사용량 초과에 따라 약가를 인하한다고 발표했다. 이는 4대 기전 중 사용량-연동에 해당한다.",
-  "evidence_summary": "메디포뉴스(2010년경): 한국MSD 자누비아100mg 약가 9.4% 인하, 10월1일부터 924원 공급. 정부 사용량 연동협상정책에 따른 것.",
+  "reason": "자누비아정 100밀리그램의 2010년 10월 1일 약가 인하는 정부의 사용량 연동협상정책에 따라 이루어졌습니다. 예상 사용량을 초과하여 약가가 조정된 것으로, 이는 사용량-약가 연동제에 의한 중간 수준의 인하(-9.41%)에 해당합니다. 특허 만료나 적응증 확대와는 관련이 없는 변동입니다.",
+  "evidence_summary": "약업신문과 메디파나뉴스에 따르면, 자누비아정 100mg은 사용량-약가 연동제 적용으로 2010년 10월 1일부터 약가가 인하되었습니다.",
   "confidence": "high",
   "window": {
     "from": "2010.04",
@@ -11,38 +11,82 @@
   },
   "references": [
     {
+      "title": "제네릭 등재·약가 사용량 연계로 보험약가 인하",
+      "url": "http://www.yakup.com/news/index.html?mode=view&cat=11&nid=133906",
+      "media": "약업신문",
+      "weight": 2.9,
+      "published_at": "2010-08-30",
+      "fetch_verified": true
+    },
+    {
+      "title": "엑셀론패취·자누비아 '사용량 연동' 약가 인하",
+      "url": "http://www.medipana.com/news/news_view.asp?CateCodeF=&CateCodeS=&NewsNum=54908",
+      "media": "메디파나뉴스",
+      "weight": 2.8,
+      "published_at": "2010-12-10",
+      "fetch_verified": true,
+      "published_at_claimed": "2010-08-28",
+      "date_corrected": true
+    },
+    {
+      "title": "자누비아100mg , 정당 924원으로 약가 인하",
+      "url": "https://dailypharm.com/user/news/190846",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "published_at": "2010.09.30",
+      "fetch_verified": true
+    },
+    {
       "title": "한국MSD 자누비아100mg 924원으로 약가 인하",
       "url": "https://medifonews.com/news/article.html?no=67723",
       "media": "메디포뉴스",
       "weight": 2.1,
-      "published_at": "2010.09.30"
+      "published_at": "2010.09.30",
+      "fetch_verified": true
     },
     {
-      "title": "자누비아 정당 924원으로 약가 인하",
-      "url": "http://www.cdpnews.co.kr/admin/news/n_read_print_renewal.asp?menuID=4&idx=13987",
-      "media": "성인병뉴스",
+      "title": "NewsView.html?ID=56981",
+      "url": "https://m.medicaltimes.com/NewsView.html?ID=56981",
+      "media": "메디칼타임즈",
+      "weight": 2.3,
+      "fetch_verified": false,
+      "date_unknown": true
+    },
+    {
+      "title": "endocrinology-news-No6.pdf",
+      "url": "http://old.endocrinology.or.kr/upload/newsletter/endocrinology-news-No6.pdf",
+      "media": "기타",
       "weight": 0.5,
-      "published_at": "2010.09.30"
+      "date_unknown": true,
+      "fetch_verified": false
     }
   ],
-  "notes": "[enforce] published_at 누락/불량 2건 제거",
+  "notes": "[enforce] URL 검증: 1건 published_at 교체, 0건 drop (의심 0건) · published_at 미확인 2건 — date_unknown 마킹 후 보존 · 윈도우 외 references 1건 제거 · [enforce] published_at 미확인 2건 — date_unknown 마킹 후 보존 · [Naver 보강] 윈도우 내 기사 18건 채택 · [enforce] URL 검증: 1건 published_at 교체, 0건 drop (의심 0건) · published_at 미확인 2건 — date_unknown 마킹 후 보존",
   "_source": "perplexity-sonar-pro",
   "analysis_meta": {
     "source": "perplexity-sonar-pro",
-    "total_articles": 2,
-    "tier_a_count": 0,
-    "tier_b_count": 0,
+    "total_articles": 4,
+    "tier_a_count": 1,
+    "tier_b_count": 1,
     "tier_c_count": 0,
     "detected_mechanisms": [
       "사용량-연동 약가인하"
     ],
     "top_media": [
       {
+        "media": "데일리팜",
+        "weight": 3.0
+      },
+      {
+        "media": "메디칼타임즈",
+        "weight": 2.3
+      },
+      {
         "media": "메디포뉴스",
         "weight": 2.1
       },
       {
-        "media": "성인병뉴스",
+        "media": "기타",
         "weight": 0.5
       }
     ]

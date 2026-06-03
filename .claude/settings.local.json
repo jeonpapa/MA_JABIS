@@ -10,7 +10,9 @@
       "Bash(pkill -f \"agents.backfill_agent\")",
       "Bash(python3 -c ':*)",
       "Bash(python3 -)",
-      "WebFetch(domain:www.mhlw.go.jp)"
+      "WebFetch(domain:www.mhlw.go.jp)",
+      "Read(//tmp/**)",
+      "Read(//private/tmp/**)"
     ]
   }
 }

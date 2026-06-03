@@ -33,6 +33,50 @@ class HTAResult:
         return asdict(self)
 
 
+@dataclass
+class ReimbursementResult:
+    """급여 결정 결과 — reimbursement_xnational 테이블 행과 1:1 매핑.
+
+    HTAResult 와 분리: HTAResult 는 권고(결정 status) 만, ReimbursementResult 는
+    실제 보험 수재 + 효력일 + 가격까지 포함 (DB 영구 저장 대상).
+    """
+    drug_query:     str             # 검색어 (brand or INN)
+    indication_id:  Optional[str]   # indications_master FK (못 잡으면 None)
+    country:        str             # UK / AU / US / JP / EU
+    body:           str             # NICE / PBAC / CMS / CHUIKYO
+    decision_type:  str             # recommend / restrict / reject / optimised / not_applicable / not_listed
+    decision_id:    Optional[str] = None   # TA1014 / PBAC item / NCD-110.x
+    decision_date:  Optional[str] = None   # ISO YYYY-MM-DD
+    effective_date: Optional[str] = None   # 보험 수재일
+    criteria_text:  Optional[str] = None
+    pbs_code:       Optional[str] = None   # 호주 PBS item code
+    nhs_list_price: Optional[float] = None
+    currency:       Optional[str] = None
+    source_url:     Optional[str] = None
+    raw_payload:    Optional[dict] = None
+
+    def to_db_record(self) -> dict:
+        """save_xnational_reimbursement() 에 그대로 넘길 dict."""
+        return {
+            "indication_id":  self.indication_id,
+            "country":        self.country,
+            "body":           self.body,
+            "decision_type":  self.decision_type,
+            "decision_id":    self.decision_id,
+            "decision_date":  self.decision_date,
+            "effective_date": self.effective_date,
+            "criteria_text":  self.criteria_text,
+            "pbs_code":       self.pbs_code,
+            "nhs_list_price": self.nhs_list_price,
+            "currency":       self.currency,
+            "source_url":     self.source_url,
+            "raw_payload":    self.raw_payload,
+        }
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
 class HTABaseScraper(ABC):
     COUNTRY: str = ""
     BODY:    str = ""

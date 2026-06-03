@@ -102,6 +102,10 @@
 - 자격증명 하드코딩
 - `BaseScraper` 미상속
 - 웹 배포용 코드가 기능 완성 전 추가되는지
+- **해외 약가 최소단위 원칙 회귀** (2026-04-22 추가, `foreign_agent_rules.md §최소단위`):
+  - (a) `us_micromedex.py` 에서 `local_price = awp_*` 직접 대입 (WAC 우선 누락) → factory_ratio 0.74 와 double-count
+  - (b) `total_mg/unit_mg` ratio 를 pack_count 로 사용하면서 `form_type == 'oral'` guard 없음 → injection 은 농도×volume/농도=volume 이라 pack count 가 아님
+  - (c) `_populate_daily_cost` 가 unit_mg 분모로 `_extract_mg` 사용 → per-mL 농도가 들어가 injection daily_cost 왜곡. `_extract_per_unit_mg(form_type, ...)` 사용 필수
 
 ### 2) 규칙 ↔ 코드 Drift 탐지 (`scan_rule_drift`)
 - MFDS `approval_date` 를 `date_source` 판단 없이 사용하는 파일
@@ -128,6 +132,8 @@ baseline 업데이트 시 `QualityGuardAgent.MFDS_OFFICIAL_BASELINE` 와 `kr_mfd
 - **미해결 편차 누적 (>20건)**: 트리아지 권장
 - **MFDS 자동화 gap**: `ForeignApprovalAgent._build_mfds` → `apply_mfds_official_dates` 통합 제안
 - **DISEASE_KR 미커버**: `indications_master.disease` 중 `kr_mfds_indication_mapper.DISEASE_KR` 에 없는 질환 검출 → 신규 약물 추가 시 회귀 방지
+- **drug_enrichment 커버리지** (2026-04-23 추가): `drug_enrichment` row 수 < 30 이면 경고. 비교약제 선택 시 일일투약비·허가일·용법용량 공백의 근본 원인. 동일 generic 상속 (`_extract_generic_key`) 은 보완책이며, 근본 해소는 TOP-N 배치 enrich.
+- **price-change-reason evidence 품질** (2026-04-23 추가): 최근 30건 `reason_cache` 중 n_refs=0 비율 >50% 또는 confidence=low 비율 >70% 면 경고. 근본 원인: `enforce_rules` 가 `published_at` 없는 perplexity citations 를 드롭하면 refs=0 함정에 빠짐. URL 에서 date 추출 + `date_unknown` 마킹 보존 경로(`agents/market_intelligence/rules_engine.py`) 점검 필수.
 
 ### 출력 형식 (`review_YYYY-MM-DD.md`)
 ```

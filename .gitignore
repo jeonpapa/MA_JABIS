@@ -6,9 +6,19 @@ config/.env
 data/db/*.db
 data/db/*.db-shm
 data/db/*.db-wal
+# 루트에 실수로 생성되는 빈 stub DB 차단 (실제 DB 는 data/db 만 사용)
+/drug_prices.db
+/drug_prices.db-shm
+/drug_prices.db-wal
 
 # 캐시 (대용량, 별도 백업)
 data/hta_cache/
+
+# 사용자 업로드 PDF (영구 보존이지만 git 부적합 — 별도 백업 필요)
+data/uploads/
+
+# 멀티에이전트 컨텍스트 (Claude Code memory/plans symlinks — 개인정보 포함, git 추적 차단)
+.agent-context/
 
 # 로그
 logs/*.log

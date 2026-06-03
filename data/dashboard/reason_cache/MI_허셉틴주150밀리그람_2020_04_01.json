@@ -1,0 +1,110 @@
+{
+  "mechanism": "patent_expiration",
+  "mechanism_label": "특허 만료",
+  "reason": "가격 시계열 산수 분석: 기준가 ₩517628 (2015.12.30) → 변동일 ₩362340 (누적 산정률 70.0%). 이는 **KR-RULE-009 Year 1 patent stage** 와 일치 — 특허 만료 직후 첫 1년 (70% 산정률, -30% 인하). 기준가 대비 누적 -30.00% 인하.\n\n허셉틴주150밀리그람의 2020.04.01 약가 -8.11% 변동은 건강보험공단과의 사용량-약가연동 협상 결과로, 예상 사용량 초과에 따른 인하로 추정됩니다. 이 변동은 가산기간 종료와 관련된 8.1% 인하와도 시기적으로 맞물려 있으며, 제네릭 등재나 적응증 확대와는 무관한 것으로 보입니다.",
+  "evidence_summary": "데일리팜은 허셉틴의 가산기간 종료로 인해 보험상한가가 8% 이상 인하되었다고 보도했습니다.",
+  "confidence": "high",
+  "window": {
+    "from": "2019.04",
+    "to": "2021.04",
+    "months": 12
+  },
+  "references": [
+    {
+      "title": "'허셉틴' 가산종료 8%↓…정부 직권 약가인하 23품목",
+      "url": "http://www.dailypharm.com/Users/News/NewsView.html?ID=262991&amp;REFERER=NP",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "published_at": "2020-03-20",
+      "fetch_verified": true
+    },
+    {
+      "title": "임핀지·벤클렉스타·빌다글 신규등재…허셉틴 약가↓",
+      "url": "http://www.dailypharm.com/Users/News/NewsView.html?ID=263055&amp;REFERER=NP",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "published_at": "2020-03-23",
+      "fetch_verified": true
+    },
+    {
+      "title": "'허셉틴' 가산종료 8%↓…정부 직권 약가인하 23품목",
+      "url": "https://www.dailypharm.com/user/news/64487",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "published_at": "2020-03-20",
+      "id_suspicious": true,
+      "id_suspicious_reason": "dailypharm.com ID=64487 는 2020+ 기사 임계값 (>= 250000) 미달. claimed year 2020 와 불일치 (오래된 기사를 신규로 위조 가능성)",
+      "fetch_verified": true,
+      "published_at_claimed": "2020.03.01",
+      "date_corrected": true
+    },
+    {
+      "title": "%EA%B0%90%EC%97%BC%EB%B3%91%EA%B8%B0%EC%88%A0%EC%A0%84%EB%9E",
+      "url": "https://www.vitalkorea.kr/uploads/trend/%EA%B0%90%EC%97%BC%EB%B3%91%EA%B8%B0%EC%88%A0%EC%A0%84%EB%9E%B5%EC%84%BC%ED%84%B0_%20%EA%B5%AD%EA%B0%80%ED%95%84%EC%88%98%EC%98%88%EB%B0%A9%EC%A0%91%EC%A2%85%20%EB%B0%B1%EC%8B%A0%20%ED%8A%B9%ED%97%88%EA%B6%8C%20%EB%B6%84%EC%84%9D%20%EB%B3%B4%EA%B3%A0%EC%84%9C.pdf",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true,
+      "fetch_verified": false
+    },
+    {
+      "title": "10601.htm",
+      "url": "https://kind.krx.co.kr/external/2020/09/01/000068/20200901000095/10601.htm",
+      "media": "기타",
+      "weight": 0.5,
+      "published_at": "2020-06-29",
+      "notes": "date_inferred_from_url",
+      "fetch_verified": true,
+      "published_at_claimed": "2020.09.01",
+      "date_corrected": true
+    },
+    {
+      "title": "L51B14122M_agree.pdf",
+      "url": "https://image.kebhana.com/cont/download/insdocument/provide/L51B14122M_agree.pdf",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true
+    },
+    {
+      "title": "2134863.pdf?attachmentId=2134863",
+      "url": "https://securities.miraeasset.com/bbs/download/2134863.pdf?attachmentId=2134863",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true
+    }
+  ],
+  "notes": "변동률 -8.11%는 사용량-연동 협상 결과와 근사(6% 내외). KR-RULE-007 단독품목 면제 무관(제네릭 미등재). · [enforce] URL 검증: 4건 published_at 교체, 0건 drop (의심 2건) · published_at 미확인 4건 — date_unknown 마킹 후 보존 · 윈도우 외 references 4건 제거 · [enforce] URL 검증: 2건 published_at 교체, 0건 drop (의심 1건) · published_at 미확인 3건 — date_unknown 마킹 후 보존 · 윈도우 외 references 1건 제거 · [Naver 보강] 윈도우 내 기사 34건 채택 · [enforce] published_at 미확인 3건 — date_unknown 마킹 후 보존 · delta_pct -8.11% (≤10%) — patent_expiration 부적합. 사용량-연동 약가인하 로 보정 · [LOE override] 가격 산수 → KR-RULE-009 Year 1 patent stage",
+  "_source": "perplexity-sonar-pro",
+  "analysis_meta": {
+    "source": "perplexity-sonar-pro",
+    "total_articles": 6,
+    "tier_a_count": 1,
+    "tier_b_count": 0,
+    "tier_c_count": 0,
+    "detected_mechanisms": [
+      "사용량-연동 약가인하"
+    ],
+    "top_media": [
+      {
+        "media": "데일리팜",
+        "weight": 3.0
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      }
+    ]
+  },
+  "cached": false
+}

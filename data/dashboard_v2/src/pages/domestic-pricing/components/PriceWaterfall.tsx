@@ -28,7 +28,6 @@ const CustomTooltip = ({ active, payload, label }: any) => {
             {d.changeRate > 0 ? '+' : ''}{d.changeRate}%
           </span></p>
         )}
-        <p className="text-[#8B9BB4]">사유: <span className="text-white">{d?.reason}</span></p>
       </div>
     );
   }

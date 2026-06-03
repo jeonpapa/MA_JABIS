@@ -1,0 +1,73 @@
+{
+  "mechanism": "actual_transaction",
+  "mechanism_label": "실거래가 연동 약가인하",
+  "reason": "추정: 특허 만료과 관련된 약가 변동으로 보입니다.",
+  "evidence_summary": "수동 검토 필요",
+  "confidence": "medium",
+  "references": [
+    {
+      "title": "루센티스 바이오시밀러 아멜리부주 약가 24.5% 자진인하",
+      "url": "http://www.dailypharm.com/Users/News/NewsView.html?ID=297213&amp;REFERER=NP",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "published_at": "2023.02.20",
+      "fetch_verified": true
+    },
+    {
+      "title": "빌다글 2년 더 가산 유지…레블리미드 25% 자진인하",
+      "url": "http://www.dailypharm.com/Users/News/NewsView.html?ID=295359&amp;REFERER=NP",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "published_at": "2022.12.26",
+      "fetch_verified": true
+    },
+    {
+      "title": "암젠코리아 작년 '데노수맙' 앞세워 승승장구",
+      "url": "http://www.docdocdoc.co.kr/news/articleView.html?idxno=3005015",
+      "media": "청년의사",
+      "weight": 2.4,
+      "published_at": "2023.04.19",
+      "fetch_verified": true
+    }
+  ],
+  "notes": "OpenAI API 오류로 규칙 기반 결과 반환 · [enforce] delta_pct -3.74% (≤10%) — patent_expiration 부적합. 실거래가 연동 약가인하 로 보정",
+  "analysis_meta": {
+    "source": "naver+gpt-4o",
+    "total_articles": 7,
+    "tier_a_count": 2,
+    "tier_b_count": 1,
+    "tier_c_count": 0,
+    "detected_mechanisms": [
+      "특허 만료",
+      "사용량-연동 약가인하"
+    ],
+    "top_media": [
+      {
+        "media": "데일리팜",
+        "weight": 3.0
+      },
+      {
+        "media": "데일리팜",
+        "weight": 3.0
+      },
+      {
+        "media": "청년의사",
+        "weight": 2.4
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      }
+    ]
+  },
+  "window": {
+    "from": "2022.09",
+    "to": "2023.09",
+    "months": 6
+  },
+  "cached": false
+}

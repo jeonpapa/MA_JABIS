@@ -42,6 +42,19 @@ MFDS_ITEM_SEQ: dict[str, str] = {
     "lenvima":   "201507057",   # 렌비마캡슐10밀리그램(렌바티닙메실산염)
 }
 
+# product_slug → 한국어 brand/generic 후보 (resolve_item_seq 런타임 검색용).
+# MFDS 는 한국어 검색만 받으므로 영문 slug 로는 검색 불가. Builder 에서 이 값을 candidates 로 넘긴다.
+# 신규 제품 추가 시: [대표 brand명, 성분명(한국어), 영문 brand명] 순서로 기재.
+PRODUCT_KO_ALIASES: dict[str, list[str]] = {
+    "keytruda":  ["키트루다", "펨브롤리주맙", "pembrolizumab"],
+    "welireg":   ["웰리렉", "벨주티판", "belzutifan"],
+    "lynparza":  ["린파자", "올라파립", "olaparib"],
+    "lenvima":   ["렌비마", "렌바티닙", "lenvatinib"],
+    "prevymis":  ["프레비미스", "프리비미스", "레테르모비르", "letermovir"],
+    "januvia":   ["자누비아", "시타글립틴", "sitagliptin"],
+    "gardasil":  ["가다실", "사람유두종바이러스", "human papillomavirus"],
+}
+
 # 런타임 자동 조회 결과 캐시. 신규 product 는 여기에 누적되어 재조회 비용 없이 재사용.
 _CACHE_FILE = Path(__file__).resolve().parents[2] / "data" / "db" / "mfds_item_seq_cache.json"
 
@@ -221,7 +234,7 @@ def _split_indications(ee_text: str) -> list[MFDSIndication]:
         result.append(MFDSIndication(
             code=f"mfds_{idx}",
             label=label[:200],
-            body=body[:2000],
+            body=body,
             keywords=[],
         ))
     return result

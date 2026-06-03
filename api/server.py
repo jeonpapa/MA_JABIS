@@ -284,6 +284,9 @@ def price_changes():
             "product_name": latest["product_name_kr"],
             "brand_name": parsed["brand"],
             "ingredient": parsed["ingredient"],
+            # HIRA 영문 `주성분명` 원문 — generic-key 매칭용 (enrichment 상속 경로)
+            "hira_ingredient": latest.get("ingredient") or "",
+            "dosage_strength": latest.get("dosage_strength") or "",
             "dosage_form": parsed["dosage_form"],
             "company": latest["company"],
             "first_date": changes[0]["date"],
@@ -381,6 +384,216 @@ def price_changes():
     })
 
 
+_GENERIC_FIRST_WORD_RE = re.compile(r"^([a-zA-Z][a-zA-Z\-]+)")
+# salt/ester 접미사가 주인공 generic 뒤에 오는 경우가 많아 첫 영단어만으로 매칭 (sitagliptin phosphate hydrate vs sitagliptin hydrochloride hydrate → 모두 'sitagliptin')
+
+_GENERIC_ALL_WORDS_RE = re.compile(r"(?:^|[\s,;])([a-zA-Z][a-zA-Z\-]{3,})")
+# 복합제의 모든 영문 generic 후보 추출 (예: 'metformin hydrochloride 0.5g, sitagliptin' → ['metformin', 'hydrochloride', 'sitagliptin'])
+# salt/form 단어 (hydrochloride, sulfate, calcium 등) 는 _SALT_WORDS 로 제외
+_SALT_WORDS = {
+    "hydrochloride", "hydrate", "dihydrate", "trihydrate", "monohydrate", "anhydrous",
+    "phosphate", "sulfate", "sulphate", "citrate", "maleate", "fumarate", "tartrate",
+    "succinate", "mesylate", "tosylate", "besylate", "acetate", "propanediol",
+    "calcium", "sodium", "potassium", "magnesium", "zinc", "iron", "lithium",
+    "as", "at", "of", "and", "or", "the", "to", "for", "with", "in", "on",
+}
+_STRENGTH_MG_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:밀리그램|mg|㎎)", re.IGNORECASE)
+
+
+def _extract_generic_key(ingredient: str | None) -> str:
+    """HIRA `주성분명` 첫 영단어 generic 키 — 대표용. _extract_generic_candidates 도 함께 사용."""
+    if not ingredient:
+        return ""
+    m = _GENERIC_FIRST_WORD_RE.match(ingredient.strip())
+    if not m:
+        return ""
+    return m.group(1).strip().lower()
+
+
+def _extract_generic_candidates(ingredient: str | None) -> list[str]:
+    """복합제 대응 — ingredient 에서 가능한 모든 generic 후보를 순서대로 반환.
+
+    예: 'metformin hydrochloride 0.5g, sitagliptin phosphate 50mg' → ['metformin', 'sitagliptin']
+        'dapagliflozin propanediol hydrate (as dapagliflozin 10mg), sitagliptin ...' → ['dapagliflozin', 'sitagliptin']
+    salt/form/hydrate 단어는 제외. donor 탐색 시 첫 매칭 generic 사용.
+    """
+    if not ingredient:
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for m in _GENERIC_ALL_WORDS_RE.finditer(ingredient):
+        w = m.group(1).strip().lower()
+        if w in _SALT_WORDS or w in seen:
+            continue
+        seen.add(w)
+        out.append(w)
+    return out
+
+
+def _extract_strength_mg(text: str | None) -> float | None:
+    """'자누비아정100mg' / '100밀리그램' → 100.0 (mg 단위)."""
+    if not text:
+        return None
+    m = _STRENGTH_MG_RE.search(text)
+    if not m:
+        return None
+    try:
+        return float(m.group(1))
+    except ValueError:
+        return None
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# 체중·BSA 기반 dosing 표준 환자 기준 (HIRA 약제 평가기준)
+#   성인 평균체중 60kg / 체표면적 1.7m² (DuBois 공식 기준 60kg, 165cm)
+#   소아 평균체중 40kg
+#   DuBois: BSA(cm²) = (W^0.425 × H^0.725) × 0.007184
+# ────────────────────────────────────────────────────────────────────────────
+_ADULT_WEIGHT_KG = 60.0
+_ADULT_BSA_M2 = 1.7
+_PEDI_WEIGHT_KG = 40.0
+
+_DOSE_PER_KG_RE = re.compile(
+    r"(?:체중\s*1?\s*kg\s*당|/\s*kg|kg\s*당)\s*(\d+(?:\.\d+)?)\s*mg|"
+    r"(\d+(?:\.\d+)?)\s*mg\s*/\s*kg",
+    re.IGNORECASE,
+)
+_DOSE_PER_M2_RE = re.compile(
+    r"(\d+(?:\.\d+)?)\s*mg\s*/\s*m\s*[²2\^]|"
+    r"체표면적\s*m[²2\^]?\s*당\s*(\d+(?:\.\d+)?)\s*mg",
+    re.IGNORECASE,
+)
+_INTERVAL_WEEK_RE = re.compile(
+    r"매?\s*(\d+)\s*주\s*(?:마다|간격|에)|q\s*(\d+)\s*w",
+    re.IGNORECASE,
+)
+_INTERVAL_DAY_RE = re.compile(
+    r"매?\s*(\d+)\s*일\s*(?:마다|간격|에)",
+    re.IGNORECASE,
+)
+
+
+# 용법용량(투여방법) 패턴 — 다음 중 하나 이상 매치되면 진짜 용법 텍스트로 판정.
+# 적응증·효능 텍스트 ("절제 불가능 비소세포폐암 환자 치료") 와 구분하기 위함.
+_DOSING_PATTERN = re.compile(
+    r"(?:1\s*일\s*\d|매\s*\d+\s*주|"          # "1일 N회" / "매 N주마다"
+    r"\d+\s*주\s*(?:마다|간격|에)|"           # "N주 간격으로"
+    r"\d+\s*일\s*(?:마다|간격|에)|"           # "N일 간격으로"
+    r"q\s*\d+\s*[whWH]|"                      # "q3w" / "q12h"
+    r"\d+\s*mg\s*/\s*kg|kg\s*당\s*\d+|"       # "mg/kg" / "kg당 mg"
+    r"\d+\s*mg\s*/\s*m\s*[²2\^]|"             # "mg/m²"
+    r"\d+\s*(?:mg|g)\s*(?:을|를)?\s*"          # "200mg 을" "1200mg 을"
+    r"\s*(?:매|q|주|회|일|투여|복용|주사|점적))",
+    re.IGNORECASE,
+)
+
+
+def _is_dosing_text(text: str | None) -> bool:
+    """텍스트가 '실제 투여방법' 인지 '효능·적응증' 인지 휴리스틱 판정.
+
+    True → 용법용량 패턴 (mg/kg, q3w, 매 N주, 1일 N회 등) 1개 이상 매치
+    False → 적응증/효능 서술 (예: '백금 기반 CCRT 후 진행되지 않은 ... 환자 치료')
+    """
+    if not text or len(text) < 10:
+        return False
+    return bool(_DOSING_PATTERN.search(text))
+
+
+def _compute_weight_bsa_daily_cost(
+    usage_text: str,
+    vial_mg: float,
+    current_price: float,
+) -> dict | None:
+    """체중(mg/kg) · BSA(mg/m²) 기반 dosing → 표준 환자(60kg / 1.7m²) 일일투약비용.
+
+    Returns: {"daily_cost": int, "method": "weight"|"bsa", "rationale": str, ...} or None
+    """
+    if not usage_text or not vial_mg or vial_mg <= 0 or current_price <= 0:
+        return None
+
+    # ── Maintenance dose 우선 — chronic dosing 의 daily_cost 가 의미있음 ──
+    # 패턴: "초기 4mg/kg, 이후 3주마다 2mg/kg" / "loading 4, maintenance 2"
+    # 모든 mg/kg / mg/m² 매치를 list 로 수집 후 maintenance 우선 선택:
+    #   1. "이후" / "유지" / "maintenance" 키워드 뒤의 매치 → 우선
+    #   2. 여러 매치 중 가장 작은 값 (loading 은 보통 더 큼)
+    #   3. 마지막 매치 (전형적으로 maintenance 가 뒤에 서술)
+    all_kg = list(_DOSE_PER_KG_RE.finditer(usage_text))
+    all_m2 = list(_DOSE_PER_M2_RE.finditer(usage_text))
+
+    def _pick_maintenance(matches: list[re.Match]) -> tuple[float, str] | None:
+        """매치 리스트에서 maintenance dose 추정. Returns (mg, rationale_hint)."""
+        if not matches:
+            return None
+        keys = ("이후", "유지", "maintenance", "지속", "장기")
+        for m in matches:
+            # "이후" 등 키워드와 같은 문장/근접 위치 확인 (앞 50자 내)
+            window_start = max(0, m.start() - 50)
+            window = usage_text[window_start:m.start()]
+            if any(k in window for k in keys):
+                val = next(float(g) for g in m.groups() if g)
+                return val, f"maintenance dose ('이후/유지' 키워드 매치)"
+        # fallback: 가장 작은 값 (loading > maintenance 일반적)
+        candidates = []
+        for m in matches:
+            v = next(float(g) for g in m.groups() if g)
+            candidates.append(v)
+        if candidates:
+            picked = min(candidates)
+            if len(candidates) > 1:
+                return picked, f"maintenance 추정 (loading 후보 {sorted(candidates, reverse=True)[0]:.0f} 제외, 최소값 {picked:.0f} 사용)"
+            return picked, "단일 매치"
+        return None
+
+    weight_pick = _pick_maintenance(all_kg)
+    bsa_pick = _pick_maintenance(all_m2)
+    if not weight_pick and not bsa_pick:
+        return None
+
+    week_m = _INTERVAL_WEEK_RE.search(usage_text)
+    day_m = _INTERVAL_DAY_RE.search(usage_text)
+    if week_m:
+        weeks_grp = next((g for g in week_m.groups() if g), None)
+        interval_days = int(weeks_grp) * 7 if weeks_grp else None
+    elif day_m:
+        interval_days = int(day_m.group(1))
+    else:
+        return None
+    if not interval_days or interval_days <= 0:
+        return None
+
+    if weight_pick:
+        per_kg_mg, hint = weight_pick
+        per_dose_mg = per_kg_mg * _ADULT_WEIGHT_KG
+        method = "weight"
+        rationale = (
+            f"{per_kg_mg}mg/kg × 60kg(성인 평균체중 표준) = {per_dose_mg:.0f}mg/dose, "
+            f"q{interval_days // 7}w 간격 → 일평균 {per_dose_mg / interval_days:.2f}mg "
+            f"[{hint}]"
+        )
+    else:
+        per_m2_mg, hint = bsa_pick  # type: ignore[misc]
+        per_dose_mg = per_m2_mg * _ADULT_BSA_M2
+        method = "bsa"
+        rationale = (
+            f"{per_m2_mg}mg/m² × 1.7m²(DuBois BSA 성인 표준 60kg/165cm) = "
+            f"{per_dose_mg:.0f}mg/dose, q{interval_days // 7}w → 일평균 {per_dose_mg / interval_days:.2f}mg "
+            f"[{hint}]"
+        )
+
+    daily_mg = per_dose_mg / interval_days
+    price_per_mg = current_price / vial_mg
+    daily_cost = int(round(daily_mg * price_per_mg))
+    return {
+        "daily_cost": daily_cost,
+        "daily_mg": daily_mg,
+        "per_dose_mg": per_dose_mg,
+        "interval_days": interval_days,
+        "vial_mg": vial_mg,
+        "method": method,
+        "rationale": rationale,
+    }
+
+
 def _enrich_products(products: list[dict]) -> None:
     """각 product 에 drug_enrichment + coverage_start 를 붙인다.
 
@@ -415,7 +628,8 @@ def _enrich_products(products: list[dict]) -> None:
         with db._connect() as conn:
             rows = conn.execute(
                 f"SELECT normalized_name, approval_date, usage_text, daily_dose_units, "
-                f"       dose_schedule, cycle_days, doses_per_cycle, confidence "
+                f"       dose_schedule, cycle_days, doses_per_cycle, confidence, "
+                f"       is_rsa, rsa_type, rsa_note "
                 f"FROM drug_enrichment WHERE normalized_name IN ({placeholders})",
                 tuple(norm_keys),
             ).fetchall()
@@ -428,6 +642,9 @@ def _enrich_products(products: list[dict]) -> None:
                     "cycle_days":      r[5],
                     "doses_per_cycle": r[6],
                     "confidence":      r[7],
+                    "is_rsa":          r[8],
+                    "rsa_type":        r[9],
+                    "rsa_note":        r[10],
                 }
             # coverage_start: 보험코드별 earliest non-null
             all_codes = []
@@ -450,24 +667,121 @@ def _enrich_products(products: list[dict]) -> None:
         enrich_map = {}
         coverage_by_code = {}
 
+    # ── 동일 generic 상속 맵 — 복합제 대응을 위해 multi-candidate 등록 ─────────────
+    #    enriched 제품의 모든 generic 후보를 donor 맵에 기록 (sitagliptin 외 metformin 등도).
+    generic_donor: dict[str, tuple[str, dict]] = {}  # generic → (donor_norm, donor_enrich)
+    for p in products:
+        norm = p.get("normalized_name")
+        if not norm:
+            continue
+        donor = enrich_map.get(norm)
+        if not donor:
+            continue
+        for gk in _extract_generic_candidates(p.get("hira_ingredient")):
+            generic_donor.setdefault(gk, (norm, donor))
+
+    # 전역 donor 보강 — drug_enrichment 에 존재하지만 이번 검색결과 products 에 없는 generic 도 커버.
+    # 예: '시타글립틴' 으로 검색 시 자누비아 100mg 는 보통 포함되지만, '메트포르민' 검색 시 combo 에서만
+    #     sitagliptin 매칭이 필요할 수 있음. 이 경우를 위해 drug_enrichment 전체를 로드하진 않고
+    #     이번 products 범위 내 donor 만 사용 (안전한 기본값).
+
     for p in products:
         norm = p.get("normalized_name")
         e = enrich_map.get(norm) if norm else None
+        donor_norm: str | None = None
+        if not e:
+            for gk in _extract_generic_candidates(p.get("hira_ingredient")):
+                if gk in generic_donor:
+                    donor_norm, e = generic_donor[gk]
+                    break
         current_price = p.get("current_price") or 0
+
+        # ── 1차 권위 소스: 식약처 의약품 제품 허가정보 API ────────────────────
+        # 결과 있으면 approval_date / usage_text 를 MFDS 실측으로 override.
+        # drug_enrichment(Perplexity) 는 보조 소스로 dose_schedule/daily_dose_units 등 산출에만 활용.
+        mfds_permit = None
+        try:
+            from agents.scrapers.kr_mfds_permit import lookup_permit
+            mfds_query = p.get("product_name") or p.get("brand_name") or ""
+            mfds_permit = lookup_permit(
+                mfds_query,
+                ingredient=p.get("ingredient"),
+                edi_code=p.get("insurance_code"),
+            )
+            if mfds_permit.get("source") == "miss":
+                mfds_permit = None
+        except Exception as ex:
+            logger.debug("MFDS 허가 API 실패 [%s]: %s", p.get("insurance_code"), ex)
+            mfds_permit = None
+
+        # 기본은 drug_enrichment 결과 → MFDS permit 가 있으면 우선
         approval_date = e["approval_date"] if e else None
         usage_text = e["usage_text"] if e else None
+        if mfds_permit:
+            if mfds_permit.get("permit_date"):
+                approval_date = mfds_permit["permit_date"]
+            if mfds_permit.get("usage_text"):
+                usage_text = mfds_permit["usage_text"]
 
         daily_cost = None
         if e and current_price > 0:
             sched = (e.get("schedule") or "").lower()
             if sched == "continuous" and e.get("daily_dose_units"):
-                daily_cost = int(round(current_price * float(e["daily_dose_units"])))
+                units = float(e["daily_dose_units"])
+                # 동일 generic 상속 시 per-strength 스케일 — 일일 총 mg 보존 (monotherapy 한정)
+                # 복합제(제품명에 "/" 포함)는 각 성분 함량이 독립 → 단순 스케일 불가.
+                # 복합제 ↔ monotherapy 간 상속은 1 tablet/day 로 가정 (scaled=False 로 표시).
+                is_combo = bool(norm and "/" in norm)
+                donor_is_combo = bool(donor_norm and "/" in donor_norm)
+                scaled = False
+                if donor_norm and not is_combo and not donor_is_combo:
+                    donor_mg = _extract_strength_mg(donor_norm) or _extract_strength_mg(p.get("dosage_strength"))
+                    this_mg = _extract_strength_mg(norm) or _extract_strength_mg(p.get("dosage_strength"))
+                    if donor_mg and this_mg and this_mg > 0:
+                        units = units * (donor_mg / this_mg)
+                        scaled = True
+                # 복합제 상속은 unit price 추정 (1정/일). enrichment_source 로 투명화.
+                daily_cost = int(round(current_price * units))
+                # combo 상속 표시 플래그 (없어도 donor_norm 로 식별 가능하지만 명시적으로)
+                if donor_norm and (is_combo or donor_is_combo) and not scaled:
+                    p.setdefault("_combo_inherited", True)
             elif sched == "cycle" and e.get("cycle_days") and e.get("doses_per_cycle"):
-                per_cycle = current_price * float(e["doses_per_cycle"])
-                try:
-                    daily_cost = int(round(per_cycle / float(e["cycle_days"])))
-                except ZeroDivisionError:
-                    daily_cost = None
+                # cycle 은 strength 별 바이알 수가 처방 프로토콜에 따라 달라 단순 스케일 부적합
+                # → 같은 normalized_name 에 대한 직접 enrichment 있을 때만 산출 (donor 상속 시 skip)
+                if not donor_norm:
+                    per_cycle = current_price * float(e["doses_per_cycle"])
+                    try:
+                        daily_cost = int(round(per_cycle / float(e["cycle_days"])))
+                    except ZeroDivisionError:
+                        daily_cost = None
+
+        # ── usage_text 가 진짜 '투여방법' 인지, 효능·적응증 인지 휴리스틱 판정 ──
+        # 임핀지 등 일부 약제는 Perplexity 가 effect_text(효능) 를 usage_text 로 잘못 채움.
+        # mg/kg, q3w, 매 N주, 1일 N회 등 dosing 패턴 미포함 시 → 적응증으로 간주.
+        usage_is_dosing = _is_dosing_text(usage_text)
+
+        # ── 체중·BSA 기반 dosing 보정 (옵디보·키트루다 등 주사제 mg/kg, mg/m² 패턴) ──
+        # 진짜 용법 텍스트일 때만 적용. 적응증 텍스트는 mg/kg 미포함이라 자연 skip 되긴 하지만 명시 분기.
+        bsa_calc = None
+        if usage_is_dosing and current_price > 0:
+            vial_mg = _extract_strength_mg(norm) or _extract_strength_mg(p.get("dosage_strength"))
+            if vial_mg:
+                bsa_calc = _compute_weight_bsa_daily_cost(usage_text, vial_mg, current_price)
+                if bsa_calc:
+                    daily_cost = bsa_calc["daily_cost"]
+                    p["_bsa_calc"] = bsa_calc  # UI 투명화용
+
+        # 전혀 매칭되지 않은 경우 — heuristic fallback. 단 usage_text 가 적응증 텍스트면
+        # daily_cost 산출 자체가 신뢰 불가 → unit price 보존하되 `usage_unverified` 마킹.
+        _heuristic_used = False
+        if daily_cost is None and current_price > 0:
+            daily_cost = current_price
+            _heuristic_used = True
+        if _heuristic_used and not usage_text:
+            usage_text = "용법 미확정 · 1정/일 추정 — 정확한 용법은 조사 필요"
+
+        # 용법 미확정 플래그 — usage_text 가 있는데 dosing 패턴 미포함 (= 적응증 가능성)
+        usage_unverified = bool(usage_text) and not usage_is_dosing and not bsa_calc
 
         monthly_cost = daily_cost * 30 if daily_cost is not None else None
         yearly_cost  = daily_cost * 365 if daily_cost is not None else None
@@ -487,6 +801,130 @@ def _enrich_products(products: list[dict]) -> None:
         p["monthly_cost"]           = monthly_cost
         p["yearly_cost"]            = yearly_cost
         p["enrichment_confidence"]  = e.get("confidence") if e else None
+        # RSA(위험분담제) — registry 우선 적용 (skill ground-truth), Perplexity 추정값은 fallback
+        from agents.kr_rsa_registry import lookup_rsa
+        rsa_reg = lookup_rsa(p.get("brand_name") or p.get("product_name") or "")
+        if rsa_reg:
+            p["is_rsa"]    = rsa_reg["is_rsa"]
+            p["rsa_type"]  = rsa_reg["rsa_type"]
+            p["rsa_note"]  = rsa_reg["rsa_note"]
+            p["rsa_source"] = rsa_reg["source"]
+        else:
+            p["is_rsa"]    = e.get("is_rsa") if e else None
+            p["rsa_type"]  = e.get("rsa_type") if e else None
+            p["rsa_note"]  = (e.get("rsa_note") or "") if e else ""
+            p["rsa_source"] = "drug_enrichment (Perplexity)" if e else None
+        # 상속 근거 투명화: 공백 값이 아닌 상속 결과임을 UI 가 구분할 수 있도록 표시
+        p["enrichment_source"]      = (
+            "direct" if (e and not donor_norm) else
+            ("inherited_generic:" + donor_norm) if donor_norm else
+            "default_heuristic" if _heuristic_used else
+            None
+        )
+        # BSA/체중 기반 dosing 산출 결과 expose (UI 가 표준 환자 기준 명시 가능)
+        if bsa_calc:
+            p["bsa_calc"] = {
+                "daily_cost": bsa_calc["daily_cost"],
+                "method":     bsa_calc["method"],
+                "rationale":  bsa_calc["rationale"],
+                "interval_days": bsa_calc["interval_days"],
+                "per_dose_mg":   bsa_calc["per_dose_mg"],
+            }
+        # 용법 미확정 플래그 — UI 가 daily_cost 신뢰도 낮음을 표시
+        p["usage_unverified"] = usage_unverified
+
+        # ── MFDS 허가정보 메타 (UI 노출용) ───────────────────────────────────
+        if mfds_permit:
+            p["mfds_permit"] = {
+                "item_seq":       mfds_permit.get("item_seq"),
+                "item_eng_name":  mfds_permit.get("item_eng_name"),
+                "permit_holder":  mfds_permit.get("entp_name"),
+                "permit_date":    mfds_permit.get("permit_date"),
+                "cancel_status":  mfds_permit.get("cancel_status"),
+                "etc_otc":        mfds_permit.get("etc_otc"),
+                "atc_code":       mfds_permit.get("atc_code"),
+                "main_ingr":      mfds_permit.get("main_ingr"),
+                "main_ingr_eng":  mfds_permit.get("main_ingr_eng"),
+                "material_name":  mfds_permit.get("material_name"),
+                "chart":          mfds_permit.get("chart"),
+                "pack_unit":      mfds_permit.get("pack_unit"),
+                "valid_term":     mfds_permit.get("valid_term"),
+                "storage_method": mfds_permit.get("storage_method"),
+                "rare_drug_yn":   mfds_permit.get("rare_drug_yn"),
+                "newdrug_class":  mfds_permit.get("newdrug_class"),
+                "reexam_target":  mfds_permit.get("reexam_target"),
+                "reexam_date":    mfds_permit.get("reexam_date"),
+                "change_date":    mfds_permit.get("change_date"),
+                "permit_kind":    mfds_permit.get("permit_kind"),
+                "effect_text":    (mfds_permit.get("effect_text") or "")[:2000],
+                "caution_text":   (mfds_permit.get("caution_text") or "")[:2000],
+                "ud_doc_url":     mfds_permit.get("ud_doc_url"),
+                "ee_doc_url":     mfds_permit.get("ee_doc_url"),
+                "nb_doc_url":     mfds_permit.get("nb_doc_url"),
+                "source":         mfds_permit.get("source"),
+            }
+            # enrichment_source 갱신: MFDS 가 우선 소스이면 라벨에 명시
+            existing_src = p.get("enrichment_source") or ""
+            if existing_src in (None, "", "default_heuristic"):
+                p["enrichment_source"] = "mfds_permit"
+            elif "mfds" not in existing_src:
+                p["enrichment_source"] = f"mfds_permit + {existing_src}"
+        else:
+            p["mfds_permit"] = None
+
+        # ── 특허 상태 — 1차: MFDS 공공데이터 API (실측), 2차: loe_pattern 가격 history 추정 ──
+        # 권위 소스: 식약처 의약품 특허정보 (data.go.kr MdcinPatentInfoService2)
+        try:
+            from agents.scrapers.kr_mfds_patent import lookup_patent
+            # item_name 은 product_name 우선, 부족하면 brand_name 으로 fallback
+            mfds_query_name = p.get("product_name") or p.get("brand_name") or ""
+            mfds_result = lookup_patent(mfds_query_name, ingredient=p.get("ingredient"))
+            mfds_status = mfds_result.get("status")  # '유효' / '만료' / 'unknown'
+        except Exception as ex:
+            logger.debug("MFDS 특허 API 실패 [%s]: %s", p.get("insurance_code"), ex)
+            mfds_result = None
+            mfds_status = None
+
+        if mfds_status in ("유효", "만료"):
+            p["patent_status"] = mfds_status
+            p["patent_expiry_date"] = mfds_result.get("expiry_date")
+            p["patent_loe_date_inferred"] = None
+            p["patent_source"] = "mfds_api"
+            p["patent_source_note"] = (
+                f"MFDS 의약품 특허정보 API 실측 — 물질특허 {mfds_result.get('active_substance_count')}건 활성 / "
+                f"{mfds_result.get('expired_substance_count')}건 만료 (판정 근거: {mfds_result.get('judgment_basis')})"
+            )
+            p["patent_substance_patents"] = mfds_result.get("substance_patents", [])
+        else:
+            # API 데이터 없음 → loe_pattern fallback
+            try:
+                from agents.market_intelligence.loe_pattern import detect_loe_stage
+                history = db.get_price_history(p["insurance_code"])
+                history_dates = sorted({h.get("apply_date") for h in history if h.get("apply_date")})
+                patent_status = "유효"
+                patent_loe_date = None
+                for date in history_dates:
+                    det = detect_loe_stage(history, date)
+                    if det.matched and det.kr_rule == "KR-RULE-009":
+                        patent_status = "만료"
+                        patent_loe_date = det.anchor_date
+                        break
+                p["patent_status"] = patent_status
+                p["patent_loe_date_inferred"] = patent_loe_date
+                p["patent_expiry_date"] = None
+                p["patent_source"] = "price_history"
+                p["patent_source_note"] = (
+                    "가격 history 추정 (KR-RULE-009 stage). MFDS API 미매칭 — "
+                    "정확한 만료일은 nedrug.mfds.go.kr/searchPatent 직접 조회"
+                )
+                p["patent_substance_patents"] = []
+            except Exception as ex:
+                logger.debug("patent_status fallback 실패 [%s]: %s", p.get("insurance_code"), ex)
+                p["patent_status"] = None
+                p["patent_expiry_date"] = None
+                p["patent_loe_date_inferred"] = None
+                p["patent_source"] = None
+                p["patent_substance_patents"] = []
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -715,6 +1153,51 @@ def domestic_enrichment():
         return jsonify({"error": str(e)}), 500
 
 
+@app.post("/api/domestic/enrichment-bulk")
+def domestic_enrichment_bulk():
+    """POST /api/domestic/enrichment-bulk
+    Body: {"items": [{"normalized_name": "...", "product_name": "...", "ingredient": "...",
+                      "current_price": 866, "code": "...", "codes": [...]}, ...]}
+
+    선택된 기준약제 + 비교약제들을 한 번에 enrich (캐시 우선).
+    허가일·용법·정확한 일일투약비를 비동기로 채우기 위해 사용. 최대 10건.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    data = request.get_json() or {}
+    items = data.get("items") or []
+    if not isinstance(items, list):
+        return jsonify({"error": "items 는 list 여야 함"}), 400
+    items = items[:10]
+
+    def _one(item: dict):
+        norm = (item.get("normalized_name") or "").strip()
+        if not norm:
+            return None, None
+        try:
+            price = item.get("current_price")
+            price_val = float(price) if price is not None else None
+            r = _enrichment_agent.get(
+                norm,
+                representative_code=item.get("code", "") or "",
+                insurance_codes=item.get("codes") or [],
+                product_name=item.get("product_name", "") or "",
+                ingredient=item.get("ingredient", "") or "",
+                current_price=price_val,
+            )
+            return norm, r
+        except Exception as e:
+            logger.warning("[bulk enrich] %s 실패: %s", norm, e)
+            return norm, {"error": str(e)}
+
+    results: dict = {}
+    with ThreadPoolExecutor(max_workers=5) as ex:
+        for norm, res in ex.map(_one, items):
+            if norm is not None:
+                results[norm] = res
+    return jsonify({"enrichments": results})
+
+
 @app.get("/api/domestic/change-reason")
 def change_reason():
     """
@@ -737,6 +1220,7 @@ def change_reason():
     change_date  = request.args.get("date", "").strip()
     ingredient   = request.args.get("ingredient", "").strip()
     ingredient_en = request.args.get("ingredient_en", "").strip()
+    insurance_code = request.args.get("insurance_code", "").strip()
     force_refresh = request.args.get("refresh", "0") == "1"
 
     try:
@@ -747,6 +1231,15 @@ def change_reason():
     if not drug or not change_date:
         return jsonify({"error": "drug, date 파라미터가 필요합니다."}), 400
 
+    # insurance_code 미제공 시 drug 명에서 자동 lookup (LOE 산수 분석에 필요)
+    if not insurance_code:
+        try:
+            matches = db.search_drug(drug, limit=5)
+            if matches:
+                insurance_code = matches[0].get("insurance_code", "") or ""
+        except Exception:
+            pass
+
     result = _mi_agent.analyze_price_change(
         drug_ko=drug,
         drug_en=drug_en or drug,
@@ -755,6 +1248,7 @@ def change_reason():
         change_date=change_date,
         delta_pct=delta_pct,
         force_refresh=force_refresh,
+        insurance_code=insurance_code,
     )
 
     # ── ReviewAgent 게이트: 결과가 요청·룰에 부합하는지 최종 검증 (최대 1회 재시도) ──
@@ -769,34 +1263,91 @@ def change_reason():
             ingredient_ko=ingredient, ingredient_en=ingredient_en,
             change_date=change_date, delta_pct=delta_pct,
             force_refresh=True,
+            insurance_code=insurance_code,
         )
         verdict2 = _review_agent.review_price_change_reason(req_ctx, retry, MI_RULES_TEXT)
         if verdict2.get("approved", False):
             result = retry
             verdict = verdict2
         else:
-            # 재시도 후에도 거부 — 명시적 unknown/low 로 하향 + reason 도 일관되게 재작성
-            logger.info("[Review] 재시도 거부 — unknown 하향")
+            # 재시도 후 거부 시 분기:
+            #  (a) refs ≥ 3 + Tier A 매체 1건 이상 + mechanism 비-unknown
+            #      → 분석 자체는 충분 근거 — confidence 만 medium 으로 강등 (기전·reason 유지)
+            #  (b) 그 외 — 기존처럼 unknown/low 강제 + reason 추정형 재포장
             result = retry
-            result["mechanism"] = "unknown"
-            result["mechanism_label"] = "미분류"
-            result["confidence"] = "low"
-            win = result.get("window", {}) or {}
-            win_txt = f"{win.get('from','')}~{win.get('to','')}"
-            original_reason = (result.get("reason") or "").strip()
-            # 원문 단정형을 제거하고 추정형으로 재포장
-            result["reason"] = (
-                f"추정: 변동 시점 윈도우({win_txt}) 내 공개 보도에서 단일 기전을 확정할 수 없음. "
-                f"패널 리뷰어(OpenAI·Gemini)가 근거 부족 또는 윈도우 정합성 불일치로 거부함. "
-                + (f"1차 분석 요지: {original_reason[:160]}…" if original_reason else "")
-            ).strip()
-            result["notes"] = (
-                (result.get("notes", "") + " · ReviewAgent 거부 — "
-                 + verdict2.get("final_verdict", "")).strip(" ·")
+            refs = result.get("references") or []
+            tier_a = sum(1 for r in refs if (r.get("weight") or 0) >= 2.5)
+            mech = (result.get("mechanism") or "unknown").lower()
+            sufficient = (
+                len(refs) >= 3
+                and tier_a >= 1
+                and mech not in ("unknown", "")
             )
+            if sufficient:
+                logger.info(
+                    "[Review] 재시도 거부했으나 refs=%d(Tier A=%d) · mech=%s — "
+                    "confidence=medium 강등하고 분석 유지",
+                    len(refs), tier_a, mech,
+                )
+                result["confidence"] = "medium"
+                result["notes"] = (
+                    (result.get("notes", "") + " · ReviewAgent 거부 (근거 충분 → confidence 강등) — "
+                     + verdict2.get("final_verdict", "")).strip(" ·")
+                )
+            else:
+                logger.info("[Review] 재시도 거부 + 근거 부족 → unknown 하향")
+                result["mechanism"] = "unknown"
+                result["mechanism_label"] = "미분류"
+                result["confidence"] = "low"
+                win = result.get("window", {}) or {}
+                win_txt = f"{win.get('from','')}~{win.get('to','')}"
+                original_reason = (result.get("reason") or "").strip()
+                result["reason"] = (
+                    f"추정: 변동 시점 윈도우({win_txt}) 내 공개 보도에서 단일 기전을 확정할 수 없음. "
+                    f"패널 리뷰어(OpenAI·Gemini)가 근거 부족 또는 윈도우 정합성 불일치로 거부함. "
+                    + (f"1차 분석 요지: {original_reason[:160]}…" if original_reason else "")
+                ).strip()
+                result["notes"] = (
+                    (result.get("notes", "") + " · ReviewAgent 거부 — "
+                     + verdict2.get("final_verdict", "")).strip(" ·")
+                )
             verdict = verdict2
 
     result["review"] = verdict
+
+    # RSA 자산 — registry 우선 (skill ground-truth) → drug_enrichment fallback.
+    # RSA 면 confidence 자동 강등 + reason 본문에 ⚠ 경고 prepend.
+    try:
+        from agents.kr_rsa_registry import lookup_rsa
+        rsa_info = lookup_rsa(drug)
+        if not (rsa_info and rsa_info.get("is_rsa") == 1):
+            row = _enrichment_agent.db.get_enrichment(drug)
+            if row and row.get("is_rsa"):
+                rsa_info = {
+                    "is_rsa": row.get("is_rsa"),
+                    "rsa_type": row.get("rsa_type"),
+                    "rsa_note": row.get("rsa_note") or "",
+                    "source": "drug_enrichment (Perplexity)",
+                }
+        if rsa_info and rsa_info.get("is_rsa") == 1:
+            existing_conf = (result.get("confidence") or "").lower()
+            if existing_conf == "high":
+                result["confidence"] = "medium"
+            warning = (
+                "⚠ 위험분담제(RSA) 자산 — 표시가 ≠ 실제가. "
+                "정부와의 RSA 계약 하 표시가는 부분 조정만 노출되며 환급·총액제한 차액은 비공개. "
+                "표시가 변동률만으로 mechanism 을 단정할 수 없음.\n\n"
+            )
+            existing_reason = (result.get("reason") or "").strip()
+            if not existing_reason.startswith("⚠"):
+                result["reason"] = warning + existing_reason
+            result["is_rsa"] = rsa_info.get("is_rsa")
+            result["rsa_type"] = rsa_info.get("rsa_type")
+            result["rsa_note"] = rsa_info.get("rsa_note") or ""
+            result["rsa_source"] = rsa_info.get("source")
+    except Exception as e:
+        logger.debug("RSA 강등 처리 실패: %s", e)
+
     return jsonify(result)
 
 
@@ -847,6 +1398,49 @@ def calibrate_media():
                    "완료까지 5~10분 소요됩니다.",
         "dry_run": dry_run,
     })
+
+
+@app.get("/api/admin/rsa-registry")
+def rsa_registry_list():
+    """RSA registry 전체 조회 (admin 전용 → 추후 auth gate 추가 가능)."""
+    from agents.kr_rsa_registry import list_all
+    reg = list_all()
+    return jsonify({
+        "count": len(reg),
+        "entries": [
+            {"brand_key": k, **v}
+            for k, v in sorted(reg.items())
+        ],
+    })
+
+
+@app.post("/api/admin/rsa-registry")
+def rsa_registry_upsert():
+    """RSA registry 추가/수정.
+
+    Body: {"brand_key":"신약X", "is_rsa":1, "rsa_type":"refund", "rsa_note":"...", "source":"user_added"}
+    """
+    from agents.kr_rsa_registry import add_or_update_rsa
+    data = request.get_json(silent=True) or {}
+    try:
+        entry = add_or_update_rsa(
+            brand_key=(data.get("brand_key") or "").strip(),
+            is_rsa=int(data.get("is_rsa", 1)),
+            rsa_type=data.get("rsa_type") or None,
+            rsa_note=data.get("rsa_note") or "",
+            source=data.get("source") or "user_added (admin endpoint)",
+        )
+        return jsonify({"ok": True, "entry": entry})
+    except (ValueError, TypeError) as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+@app.delete("/api/admin/rsa-registry/<path:brand_key>")
+def rsa_registry_delete(brand_key: str):
+    """RSA registry entry 제거."""
+    from agents.kr_rsa_registry import remove_rsa
+    removed = remove_rsa(brand_key)
+    return jsonify({"ok": removed, "brand_key": brand_key})
 
 
 @app.get("/api/admin/calibration-status")
@@ -940,31 +1534,79 @@ def foreign_search():
     finally:
         loop.close()
 
+    # coverage_notes: 국가별 빈 결과의 원인 (정책/로그인/스크래핑 실패 구분)
+    coverage_notes = _compute_coverage_notes(query, supported, results)
+
     return jsonify({
         "query": query,
         "mode": "live",
         "results": results,
         "unsupported_countries": unsupported,
+        "coverage_notes": coverage_notes,
     })
+
+
+def _compute_coverage_notes(query: str, countries: list, results) -> dict:
+    """국가별로 결과가 비어있으면 country_coverage 의 정책 메타 반환."""
+    from agents.scrapers.country_coverage import lookup_policy
+    slug = (query or "").strip().lower()
+    notes: dict = {}
+    # results 가 list 이면 {country: [...]} 구조가 아닐 수 있어 방어적 처리
+    if isinstance(results, dict):
+        for cc in countries:
+            rows = results.get(cc, []) or []
+            has_price = any(
+                isinstance(r, dict) and r.get("local_price") is not None for r in rows
+            )
+            if not has_price:
+                policy = lookup_policy(cc, slug)
+                if policy:
+                    notes[cc] = policy
+    return notes
 
 
 @app.get("/api/foreign/cached")
 def foreign_cached():
     """
-    DB에 저장된 해외 약가 결과 조회 (스크레이핑 없음)
-    GET /api/foreign/cached?q=Keytruda
+    해외 약가 결과 조회
+    GET /api/foreign/cached?q=Keytruda[&use_cache=false]
+
+    use_cache=false: 실시간 스크래이핑 실행 후 최신 데이터 반환
+    use_cache=true (기본): DB 캐시된 데이터만 반환
     """
     query = request.args.get("q", "").strip()
+    use_cache = request.args.get("use_cache", "true").lower() != "false"
+
     if not query:
         return jsonify({"error": "검색어(q)를 입력하세요."}), 400
+
+    # use_cache=false 일 때: 실시간 스크래이핑 실행
+    if not use_cache:
+        logger.info("[API] 실시간 재검색 시작: %s", query)
+        try:
+            results = asyncio.run(foreign_agent.search_all(query))
+            logger.info("[API] 실시간 검색 완료: %s (%d개 국가)", query, len(results))
+        except Exception as e:
+            logger.error("[API] 실시간 검색 실패: %s", e, exc_info=True)
+            return jsonify({"error": f"실시간 검색 실패: {str(e)}"}), 500
+
+    # DB에서 최신 데이터 조회 (실시간 검색했으면 방금 저장된 데이터)
     cached = foreign_agent.get_cached_results(query)
+
     # 검색 이력 기록
     try:
         total = sum(len(v) if isinstance(v, list) else 0 for v in cached.values())
         db.log_search(query, "foreign_price", result_count=total)
     except Exception:
         pass
-    return jsonify({"query": query, "results": cached})
+
+    coverage_notes = _compute_coverage_notes(query, AVAILABLE_COUNTRIES, cached)
+    return jsonify({
+        "query": query,
+        "results": cached,
+        "refreshed": not use_cache,
+        "coverage_notes": coverage_notes,
+    })
 
 
 @app.get("/api/foreign/drugs")
@@ -1005,6 +1647,209 @@ def foreign_drug_delete(query_name: str):
 @app.get("/api/foreign/available_countries")
 def available_countries():
     return jsonify({"available": AVAILABLE_COUNTRIES})
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# /api/foreign/country-overview — 국가별 카드 그리드용 통합 응답
+# (pure-napping-goose plan / Phase 4)
+# axis: brand 검색 → 국가 카드 (각 카드: 허가 N건 + 급여 status + 가격)
+# ──────────────────────────────────────────────────────────────────────────────
+
+# 허가 agency ↔ 급여 body 매핑 (1국 1 agency 가정. EU 는 EMA 만 있음)
+_COUNTRY_AGENCY_MAP = [
+    # (country, agency_for_approval, body_for_reimbursement, currency_hint)
+    ("US", "FDA",  "CMS",     "USD"),
+    ("EU", "EMA",  None,      "EUR"),
+    ("UK", "MHRA", "NICE",    "GBP"),
+    ("JP", "PMDA", "CHUIKYO", "JPY"),
+    ("AU", "TGA",  "PBAC",    "AUD"),
+    ("KR", "MFDS", "HIRA",    "KRW"),
+]
+
+
+def _summarize_reimbursement(rows: list[dict]) -> str:
+    """국가 카드 헤더 pill 라벨. 우선순위: recommend > restrict > optimised > reject > not_listed > not_applicable > none."""
+    if not rows:
+        return "none"
+    types = {r.get("decision_type") for r in rows if r.get("decision_type")}
+    for level in ("recommend", "restrict", "optimised", "reject", "not_listed", "not_applicable"):
+        if level in types:
+            return level
+    return "none"
+
+
+def _country_card_row(product_slug: str, country: str, agency: str | None,
+                       body: str | None, currency: str | None) -> dict:
+    """단일 (product, country) 카드 row 생성.
+
+    indication × agency × reimbursement × price 4-way 조회 결과를 카드용 dict 로.
+    """
+    # 1) 허가 — indications_by_agency
+    with db._connect() as conn:
+        approvals = []
+        if agency:
+            approvals = [dict(r) for r in conn.execute("""
+                SELECT m.indication_id, m.title, m.disease, m.line_of_therapy,
+                       m.biomarker_class, ia.approval_date, ia.label_excerpt,
+                       ia.label_url, ia.restriction_note
+                  FROM indications_master m
+                  JOIN indications_by_agency ia ON m.indication_id = ia.indication_id
+                 WHERE m.product = ? AND ia.agency = ?
+                 ORDER BY ia.approval_date DESC NULLS LAST
+            """, (product_slug, agency)).fetchall()]
+
+    # 2) 급여 — reimbursement_xnational + indication_reimbursement (KR)
+    if country == "KR":
+        # KR: indication_reimbursement union 으로 처리
+        reimb_rows = db.get_xnational_reimbursement_for_product(product_slug)
+        reimb_rows = [r for r in reimb_rows if r.get("country") == "KR"]
+    else:
+        reimb_rows = db.get_xnational_reimbursement_for_product(product_slug)
+        reimb_rows = [r for r in reimb_rows if r.get("country") == country]
+
+    # 3) 가격 — foreign_drug_prices (alias_map 기반 조회). KR 은 별도 (drug_prices)
+    price_rows: list[dict] = []
+    if country != "KR":
+        # alias 기반 검색 — get_foreign_prices 가 그대로 작동
+        try:
+            all_prices = db.get_foreign_prices(product_slug)
+            price_rows = [p for p in all_prices if p.get("country") == country]
+        except Exception:
+            price_rows = []
+
+    # 4) indications array — 허가 row 에 같은 indication_id 의 reimbursement / price 결합
+    by_ind: dict[str, dict] = {}
+    for a in approvals:
+        ind_id = a["indication_id"]
+        by_ind[ind_id] = {
+            "indication_id": ind_id,
+            "title":         a.get("title"),
+            "disease":       a.get("disease"),
+            "line_of_therapy": a.get("line_of_therapy"),
+            "biomarker":     a.get("biomarker_class"),
+            "approval_date": a.get("approval_date"),
+            "label_excerpt": (a.get("label_excerpt") or "")[:300],
+            "label_url":     a.get("label_url"),
+            "reimbursement": None,
+            "price":         None,
+        }
+    # reimbursement attach
+    for r in reimb_rows:
+        ind_id = r.get("indication_id")
+        if ind_id and ind_id in by_ind:
+            by_ind[ind_id]["reimbursement"] = {
+                "decision_type": r.get("decision_type"),
+                "decision_id":   r.get("decision_id"),
+                "decision_date": r.get("decision_date"),
+                "criteria_text": (r.get("criteria_text") or "")[:500],
+                "source_url":    r.get("source_url"),
+                "body":          r.get("body"),
+            }
+    # price attach — 가격은 indication-specific 이 아닐 수도 (brand-level). 첫 가격을 모든 indication 에 attach
+    rep_price = None
+    if price_rows:
+        # 가장 최신 / form_type 우선순위: oral > injection > unknown
+        def _form_priority(p):
+            ft = (p.get("form_type") or "").lower()
+            return {"oral": 0, "injection": 1}.get(ft, 2)
+        pr = sorted(price_rows, key=lambda p: (_form_priority(p), p.get("searched_at") or ""), reverse=False)[0]
+        rep_price = {
+            "currency":            pr.get("currency"),
+            "local_price":         pr.get("local_price"),
+            "adjusted_price_krw":  pr.get("adjusted_price_krw"),
+            "daily_cost_krw":      pr.get("daily_cost_krw"),
+            "form_type":           pr.get("form_type"),
+            "dosage_strength":     pr.get("dosage_strength"),
+            "package_unit":        pr.get("package_unit"),
+            "source_label":        pr.get("source_label"),
+            "searched_at":         pr.get("searched_at"),
+        }
+        for v in by_ind.values():
+            v["price"] = rep_price
+
+    # KR 가격은 별도 — drug_prices.search_drug 에서 brand 기준으로 첫 row
+    if country == "KR" and not rep_price:
+        try:
+            with db._connect() as conn:
+                rk = conn.execute("""
+                    SELECT max_price, dosage_strength, package_unit
+                      FROM drug_latest
+                     WHERE LOWER(product_name_kr) LIKE ?
+                     LIMIT 1
+                """, (f"%{product_slug}%",)).fetchone()
+            if rk:
+                rep_price = {
+                    "currency": "KRW",
+                    "local_price": rk[0],
+                    "adjusted_price_krw": rk[0],
+                    "daily_cost_krw": None,
+                    "form_type": None,
+                    "dosage_strength": rk[1],
+                    "package_unit": rk[2],
+                    "source_label": "HIRA",
+                    "searched_at": None,
+                }
+                for v in by_ind.values():
+                    v["price"] = rep_price
+        except Exception:
+            pass
+
+    indications_list = sorted(
+        by_ind.values(),
+        key=lambda v: (v.get("approval_date") or "0000-00-00"),
+        reverse=True,
+    )
+
+    return {
+        "country": country,
+        "agency":  agency,
+        "body":    body,
+        "currency_hint": currency,
+        "approval_count": len(approvals),
+        "indications":    indications_list,
+        "reimbursement_summary": _summarize_reimbursement(reimb_rows),
+        "reimbursement_count":   len(reimb_rows),
+        "price_summary":         rep_price,
+    }
+
+
+@app.get("/api/foreign/country-overview")
+def foreign_country_overview():
+    """
+    국가별 카드 그리드용 단일 통합 응답.
+    GET /api/foreign/country-overview?query=keytruda
+    """
+    query = request.args.get("query", "").strip()
+    if not query:
+        return jsonify({"error": "query parameter required"}), 400
+
+    # query → product_slug (alias_map 우선, fallback canonical)
+    product_slug = query.lower()
+    alias = db.get_product_alias(product_slug)
+    if not alias:
+        # alias_map 의 brand_aliases 안에 query 가 있을 수 있음 — 전체 스캔
+        for entry in db.list_product_aliases():
+            keys = [entry["product_slug"].lower()]
+            if entry.get("inn"):
+                keys.append(entry["inn"].lower())
+            keys += [str(x).lower() for x in entry.get("brand_aliases", [])]
+            if query.lower() in keys:
+                product_slug = entry["product_slug"]
+                alias = entry
+                break
+
+    inn = (alias or {}).get("inn")
+
+    countries = []
+    for country, agency, body, currency in _COUNTRY_AGENCY_MAP:
+        countries.append(_country_card_row(product_slug, country, agency, body, currency))
+
+    return jsonify({
+        "product": product_slug,
+        "inn":     inn,
+        "query":   query,
+        "countries": countries,
+    })
 
 
 @app.get("/api/search/history")
@@ -1324,6 +2169,50 @@ def _is_japanese(text: str) -> bool:
     return False
 
 
+@app.get("/api/approval/full_text")
+def approval_full_text():
+    """GET /api/approval/full_text?product=keytruda
+
+    product slug 의 모든 적응증 × agency 조합에 대한 허가 원문 전문 반환.
+    대쉬보드 '허가 문구' 패널이 요약 대신 원문을 보여주기 위해 사용.
+    """
+    product = (request.args.get("product") or "").strip().lower()
+    if not product:
+        return jsonify({"error": "product 는 필수"}), 400
+    try:
+        rows: list[dict] = []
+        with db._connect() as conn:
+            for r in conn.execute(
+                "SELECT m.indication_id, m.disease, m.stage, m.line_of_therapy, "
+                "       m.biomarker_class, m.title, "
+                "       a.agency, a.approval_date, a.date_source, a.label_excerpt, a.label_full_text, "
+                "       a.label_url, a.biomarker_label, a.combination_label "
+                "FROM indications_master m "
+                "JOIN indications_by_agency a ON a.indication_id = m.indication_id "
+                "WHERE m.product = ? "
+                "ORDER BY (a.approval_date IS NULL), a.approval_date DESC, a.agency, m.disease",
+                (product,),
+            ):
+                d = dict(r)
+                if d.get("agency") == "PMDA":
+                    ft = d.get("label_full_text") or ""
+                    if _is_japanese(ft):
+                        d["label_full_text_original"] = ft
+                        d["label_full_text"] = _translate_ja_to_ko(ft)
+                    ex = d.get("label_excerpt") or ""
+                    if _is_japanese(ex):
+                        d["label_excerpt_original"] = ex
+                        d["label_excerpt"] = _translate_ja_to_ko(ex)
+                rows.append(d)
+        by_agency: dict[str, list[dict]] = {}
+        for row in rows:
+            by_agency.setdefault(row["agency"], []).append(row)
+        return jsonify({"product": product, "by_agency": by_agency})
+    except Exception as e:
+        logger.error("Approval full_text 조회 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @app.get("/api/approval/detail")
 def approval_detail():
     """GET /api/approval/detail?id=keytruda_nsclc_1l_metastatic_chemo"""
@@ -1355,6 +2244,10 @@ def approval_detail():
                 if _is_japanese(excerpt):
                     a["label_excerpt_original"] = excerpt
                     a["label_excerpt"] = _translate_ja_to_ko(excerpt)
+                full_text = a.get("label_full_text") or ""
+                if _is_japanese(full_text):
+                    a["label_full_text_original"] = full_text
+                    a["label_full_text"] = _translate_ja_to_ko(full_text)
                 combo = a.get("combination_label") or ""
                 if _is_japanese(combo):
                     a["combination_label_original"] = combo
@@ -3472,6 +4365,244 @@ def admin_reimbursement_upsert(indication_id: str):
         return jsonify({"item": _reimbursement_row_to_dict(row)})
     except Exception as e:
         logger.error("reimbursement_upsert 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 허가문서 (PDF) 업로드 — 5국 (EMA/MHRA/PMDA/TGA/MFDS) 수동 보강
+# (FDA 자동 sync 는 /api/admin/fda-sync, indication grid 는 /api/admin/indication-grid)
+# ──────────────────────────────────────────────────────────────────────────────
+
+UPLOAD_DIR = BASE_DIR / "data" / "uploads" / "approval_pdf"
+
+
+@app.get("/api/admin/indication-grid")
+@require_auth(role="admin")
+def admin_indication_grid():
+    """product 별 적응증 × 6국 agency grid. UI 매트릭스 데이터.
+
+    GET /api/admin/indication-grid?product=keytruda
+    응답: {product, indications: [{indication_id, title, agencies: {FDA: {...}, EMA: {...}, ...}}]}
+    """
+    product = (request.args.get("product") or "").strip().lower()
+    if not product:
+        return jsonify({"error": "product 파라미터 필요"}), 400
+    try:
+        indications = db.get_approval_grid(product)
+        return jsonify({"product": product, "indications": indications})
+    except Exception as e:
+        logger.error("indication_grid 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/admin/approval-document")
+@require_auth(role="admin")
+def admin_approval_document_upload():
+    """PDF 업로드 + indications_by_agency 병행 갱신.
+
+    multipart/form-data:
+      file: PDF
+      indication_id: indications_master 의 PK
+      agency: FDA / EMA / MHRA / PMDA / TGA / MFDS
+      approval_date: YYYY-MM-DD (선택)
+      label_excerpt: 적응증 본문 발췌 (선택)
+      label_url: 원본 사이트 URL (선택)
+      notes: 자유 메모 (선택)
+    """
+    if "file" not in request.files:
+        return jsonify({"error": "file 필드 누락", "code": "NO_FILE"}), 400
+    file = request.files["file"]
+    if not file.filename:
+        return jsonify({"error": "filename 누락", "code": "NO_NAME"}), 400
+    if not file.filename.lower().endswith(".pdf"):
+        return jsonify({"error": "PDF 만 허용", "code": "BAD_EXT"}), 400
+
+    indication_id = (request.form.get("indication_id") or "").strip()
+    agency = (request.form.get("agency") or "").strip().upper()
+    if not indication_id or not agency:
+        return jsonify({"error": "indication_id + agency 필요", "code": "MISSING_FIELDS"}), 400
+    valid_agencies = {"FDA", "EMA", "MHRA", "PMDA", "TGA", "MFDS"}
+    if agency not in valid_agencies:
+        return jsonify({"error": f"agency 는 {sorted(valid_agencies)} 중 하나",
+                        "code": "BAD_AGENCY"}), 400
+
+    # indications_master row 존재 검증
+    with db._connect() as conn:
+        if not conn.execute(
+            "SELECT 1 FROM indications_master WHERE indication_id = ?",
+            (indication_id,),
+        ).fetchone():
+            return jsonify({"error": "indication_id not found",
+                            "code": "NOT_FOUND"}), 404
+
+    approval_date = (request.form.get("approval_date") or "").strip() or None
+    label_excerpt = (request.form.get("label_excerpt") or "").strip() or None
+    label_url = (request.form.get("label_url") or "").strip() or None
+    notes = (request.form.get("notes") or "").strip() or None
+    user_email = getattr(request, "user", {}).get("sub") if hasattr(request, "user") else None
+
+    # 파일 저장 — 영구 보존, 캐시 디렉토리 분리
+    target_dir = UPLOAD_DIR / agency
+    target_dir.mkdir(parents=True, exist_ok=True)
+    from datetime import datetime as _dt
+    ts = _dt.now().strftime("%Y%m%d-%H%M%S")
+    safe_indication = re.sub(r"[^a-zA-Z0-9_]+", "_", indication_id)[:80]
+    target = target_dir / f"{safe_indication}_{agency}_{ts}.pdf"
+    try:
+        file.save(str(target))
+        size = target.stat().st_size
+    except Exception as e:
+        logger.error("PDF 저장 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e), "code": "SAVE_FAIL"}), 500
+
+    # DB 등록
+    try:
+        rec = {
+            "indication_id":     indication_id,
+            "agency":            agency,
+            "file_path":         str(target.relative_to(BASE_DIR)),
+            "original_filename": file.filename,
+            "file_size":         size,
+            "content_type":      file.content_type or "application/pdf",
+            "approval_date":     approval_date,
+            "label_excerpt":     label_excerpt,
+            "label_url":         label_url,
+            "notes":             notes,
+            "uploaded_by":       user_email,
+        }
+        doc_id = db.insert_approval_document(rec)
+
+        # indications_by_agency 동시 갱신 — label_url 에 우리 PDF 경로, approval_date 보존
+        from datetime import datetime as _dt2
+        with db._connect() as conn:
+            existing = conn.execute(
+                "SELECT label_excerpt, label_url, approval_date "
+                "FROM indications_by_agency "
+                "WHERE indication_id = ? AND agency = ?",
+                (indication_id, agency),
+            ).fetchone()
+            new_label_url = f"/api/admin/approval-document/{doc_id}/file"
+            new_approval = approval_date or (existing[2] if existing else None)
+            new_excerpt = label_excerpt or (existing[0] if existing else None)
+            conn.execute(
+                """
+                INSERT INTO indications_by_agency
+                    (indication_id, agency, biomarker_label, combination_label,
+                     approval_date, label_excerpt, label_full_text, label_url,
+                     restriction_note, raw_source, fetched_at)
+                VALUES (?, ?, NULL, NULL, ?, ?, NULL, ?, NULL,
+                        json_object('source','admin_pdf_upload','doc_id',?), ?)
+                ON CONFLICT(indication_id, agency) DO UPDATE SET
+                    approval_date = COALESCE(excluded.approval_date, indications_by_agency.approval_date),
+                    label_excerpt = COALESCE(excluded.label_excerpt, indications_by_agency.label_excerpt),
+                    label_url     = excluded.label_url,
+                    fetched_at    = excluded.fetched_at
+                """,
+                (indication_id, agency, new_approval, new_excerpt, new_label_url,
+                 doc_id, _dt2.now().isoformat(timespec="seconds")),
+            )
+            conn.commit()
+
+        return jsonify({"ok": True, "doc_id": doc_id, "file_path": rec["file_path"]})
+    except Exception as e:
+        # 파일은 남기되 DB 실패는 알림
+        logger.error("approval_document insert 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e), "code": "DB_FAIL"}), 500
+
+
+@app.get("/api/admin/approval-document")
+@require_auth(role="admin")
+def admin_approval_document_list():
+    """업로드된 PDF 메타 리스트.
+    GET /api/admin/approval-document?indication_id=X / agency=X / product=X
+    """
+    indication_id = (request.args.get("indication_id") or "").strip() or None
+    agency = (request.args.get("agency") or "").strip().upper() or None
+    product = (request.args.get("product") or "").strip().lower() or None
+    try:
+        items = db.list_approval_documents(indication_id, agency, product)
+        return jsonify({"items": items})
+    except Exception as e:
+        logger.error("approval_document_list 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/admin/approval-document/<int:doc_id>/file")
+def admin_approval_document_file(doc_id: int):
+    """업로드된 PDF 다운로드/표시. 인증 무관 (임베드 view 위해).
+
+    UI 의 iframe / link 에서 직접 호출 가능.
+    """
+    doc = db.get_approval_document(doc_id)
+    if not doc:
+        return jsonify({"error": "not found"}), 404
+    p = BASE_DIR / doc["file_path"]
+    if not p.exists():
+        return jsonify({"error": "file missing on disk", "expected": str(p)}), 404
+    from flask import send_file as _send_file
+    return _send_file(
+        str(p),
+        mimetype=doc.get("content_type") or "application/pdf",
+        as_attachment=False,
+        download_name=doc.get("original_filename") or p.name,
+    )
+
+
+@app.delete("/api/admin/approval-document/<int:doc_id>")
+@require_auth(role="admin")
+def admin_approval_document_delete(doc_id: int):
+    """row + file 삭제."""
+    file_path = db.delete_approval_document(doc_id)
+    if file_path is None:
+        return jsonify({"error": "not found"}), 404
+    p = BASE_DIR / file_path
+    try:
+        if p.exists():
+            p.unlink()
+    except OSError as e:
+        logger.warning("PDF unlink 실패 (DB row 는 이미 삭제됨): %s", e)
+    return jsonify({"ok": True, "deleted_id": doc_id})
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# FDA 자동 sync — admin 트리거 (LLM/스크레이퍼 기반 build)
+# ──────────────────────────────────────────────────────────────────────────────
+
+@app.post("/api/admin/fda-sync")
+@require_auth(role="admin")
+def admin_fda_sync():
+    """FDA 적응증 자동 build (ForeignApprovalAgent.build 의 FDA agency 만).
+
+    body:
+      {drug: 'pembrolizumab', product_slug: 'keytruda', wipe: false}
+    """
+    body = request.get_json(silent=True) or {}
+    drug = (body.get("drug") or "").strip()
+    product_slug = (body.get("product_slug") or "").strip().lower()
+    wipe = bool(body.get("wipe", False))
+    if not drug or not product_slug:
+        return jsonify({"error": "drug + product_slug 필요"}), 400
+
+    try:
+        from agents.foreign_approval import ForeignApprovalAgent
+        agent = ForeignApprovalAgent(db_path=db.db_path)
+        summary = agent.build(
+            drug=drug,
+            product_slug=product_slug,
+            brand_slug=product_slug,
+            agencies=["FDA"],
+            wipe=wipe,
+        )
+        # AgencyBuildResult dataclass 를 dict 화
+        result = {
+            "product_slug": product_slug,
+            "drug":         drug,
+            "agencies":     [{"agency": a.agency, "ok": a.ok, "skipped": a.skipped,
+                              "errors": a.errors} for a in summary.agencies],
+        }
+        return jsonify(result)
+    except Exception as e:
+        logger.error("fda_sync 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell,
 } from 'recharts';
+import CountryCardGrid from './components/CountryCardGrid';
 import {
   fetchForeignDrugList,
   fetchForeignDrugDetail,
@@ -47,16 +48,15 @@ const HTA_COUNTRIES = [
 ].sort((a, b) => a.label.localeCompare(b.label, 'ko'));
 
 const ALL_APPROVAL_COUNTRIES = [
-  { key: 'germany', label: '독일', flag: '🇩🇪' },
+  { key: 'korea', label: '한국', flag: '🇰🇷' },
   { key: 'usa', label: '미국', flag: '🇺🇸' },
   { key: 'uk', label: '영국', flag: '🇬🇧' },
-  { key: 'italy', label: '이탈리아', flag: '🇮🇹' },
+  { key: 'eu', label: 'EU (독일·프랑스·이탈리아)', flag: '🇪🇺' },
   { key: 'japan', label: '일본', flag: '🇯🇵' },
   { key: 'scotland', label: '스코틀랜드', flag: '🏴󠁧󠁢󠁳󠁣󠁴󠁿' },
   { key: 'switzerland', label: '스위스', flag: '🇨🇭' },
   { key: 'australia', label: '호주', flag: '🇦🇺' },
   { key: 'canada', label: '캐나다', flag: '🇨🇦' },
-  { key: 'france', label: '프랑스', flag: '🇫🇷' },
 ].sort((a, b) => a.label.localeCompare(b.label, 'ko'));
 
 const getCurrencySymbol = (currency: string) => {
@@ -85,12 +85,21 @@ export default function InternationalPricingPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'pricing' | 'hta' | 'approval'>('pricing');
+  const [activeTab, setActiveTab] = useState<'country' | 'pricing' | 'hta' | 'approval'>('country');
   const [expandedHta, setExpandedHta] = useState<string | null>(null);
   const [expandedApproval, setExpandedApproval] = useState<string | null>(null);
+  const [expandedIndications, setExpandedIndications] = useState<Set<string>>(new Set());
+  const toggleIndicationBlock = (key: string) => {
+    setExpandedIndications(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
   const [deleteTarget, setDeleteTarget] = useState<ForeignDrugListItem | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [formFilter, setFormFilter] = useState<FormFilter>('all');
+  const [refreshingId, setRefreshingId] = useState<string | null>(null);
 
   const resolvePricing = (countryKey: string): A8Pricing | undefined => {
     if (!selectedDrug) return undefined;
@@ -143,9 +152,12 @@ export default function InternationalPricingPage() {
     for (const c of A8_COUNTRIES) {
       const p = resolvePricing(c.key);
       if (!p) { rows.push(['A8 가격', c.label, '가격', '정보 없음']); continue; }
-      rows.push(['A8 가격', c.label, `가격(${p.currency})`, p.price.toLocaleString()]);
+      rows.push(['A8 가격', c.label, `현지가(${p.currency})`, p.price.toLocaleString()]);
       rows.push(['A8 가격', c.label, '제형', FORM_TYPE_LABEL[p.formType] ?? p.formType]);
       if (p.krwConverted != null) rows.push(['A8 가격', c.label, 'KRW 환산', p.krwConverted.toLocaleString()]);
+      if (p.adjustedPriceKrw != null) rows.push(['A8 가격', c.label, 'A8 조정가(per unit)', p.adjustedPriceKrw.toLocaleString()]);
+      if (p.dailyCostKrw != null) rows.push(['A8 가격', c.label, '일일 투약비용', p.dailyCostKrw.toLocaleString()]);
+      if (p.dosingScheduleLabel) rows.push(['A8 가격', c.label, '용법용량', p.dosingScheduleLabel]);
       rows.push(['A8 가격', c.label, '급여', p.reimbursed ? 'O' : 'X']);
       if (p.sourceLabel) rows.push(['A8 가격', c.label, '출처', p.sourceLabel]);
     }
@@ -177,16 +189,22 @@ export default function InternationalPricingPage() {
 
   useEffect(() => { void loadHistory(); }, []);
 
-  // KRW 조정가 국가간 비교 (HIRA 방식) — 필터 반영
-  const adjustedChartData = useMemo(() => {
+  // 일일 투약비용 국가간 비교 (용법용량 기준) — 필터 반영
+  const dailyCostChartData = useMemo(() => {
     if (!selectedDrug) return [];
     const rows = A8_COUNTRIES
       .map(c => {
         const p = resolvePricing(c.key);
-        if (!p || p.adjustedPriceKrw == null) return null;
-        return { key: c.key, label: `${c.flag} ${c.label}`, krw: Math.round(p.adjustedPriceKrw) };
+        if (!p || p.dailyCostKrw == null) return null;
+        return {
+          key: c.key,
+          label: `${c.flag} ${c.label}`,
+          krw: Math.round(p.dailyCostKrw),
+          schedule: p.dosingScheduleLabel || '',
+          dailyDoseMg: p.dailyDoseMg ?? null,
+        };
       })
-      .filter((r): r is { key: string; label: string; krw: number } => r !== null);
+      .filter((r): r is { key: string; label: string; krw: number; schedule: string; dailyDoseMg: number | null } => r !== null);
     rows.sort((a, b) => b.krw - a.krw);
     return rows;
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -237,6 +255,23 @@ export default function InternationalPricingPage() {
       setDetailError(msg);
     } finally {
       setLiveSearching(false);
+    }
+  };
+
+  const handleRefresh = async (queryName: string) => {
+    setRefreshingId(queryName);
+    setDetailError(null);
+    try {
+      // use_cache=false로 강제 재검색 + 최신 데이터 로드
+      const detail = await fetchForeignDrugDetail(queryName, false);
+      setSelectedDrug(detail);
+      // 이력도 새로고침 (최신 검색 시간 반영)
+      await loadHistory();
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : '재검색 실패';
+      setDetailError(msg);
+    } finally {
+      setRefreshingId(null);
     }
   };
 
@@ -316,13 +351,23 @@ export default function InternationalPricingPage() {
                       <span className="w-3.5 h-3.5 flex items-center justify-center text-[#4A5568]"><i className="ri-calendar-line text-xs"></i></span>
                       <span className="text-[#4A5568] text-xs">{drug.lastSearchedAt}</span>
                     </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setDeleteTarget(drug); }}
-                      title="검색 이력 삭제"
-                      className="pointer-events-auto w-6 h-6 flex items-center justify-center rounded-md text-[#4A5568] hover:text-red-400 hover:bg-red-400/10 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
-                    >
-                      <i className="ri-delete-bin-line text-sm"></i>
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); void handleRefresh(drug.queryName); }}
+                        disabled={refreshingId === drug.queryName}
+                        title={refreshingId === drug.queryName ? '재검색 중...' : '실시간 재검색 (최신 약가 조회)'}
+                        className="pointer-events-auto w-6 h-6 flex items-center justify-center rounded-md text-[#4A5568] hover:text-[#00E5CC] hover:bg-[#00E5CC]/10 opacity-0 group-hover:opacity-100 transition-all cursor-pointer disabled:opacity-100 disabled:text-[#00E5CC] disabled:cursor-wait"
+                      >
+                        <i className={`ri-refresh-line text-sm ${refreshingId === drug.queryName ? 'animate-spin' : ''}`}></i>
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setDeleteTarget(drug); }}
+                        title="검색 이력 삭제"
+                        className="pointer-events-auto w-6 h-6 flex items-center justify-center rounded-md text-[#4A5568] hover:text-red-400 hover:bg-red-400/10 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+                      >
+                        <i className="ri-delete-bin-line text-sm"></i>
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -500,13 +545,14 @@ export default function InternationalPricingPage() {
                 </div>
                 <div className="flex items-center gap-1 bg-[#0D1117] border border-[#1E2530] rounded-xl p-1">
                   {[
+                    { key: 'country', label: '국가별 통합', icon: 'ri-global-line' },
                     { key: 'pricing', label: 'A8 급여약가', icon: 'ri-money-dollar-circle-line' },
                     { key: 'hta', label: 'HTA 현황', icon: 'ri-shield-check-line' },
                     { key: 'approval', label: '허가 현황', icon: 'ri-file-check-line' },
                   ].map(tab => (
                     <button
                       key={tab.key}
-                      onClick={() => setActiveTab(tab.key as 'pricing' | 'hta' | 'approval')}
+                      onClick={() => setActiveTab(tab.key as 'country' | 'pricing' | 'hta' | 'approval')}
                       className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium cursor-pointer transition-all whitespace-nowrap ${
                         activeTab === tab.key ? 'bg-[#00E5CC] text-[#0A0E1A]' : 'text-[#8B9BB4] hover:text-white'
                       }`}
@@ -518,6 +564,11 @@ export default function InternationalPricingPage() {
                 </div>
               </div>
             </div>
+
+            {/* ── 국가별 통합 (CountryCardGrid) ── */}
+            {activeTab === 'country' && (
+              <CountryCardGrid query={selectedDrug.productName || newSearchQuery} />
+            )}
 
             {/* ── A8 Pricing Tab ── */}
             {activeTab === 'pricing' && (
@@ -563,35 +614,62 @@ export default function InternationalPricingPage() {
                         </div>
                         {pricing ? (
                           <>
-                            <div className="flex items-center gap-1.5 mb-0.5">
-                              <p className="text-white text-sm font-semibold">
-                                {getCurrencySymbol(country.currency)}{pricing.price.toLocaleString()}
-                              </p>
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                                pricing.formType === 'oral'
-                                  ? 'bg-[#7C3AED]/10 text-[#B794F6] border border-[#7C3AED]/30'
-                                  : pricing.formType === 'injection'
-                                    ? 'bg-[#00E5CC]/10 text-[#00E5CC] border border-[#00E5CC]/30'
-                                    : 'bg-[#4A5568]/20 text-[#8B9BB4] border border-[#4A5568]/30'
-                              }`}>
-                                {FORM_TYPE_LABEL[pricing.formType] ?? pricing.formType}
-                              </span>
-                            </div>
-                            {pricing.krwConverted != null && (
-                              <p className="text-[#4A5568] text-xs mb-2">환산 ₩{pricing.krwConverted.toLocaleString()}</p>
-                            )}
-                            {pricing.adjustedPriceKrw != null ? (
-                              <div className="pt-2 border-t border-[#1E2530]">
-                                <p className="text-[#4A5568] text-[10px] uppercase tracking-wider mb-0.5">HIRA 조정가</p>
-                                <p className="text-[#00E5CC] text-base font-bold">
-                                  ₩{pricing.adjustedPriceKrw.toLocaleString()}
-                                </p>
+                            {/* 1순위: 일일 투약비용 (국가간 비교 기준) */}
+                            {pricing.dailyCostKrw != null ? (
+                              <div className="mb-2">
+                                <p className="text-[#4A5568] text-[10px] uppercase tracking-wider mb-0.5">일일 투약비용</p>
+                                <div className="flex items-baseline gap-1.5">
+                                  <p className="text-[#00E5CC] text-lg font-bold leading-tight">
+                                    ₩{pricing.dailyCostKrw.toLocaleString()}
+                                  </p>
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                                    pricing.formType === 'oral'
+                                      ? 'bg-[#7C3AED]/10 text-[#B794F6] border border-[#7C3AED]/30'
+                                      : pricing.formType === 'injection'
+                                        ? 'bg-[#00E5CC]/10 text-[#00E5CC] border border-[#00E5CC]/30'
+                                        : 'bg-[#4A5568]/20 text-[#8B9BB4] border border-[#4A5568]/30'
+                                  }`}>
+                                    {FORM_TYPE_LABEL[pricing.formType] ?? pricing.formType}
+                                  </span>
+                                </div>
+                                {pricing.dosingScheduleLabel && (
+                                  <p className="text-[#4A5568] text-[10px] mt-0.5">{pricing.dosingScheduleLabel}</p>
+                                )}
                               </div>
                             ) : (
-                              <div className="pt-2 border-t border-[#1E2530]">
-                                <p className="text-[#4A5568] text-[10px]">조정가 산출 불가</p>
+                              <div className="mb-2">
+                                <p className="text-[#4A5568] text-[10px] uppercase tracking-wider mb-0.5">일일 투약비용</p>
+                                <p className="text-[#4A5568] text-sm">산출 불가</p>
+                                <p className="text-[#4A5568] text-[10px] mt-0.5">용법용량/함량 정보 부족</p>
                               </div>
                             )}
+
+                            {/* 2순위: 패키지 가격 (원가·조정가) — 참고용 */}
+                            <div className="pt-2 border-t border-[#1E2530] space-y-0.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[#4A5568] text-[10px]">
+                                  현지가{pricing.packCount && pricing.packCount > 1 ? ` (pack ${pricing.packCount})` : ' (per unit)'}
+                                </span>
+                                <span className="text-white text-xs">
+                                  {getCurrencySymbol(country.currency)}{pricing.price.toLocaleString()}
+                                </span>
+                              </div>
+                              {pricing.packCount && pricing.packCount > 1 && pricing.perUnitLocal != null && (
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-[#4A5568] text-[10px]">단가 (per unit)</span>
+                                  <span className="text-[#8B9BB4] text-xs">
+                                    {getCurrencySymbol(country.currency)}{pricing.perUnitLocal.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                  </span>
+                                </div>
+                              )}
+                              {pricing.adjustedPriceKrw != null && (
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-[#4A5568] text-[10px]">A8 조정가 (per unit)</span>
+                                  <span className="text-[#8B9BB4] text-xs">₩{pricing.adjustedPriceKrw.toLocaleString()}</span>
+                                </div>
+                              )}
+                            </div>
+
                             {pricing.sourceLabel && (
                               <p className="text-[#8B9BB4] text-xs mt-2 truncate" title={pricing.sourceLabel}>
                                 출처: {pricing.sourceLabel}
@@ -599,7 +677,23 @@ export default function InternationalPricingPage() {
                             )}
                           </>
                         ) : (
-                          <p className="text-[#4A5568] text-sm">정보 없음</p>
+                          (() => {
+                            const note = selectedDrug.coverageNotes?.[country.key];
+                            if (note) {
+                              return (
+                                <div>
+                                  <p className="text-[#4A5568] text-sm">가격 비공개</p>
+                                  <p className="text-amber-300 text-[10px] mt-1 leading-snug" title={note.policy}>
+                                    {note.policy}
+                                  </p>
+                                  {note.sourceHint && (
+                                    <p className="text-[#4A5568] text-[10px] mt-0.5">↪ {note.sourceHint}</p>
+                                  )}
+                                </div>
+                              );
+                            }
+                            return <p className="text-[#4A5568] text-sm">정보 없음</p>;
+                          })()
                         )}
                       </div>
                     );
@@ -607,17 +701,20 @@ export default function InternationalPricingPage() {
                 </div>
               </div>
 
-              {/* KRW 조정가 국가 비교 */}
-              {adjustedChartData.length > 0 && (
+              {/* 일일 투약비용 국가 비교 */}
+              {dailyCostChartData.length > 0 && (
                 <div className="bg-[#161B27] rounded-2xl border border-[#1E2530] overflow-hidden">
                   <div className="px-5 py-4 border-b border-[#1E2530]">
-                    <h3 className="text-white font-bold text-sm">KRW 조정가 국가 비교 (HIRA 방식)</h3>
-                    <p className="text-[#4A5568] text-xs mt-0.5">공장도비율 · VAT · 유통마진 반영 · 높은 순 정렬 · 최대/최소 강조</p>
+                    <h3 className="text-white font-bold text-sm">일일 투약비용 국가 비교 (KRW 조정가 기반)</h3>
+                    <p className="text-[#4A5568] text-xs mt-0.5">
+                      용법용량 기준 · 제형 필터 연동: <span className="text-[#00E5CC]">{FORM_FILTER_OPTIONS.find(o => o.key === formFilter)?.label}</span>
+                      {dailyCostChartData[0]?.schedule && <> · {dailyCostChartData[0].schedule}</>}
+                    </p>
                   </div>
                   <div className="p-5">
-                    <ResponsiveContainer width="100%" height={Math.max(200, adjustedChartData.length * 44)}>
+                    <ResponsiveContainer width="100%" height={Math.max(200, dailyCostChartData.length * 44)}>
                       <BarChart
-                        data={adjustedChartData}
+                        data={dailyCostChartData}
                         layout="vertical"
                         margin={{ top: 5, right: 40, left: 20, bottom: 5 }}
                       >
@@ -640,12 +737,12 @@ export default function InternationalPricingPage() {
                         <Tooltip
                           contentStyle={{ backgroundColor: '#0D1117', border: '1px solid #2A3545', borderRadius: '0.5rem', fontSize: 12 }}
                           cursor={{ fill: 'rgba(0, 229, 204, 0.05)' }}
-                          formatter={(v: number) => [`₩${v.toLocaleString()}`, 'KRW 조정가']}
+                          formatter={(v: number) => [`₩${v.toLocaleString()}`, '일일 투약비용']}
                         />
                         <Bar dataKey="krw" radius={[0, 6, 6, 0]} label={{ position: 'right', fill: '#E5E7EB', fontSize: 11, formatter: (v: number) => `₩${v.toLocaleString()}` }}>
-                          {adjustedChartData.map((row, i) => {
-                            const max = adjustedChartData[0].krw;
-                            const min = adjustedChartData[adjustedChartData.length - 1].krw;
+                          {dailyCostChartData.map((row, i) => {
+                            const max = dailyCostChartData[0].krw;
+                            const min = dailyCostChartData[dailyCostChartData.length - 1].krw;
                             const color = row.krw === max ? '#00E5CC' : row.krw === min ? '#F59E0B' : '#4A5568';
                             return <Cell key={`cell-${i}`} fill={color} />;
                           })}
@@ -654,9 +751,9 @@ export default function InternationalPricingPage() {
                     </ResponsiveContainer>
                   </div>
                   <div className="px-5 pb-5 text-[11px] leading-relaxed text-[#8B9BB4] space-y-1 border-t border-[#1E2530] pt-3">
-                    <div><span className="text-white font-semibold">산출 공식:</span> 현지약가 × 공장도비율 = 공장도가 → × 환율 = 공장도가(KRW) → × (1+VAT) → × (1+유통마진) = <span className="text-[#00E5CC] font-semibold">조정가</span></div>
-                    <div><span className="text-white font-semibold">공장도비율:</span> US 0.74 · UK 0.73 · JP 0.79 · FR 0.77 · IT (AIFA Ex-factory 직접) · CH 0.73 · DE 특수공식</div>
-                    <div><span className="text-white font-semibold">환율:</span> KEB하나은행 매매기준율 36개월 평균 · <span className="text-white font-semibold">유통거래폭:</span> 0% (A8 규정상 미적용)</div>
+                    <div><span className="text-white font-semibold">산출 공식:</span> (용법용량 mg ÷ 주기일수) × (KRW 조정가 ÷ 제형 함량 mg) = <span className="text-[#00E5CC] font-semibold">일일 투약비용</span></div>
+                    <div><span className="text-white font-semibold">조정가:</span> 현지약가 × 공장도비율 × 환율 × (1+VAT) × (1+유통마진) — A8 HIRA 방식</div>
+                    <div><span className="text-white font-semibold">주의:</span> 용법용량은 <code>foreign_drug_dosing</code> 테이블에서 성분별로 관리. 데이터 없는 성분은 제외됨.</div>
                   </div>
                 </div>
               )}
@@ -743,8 +840,8 @@ export default function InternationalPricingPage() {
             {activeTab === 'approval' && (
               <div className="space-y-3">
                 <div className="bg-[#161B27] rounded-2xl border border-[#1E2530] px-5 py-3">
-                  <h3 className="text-white font-bold text-sm">제외국 허가 현황</h3>
-                  <p className="text-[#4A5568] text-xs mt-0.5">FDA · EMA · PMDA · MHRA · TGA 매트릭스 기반 · 캐나다/스위스 데이터 소스 미구현</p>
+                  <h3 className="text-white font-bold text-sm">국내·제외국 허가 현황</h3>
+                  <p className="text-[#4A5568] text-xs mt-0.5">MFDS · FDA · EMA · PMDA · MHRA · TGA 기관 단위 · EU centralized (DE/FR/IT 공통) · 캐나다/스위스 데이터 소스 미구현</p>
                 </div>
                 {ALL_APPROVAL_COUNTRIES.map(country => {
                   const approval = selectedDrug.approvalStatus[country.key];
@@ -767,6 +864,12 @@ export default function InternationalPricingPage() {
                               <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-400/10 text-emerald-400 border border-emerald-400/20 font-semibold">허가</span>
                             ) : (
                               <span className="text-xs px-2 py-0.5 rounded-full bg-red-400/10 text-red-400 border border-red-400/20 font-semibold">미허가</span>
+                            )}
+                            {isApproved && approval?.dateSource === 'official' && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-400/10 text-sky-300 border border-sky-400/20 font-semibold" title="기관 고시 기준 공식 승인일">공식일</span>
+                            )}
+                            {isApproved && approval?.dateSource === 'unverified' && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-400/10 text-amber-300 border border-amber-400/20 font-semibold" title="식약처 변경이력 대조 전 추정값">추정일</span>
                             )}
                           </div>
                           {isApproved && approval ? (
@@ -792,11 +895,107 @@ export default function InternationalPricingPage() {
                       {isExpanded && approval?.fullIndication && (
                         <div className="px-5 pb-5 border-t border-[#1E2530]">
                           <div className="mt-4 bg-[#0D1117] rounded-xl p-4 border border-[#1E2530]">
-                            <div className="flex items-center gap-2 mb-3">
-                              <span className="w-4 h-4 flex items-center justify-center text-[#00E5CC]"><i className="ri-file-check-line text-xs"></i></span>
-                              <p className="text-[#00E5CC] text-xs font-semibold uppercase tracking-wider">Approved Indications Summary</p>
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center gap-2">
+                                <span className="w-4 h-4 flex items-center justify-center text-[#00E5CC]"><i className="ri-file-check-line text-xs"></i></span>
+                                <p className="text-[#00E5CC] text-xs font-semibold uppercase tracking-wider">허가 원문 (Full Label Text) · 승인일 최신순</p>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <button
+                                  onClick={() => {
+                                    const blocks = approval.indicationBlocks || [];
+                                    const keys = blocks.map((b, idx) => `${country.key}:${b.indicationId || idx}`);
+                                    const allOpen = keys.length > 0 && keys.every(k => expandedIndications.has(k));
+                                    setExpandedIndications(prev => {
+                                      const next = new Set(prev);
+                                      if (allOpen) keys.forEach(k => next.delete(k));
+                                      else keys.forEach(k => next.add(k));
+                                      return next;
+                                    });
+                                  }}
+                                  className="text-[#4A5568] hover:text-[#00E5CC] text-xs"
+                                  title="모든 적응증 펼치기/접기"
+                                >
+                                  <i className="ri-expand-up-down-line"></i> 전체
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard?.writeText(approval.fullIndication || '');
+                                  }}
+                                  className="text-[#4A5568] hover:text-[#00E5CC] text-xs"
+                                  title="원문 복사"
+                                >
+                                  <i className="ri-file-copy-line"></i> 복사
+                                </button>
+                              </div>
                             </div>
-                            <p className="text-[#8B9BB4] text-xs leading-relaxed">{approval.fullIndication}</p>
+                            <div className="max-h-[520px] overflow-y-auto space-y-2">
+                              {(approval.indicationBlocks && approval.indicationBlocks.length > 0) ? (
+                                approval.indicationBlocks.map((b, idx) => {
+                                  const blockKey = `${country.key}:${b.indicationId || idx}`;
+                                  const isBlockOpen = expandedIndications.has(blockKey);
+                                  return (
+                                    <div key={blockKey} className="rounded-lg border border-[#1E2530] bg-[#0A0E14]">
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleIndicationBlock(blockKey)}
+                                        className="w-full text-left px-3 py-2 hover:bg-[#161B27]/60 transition-colors"
+                                      >
+                                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                          <i className={`text-[11px] text-[#4A5568] ${isBlockOpen ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'}`}></i>
+                                          <span className="text-white text-xs font-semibold">{b.title}</span>
+                                          {b.approvalDate && (
+                                            <span className="text-[#00E5CC] text-[11px] font-semibold">{b.approvalDate}</span>
+                                          )}
+                                          {b.dateSource === 'official' && (
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-400/10 text-sky-300 border border-sky-400/20">공식일</span>
+                                          )}
+                                          {b.dateSource === 'unverified' && (
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-400/10 text-amber-300 border border-amber-400/20">추정일</span>
+                                          )}
+                                          {b.disease && (
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-400/10 text-purple-300 border border-purple-400/20" title="질환">{b.disease}</span>
+                                          )}
+                                          {b.stage && (
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-400/10 text-indigo-300 border border-indigo-400/20" title="병기">{b.stage}</span>
+                                          )}
+                                          {b.lineOfTherapy && (
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-400/10 text-blue-300 border border-blue-400/20" title="치료 라인">{b.lineOfTherapy}</span>
+                                          )}
+                                          {b.biomarkerClass && (
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-400/10 text-teal-300 border border-teal-400/20" title="바이오마커">{b.biomarkerClass}</span>
+                                          )}
+                                          {b.combinationLabel && (
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-400/10 text-rose-300 border border-rose-400/20" title="병용">+병용</span>
+                                          )}
+                                        </div>
+                                      </button>
+                                      {isBlockOpen && (
+                                        <div className="px-3 pb-3 border-t border-[#1E2530]">
+                                          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[#8B9BB4]">
+                                            {b.biomarkerLabel && <span>{b.biomarkerLabel}</span>}
+                                            {b.combinationLabel && <span>{b.combinationLabel}</span>}
+                                            {b.labelUrl && (
+                                              <a
+                                                href={b.labelUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-[#00E5CC] hover:underline inline-flex items-center gap-1"
+                                              >
+                                                <i className="ri-external-link-line"></i> 공식 라벨
+                                              </a>
+                                            )}
+                                          </div>
+                                          <pre className="mt-2 text-[#B0BCC9] text-xs leading-relaxed whitespace-pre-wrap font-sans">{b.body}</pre>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })
+                              ) : (
+                                <pre className="text-[#8B9BB4] text-xs leading-relaxed whitespace-pre-wrap font-sans">{approval.fullIndication}</pre>
+                              )}
+                            </div>
                           </div>
                         </div>
                       )}

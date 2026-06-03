@@ -1,0 +1,240 @@
+{
+  "main": {
+    "id": "ae196fa17fa955ef",
+    "type": "split",
+    "children": [
+      {
+        "id": "c25295850e9cd979",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "c53e773ff27fb1b2",
+            "type": "leaf",
+            "state": {
+              "type": "empty",
+              "state": {},
+              "icon": "lucide-file",
+              "title": "새 탭"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "860cdc60cdf4b64a",
+    "type": "split",
+    "children": [
+      {
+        "id": "b7f8dca62ffaca62",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "095aa00a1ea05131",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "파일 탐색기"
+            }
+          },
+          {
+            "id": "0dc0d9bc89591ad7",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "검색"
+            }
+          },
+          {
+            "id": "bc0f23981cd041e2",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "북마크"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "cc933d2f8955bb07",
+    "type": "split",
+    "children": [
+      {
+        "id": "d59bbc18f54b9667",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "0a1f5efcae932edf",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "data/hta_cache/EMA/januvia_pi.pdf",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "januvia_pi 의 백링크"
+            }
+          },
+          {
+            "id": "957a9099c7854c6c",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "data/hta_cache/EMA/januvia_pi.pdf",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "januvia_pi 의 나가는 링크"
+            }
+          },
+          {
+            "id": "de8bb660c67e5913",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "태그"
+            }
+          },
+          {
+            "id": "c72ce0431f972ad7",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "모든 속성"
+            }
+          },
+          {
+            "id": "625f43055999c52e",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "data/hta_cache/EMA/januvia_pi.pdf",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "januvia_pi 의 개요"
+            }
+          },
+          {
+            "id": "5390529d8ce2de7d",
+            "type": "leaf",
+            "state": {
+              "type": "git-view",
+              "state": {},
+              "icon": "git-pull-request",
+              "title": "Source Control"
+            }
+          }
+        ],
+        "currentTab": 5
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:빠른 전환기 열기": false,
+      "graph:그래프 뷰 열기": false,
+      "canvas:새 캔버스 만들기": false,
+      "daily-notes:오늘의 일일 노트 열기": false,
+      "templates:템플릿 삽입": false,
+      "command-palette:명령어 팔레트 열기": false,
+      "bases:새 베이스 생성하기": false,
+      "obsidian-excalidraw-plugin:New drawing": false,
+      "obsidian-git:Open Git source control": false,
+      "templater-obsidian:Templater": false
+    }
+  },
+  "active": "c53e773ff27fb1b2",
+  "lastOpenFiles": [
+    "data/dashboard_v2/node_modules/binary-extensions/readme.md",
+    "data/hira_pipeline/_backend_log/최종_검증_2026-05-30.md",
+    "data/hira_pipeline/_backend_log/launchd_setup_guide.md",
+    "data/hira_pipeline/보고서/D-2_사전_예측/2026-06-02_yakpyungwi-6_d_minus_2_v6.pdf",
+    "data/hira_pipeline/보고서/D-2_사전_예측/2026-06-02_yakpyungwi-6_d_minus_2_v6.md",
+    "data/hira_pipeline/_backend_log/data_reliability_log.md",
+    "data/hira_pipeline/_backend_log",
+    "data/hira_pipeline/HIRA_보도자료/2026-02-05_약평위_2차.md",
+    "data/hira_pipeline/HIRA_보도자료/2026-01-21_암질심_1차.md",
+    "data/hira_pipeline/HIRA_보도자료/2026-01-15_약평위_1차.md",
+    "data/hira_pipeline/HIRA_보도자료/2026-03-05_약평위_3차.md",
+    "data/hira_pipeline/보고서/D-2_사전_예측/2026-06-02_yakpyungwi-6_d_minus_2_v5.pdf",
+    "data/hira_pipeline/보고서/D-2_사전_예측/2026-06-02_yakpyungwi-6_d_minus_2_v5.md",
+    "data/hira_pipeline/예측_룰/audit_log.md",
+    "data/hira_pipeline/예측_룰/active/PR-004_약평위_재심의_재상정.md",
+    "data/hira_pipeline/예측_룰/active/PR-002_OS_진성_N차_도전.md",
+    "data/hira_pipeline/예측_룰/active/PR-001_정부_D-14_사무관_거명.md",
+    "data/hira_pipeline/예측_룰/active",
+    "data/hira_pipeline/예측_룰/README.md",
+    "data/hira_pipeline/예측_룰",
+    "data/hira_pipeline/보고서/D-2_사전_예측/2026-06-02_yakpyungwi-6_d_minus_2_v4.pdf",
+    "data/hira_pipeline/보고서/D-2_사전_예측/2026-06-02_yakpyungwi-6_d_minus_2_v4.md",
+    "data/hira_pipeline/보고서/D-2_사전_예측",
+    "data/hira_pipeline/보고서",
+    "data/hira_pipeline/통과_약물_archive/2025-2026_통과약물.md",
+    "data/hira_pipeline/통과_약물_archive",
+    "data/hira_pipeline/미통과_약물_관리/암질심_미설정.md",
+    "data/hira_pipeline/미통과_약물_관리/약평위_미진입_큐.md",
+    "data/hira_pipeline/미통과_약물_관리/약평위_재심의_부결.md",
+    "data/hira_pipeline/미통과_약물_관리",
+    "data/hira_pipeline/HIRA_보도자료/2026-04-15_암질심_4차.md",
+    "data/hira_pipeline/HIRA_보도자료/2026-04-02_약평위_4차.md",
+    "data/hira_pipeline/HIRA_보도자료/2026-05-07_약평위_5차.md",
+    "data/hira_pipeline/HIRA_보도자료/2026-05-27_암질심_5차.md",
+    "data/hira_pipeline/README.md",
+    "docs/PROJECT_OVERVIEW_FOR_TEAM.md",
+    "obsidian-code/node_modules/istanbul-reports/lib/html-spa/assets/sort-arrow-sprite.png",
+    "obsidian-code/node_modules/istanbul-reports/lib/html/assets/sort-arrow-sprite.png",
+    "obsidian-code/node_modules/istanbul-reports/lib/html/assets/favicon.png",
+    "obsidian-code/node_modules/@jest/reporters/assets/jest_logo.png",
+    "obsidian-code/Preview.png"
+  ]
+}

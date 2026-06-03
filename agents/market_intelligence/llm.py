@@ -16,6 +16,7 @@ from typing import Optional
 
 from .media import score_source
 from .rules_engine import BASE_DIR, MI_RULES_TEXT, enforce_rules, window_bounds
+from .skill_kb import build_kr_rule_context
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,7 @@ SYSTEM_PROMPT_MA = """
   "reason": "3~5문장 한국어 설명 (불확실하면 '추정:' 접두)",
   "evidence_summary": "가장 신뢰도 높은 매체의 핵심 보도 내용 요약 1~2문장",
   "confidence": "high | medium | low",
-  "references": [{"title": "...", "url": "...", "media": "...", "weight": 0.0}],
+  "references": [{"title": "...", "url": "...", "media": "...", "weight": 0.0, "published_at": "YYYY-MM-DD"}],
   "notes": "복합 기전 가능성 또는 추가 주의사항"
 }
 """
@@ -106,13 +107,31 @@ def openai_analyze(drug_ko: str, change_date: str,
             )
 
         delta_str = f"{delta_pct:+.2f}%" if delta_pct is not None else "미상"
+        # 변동일 ±6개월 윈도우 명시 — 입력 articles 는 이미 collect_news 가 윈도우 내 필터링하지만
+        # GPT 가 윈도우 밖 일반 시장 동향을 추가하지 않도록 명시적으로 제약한다.
+        _, _, wf_str, wt_str = window_bounds(change_date, months=6)
+
+        # KR-RULE 사실 base 동적 주입
+        kr_rule_ctx = build_kr_rule_context(drug_name=drug_ko, reason_hint=str(delta_pct))
 
         user_msg = (
+            f"{kr_rule_ctx}\n\n"
+            f"=== 분석 요청 ===\n"
             f"약제명: {drug_ko}\n"
-            f"가격 변동 시점: {change_date}\n"
-            f"가격 변동률: {delta_str}\n\n"
+            f"가격 변동 시점: **{change_date}**\n"
+            f"가격 변동률: {delta_str}\n"
+            f"**분석 윈도우**: {wf_str} ~ {wt_str} (이 기간 내 보도만 근거)\n\n"
             f"{mech_text}\n\n"
-            f"=== 수집된 한국 의약전문 뉴스 (가중치 정렬) ===\n{art_text}"
+            f"=== 수집된 의약전문 뉴스 (윈도우 내 · 가중치 정렬) ===\n{art_text}\n\n"
+            f"요구사항:\n"
+            f"1. 윈도우 밖 연도 일반 서술 금지\n"
+            f"2. 4대 기전 중 하나 분류 (indication_expansion / patent_expiration / volume_price / actual_transaction / unknown)\n"
+            f"3. references 의 published_at 유지\n"
+            f"4. **KR-RULE 번호 인용 의무** — reason 본문에 적용한 KR-RULE 번호 명시 (일반론 금지)\n"
+            f"5. **KR-RULE-009 단계 인식**: 특허 만료 첫 1년은 70% 산정률 (-30% 인하), Year 1 이후 53.55% (추가 -23.5% 인하)\n"
+            f"6. 동일 브랜드 다른 규격 동시 인하는 패밀리 패턴 — 가장 큰 규격 보도 기준\n"
+            f"7. PVA 134품목 일괄 처리는 행정 절차 — 약제 고유 기전 (KR-RULE-009 등) 우선\n"
+            f"8. 단독품목 (KR-RULE-007: Zerbaxa·Emend) 은 LOE 후에도 인하 미적용\n"
         )
 
         resp = client.chat.completions.create(
@@ -184,28 +203,48 @@ def perplexity_analyze(
         from openai import OpenAI
         client = OpenAI(api_key=pplx_key, base_url="https://api.perplexity.ai")
 
-        year       = change_date[:4]
         delta_str  = f"{delta_pct:+.2f}%" if delta_pct is not None else "미상"
         short_ing  = (ingredient_ko or drug_ko).split(",")[0].strip()
         brand_base = re.sub(r"(주|정|캡슐|액|주사|시럽)$", "", drug_ko).strip()
 
+        # 변동일 ±6개월 윈도우 — 초기 "연도 전체" 검색 대비 정확도 대폭 향상.
+        # 특허만료 ±12개월 은 enforce_rules 쪽에서 별도 처리 (references 필터).
+        _, _, wf_str, wt_str = window_bounds(change_date, months=6)
+
         if delta_pct is not None and abs(delta_pct) > 20:
-            hint = "변동폭이 크므로 적응증 확대 또는 특허 만료 가능성을 우선 검토하세요."
+            hint = "변동폭이 크므로 KR-RULE-009 (특허 만료 1단계 70% / Year 1+ 53.55%) 또는 적응증 확대를 우선 검토."
         elif delta_pct is not None and abs(delta_pct) <= 5:
-            hint = "소폭 인하이므로 실거래가 연동 약가인하 가능성을 우선 검토하세요."
+            hint = "소폭 인하 — 실거래가 연동 약가인하 우선 (KR-RULE-026 표 1.5%~5.0%)."
         else:
-            hint = "중간 수준 변동이므로 사용량-연동 약가인하 또는 적응증 확대를 검토하세요."
+            hint = "중간 수준 변동 — KR-RULE-025 사용량-약가 연동 또는 적응증 확대 검토."
+
+        # KR-RULE 사실 base 동적 주입 (drug + reason context 기반).
+        kr_rule_ctx = build_kr_rule_context(drug_name=drug_ko, reason_hint=hint)
 
         user_msg = (
-            f"다음 약제의 약가 변동 사유를 분석해주세요.\n\n"
+            f"{kr_rule_ctx}\n\n"
+            f"=== 분석 요청 ===\n"
             f"약제명: {drug_ko} (브랜드: {brand_base})\n"
             f"성분명: {short_ing}\n"
-            f"변동 시점: {change_date}\n"
+            f"변동 시점: **{change_date}** (이 날짜 전후 ±6개월 윈도우에 집중)\n"
             f"변동률: {delta_str}\n\n"
             f"분석 힌트: {hint}\n\n"
-            f"데일리팜, 약업신문, 메디파나뉴스, 히트뉴스, 보건복지부 보도자료에서 "
-            f"\"{brand_base}\" 또는 \"{short_ing}\" 관련 {year}년 약가 변동 기사를 "
-            f"검색하여 위 JSON 형식으로 답변하세요."
+            f"**검색 윈도우**: {wf_str} ~ {wt_str}\n"
+            f"**우선 매체**: 데일리팜·약업신문·메디파나뉴스·히트뉴스·보건복지부·HIRA·약평위 결정문\n\n"
+            f"요구사항:\n"
+            f"1. 윈도우 외 연도 일반 서술 금지\n"
+            f"2. references 의 published_at YYYY-MM-DD 명시\n"
+            f"3. **KR-RULE 번호 인용 의무** — reason 본문에 적용한 KR-RULE 번호(예: KR-RULE-009) 명시.\n"
+            f"   일반론 ('약평위에서 검토 가능' 같은 generic 표현) 금지.\n"
+            f"4. 4대 기전 중 하나 분류 (indication_expansion / patent_expiration / volume_price / actual_transaction / unknown)\n"
+            f"5. **단일 기전 단정형** — '복합 기전' '~과 결합' 양가 서술 금지\n"
+            f"6. **mechanism ↔ reason 일관성** — mechanism=patent_expiration 인데 reason 본문이 PVA 만 다루면 잘못\n"
+            f"7. **KR-RULE-009 단계별 인하 인식**:\n"
+            f"   - 첫 제네릭 등재 시점 ±3개월, 산정률 70% 도달 (-30% 인하) → patent_expiration **Year 1**\n"
+            f"   - 첫 제네릭 등재 1년 후 시점 ±3개월, 누적 산정률 53.55% 도달 (추가 -23.5% 인하) → patent_expiration **Year 1+**\n"
+            f"   - 1년 이상 지난 후 일반 PVA/실거래가 인하는 patent 아님 → volume_price/actual_transaction\n"
+            f"8. **단독품목 면제** (KR-RULE-007): Zerbaxa·Emend·기타 단독 공급 자산은 LOE 후에도 patent_expiration 인하 미적용\n\n"
+            f"\"{brand_base}\" 또는 \"{short_ing}\" 관련 {wf_str}~{wt_str} 기사 검색하여 위 JSON 형식 응답."
         )
 
         resp = client.chat.completions.create(
@@ -247,7 +286,7 @@ def perplexity_analyze(
                     ref["media"] = sc["media_name"]
 
         result["_source"] = "perplexity-sonar-pro"
-        result = enforce_rules(result, change_date)
+        result = enforce_rules(result, change_date, delta_pct=delta_pct)
 
         logger.info(
             "[MI Agent] Perplexity 분석 완료 — 기전: %s, 신뢰도: %s, refs: %d건",

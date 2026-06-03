@@ -1,0 +1,76 @@
+{
+  "updated_at": "2026-04-26T08:31:59.863479",
+  "markdown": "- **K-재생의료**: 보건복지부가 국내 1호 첨단재생의료 치료를 승인, 일본과의 기술 경쟁에서 우위를 점할 수 있는 기반 마련.\n- **AI 돌봄 플랫폼**: 보건복지부의 AI스마트홈 사업 참여로 돌봄 서비스의 디지털 전환이 가속화될 전망.\n- **건강보험료 추가 납부**: 직장가입자 62%가 보험료 추가 납부, 이는 향후 보험료 정책 및 재정 안정성에 영향을 미칠 수 있음.\n\n**함의**: 재생의료와 AI 기반 돌봄 서비스는 향후 시장 접근성을 높일 수 있으며, 건강보험료 변화는 제약사 및 의료 서비스 제공자의 재정 계획에 중요한 요소로 작용할 것임.",
+  "reviewers": [
+    "openai:gpt-4o-mini",
+    "gemini:gemini-2.5-flash"
+  ],
+  "sources": [
+    {
+      "title": "용인특례시 지역사회, 취약계층 위한 온정 나눔",
+      "url": "http://www.econonews.co.kr/news/articleView.html?idxno=436765",
+      "source": "econoco",
+      "date": "2026-04-26"
+    },
+    {
+      "title": "충남도-사회서비스원 맞손, '포용적 복지' 로드맵 구축",
+      "url": "https://www.newstnt.com/news/articleView.html?idxno=700132",
+      "source": "newstnt",
+      "date": "2026-04-26"
+    },
+    {
+      "title": "‘원정 치료’ 끝내고 ‘K-재생의료’ 서막…일본 넘보는 기술 주권",
+      "url": "https://biz.heraldcorp.com/article/10725403?ref=naver",
+      "source": "biz",
+      "date": "2026-04-26"
+    },
+    {
+      "title": "나주시, 전남 유일 소아 야간진료기관 선정…출산·아동복지 정책도 강...",
+      "url": "https://www.geconomy.co.kr/news/article.html?no=319850",
+      "source": "geconomy",
+      "date": "2026-04-26"
+    },
+    {
+      "title": "[AI혁명](196)NHN와플랫 \"AI 돌봄 플랫폼으로 살던 곳에서 노후를\"",
+      "url": "https://view.asiae.co.kr/article/2026042414415754470",
+      "source": "view",
+      "date": "2026-04-26"
+    },
+    {
+      "title": "[로또당첨번호 조회]1221회 로또복권 1등 당첨 지역 및 연금복권 720+ 당...",
+      "url": "http://www.economytalk.kr/news/articleView.html?idxno=420861",
+      "source": "economytalk",
+      "date": "2026-04-26"
+    },
+    {
+      "title": "\"술 안 마시는데?\" 2030 신장암 급증 원인 '지방간'",
+      "url": "https://www.kyeonggi.com/article/20260420580338",
+      "source": "kyeonggi",
+      "date": "2026-04-26"
+    },
+    {
+      "title": "삼성서울병원 유전자치료연구센터장 \"5년 내 유전자치료제 플랫폼 국산...",
+      "url": "https://www.news1.kr/bio/general/6147081",
+      "source": "news1",
+      "date": "2026-04-26"
+    },
+    {
+      "title": "늦었다고요? 60세 이후 ‘이것’만 바꿔도 치매 예방[일터 일침]",
+      "url": "https://www.sedaily.com/article/20036142?ref=naver",
+      "source": "sedaily",
+      "date": "2026-04-26"
+    },
+    {
+      "title": "원주시, 'AI 특화 시범도시' 공모 도전…민간 컨소시엄과 본격 준비",
+      "url": "https://www.shinailbo.co.kr/news/articleView.html?idxno=5014747",
+      "source": "shinailbo",
+      "date": "2026-04-26"
+    }
+  ],
+  "keywords": [
+    "보건복지부",
+    "건강보험심사평가원",
+    "건강보험공단",
+    "식품의약품안전처"
+  ]
+}

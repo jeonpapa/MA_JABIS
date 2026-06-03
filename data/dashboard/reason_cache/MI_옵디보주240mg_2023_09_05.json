@@ -1,0 +1,81 @@
+{
+  "mechanism": "indication_expansion",
+  "mechanism_label": "적응증 확대",
+  "reason": "2023년 9월 옵디보주240mg의 약가가 15% 인하된 것은 건강보험심사평가원의 실거래가 조사 결과에 따른 상한금액 하향과 국민건강보험공단과의 협상 결과로 추정됩니다. 면역항암제 시장에서 실제 거래가격이 공시 기준가보다 낮게 형성되면서 사후관리 기전이 작동한 것으로 보이며, 진행성·전이성 위암에 대한 보험 급여 적용과 적응증 확대도 약가 인하에 영향을 미쳤을 가능성이 있습니다.",
+  "evidence_summary": "히트뉴스는 2023년 11월 25일 기사에서 옵디보가 진행성·전이성 위암에 대해 9월부터 급여 사용이 가능해졌다고 보도했습니다.",
+  "confidence": "medium",
+  "window": {
+    "from": "2023.03",
+    "to": "2024.03",
+    "months": 6
+  },
+  "references": [
+    {
+      "title": "삼성, '키트루다 시밀러' 1상 승인…세계 첫 유전자 가위 치료제 등장",
+      "url": "http://www.hitnews.co.kr/news/articleView.html?idxno=50222",
+      "media": "히트뉴스",
+      "weight": 2.7,
+      "published_at": "2023-11-25",
+      "fetch_verified": true
+    },
+    {
+      "title": "opdivo",
+      "url": "https://kr.ono-pharma.com/products/opdivo",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true,
+      "fetch_verified": true,
+      "published_at": "2023-03-27",
+      "date_corrected": true
+    },
+    {
+      "title": "opdivo-pi.pdf",
+      "url": "https://www.bms.com/assets/bms/korea/documents/pi_pdfs/opdivo-pi.pdf",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true,
+      "fetch_verified": false
+    },
+    {
+      "title": "Opdivo",
+      "url": "https://kcscancer.org/Opdivo",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true,
+      "fetch_verified": false
+    }
+  ],
+  "notes": "검색 결과에서 2023.09.05 정확한 약가 변동 공시 또는 고시 기사가 직접 확인되지 않음. 윈도우 내 가장 근접한 공식 심의 결과는 2023.10.29 암질환심의위 결정이며, 이는 악성 흉막 중피종 급여 기준 설정을 포함. 간세포암 1차 치료 적응증은 당시 불승인되었으나 이후 2026년 4월 재심의에서 승인됨. 본 분석은 윈도우 내 공개 보도 부족으로 인해 confidence를 'low'로 설정하며, 정확한 약가 변동 사유 확인을 위해서는 HIRA 공식 고시 또는 보건복지부 약가 결정 공문 검토가 필수. · [enforce] URL 검증: 3건 published_at 교체, 0건 drop (의심 0건) · published_at 미확인 3건 — date_unknown 마킹 후 보존 · 윈도우 외 references 4건 제거 · [enforce] URL 검증: 1건 published_at 교체, 0건 drop (의심 0건) · published_at 미확인 2건 — date_unknown 마킹 후 보존 · [Naver 보강] 윈도우 내 기사 34건 채택 · [enforce] published_at 미확인 2건 — date_unknown 마킹 후 보존",
+  "_source": "perplexity-sonar-pro",
+  "analysis_meta": {
+    "source": "perplexity-sonar-pro",
+    "total_articles": 3,
+    "tier_a_count": 0,
+    "tier_b_count": 0,
+    "tier_c_count": 0,
+    "detected_mechanisms": [
+      "적응증 확대"
+    ],
+    "top_media": [
+      {
+        "media": "기타",
+        "weight": 0.5
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      }
+    ]
+  },
+  "deep_research": {
+    "source": "perplexity-sonar-pro-research",
+    "model": "sonar-pro",
+    "citations": [],
+    "created_at": "2026-04-25T13:56:01.842182Z"
+  },
+  "cached": false
+}

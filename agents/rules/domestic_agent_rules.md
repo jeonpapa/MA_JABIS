@@ -2,6 +2,19 @@
 
 ## 역할
 HIRA(건강보험심사평가원) 약가고시 Excel을 다운로드하고 DB에 적재.
+대쉬보드 검색 응답에는 **MFDS 공공데이터 API 실측** 결과를 enrichment 1차 권위 소스로 결합한다.
+
+## 데이터 권위 (2026-04-27 개정)
+
+대쉬보드의 모든 국내약 검색 응답 (`/api/domestic/price-changes`) 은 다음 layer 결합:
+
+1. **HIRA 약가** (이 에이전트) — 보험코드, 상한금액, 적용일, 가격 history
+2. **MFDS Permit API** — 허가일, 용법용량, ATC, 분류, 보관, 포장, 효능, 주의사항 (1차 권위)
+3. **MFDS Patent API** — 특허 상태, 만료일, 물질/후속 특허 분류
+4. **drug_enrichment** (Perplexity) — RSA, dose_schedule, daily_dose_units (보조)
+5. **kr_rsa_registry** (curated JSON) — RSA 권위 (skill ground-truth)
+
+상세는 `agents/rules/mfds_api_integration_rules.md` 참조.
 
 ## 데이터 소스
 - URL: HIRA 약가고시현황 게시판

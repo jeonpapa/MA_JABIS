@@ -1,0 +1,76 @@
+{
+  "updated_at": "2026-05-19T11:28:54.729045",
+  "markdown": "- **의약품 소비 증가**: 건강보험심사평가원이 발표한 통계에 따르면, 청소년 의약품 소비량이 급증하고 있으며, 이는 젊은 층의 정신 건강 문제와 관련이 있을 수 있음.\n- **의료제품 공급 안정화**: 보건복지부는 중동전쟁에도 불구하고 의료제품 공급이 안정적이라고 발표, 이는 의료기관의 제품 수급에 긍정적인 영향을 미칠 것으로 예상됨.\n- **AI 기반 연구 지원**: 보건복지부의 실사용 데이터 기반 임상연구 지원이 진행 중이며, 이는 향후 의료기술 및 제품 개발에 기여할 가능성이 높음.\n\n**함의**: 의약품 소비 증가와 의료제품 공급 안정화는 제약 및 의료기기 시장의 성장 기회를 제공하며, AI 기반 연구는 혁신적인 제품 개발을 촉진할 수 있음.",
+  "reviewers": [
+    "openai:gpt-4o-mini",
+    "gemini:gemini-2.5-flash"
+  ],
+  "sources": [
+    {
+      "title": "대전 대덕구, 치매안심재산관리지원서비스 연계 강화 박차",
+      "url": "http://www.chungnamilbo.co.kr/news/articleView.html?idxno=889251",
+      "source": "chungnamilbo",
+      "date": "2026-05-19"
+    },
+    {
+      "title": "복지부 \"중동전쟁 속 의료기관 의료제품 수급 안정적\"",
+      "url": "https://www.newspim.com/news/view/20260519000565",
+      "source": "newspim",
+      "date": "2026-05-19"
+    },
+    {
+      "title": "영상검사만으로는 보이지 않는 보행 기능…유준일 교수가 말하는 뉴로게...",
+      "url": "https://www.medigatenews.com/news/2840879623",
+      "source": "medigatecom",
+      "date": "2026-05-19"
+    },
+    {
+      "title": "GIST-전남대 ‘K-의료 AI’ 전초기지 구축",
+      "url": "https://www.seoul.co.kr/news/society/2026/05/19/20260519500069?wlog_tag3=naver",
+      "source": "seoul",
+      "date": "2026-05-19"
+    },
+    {
+      "title": "청년이 우울한 나라",
+      "url": "http://www.jeollailbo.com/news/articleView.html?idxno=800563",
+      "source": "jeollailbo",
+      "date": "2026-05-19"
+    },
+    {
+      "title": "위·대장 내시경 통한 조기 검진 중요",
+      "url": "https://www.vegannews.co.kr/news/article.html?no=382750",
+      "source": "veganco",
+      "date": "2026-05-19"
+    },
+    {
+      "title": "옥천군, 위기가구 긴급 지원 '그냥드림' 본격 운영",
+      "url": "https://www.ccdailynews.com/news/articleView.html?idxno=2417128",
+      "source": "ccdailycom",
+      "date": "2026-05-19"
+    },
+    {
+      "title": "\"무너진 공공의료 다시 세웠다\"…천안의료원, 지역거점병원 재도약",
+      "url": "https://www.ggilbo.com/news/articleView.html?idxno=1159034",
+      "source": "ggilbo",
+      "date": "2026-05-19"
+    },
+    {
+      "title": "홍승권 심평원장, 병원협회·간호협회 방문...협력 강화 논의",
+      "url": "https://www.rapportian.com/news/articleView.html?idxno=236173",
+      "source": "rapportian",
+      "date": "2026-05-19"
+    },
+    {
+      "title": "사무장병원부터 설계사 전력까지…보험사기 근절 압박 커진",
+      "url": "https://www.financialpost.co.kr/news/articleView.html?idxno=259600",
+      "source": "financialpost",
+      "date": "2026-05-19"
+    }
+  ],
+  "keywords": [
+    "보건복지부",
+    "건강보험심사평가원",
+    "건강보험공단",
+    "식품의약품안전처"
+  ]
+}

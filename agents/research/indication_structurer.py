@@ -626,12 +626,17 @@ def structure_indication(
         "biomarker_label":   variant.get("biomarker_label"),
         "combination_label": variant.get("combination_label"),
         "approval_date":     effective_time,
+        # 카드 미리보기용 발췌 (기존 유지)
         "label_excerpt":     indication.body[:2000],
+        # 원문 전문 — truncate 없이 저장 (모달/상세 화면용)
+        "label_full_text":   indication.body,
         "label_url":         label_url,
         "restriction_note":  variant.get("restriction_note"),
+        # 스크레이퍼가 실제로 가져온 전체 payload 를 그대로 보존
         "raw_source":        json.dumps({
             "source_code":   indication.code,
             "label_header":  indication.label,
+            "label_body":    indication.body,
             "source_agency": agency,
         }, ensure_ascii=False),
     }

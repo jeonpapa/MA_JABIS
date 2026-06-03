@@ -1,0 +1,76 @@
+{
+  "updated_at": "2026-04-23T00:01:20.806353",
+  "markdown": "- **신약 도입**: 고칼륨혈증 치료 신약 '로켈마'가 국내에 도입됨. 이는 40년 만의 새로운 치료 옵션으로, 시장 접근성이 높아질 것으로 예상됨.\n- **의료소모품 가격 문제**: 일부 유통업체가 의료소모품 가격을 5배 인상하여 의사협회가 강력히 반발. 이는 의료비 상승과 환자 치료에 부정적 영향을 미칠 수 있음.\n- **약가 협상 효율성 개선**: 건강보험심사평가원이 신약 약가 협상 절차를 간소화하여 행정 효율성을 높임. 이는 신약 시장 접근성을 더욱 원활하게 할 것으로 기대됨.\n\n**함의**: 신약 도입과 약가 협상 개선은 제약사에 긍정적 영향을 미칠 수 있으며, 의료소모품 가격 문제는 시장 신뢰도에 부정적 영향을 줄 수 있음.",
+  "reviewers": [
+    "openai:gpt-4o-mini",
+    "gemini:gemini-2.5-flash"
+  ],
+  "sources": [
+    {
+      "title": "‘의료 미이용’ 아동 5만 8천여 명 직접 조사",
+      "url": "https://news.kbs.co.kr/news/pc/view/view.do?ncd=8543321&ref=A",
+      "source": "kbs",
+      "date": "2026-04-22"
+    },
+    {
+      "title": "'환자 없이 질주' 사설구급차…\"평범한 하루가 비극으로\" 중학생 참변",
+      "url": "http://weekly.chosun.com/news/articleView.html?idxno=50919",
+      "source": "weekly",
+      "date": "2026-04-22"
+    },
+    {
+      "title": "경남 비자발적 입원율 43.5% 전국 최고…정신건강 예산은 전국 최저",
+      "url": "https://medicalworldnews.co.kr/news/view.php?idx=1510974253",
+      "source": "medicalworldco",
+      "date": "2026-04-22"
+    },
+    {
+      "title": "\"학대 위기 아동 찾는다\"…진료 이력 없는 6세 이하 6만명 조사",
+      "url": "https://www.hankyung.com/article/2026042201247",
+      "source": "hankyung",
+      "date": "2026-04-22"
+    },
+    {
+      "title": "설거지도 힘든 '이 병', 장애등급 안 나와 병원 가는 것도 고통 (영상)",
+      "url": "https://www.wikitree.co.kr/articles/1132985",
+      "source": "wikitree",
+      "date": "2026-04-22"
+    },
+    {
+      "title": "[패트롤] 광명시-부천시-시흥시-안양시-의왕시",
+      "url": "https://www.ekn.kr/web/view.php?key=20260422028309241",
+      "source": "ekn",
+      "date": "2026-04-22"
+    },
+    {
+      "title": "[행사] 의료기기법 개정안 현장 안착 위한 토론회 진행",
+      "url": "https://www.monews.co.kr/news/articleView.html?idxno=410833",
+      "source": "moco",
+      "date": "2026-04-22"
+    },
+    {
+      "title": "[오늘의 병원가] 4월 22일 한림대성심병원·국제성모병원外",
+      "url": "https://www.monews.co.kr/news/articleView.html?idxno=410824",
+      "source": "moco",
+      "date": "2026-04-22"
+    },
+    {
+      "title": "동산병원 고위험 산모·신생아 통합치료센터, 메디컬 헬스케어 특성화센...",
+      "url": "https://www.idaegu.co.kr/news/articleView.html?idxno=545967",
+      "source": "idaegu",
+      "date": "2026-04-22"
+    },
+    {
+      "title": "점심 대신 잠 택하는 대한민국…‘슬리포노믹스’ [스페셜리포트]",
+      "url": "https://www.mk.co.kr/article/12019824",
+      "source": "mk",
+      "date": "2026-04-22"
+    }
+  ],
+  "keywords": [
+    "보건복지부",
+    "건강보험심사평가원",
+    "건강보험공단",
+    "식품의약품안전처"
+  ]
+}

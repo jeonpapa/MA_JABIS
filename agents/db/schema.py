@@ -86,13 +86,20 @@ CREATE TABLE IF NOT EXISTS foreign_drug_prices (
     exchange_rate       REAL,               -- 적용 환율 (36개월 평균)
     exchange_rate_from  TEXT,               -- 환율 적용 시작월 (YYYY-MM)
     exchange_rate_to    TEXT,               -- 환율 적용 종료월 (YYYY-MM)
-    factory_price_krw   INTEGER,            -- 공장도출하가격 (원)
-    vat_rate            REAL,               -- 부가가치세율 (소수점)
-    distribution_margin REAL,               -- 유통거래폭 (소수점)
-    adjusted_price_krw  INTEGER,            -- 조정가 (원)
+    factory_price_krw   INTEGER,            -- per-unit ex-factory KRW
+    vat_rate            REAL,               -- KR_VAT = 0.10 (Korean A8 기준 상수)
+    distribution_margin REAL,               -- KR_DIST_MARGIN = 0.0869 (Korean A8 기준 상수)
+    adjusted_price_krw  INTEGER,            -- per-unit A8 조정가 KRW (pack 단위 아님)
+    pack_count          INTEGER,            -- pack 당 tablet/vial 수 (per-unit 환산 기준)
+    per_unit_local      REAL,               -- listed_price / pack_count (per-unit 현지가)
+    total_pkg_mg        REAL,               -- pack 총 mg (_extract_total_pkg_mg)
+    daily_dose_mg       REAL,               -- foreign_drug_dosing 기준 일일 mg
+    daily_cost_krw      INTEGER,            -- 일일 투약비용 KRW (sanity cap ≤ 10M)
+    daily_cost_note     TEXT,               -- 이상치 마커 (예: suspicious_outlier)
     source_url          TEXT,               -- 자료 출처 URL
     source_label        TEXT,               -- 자료원 명칭 (예: Redbook, MIMS)
-    raw_data            TEXT                -- 원본 데이터 JSON
+    raw_data            TEXT,               -- 원본 데이터 JSON
+    form_type           TEXT                -- oral/injection/unknown (최소단위 결정 기준)
 );
 
 CREATE INDEX IF NOT EXISTS idx_foreign_query
@@ -146,6 +153,75 @@ CREATE INDEX IF NOT EXISTS idx_enrichment_code
     ON drug_enrichment(representative_code);
 
 -- ─────────────────────────────────────────────────────────────────────────
+-- 의약품 특허정보 캐시 — data.go.kr MdcinPatentInfoService2/getMdcinPatentInfoList2
+-- ─────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS mfds_patent_cache (
+    item_seq        TEXT,                -- MFDS 품목일련번호
+    item_name       TEXT NOT NULL,       -- 한글 제품명 (정규화 키)
+    ingredient      TEXT,                -- 성분명
+    page_gb_nm      TEXT,                -- 제품특허 / 기타특허
+    patent_gb_code  TEXT,                -- 물질 / 제법 / 결정형 / 용도
+    patent_no       TEXT,                -- DOMESTIC_PATENT_NO
+    patent_status   TEXT,                -- 등록 / 소멸(존속기간만료) / 소멸(등록료불납)
+    patent_end_date TEXT,                -- DOMESTIC_END_DATE (YYYY-MM-DD)
+    invn_name       TEXT,                -- 발명의 명칭
+    patentee        TEXT,                -- 권리자
+    fetched_at      TEXT,                -- ISO8601
+    raw_json        TEXT,                -- 원응답 row JSON
+    PRIMARY KEY (item_name, patent_no, page_gb_nm)
+);
+CREATE INDEX IF NOT EXISTS idx_patent_item_name
+    ON mfds_patent_cache(item_name);
+CREATE INDEX IF NOT EXISTS idx_patent_ingredient
+    ON mfds_patent_cache(ingredient);
+CREATE INDEX IF NOT EXISTS idx_patent_item_seq
+    ON mfds_patent_cache(item_seq);
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Cross-national reimbursement (NICE / PBAC / CMS / 일본 후생노동성 中医協 등)
+-- 한국(HIRA) 은 별도 indication_reimbursement 테이블에 보존, API 레벨 union.
+-- axis: indication_id × country × body
+-- ─────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS reimbursement_xnational (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    indication_id   TEXT NOT NULL,                  -- FK -> indications_master
+    country         TEXT NOT NULL,                  -- UK / JP / US / AU / EU / CA
+    body            TEXT NOT NULL,                  -- NICE / PBAC / CMS / CHUIKYO / G-BA / CADTH
+    decision_type   TEXT,                           -- recommend / restrict / reject / optimised / not_applicable
+    decision_id     TEXT,                           -- TA1014 / PBAC item / NCD-110.x / 中医協 의사록 번호
+    decision_date   TEXT,                           -- YYYY-MM-DD
+    effective_date  TEXT,                           -- 보험 수재일 YYYY-MM-DD
+    criteria_text   TEXT,                           -- 권고 본문/조건
+    pbs_code        TEXT,                           -- PBS item_code (호주)
+    nhs_list_price  REAL,                           -- 영국 list price (있을 때)
+    currency        TEXT,                           -- GBP / AUD / USD / JPY / EUR
+    source_url      TEXT,
+    raw_payload     TEXT,                           -- JSON (원응답)
+    fetched_at      TEXT NOT NULL,
+    FOREIGN KEY (indication_id) REFERENCES indications_master(indication_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reimb_xn_unique
+    ON reimbursement_xnational(indication_id, country, body, decision_id);
+CREATE INDEX IF NOT EXISTS idx_reimb_xn_country_body
+    ON reimbursement_xnational(country, body);
+CREATE INDEX IF NOT EXISTS idx_reimb_xn_indid
+    ON reimbursement_xnational(indication_id);
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- product_alias_map — brand ↔ INN ↔ 국가별 표기 정규화 브릿지
+-- foreign_drug_prices.query_name (e.g. 'pembrolizumab') ↔ indications_master.product (e.g. 'keytruda')
+-- ─────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS product_alias_map (
+    product_slug             TEXT PRIMARY KEY,      -- canonical (예: 'keytruda')
+    inn                      TEXT,                  -- 'pembrolizumab'
+    brand_aliases_json       TEXT,                  -- ["키트루다", "Keytruda", "MK-3475", ...]
+    agency_brand_overrides_json TEXT,               -- {"EMA":"Keytruda","PMDA":"キイトルーダ"}
+    updated_at               TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_alias_map_inn
+    ON product_alias_map(inn);
+
+-- ─────────────────────────────────────────────────────────────────────────
 -- 적응증(Indication) 마스터 + 국가별 variant
 -- discussion.md (2026-04-16) 결정 기반: 5-anchor 매칭 / FDA·EMA·NICE·... variant
 -- ─────────────────────────────────────────────────────────────────────────
@@ -179,10 +255,11 @@ CREATE TABLE IF NOT EXISTS indications_by_agency (
     biomarker_label     TEXT,             -- 라벨 원문 그대로 (예: "PD-L1 TPS >=1%")
     combination_label   TEXT,             -- 라벨 원문 그대로
     approval_date       TEXT,             -- YYYY-MM-DD
-    label_excerpt       TEXT,             -- 해당 적응증 본문 발췌
+    label_excerpt       TEXT,             -- 해당 적응증 본문 발췌 (카드용 ~2000자)
+    label_full_text     TEXT,             -- 허가 원문 전문 (truncate 없음, 모달/상세용)
     label_url           TEXT,
     restriction_note    TEXT,             -- 좁혀진 사유 (CHMP opinion 등)
-    raw_source          TEXT,             -- 원본 payload JSON
+    raw_source          TEXT,             -- 원본 payload JSON (body + label + code + agency 전체)
     fetched_at          TEXT NOT NULL,
     FOREIGN KEY (indication_id) REFERENCES indications_master(indication_id)
 );
@@ -191,6 +268,35 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_ind_agency_unique
     ON indications_by_agency(indication_id, agency);
 CREATE INDEX IF NOT EXISTS idx_ind_agency_indid
     ON indications_by_agency(indication_id);
+
+-- ──────────────────────────────────────────────────────────────
+-- 허가 문서 업로드 (PDF) — 영구 보존
+-- 5국(EMA/MFDS/MHRA/PMDA/TGA)는 사용자가 PDF 직접 업로드해 채움
+-- FDA 는 자동(LLM/스크레이퍼)이지만 보강 PDF 도 같은 테이블 사용 가능
+-- ──────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS approval_documents (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    indication_id     TEXT NOT NULL,                 -- FK -> indications_master
+    agency            TEXT NOT NULL,                 -- FDA / EMA / MHRA / PMDA / TGA / MFDS
+    file_path         TEXT NOT NULL,                 -- data/uploads/approval_pdf/<agency>/<id>_<timestamp>.pdf
+    original_filename TEXT,
+    file_size         INTEGER,                       -- bytes
+    content_type      TEXT,                          -- application/pdf 등
+    approval_date     TEXT,                          -- YYYY-MM-DD (사용자 form 입력)
+    label_excerpt     TEXT,                          -- 적응증 본문 발췌 (사용자 form 입력)
+    label_url         TEXT,                          -- 원본 사이트 URL (선택)
+    notes             TEXT,                          -- 자유 메모
+    uploaded_by       TEXT,                          -- 업로더 email
+    uploaded_at       TEXT NOT NULL,                 -- ISO8601
+    FOREIGN KEY (indication_id) REFERENCES indications_master(indication_id)
+);
+CREATE INDEX IF NOT EXISTS idx_approval_doc_ind
+    ON approval_documents(indication_id);
+CREATE INDEX IF NOT EXISTS idx_approval_doc_agency
+    ON approval_documents(indication_id, agency);
+CREATE INDEX IF NOT EXISTS idx_approval_doc_uploaded
+    ON approval_documents(uploaded_at);
 
 -- ──────────────────────────────────────────────────────────────
 -- 적응증별 한국 급여 상태 (HIRA 항암화학요법 공고 / 고시 기반 수동 편집)
@@ -347,6 +453,19 @@ CREATE TABLE IF NOT EXISTS keyword_cloud (
     updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_keyword_cloud_weight ON keyword_cloud(weight DESC);
+
+-- 해외약가 일일 투약용량 마스터 (성분별 수동 관리)
+-- 일일 투약비용 계산: (dose_per_cycle_mg / cycle_days) × (adjusted_price_krw / dosage_strength_mg)
+CREATE TABLE IF NOT EXISTS foreign_drug_dosing (
+    ingredient_key      TEXT PRIMARY KEY,     -- 정규화 소문자 성분명 (예: 'pembrolizumab')
+    display_name        TEXT,                 -- 표시용 성분명 (예: 'Pembrolizumab')
+    dose_per_cycle_mg   REAL NOT NULL,        -- 주기 총 용량 mg (예: 200)
+    cycle_days          INTEGER NOT NULL,     -- 주기 일수 (예: 21)
+    schedule_label      TEXT,                 -- 표시 라벨 (예: '200mg Q3W')
+    notes               TEXT,                 -- 비고
+    default_pack_count  INTEGER,              -- 제조사 표준 포장수량 (tablet/vial 수). pack pricing 국가에서 fallback
+    updated_at          TEXT
+);
 """
 
 
@@ -360,7 +479,7 @@ COL_CANDIDATES = {
     "product_name_en": ["영문제품명", "영문\n제품명", "품목명(영문)", "영문 제품명"],
     "company":         ["업체명", "제조(수입)업체", "회사명", "제약사",
                         "업소명"],           # 구형 포맷
-    "ingredient":      ["성분명(일반명)", "성분명", "일반명", "주성분"],
+    "ingredient":      ["주성분명", "성분명(일반명)", "성분명", "일반명", "주성분"],
     "dosage_strength": ["함량", "규격", "함량/규격"],
     "dosage_form":     ["제형", "剂型"],
     "package_unit":    ["포장단위", "포장", "단위"],

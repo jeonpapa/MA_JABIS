@@ -264,6 +264,127 @@ class QualityGuardAgent:
         except Exception as e:
             logger.debug("DISEASE_KR 점검 생략: %s", e)
 
+        # 5) drug_enrichment 커버리지 — 활성 약제 대비
+        try:
+            db_path = BASE_DIR / "data" / "db" / "drug_prices.db"
+            if db_path.exists():
+                with sqlite3.connect(db_path) as conn:
+                    def _table_exists(name: str) -> bool:
+                        r = conn.execute(
+                            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                            (name,),
+                        ).fetchone()
+                        return r is not None
+                    enriched = conn.execute(
+                        "SELECT COUNT(*) FROM drug_enrichment"
+                    ).fetchone()[0] if _table_exists("drug_enrichment") else 0
+                    # drug_latest 전체 row (활성 약제의 대략적 upper bound)
+                    active = conn.execute(
+                        "SELECT COUNT(*) FROM drug_latest"
+                    ).fetchone()[0] if _table_exists("drug_latest") else 0
+                if active > 0 and enriched < 30:
+                    ratio = enriched / active * 100
+                    suggestions.append(
+                        f"💊 drug_enrichment 커버리지 {enriched}/{active} ({ratio:.3f}%) — "
+                        f"비교약제 추가 시 대부분 일일투약비/허가일 공백. "
+                        f"동일 generic 상속은 보완책일 뿐. 주요 ATC TOP-100 drug enrich 배치 권장"
+                    )
+        except Exception as e:
+            logger.debug("drug_enrichment 커버리지 점검 생략: %s", e)
+
+        # 6a) DE DocCheck 자격증명 점검 — 로그인 실패 시 Rote Liste 가격 벽 통과 불가
+        try:
+            verify_script = BASE_DIR / "scripts" / "verify_docchecker_login.py"
+            if verify_script.exists():
+                import subprocess
+                proc = subprocess.run(
+                    ["python3", str(verify_script)],
+                    capture_output=True, text=True, timeout=60,
+                )
+                if proc.returncode == 1:
+                    suggestions.append(
+                        "🔐 DocCheck 자격증명 미설정 (ROTE_LISTE_DE_USERNAME/PASSWORD) — "
+                        "DE Rote Liste 가격 수집 불가"
+                    )
+                elif proc.returncode == 2:
+                    suggestions.append(
+                        "🔐 DocCheck 로그인 실패 — 자격증명 만료/변경 가능성. "
+                        "config/.env 갱신 필요"
+                    )
+        except Exception as e:
+            logger.debug("DocCheck 점검 생략: %s", e)
+
+        # 6c) MFDS 공공데이터 API 통합 헬스 점검 — permit/patent cache 비어있으면 회귀 신호
+        try:
+            db_path = BASE_DIR / "data" / "db" / "drug_prices.db"
+            if db_path.exists():
+                with sqlite3.connect(db_path) as conn:
+                    permit_n = patent_n = None
+                    for tbl, key in [("mfds_permit_cache", "permit"), ("mfds_patent_cache", "patent")]:
+                        r = conn.execute(
+                            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (tbl,)
+                        ).fetchone()
+                        if r is None:
+                            suggestions.append(
+                                f"🚨 `{tbl}` 테이블 부재 — MFDS API 모듈이 로드되지 않았거나 "
+                                f"agents/db/schema.py 적용 안됨. `python -c \"from agents.db.base import DrugPriceDB; DrugPriceDB()\"` 실행"
+                            )
+                            continue
+                        n = conn.execute(f"SELECT COUNT(*) FROM {tbl}").fetchone()[0]
+                        if key == "permit": permit_n = n
+                        else: patent_n = n
+                    if permit_n is not None and patent_n is not None:
+                        if permit_n == 0 and patent_n == 0:
+                            suggestions.append(
+                                "💤 MFDS API 캐시 모두 비어있음 — 첫 enrichment 미실행. "
+                                "대쉬보드에서 약 1건 검색하면 자동 캐시 누적 시작 (mfds_api_integration_rules.md)"
+                            )
+                    # API 키 점검
+                    env = BASE_DIR / "config" / ".env"
+                    if env.exists():
+                        env_text = env.read_text(encoding="utf-8")
+                        if "MFDS_PATENT_API_KEY=" not in env_text:
+                            suggestions.append(
+                                "🔑 `MFDS_PATENT_API_KEY` 가 config/.env 에 없음 — "
+                                "data.go.kr 공공데이터 API 인증 실패 → enrichment fallback 으로만 동작"
+                            )
+        except Exception as e:
+            logger.debug("MFDS API 헬스 점검 생략: %s", e)
+
+        # 6) price-change-reason evidence 품질 — 최근 캐시에서 n_refs=0 비율
+        try:
+            cache_dir = BASE_DIR / "data" / "dashboard" / "reason_cache"
+            if cache_dir.exists():
+                import json as _json
+                files = sorted(cache_dir.glob("MI_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)[:30]
+                zero_refs = 0
+                low_confidence = 0
+                for f in files:
+                    try:
+                        d = _json.loads(f.read_text(encoding="utf-8"))
+                    except Exception:
+                        continue
+                    if len(d.get("references") or []) == 0:
+                        zero_refs += 1
+                    if (d.get("confidence") or "").lower() == "low":
+                        low_confidence += 1
+                total = len(files)
+                if total >= 5 and (zero_refs / total) > 0.5:
+                    suggestions.append(
+                        f"📰 price-change-reason 최근 {total}건 중 n_refs=0 {zero_refs}건 "
+                        f"({zero_refs/total:.0%}) — 근거 수집 실패 과반. "
+                        f"perplexity `citations` → references 변환 + enforce_rules "
+                        f"URL-date 추출 경로 점검 (agents/market_intelligence/rules_engine.py)"
+                    )
+                elif total >= 5 and (low_confidence / total) > 0.7:
+                    suggestions.append(
+                        f"📰 price-change-reason 최근 {total}건 중 confidence=low {low_confidence}건 "
+                        f"({low_confidence/total:.0%}) — 근거 부족 또는 ReviewAgent 연속 거부. "
+                        f"refresh=1 로 재분석 또는 perplexity 프롬프트 보강 검토"
+                    )
+        except Exception as e:
+            logger.debug("reason_cache 품질 점검 생략: %s", e)
+
         return suggestions
 
     # ── 종합 리뷰 ──────────────────────────────────────────────────────────

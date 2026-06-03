@@ -94,14 +94,39 @@ class MarketIntelligenceAgent:
         drug_en: str = "",
         ingredient_en: str = "",
         force_refresh: bool = False,
+        insurance_code: str = "",
     ) -> dict:
-        """2단계 엔진: Perplexity → Naver+GPT-4o 폴백 → 캐시 저장."""
+        """2단계 엔진: Perplexity → Naver+GPT-4o 폴백 → 캐시 저장.
+
+        insurance_code 전달 시 가격 history 산수 분석 (KR-RULE-009 stage 매칭) 우선 적용.
+        """
         if not force_refresh:
             cached = self.get_cached(drug_ko, change_date)
             if cached:
                 return cached
 
         logger.info("[MI Agent] 분석 시작: %s %s (δ%s%%)", drug_ko, change_date, delta_pct)
+
+        # ── Pre-LLM: 가격 시계열 KR-RULE-009 stage 산수 매칭 ────────────────
+        # insurance_code 있으면 가격 history 의 LOE 패턴 검출 → mechanism 결정적 부여.
+        loe_detection = None
+        if insurance_code:
+            try:
+                from agents.db import DrugPriceDB
+                from .loe_pattern import detect_loe_stage
+                from .rules_engine import BASE_DIR
+                db = DrugPriceDB(BASE_DIR / "data" / "db" / "drug_prices.db")
+                history = db.get_price_history(insurance_code)
+                if history:
+                    loe_detection = detect_loe_stage(history, change_date)
+                    if loe_detection.matched:
+                        logger.info(
+                            "[MI Agent] LOE pattern matched — %s (ratio=%.4f, %s)",
+                            loe_detection.stage_label, loe_detection.actual_ratio,
+                            loe_detection.kr_rule,
+                        )
+            except Exception as e:
+                logger.warning("[MI Agent] LOE pattern detection 실패: %s", e)
 
         try:
             dt = datetime.strptime(change_date, "%Y.%m.%d")
@@ -137,16 +162,29 @@ class MarketIntelligenceAgent:
                 ],
             }
             result = self._deep_research_if_low(result, drug_ko, ingredient_ko, change_date, delta_pct)
-            result = enforce_rules(result, change_date)
+            result = enforce_rules(result, change_date, delta_pct=delta_pct)
 
-            weak = (
-                len(result.get("references") or []) <= 1
+            # 전문지 다양성 강화: refs 5건 미만이거나 Tier A 매체 부족 시 Naver 로 보강.
+            # (이전: refs<=1 or mechanism=unknown 만 보강 → 전문지 1~2건만 노출되는 경우 다수)
+            tier_a_refs = sum(1 for r in (result.get("references") or [])
+                              if (r.get("weight") or 0) >= 2.5)
+            if (
+                len(result.get("references") or []) < 5
+                or tier_a_refs < 2
                 or (result.get("mechanism") or "unknown") in ("unknown", "", None)
-            )
-            if weak:
-                logger.info("[MI Agent] Perplexity weak → Naver 보강 시도")
+            ):
+                logger.info(
+                    "[MI Agent] refs=%d, Tier A=%d → Naver 보강 시도",
+                    len(result.get("references") or []), tier_a_refs,
+                )
                 result = self._augment_with_naver(result, drug_ko, ingredient_ko, change_date, delta_pct)
-                result = enforce_rules(result, change_date)
+                result = enforce_rules(result, change_date, delta_pct=delta_pct)
+
+            # LOE 산수 매칭 시 mechanism 강제 부여 (LLM stochastic 실패 우회)
+            result = self._apply_loe_override(result, loe_detection)
+
+            # RSA 키워드 자동 검출 — registry 미등록 약제에서 RSA 단서 발견 시 후보 flag
+            self._detect_rsa_signal(result, drug_ko)
 
             result["cached"] = False
             self.save_cache(drug_ko, change_date, result)
@@ -178,11 +216,91 @@ class MarketIntelligenceAgent:
                 for a in sorted(articles, key=lambda x: -x.get("weight", 0))[:5]
             ],
         }
-        result = enforce_rules(result, change_date)
+        result = enforce_rules(result, change_date, delta_pct=delta_pct)
         result = self._deep_research_if_low(result, drug_ko, ingredient_ko, change_date, delta_pct)
-        result = enforce_rules(result, change_date)
+        result = enforce_rules(result, change_date, delta_pct=delta_pct)
+        result = self._apply_loe_override(result, loe_detection)
         result["cached"] = False
         self.save_cache(drug_ko, change_date, result)
+        return result
+
+    @staticmethod
+    def _detect_rsa_signal(result: dict, drug_ko: str) -> None:
+        """변동사유 분석 텍스트에서 RSA 단서 검출 → registry 미등록 시 후보 flag.
+
+        registry 등록 자산은 skip. references title + reason 본문에서 RSA 키워드 1개 이상
+        매치되면 result["rsa_candidate"] = {brand, signals, hint_type} 첨부.
+        """
+        try:
+            from agents.kr_rsa_registry import lookup_rsa
+            existing = lookup_rsa(drug_ko)
+            if existing:  # 이미 registry 에 있음 — flag 불필요
+                return
+        except Exception:
+            pass
+
+        # 검색 텍스트 풀 — reason + evidence_summary + 참고문헌 title
+        haystack = " ".join([
+            (result.get("reason") or ""),
+            (result.get("evidence_summary") or ""),
+            *[(r.get("title") or "") for r in (result.get("references") or [])],
+        ]).lower()
+
+        # RSA 단서 키워드 (가중치 표시 위해 hint_type 추정)
+        signals: list[str] = []
+        type_hints: dict[str, list[str]] = {
+            "refund":          ["환급형", "환급제", "refund"],
+            "expenditure_cap": ["총액제한", "expenditure cap", "총액제한형"],
+            "utilization":     ["사용량-약가 연동", "사용량 연동", "pva"],
+            "conditional":     ["조건부 급여", "조건부 등재"],
+            "combined":        ["환급형+", "환급+총액", "복합 위험분담", "rsa 복합"],
+        }
+        # 우선 일반 RSA 단어 검출
+        for kw in ("위험분담", "rsa", "risk-sharing", "위험분담제"):
+            if kw in haystack:
+                signals.append(kw)
+                break
+        if not signals:
+            return  # RSA 언급 없음
+
+        # 유형 hint 추정 (검출된 첫 type)
+        hint_type = None
+        for typ, kws in type_hints.items():
+            if any(kw in haystack for kw in kws):
+                hint_type = typ
+                break
+
+        result["rsa_candidate"] = {
+            "brand": drug_ko,
+            "signals_detected": signals,
+            "hint_type": hint_type,
+            "note": "MI agent 변동사유 분석에서 RSA 단서 검출 — registry 미등록 상태. 사용자 확인 후 등록 권장.",
+        }
+        logger.info(
+            "[MI Agent] RSA 후보 검출: %s (signals=%s, hint=%s)",
+            drug_ko, signals, hint_type,
+        )
+
+    @staticmethod
+    def _apply_loe_override(result: dict, loe_detection) -> dict:
+        """가격 시계열 산수 매칭 결과를 LLM result 에 강제 적용.
+
+        KR-RULE-009 stage 가 매칭되면 mechanism = patent_expiration 으로 override.
+        LLM 이 다른 라벨 추정해도 산수가 우선 — stochastic 실패 안전망.
+        """
+        if not loe_detection or not getattr(loe_detection, "matched", False):
+            return result
+        result["mechanism"] = "patent_expiration"
+        result["mechanism_label"] = "특허 만료"
+        result["confidence"] = "high"
+        # reason 본문 prepend (LLM 작성 reason 보존하되 산수 분석을 앞에 붙임)
+        anchor_text = loe_detection.to_reason_text()
+        existing_reason = (result.get("reason") or "").strip()
+        result["reason"] = anchor_text + ("\n\n" + existing_reason if existing_reason else "")
+        # notes 에 LOE 적용 사실 기록
+        existing_notes = (result.get("notes") or "").strip()
+        loe_note = f"[LOE override] 가격 산수 → {loe_detection.kr_rule} {loe_detection.stage_label}"
+        result["notes"] = (existing_notes + " · " + loe_note).strip(" ·") if existing_notes else loe_note
         return result
 
     def _augment_with_naver(

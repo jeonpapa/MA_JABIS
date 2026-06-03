@@ -1,0 +1,250 @@
+{
+  "_meta": {
+    "schema_version": 1,
+    "description": "한국 위험분담제(RSA) 적용 약제 curated registry. brand_key → {is_rsa, rsa_type, rsa_note, source}",
+    "rsa_types": [
+      "refund",
+      "expenditure_cap",
+      "utilization",
+      "conditional",
+      "combined"
+    ],
+    "source_levels": [
+      "skill msd_assets.md (KPAD v3 ground-truth)",
+      "drug_enrichment 기존 (검증)",
+      "curated",
+      "user_added (admin endpoint)",
+      "perplexity_candidate (auto-flag)"
+    ]
+  },
+  "registry": {
+    "키트루다": {
+      "is_rsa": 1,
+      "rsa_type": "combined",
+      "rsa_note": "환급형 + expenditure cap (적응증별 분리). 30+ 적응증, 4회 누적 인하 history.",
+      "source": "skill msd_assets.md (KPAD v3 ground-truth)"
+    },
+    "웰리렉": {
+      "is_rsa": 1,
+      "rsa_type": "combined",
+      "rsa_note": "4차 신청 진행 중 — PPDT-layered soft cap (financial cap, outcome-based 아님). VHL 희귀.",
+      "source": "skill msd_assets.md"
+    },
+    "브리디온": {
+      "is_rsa": 0,
+      "rsa_type": null,
+      "rsa_note": "등재 시 RSA 미적용. 이미 LOE 도래 (KR-RULE-008).",
+      "source": "skill msd_assets.md"
+    },
+    "저박사": {
+      "is_rsa": 0,
+      "rsa_type": null,
+      "rsa_note": "단독품목 (KR-RULE-007), 항균제 경평면제 첫 사례. RSA 미적용.",
+      "source": "skill msd_assets.md"
+    },
+    "에멘드": {
+      "is_rsa": 0,
+      "rsa_type": null,
+      "rsa_note": "단독품목 (KR-RULE-007), premium retention. RSA 미적용 추정.",
+      "source": "skill msd_assets.md"
+    },
+    "옵디보": {
+      "is_rsa": 1,
+      "rsa_type": "combined",
+      "rsa_note": "환급형 + expenditure cap. 다적응증 항PD-1.",
+      "source": "curated (Korean oncology RSA pattern)"
+    },
+    "티쎈트릭": {
+      "is_rsa": 1,
+      "rsa_type": "combined",
+      "rsa_note": "환급형 + expenditure cap. 항PD-L1 NSCLC/SCLC/HCC.",
+      "source": "user_added (admin endpoint)"
+    },
+    "임핀지": {
+      "is_rsa": 1,
+      "rsa_type": "combined",
+      "rsa_note": "환급형 + expenditure cap. 백금 기반 CCRT 후 NSCLC.",
+      "source": "curated"
+    },
+    "여보이": {
+      "is_rsa": 1,
+      "rsa_type": "combined",
+      "rsa_note": "환급형 + expenditure cap. 옵디보 병용 melanoma/RCC.",
+      "source": "curated"
+    },
+    "트로델비": {
+      "is_rsa": 1,
+      "rsa_type": "combined",
+      "rsa_note": "환급형 + expenditure cap (예상). TNBC ADC.",
+      "source": "curated"
+    },
+    "테빔브라": {
+      "is_rsa": 1,
+      "rsa_type": "combined",
+      "rsa_note": "환급형 + expenditure cap. 항PD-1 NSCLC/식도암.",
+      "source": "curated"
+    },
+    "린파자": {
+      "is_rsa": 1,
+      "rsa_type": "combined",
+      "rsa_note": "환급형 + 총액제한형 중복 적용 (2021.10.1 보험 적용). PARP 억제제.",
+      "source": "drug_enrichment 기존 (검증)"
+    },
+    "타그리소": {
+      "is_rsa": 1,
+      "rsa_type": "refund",
+      "rsa_note": "환급형. EGFR T790M+ NSCLC.",
+      "source": "curated"
+    },
+    "잴코리": {
+      "is_rsa": 1,
+      "rsa_type": "refund",
+      "rsa_note": "환급형. ALK+ NSCLC.",
+      "source": "curated"
+    },
+    "알레센자": {
+      "is_rsa": 1,
+      "rsa_type": "refund",
+      "rsa_note": "환급형. ALK+ NSCLC.",
+      "source": "curated"
+    },
+    "허셉틴": {
+      "is_rsa": 1,
+      "rsa_type": "conditional",
+      "rsa_note": "조건부 급여 (유방암 보험급여 인정기준 적용).",
+      "source": "drug_enrichment 기존 (검증)"
+    },
+    "퍼제타": {
+      "is_rsa": 1,
+      "rsa_type": "refund",
+      "rsa_note": "환급형. HER2+ 유방암 1L 병용.",
+      "source": "curated"
+    },
+    "캐싸일라": {
+      "is_rsa": 1,
+      "rsa_type": "refund",
+      "rsa_note": "환급형. HER2+ 유방암 ADC.",
+      "source": "curated"
+    },
+    "엔허투": {
+      "is_rsa": 1,
+      "rsa_type": "combined",
+      "rsa_note": "환급형 + expenditure cap. HER2+ 유방암 ADC.",
+      "source": "curated"
+    },
+    "아바스틴": {
+      "is_rsa": 1,
+      "rsa_type": "conditional",
+      "rsa_note": "조건부 급여. 다적응증 항VEGF.",
+      "source": "curated"
+    },
+    "입랜스": {
+      "is_rsa": 1,
+      "rsa_type": "refund",
+      "rsa_note": "환급형. HR+/HER2- 진행성 유방암.",
+      "source": "curated"
+    },
+    "키스칼리": {
+      "is_rsa": 1,
+      "rsa_type": "refund",
+      "rsa_note": "환급형. CDK4/6 억제제.",
+      "source": "curated"
+    },
+    "버지니오": {
+      "is_rsa": 1,
+      "rsa_type": "refund",
+      "rsa_note": "환급형. CDK4/6 억제제.",
+      "source": "curated"
+    },
+    "다잘렉스": {
+      "is_rsa": 1,
+      "rsa_type": "refund",
+      "rsa_note": "환급형. 항CD38 다발성골수종.",
+      "source": "curated"
+    },
+    "포말리스트": {
+      "is_rsa": 1,
+      "rsa_type": "combined",
+      "rsa_note": "환급형 + expenditure cap. 다발성골수종 IMiD.",
+      "source": "curated"
+    },
+    "닌라로": {
+      "is_rsa": 1,
+      "rsa_type": "refund",
+      "rsa_note": "환급형. 다발성골수종 PI 경구.",
+      "source": "curated"
+    },
+    "카이프롤리스": {
+      "is_rsa": 1,
+      "rsa_type": "refund",
+      "rsa_note": "환급형. 다발성골수종 PI.",
+      "source": "curated"
+    },
+    "솔리리스": {
+      "is_rsa": 1,
+      "rsa_type": "combined",
+      "rsa_note": "환급형 + expenditure cap. PNH/aHUS 희귀.",
+      "source": "curated (rare-disease RSA pattern)"
+    },
+    "스핀라자": {
+      "is_rsa": 1,
+      "rsa_type": "expenditure_cap",
+      "rsa_note": "총액제한형. SMA 희귀.",
+      "source": "curated"
+    },
+    "졸겐스마": {
+      "is_rsa": 1,
+      "rsa_type": "combined",
+      "rsa_note": "환급형 + 분할 환급 (one-time gene therapy).",
+      "source": "curated"
+    },
+    "리브타요": {
+      "is_rsa": 1,
+      "rsa_type": "combined",
+      "rsa_note": "환급형 + expenditure cap. 항PD-1.",
+      "source": "curated"
+    },
+    "레파타": {
+      "is_rsa": 0,
+      "rsa_type": null,
+      "rsa_note": "HIRA 급여기준 있으나 위험분담제 공식 목록 미확인.",
+      "source": "drug_enrichment 기존 (검증)"
+    },
+    "프랄런트": {
+      "is_rsa": 0,
+      "rsa_type": null,
+      "rsa_note": "HIRA 급여기준만, RSA 미적용.",
+      "source": "drug_enrichment 기존 (검증)"
+    },
+    "자누비아": {
+      "is_rsa": 0,
+      "rsa_type": null,
+      "rsa_note": "DPP-4 억제제. RSA 미적용. 2023.09 LOE 도래, 단계 인하 진행 중 (KR-RULE-009).",
+      "source": "curated"
+    },
+    "리피토": {
+      "is_rsa": 0,
+      "rsa_type": null,
+      "rsa_note": "스타틴. LOE 도래, RSA 미적용.",
+      "source": "drug_enrichment 기존 (검증)"
+    },
+    "아토젯": {
+      "is_rsa": 0,
+      "rsa_type": null,
+      "rsa_note": "스타틴+에제티미브 복합제. RSA 미적용.",
+      "source": "drug_enrichment 기존 (검증)"
+    },
+    "도바토": {
+      "is_rsa": 0,
+      "rsa_type": null,
+      "rsa_note": "HIV ARV 복합제. RSA 미적용.",
+      "source": "drug_enrichment 기존"
+    },
+    "빅타비": {
+      "is_rsa": 0,
+      "rsa_type": null,
+      "rsa_note": "HIV ARV B/F/TAF. RSA 미적용 (HIV 약제는 통상 RSA 없음).",
+      "source": "curated"
+    }
+  }
+}

@@ -1,0 +1,147 @@
+{
+  "mechanism": "actual_transaction",
+  "mechanism_label": "실거래가 연동 약가인하",
+  "reason": "허셉틴주150밀리그램의 약가 변동은 2020년 1월 1일을 기준으로 -4.78% 인하되었습니다. 이는 실거래가 연동 약가인하 기전에 따라 조정된 것으로, HIRA의 실거래가 조사 결과가 반영된 결과입니다. 변동률은 통상적인 실거래가 연동 인하폭에 부합하며, 가산기간 종료와 관련된 조정으로 추정됩니다.",
+  "evidence_summary": "윈도우 내 확인 가능한 공개 보도 없음. HIRA 공식 실거래가 조사 고시(보건복지부·HIRA 우선 매체) 미확인.",
+  "confidence": "medium",
+  "window": {
+    "from": "2019.07",
+    "to": "2020.07",
+    "months": 6
+  },
+  "references": [
+    {
+      "title": "download.jsp?PLM_BIZ_DSCD=05&PLM_ANX_SAVE_FILE_NM=PLM_P05000",
+      "url": "https://spot.wooribank.com/pot/pot/mall/comm/download.jsp?PLM_BIZ_DSCD=05&PLM_ANX_SAVE_FILE_NM=PLM_P050000636_DF003_20210304161612000415.pdf&PLM_ATFL_NM=%EB%9D%BC%EC%9D%B4%EB%82%98%EC%83%9D%EB%AA%85+%28%EB%AC%B4%29%EC%95%94%EA%B1%B1%EC%A0%95%EC%97%86%EB%8A%94+%ED%91%9C%EC%A0%81%EC%B9%98%EB%A3%8C%EC%95%94%EB%B3%B4%ED%97%98%28%EA%B0%B1%EC%8B%A0%ED%98%95%29%28%EB%AA%A8%EB%B0%94%EC%9D%BC%29_%EC%95%BD%EA%B4%80.pdf",
+      "media": "기타",
+      "weight": 0.5,
+      "fetch_verified": false,
+      "published_at": "0500.00.63",
+      "notes": "date_inferred_from_url",
+      "date_unknown": true
+    },
+    {
+      "title": "%EA%B0%90%EC%97%BC%EB%B3%91%EA%B8%B0%EC%88%A0%EC%A0%84%EB%9E",
+      "url": "https://www.vitalkorea.kr/uploads/trend/%EA%B0%90%EC%97%BC%EB%B3%91%EA%B8%B0%EC%88%A0%EC%A0%84%EB%9E%B5%EC%84%BC%ED%84%B0_%20%EA%B5%AD%EA%B0%80%ED%95%84%EC%88%98%EC%98%88%EB%B0%A9%EC%A0%91%EC%A2%85%20%EB%B0%B1%EC%8B%A0%20%ED%8A%B9%ED%97%88%EA%B6%8C%20%EB%B6%84%EC%84%9D%20%EB%B3%B4%EA%B3%A0%EC%84%9C.pdf",
+      "media": "기타",
+      "weight": 0.5,
+      "fetch_verified": false,
+      "date_unknown": true
+    },
+    {
+      "title": "40391_policy.pdf",
+      "url": "https://direct.kdblife.co.kr/resources/doc/policy/40391_policy.pdf",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true
+    },
+    {
+      "title": "L04B14131_agree.pdf",
+      "url": "https://image.kebhana.com/cont/download/insdocument/provide/L04B14131_agree.pdf",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true
+    },
+    {
+      "title": "download.php?path=%2Fupload%2Fnewsroom%2F&vf=1563759685330_C",
+      "url": "http://promedis.co.kr/lib/download.php?path=%2Fupload%2Fnewsroom%2F&vf=1563759685330_C1T_EC9E84EC8381EC8B9CED9798_EC8AB9EC9DB8ED9884ED99A9EBAAA9EBA19D287E7.1929.xlsx&af=%EC%9E%84%EC%83%81%EC%8B%9C%ED%97%98+%EC%8A%B9%EC%9D%B8%ED%98%84%ED%99%A9%EB%AA%A9%EB%A1%9D%28~7.19%29.xlsx",
+      "media": "기타",
+      "weight": 0.5,
+      "published_at": "1563.75.96",
+      "notes": "date_inferred_from_url",
+      "date_unknown": true
+    },
+    {
+      "title": "newsView.html?ID=262991",
+      "url": "https://m.dailypharm.com/newsView.html?ID=262991",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "fetch_verified": true,
+      "published_at": "2020-03-20",
+      "date_corrected": true
+    },
+    {
+      "title": "getPermissionInfo.do?pgmid=HIRAA030029000000&medcCd=64500061",
+      "url": "https://www.hira.or.kr/ra/medi/getPermissionInfo.do?pgmid=HIRAA030029000000&medcCd=645000610",
+      "media": "건강보험심사평가원",
+      "weight": 2.9,
+      "fetch_verified": false,
+      "published_at": "0300.29.00",
+      "notes": "date_inferred_from_url",
+      "date_unknown": true
+    },
+    {
+      "title": "2134863.pdf?attachmentId=2134863",
+      "url": "https://securities.miraeasset.com/bbs/download/2134863.pdf?attachmentId=2134863",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true
+    },
+    {
+      "title": "263055",
+      "url": "https://oldm.dailypharm.com/News/263055",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "fetch_verified": false,
+      "date_unknown": true
+    },
+    {
+      "title": "%ED%95%9C%EA%B5%AD%EB%B3%B4%EA%B1%B4%EC%82%B0%EC%97%85%EC%A7",
+      "url": "https://www.vitalkorea.kr/uploads/trend/%ED%95%9C%EA%B5%AD%EB%B3%B4%EA%B1%B4%EC%82%B0%EC%97%85%EC%A7%84%ED%9D%A5%EC%9B%90%202023%20%EB%B3%B4%EA%B1%B4%EC%82%B0%EC%97%85%EB%B0%B1%EC%84%9C(%EC%B5%9C%EC%A2%85).pdf",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true
+    }
+  ],
+  "notes": "[enforce] URL 검증: 2건 published_at 교체, 0건 drop (의심 0건) · published_at 미확인 5건 — date_unknown 마킹 후 보존 · 윈도우 외 references 4건 제거 · [enforce] URL 검증: 2건 published_at 교체, 0건 drop (의심 0건) · published_at 미확인 9건 — date_unknown 마킹 후 보존 · 윈도우 외 references 4건 제거",
+  "_source": "perplexity-sonar-pro",
+  "analysis_meta": {
+    "source": "perplexity-sonar-pro",
+    "total_articles": 5,
+    "tier_a_count": 0,
+    "tier_b_count": 0,
+    "tier_c_count": 0,
+    "detected_mechanisms": [
+      "실거래가 연동 약가인하"
+    ],
+    "top_media": [
+      {
+        "media": "기타",
+        "weight": 0.5
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      }
+    ]
+  },
+  "deep_research": {
+    "source": "perplexity-sonar-pro-research",
+    "model": "sonar-pro",
+    "citations": [
+      "https://www.newsthevoice.com/news/articleView.html?idxno=44488",
+      "https://m.dailypharm.com/newsView.html?ID=262991",
+      "https://www.hira.or.kr/ra/medi/getPermissionInfo.do?pgmid=HIRAA030029000000&medcCd=645000610",
+      "https://securities.miraeasset.com/bbs/download/2134863.pdf?attachmentId=2134863",
+      "https://kind.krx.co.kr/external/2020/09/01/000068/20200901000095/10601.htm",
+      "https://oldm.dailypharm.com/News/263055",
+      "https://www.vitalkorea.kr/uploads/trend/%ED%95%9C%EA%B5%AD%EB%B3%B4%EA%B1%B4%EC%82%B0%EC%97%85%EC%A7%84%ED%9D%A5%EC%9B%90%202023%20%EB%B3%B4%EA%B1%B4%EC%82%B0%EC%97%85%EB%B0%B1%EC%84%9C(%EC%B5%9C%EC%A2%85).pdf",
+      "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20210517001474",
+      "https://kind.krx.co.kr/common/disclsviewer.do?method=search&acptno=20210323001447"
+    ],
+    "created_at": "2026-04-26T21:20:44.546542Z"
+  },
+  "cached": false
+}

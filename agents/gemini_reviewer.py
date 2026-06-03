@@ -81,11 +81,16 @@ class GeminiReviewer:
             logger.info("[GeminiReviewer] GEMINI_API_KEY 없음 — 패널 합의 단독 OpenAI 의존")
             return None
 
+        from agents.market_intelligence.rules_engine import prepare_review_payload
+        display_result = prepare_review_payload(mi_result)
+
         user_msg = (
             f"[원 사용자 요청]\n약제: {original_request.get('drug')}\n"
             f"변동일: {original_request.get('date')}\n"
             f"변동률: {original_request.get('delta_pct')}%\n\n"
-            f"[MI Agent 결과]\n{json.dumps(mi_result, ensure_ascii=False, indent=2)}\n\n"
+            f"[MI Agent 결과]\n{json.dumps(display_result, ensure_ascii=False, indent=2)}\n\n"
+            f"주의: published_at 없는 references 는 평가 대상에서 제외함 "
+            f"(본 목록의 references 로만 윈도우·기전 정합성 판단).\n\n"
             f"[market_intelligence_rules.md 원문]\n{mi_rules}\n\n"
             "위 결과가 원래 요청과 룰에 부합하는지 JSON 으로만 응답하세요."
         )

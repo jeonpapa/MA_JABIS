@@ -283,11 +283,16 @@ class ReviewAgent:
             from openai import OpenAI
             client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
 
+            from agents.market_intelligence.rules_engine import prepare_review_payload
+            display_result = prepare_review_payload(result)
+
             user_msg = (
                 f"[원 사용자 요청]\n"
                 f"약제: {req.get('drug')}, 변동일: {req.get('date')}, "
                 f"변동률: {req.get('delta_pct')}%\n\n"
-                f"[에이전트 결과]\n{json.dumps(result, ensure_ascii=False, indent=2)}\n\n"
+                f"[에이전트 결과]\n{json.dumps(display_result, ensure_ascii=False, indent=2)}\n\n"
+                f"주의: published_at 없는 references 는 검토 대상에서 제외했음 "
+                f"(date_unknown 마킹 후 보존됨 — 평가는 본 목록의 references 로만 진행).\n\n"
                 f"[MarketIntelligenceAgent 룰 원문]\n{mi_rules}\n\n"
                 f"[ReviewAgent 룰 원문]\n{self.review_rules}\n\n"
                 f"위 4가지 축을 점검하고 JSON으로만 응답하세요."

@@ -80,12 +80,23 @@ class DrugEnrichmentAgent:
         """
         cached = self.db.get_enrichment(normalized_name) if not force_refresh else None
         if cached and self._cache_valid(cached):
-            logger.info("[Enrichment] cache HIT: %s", normalized_name)
+            if self._is_failure_record(cached):
+                # 실패 캐시: TTL 1일 내 재시도 회피 (과도한 API 호출 방지).
+                # 그러나 shape_response 로 반환 — 이 값을 받은 호출자는 비워진 필드를 인지.
+                logger.info("[Enrichment] cache HIT (failure record within TTL): %s", normalized_name)
+            else:
+                logger.info("[Enrichment] cache HIT: %s", normalized_name)
             return self._shape_response(cached, current_price, source="cache")
 
-        # cache miss → 외부 조회
-        logger.info("[Enrichment] cache MISS: %s — Perplexity 호출", normalized_name)
-        rec = self._fetch_remote(normalized_name, product_name, ingredient)
+        # cache miss → 외부 조회 체인: 1) health.kr (MFDS 원천 · 공식 데이터) → 2) Perplexity (fallback)
+        logger.info("[Enrichment] cache MISS: %s — 외부 조회 시작", normalized_name)
+        rec = self._fetch_health_kr(normalized_name)
+        if rec:
+            logger.info("[Enrichment] %s — health.kr 성공 (허가일=%s)",
+                        normalized_name, rec.get("approval_date"))
+        else:
+            logger.info("[Enrichment] %s — health.kr miss → Perplexity fallback", normalized_name)
+            rec = self._fetch_remote(normalized_name, product_name, ingredient)
         if not rec:
             # 실패 폴백 — 빈 레코드 반환 (에러로 블록하지 않음)
             rec = self._empty_record()
@@ -109,6 +120,9 @@ class DrugEnrichmentAgent:
             return False
 
     def _empty_record(self) -> dict:
+        # 실패 레코드는 성공 레코드와 다른 짧은 TTL 로 저장.
+        # 30일 기본 TTL 을 쓰면 Perplexity 일시 오류(WARP OFF 등) 가 30일 빈값 반복을 유발.
+        # ttl_days=1 로 다음날부터 재시도 허용. `_is_failure_record` 가 notes/confidence 기반 탐지.
         return {
             "is_rsa": None, "rsa_type": None, "rsa_note": "",
             "approval_date": None, "usage_text": "",
@@ -116,10 +130,43 @@ class DrugEnrichmentAgent:
             "cycle_days": None, "doses_per_cycle": None,
             "sources_json": [], "confidence": "low",
             "notes": "외부 조회 실패 — 재시도 필요",
+            "ttl_days": 1,
         }
 
+    @staticmethod
+    def _is_failure_record(rec: dict) -> bool:
+        """persist 된 실패 레코드 식별 — confidence=low + notes 패턴."""
+        if not rec:
+            return False
+        return (
+            (rec.get("confidence") or "").lower() == "low"
+            and str(rec.get("notes") or "").startswith("외부 조회 실패")
+        )
+
     # ─────────────────────────────────────────────────────────────
-    # Perplexity 호출
+    # 1차 — 약학정보원 (health.kr) AJAX
+    # ─────────────────────────────────────────────────────────────
+    def _fetch_health_kr(self, normalized_name: str) -> Optional[dict]:
+        """health.kr 에서 공식 허가일·용법·함량 회수. DRUG_CD_MAP 에 등록된 제품만 성공.
+
+        성공 시 DrugEnrichmentAgent 표준 스키마 dict (persisted 가능한 형태) 반환.
+        """
+        try:
+            from agents.scrapers.kr_health_kr import HealthKrScraper
+            scraper = HealthKrScraper()
+            cd = scraper.resolve_drug_cd(normalized_name)
+            if not cd:
+                return None
+            rec = scraper.fetch(cd)
+            if not rec:
+                return None
+            return rec.to_enrichment_dict()
+        except Exception as e:
+            logger.warning("[Enrichment] health.kr 호출 중 예외: %s", e)
+            return None
+
+    # ─────────────────────────────────────────────────────────────
+    # 2차 — Perplexity 호출 (health.kr fallback)
     # ─────────────────────────────────────────────────────────────
     def _fetch_remote(self, normalized_name: str, product_name: str, ingredient: str) -> Optional[dict]:
         api_key = os.environ.get("PERPLEXITY_API_KEY", "")
@@ -245,6 +292,7 @@ class DrugEnrichmentAgent:
             "normalized_name":      rec.get("normalized_name"),
             "representative_code":  rec.get("representative_code"),
             "insurance_codes":      codes,
+            "is_failure":           self._is_failure_record(rec),
             "is_rsa":               rec.get("is_rsa"),
             "rsa_type":             rec.get("rsa_type"),
             "rsa_note":             rec.get("rsa_note") or "",

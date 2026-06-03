@@ -21,7 +21,7 @@ from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 
-from .base import HTABaseScraper, HTAResult
+from .base import HTABaseScraper, HTAResult, ReimbursementResult
 
 logger = logging.getLogger(__name__)
 
@@ -145,6 +145,98 @@ class UKNICEScraper(HTABaseScraper):
             pdf_url=pdf_url,
             pdf_local=pdf_local,
             extra={"nice_id": ta_id},
+        )
+
+    # ── Reimbursement (NHS list price + 권고 → ReimbursementResult) ─────────
+
+    # NICE decision_type 정규화 — recommend/restrict/optimised/reject
+    _DECISION_TYPE_MAP = [
+        ("terminated appraisal",                    "not_applicable"),
+        ("not recommended",                         "reject"),
+        ("recommended within the cancer drugs fund", "restrict"),
+        ("recommended with managed access",         "restrict"),
+        ("recommended, with managed access",        "restrict"),
+        ("only recommended",                        "restrict"),
+        ("optimised",                               "optimised"),
+        ("recommended as an option",                "recommend"),
+        ("is recommended",                          "recommend"),
+    ]
+
+    def search_reimbursement(self, drug: str) -> list[ReimbursementResult]:
+        """NICE TA 별 ReimbursementResult 리스트 — DB 영구 저장 대상.
+
+        decision_type:
+          - recommend: 무조건 권고
+          - restrict: managed access / cancer drugs fund / optimised population
+          - reject: not recommended
+          - not_applicable: terminated appraisal
+        """
+        html = self._get(f"{self.BASE_URL}/search?q={drug}")
+        if not html:
+            return []
+        tas = sorted({m.group(1) for m in self.TA_HREF_RE.finditer(html)})
+        out: list[ReimbursementResult] = []
+        for ta in tas:
+            url = urljoin(self.BASE_URL, ta)
+            r = self._parse_ta_reimbursement(drug, url)
+            if r:
+                out.append(r)
+        return out
+
+    def _parse_ta_reimbursement(self, drug: str, url: str) -> Optional[ReimbursementResult]:
+        html = self._get(url)
+        if not html:
+            return None
+        soup = BeautifulSoup(html, "lxml")
+        title_el = soup.find("h1")
+        title = title_el.get_text(strip=True) if title_el else ""
+        if drug.lower() not in title.lower() and drug.lower() not in html.lower()[:5000]:
+            return None
+
+        reco_html = self._get(url + "/chapter/1-recommendations") or ""
+        combined_text = BeautifulSoup(html + "\n" + reco_html, "lxml").get_text(" ", strip=True)
+        combined_lower = combined_text.lower()
+
+        decision_type = "not_applicable"
+        for needle, label in self._DECISION_TYPE_MAP:
+            if needle in combined_lower:
+                decision_type = label
+                break
+
+        # 권고 본문 발췌 (criteria_text)
+        criteria = ""
+        if reco_html:
+            soup_reco = BeautifulSoup(reco_html, "lxml")
+            paras = [p.get_text(" ", strip=True) for p in soup_reco.find_all("p")]
+            criteria = " ".join(paras[:5])[:2000]
+        if not criteria:
+            criteria = title
+
+        # 발행일
+        date_iso = None
+        dm = self.DATE_RE.search(combined_text)
+        if dm:
+            from datetime import datetime
+            try:
+                dt = datetime.strptime(f"{dm.group(1)} {dm.group(2)} {dm.group(3)}", "%d %B %Y")
+                date_iso = dt.strftime("%Y-%m-%d")
+            except ValueError:
+                pass
+
+        ta_id = url.rsplit("/", 1)[-1]
+        return ReimbursementResult(
+            drug_query=drug,
+            indication_id=None,  # TA → indication_id 매칭은 save 단계에서 fuzzy 매칭
+            country="UK",
+            body="NICE",
+            decision_type=decision_type,
+            decision_id=ta_id,
+            decision_date=date_iso,
+            effective_date=date_iso,
+            criteria_text=criteria,
+            source_url=url,
+            currency="GBP",
+            raw_payload={"title": title, "url": url, "ta_id": ta_id},
         )
 
 

@@ -278,11 +278,17 @@ class FrBdpmScraper(BaseScraper):
         if price is None:
             price_note = "PPH 비공개 (병원 전용 또는 미상업)"
 
+        # BDPM `dosage_form` 컬럼은 병원약에서 종종 공백. product_name 에서 제형 키워드 추출 폴백.
+        # 예: "KEYTRUDA 25 mg/ml sol diluer p perf" → "sol diluer p perf" 로 extract → detect_form 성공
+        dosage_form = (meta.get("dosage_form") or "").strip()
+        if not dosage_form:
+            dosage_form = self._infer_dosage_form(meta["name"])
+
         return {
             "product_name":    meta["name"],
             "ingredient":      self._extract_ingredient(meta["name"]),
             "dosage_strength": self._extract_dosage(meta["name"]),
-            "dosage_form":     meta["dosage_form"],
+            "dosage_form":     dosage_form,
             "package_unit":    libelle,
             "local_price":     price,
             "source_url":      f"{BDPM_BASE}/extrait.php?specid={meta['cis']}",
@@ -297,6 +303,35 @@ class FrBdpmScraper(BaseScraper):
                 "source_type":  self.SOURCE_TYPE,
             },
         }
+
+    _DOSAGE_FORM_PATTERNS = [
+        r"\bsol(?:ution)?\s+(?:à\s+)?diluer(?:\s+(?:pour|p)\s+perf(?:usion)?)?\b",
+        r"\bsol(?:ution)?\s+pour\s+perfusion\b",
+        r"\bsol(?:ution)?\s+injectable\b",
+        r"\bsol\s+inj\b",
+        r"\bp\s+perf\b",
+        r"\bpoudre\s+(?:pour|p)\s+(?:sol|perf|inj|us\s+parent)\b",
+        r"\blyophilisat\b",
+        r"\bcomprimé\s+(?:pelliculé|enrobé|effervescent|dispersible|orodispersible|à\s+libération)?\b",
+        r"\bcomprimés?\b",
+        r"\bgélules?\b",
+        r"\bgranulés?\b",
+        r"\bsuspension\s+(?:buvable|injectable)?\b",
+        r"\bflacon\b",
+        r"\bseringue\s+préremplie\b",
+    ]
+
+    def _infer_dosage_form(self, product_name: str) -> str:
+        """product_name 에서 제형 단서 추출. BDPM 원본 dosage_form 공백 시 사용."""
+        if not product_name:
+            return ""
+        lower = product_name.lower()
+        import re as _re
+        for pat in self._DOSAGE_FORM_PATTERNS:
+            m = _re.search(pat, lower)
+            if m:
+                return m.group(0).strip()
+        return ""
 
     async def refresh(self, _page=None) -> None:
         logger.info("[FR] BDPM 공개 파일 캐시 기반")

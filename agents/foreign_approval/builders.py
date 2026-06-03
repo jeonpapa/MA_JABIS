@@ -179,9 +179,24 @@ class _BuildersMixin:
     ) -> AgencyResult:
         res = AgencyResult(agency="MFDS")
         t0 = time.time()
-        records = self._mfds.search(product_slug)
+        # 한국어 brand/generic 별칭을 candidate 로 넘겨 runtime itemSeq 자동조회 성공률 향상.
+        # MFDS nedrug 는 한국어 검색만 받음 — 영문 slug 만으론 검색 실패.
+        from agents.hta_scrapers.kr_mfds import PRODUCT_KO_ALIASES
+        aliases = PRODUCT_KO_ALIASES.get(product_slug.lower(), [])
+        # search() 의 item_name 파라미터는 단일 값이라 첫 alias 사용 (나머지는 resolve_item_seq 내부 fallback 에서 처리됨).
+        records = self._mfds.search(product_slug, item_name=aliases[0] if aliases else None)
+        if not records and aliases:
+            # 첫 alias 실패 시 나머지 alias 순차 시도
+            for alt in aliases[1:]:
+                records = self._mfds.search(product_slug, item_name=alt)
+                if records:
+                    break
         if not records:
-            res.errors.append("MFDS: 결과 없음 (MFDS_ITEM_SEQ 에 itemSeq 미설정 가능성)")
+            res.errors.append(
+                f"MFDS: 결과 없음 (product_slug={product_slug}). "
+                f"PRODUCT_KO_ALIASES 에 한국어 brand 명 등록 또는 "
+                f"MFDS_ITEM_SEQ 에 itemSeq 직접 지정 필요"
+            )
             res.elapsed = time.time() - t0
             return res
         rec = records[0]
