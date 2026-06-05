@@ -1,0 +1,64 @@
+{
+  "committee_short_kr": "약제평가위원회",
+  "committee_full_kr": "약제급여평가위원회",
+  "session_ordinal": 6,
+  "session_date_dot": "2026.06.04",
+  "session_date_kr": "2026년 6월 4일",
+  "opening_summary": "이번 회의는 10기 약평위 위원장과 신임 보험약제과장의 첫 정기 의결 회의였으며, 심의 대상 5종이 모두 통과되었습니다.",
+  "result_items": [
+    {
+      "drug_name": "리브리반트주",
+      "company": "한국얀센",
+      "indication_short": "EGFR 엑손20 NSCLC 단독요법",
+      "hira_official_result": "급여 적정성 있음",
+      "one_sentence_rationale": "5월 제5차 약평위 재심의 이후 1차수 만에 재상정되어 통과되었습니다."
+    },
+    {
+      "drug_name": "빌로이주 100·300mg",
+      "company": "한국아스텔라스",
+      "indication_short": "CLDN18.2+ 위암 1차",
+      "hira_official_result": "급여 적정성 있음",
+      "one_sentence_rationale": "5월 22일 경제성평가소위원회 통과 이후 이번 차수에 상정되어 통과되었습니다."
+    },
+    {
+      "drug_name": "핀테플라액",
+      "company": "한국유씨비",
+      "indication_short": "드라벳증후군 부가요법",
+      "hira_official_result": "급여 적정성 있음",
+      "one_sentence_rationale": "허가-평가-협상 병행 시범사업 대상 품목으로 심의되었습니다."
+    },
+    {
+      "drug_name": "지텍정 75mg",
+      "company": "종근당",
+      "indication_short": "위염",
+      "hira_official_result": "평가금액 이하 수용 시 적정",
+      "one_sentence_rationale": "평가금액 수용을 전제로 급여 적정성이 인정되었습니다."
+    },
+    {
+      "drug_name": "테빔브라주 100mg",
+      "company": "비원메디슨",
+      "indication_short": "PD-1, 식도암·위암·NSCLC 등 5개 적응증",
+      "hira_official_result": "위험분담 확대 적정",
+      "one_sentence_rationale": "위험분담 적용 범위 확대가 인정되었습니다."
+    }
+  ],
+  "msd_asset_impact": "테빔브라의 5개 적응증에 대한 위험분담 확대는 국내 면역항암제 시장 경쟁 구도 측면에서 지속 모니터링이 필요한 사안으로 판단됩니다.\n특히 식도암·위암·NSCLC 영역에서 키트루다와 경쟁 환경 변화 가능성이 있으며, 향후 키트루다 후속 적응증 신청 및 사후관리 협상에도 영향을 미칠 수 있어 중점적으로 추적할 예정입니다.\n한편, *파드셉+키트루다 통합 협상*은 4월 제4차 약평위 통과 이후 현재 NHIS 약가협상이 진행 중이며, 기존 *7~9월 timeline*을 유지하고 있습니다.",
+  "next_session_date_kr": "7월 2일",
+  "next_session_ordinal": 7,
+  "next_committee_short_kr": "약평위",
+  "next_candidates": [
+    {
+      "name": "엘라히어·버제니오",
+      "rationale": "5월 27일 제5차 암질심 통과 이후 약 5주 경과 예정으로, 약평위 상정 가능성이 높습니다."
+    },
+    {
+      "name": "옵디보+여보이 간세포암 1차",
+      "rationale": "4월 15일 제4차 암질심 통과 이후 약 11주 경과 예정으로, 상정 가능성을 중간 수준으로 보고 있습니다."
+    },
+    {
+      "name": "카보메틱스·사이람자",
+      "rationale": "약 5개월 이상 약평위 미진입 상태이며, 가격 합의 여부에 따라 재진입 가능성이 있습니다."
+    }
+  ],
+  "policy_context": "이번 회의는 10기 약평위의 첫 정기 의결 회의로, 운영 기조를 가늠할 수 있는 첫 사례로 볼 수 있습니다.\n또한 *약가 유연계약제*는 6월 1일 시행 이후 처음 적용 가능한 약평위였으나, 이번 회의에서 명시적인 활용 사례는 확인되지 않았습니다. 관련 제도의 실제 적용 여부는 후속 차수에서 지속 확인이 필요합니다."
+}
