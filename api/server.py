@@ -13,7 +13,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_file, send_from_directory
 from flask_cors import CORS
 
 # 프로젝트 루트를 sys.path에 추가
@@ -717,11 +717,16 @@ def _enrich_products(products: list[dict]) -> None:
         # 기본은 drug_enrichment 결과 → MFDS permit 가 있으면 우선
         approval_date = e["approval_date"] if e else None
         usage_text = e["usage_text"] if e else None
+        # 필드별 출처 플래그 (date_source 원칙): mfds_official=식약처 공공데이터 실측, estimate=LLM 보강 추정
+        approval_date_source = "estimate" if approval_date else None
+        usage_text_source = "estimate" if usage_text else None
         if mfds_permit:
             if mfds_permit.get("permit_date"):
                 approval_date = mfds_permit["permit_date"]
+                approval_date_source = "mfds_official"
             if mfds_permit.get("usage_text"):
                 usage_text = mfds_permit["usage_text"]
+                usage_text_source = "mfds_official"
 
         daily_cost = None
         if e and current_price > 0:
@@ -795,7 +800,9 @@ def _enrich_products(products: list[dict]) -> None:
             cov = p.get("first_date")
 
         p["approval_date"]          = approval_date
+        p["approval_date_source"]   = approval_date_source
         p["usage_text"]             = usage_text
+        p["usage_text_source"]      = usage_text_source
         p["coverage_start"]         = cov
         p["daily_cost"]             = daily_cost
         p["monthly_cost"]           = monthly_cost
@@ -3955,7 +3962,7 @@ def mail_sub_test_send(item_id: int):
 # Competitor Trends — 경쟁사 동향 카드 (CRUD)
 # ──────────────────────────────────────────────────────────────────────────────
 
-_COMPETITOR_COLS = "id, company, logo, color, badge, badge_color, headline, detail, date, source, url, created_at, updated_at"
+_COMPETITOR_COLS = "id, company, logo, color, badge, badge_color, headline, detail, date, source, url, created_at, updated_at, source_type, importance"
 
 _COMPETITOR_BADGES = ("신규 출시", "가격 변동", "임상 진행", "급여 등재", "파이프라인", "전략 변화")
 
@@ -3975,6 +3982,9 @@ def _competitor_row_to_dict(r) -> dict:
         "url": r[10],
         "created_at": r[11],
         "updated_at": r[12],
+        # auto_naver(주 1회 자동 크롤) vs manual 구분 — manual 보존 원칙의 UI 표시용
+        "source_type": r[13],
+        "importance": r[14],
     }
 
 
@@ -4604,6 +4614,174 @@ def admin_fda_sync():
     except Exception as e:
         logger.error("fda_sync 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Reimbursement Intelligence Reports — 약평위·암질심 리포트 PDF 인제스트
+#   PDF 드롭 위치: data/hira_pipeline/보고서/inbox/ → scan 시 LLM 분석 후 DB 반영
+# ──────────────────────────────────────────────────────────────────────────────
+
+from agents import reimb_reports as _reimb_reports
+
+_reimb_reports.ensure_schema()
+
+
+@app.get("/api/reimbursement/reports")
+@require_auth()
+def reimb_reports_list():
+    try:
+        return jsonify({"items": _reimb_reports.list_reports(),
+                        "inbox_dir": str(_reimb_reports.INBOX_DIR)})
+    except Exception as e:
+        logger.error("reimb reports list 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/reimbursement/reports/<int:report_id>/pdf")
+@require_auth()
+def reimb_report_pdf(report_id: int):
+    row = _reimb_reports.get_report(report_id)
+    if not row:
+        return jsonify({"error": "리포트 없음"}), 404
+    pdf = _reimb_reports.BASE_DIR / row["pdf_path"]
+    if not pdf.exists():
+        return jsonify({"error": "PDF 파일 유실"}), 404
+    return send_file(str(pdf), mimetype="application/pdf",
+                     as_attachment=False, download_name=row["file_name"])
+
+
+@app.post("/api/admin/reimbursement-reports/scan")
+@require_auth(role="admin")
+def reimb_reports_scan():
+    """inbox 폴더 스캔 → 신규 PDF 전부 LLM 분석 + 등록."""
+    try:
+        results = _reimb_reports.scan_inbox()
+        return jsonify({"results": results,
+                        "ingested": sum(1 for r in results if r["status"] == "ingested")})
+    except Exception as e:
+        logger.error("reimb reports scan 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/admin/reimbursement-reports/upload")
+@require_auth(role="admin")
+def reimb_reports_upload():
+    """PDF 직접 업로드 → inbox 저장 → 즉시 인제스트."""
+    f = request.files.get("file")
+    if f is None or not (f.filename or "").lower().endswith(".pdf"):
+        return jsonify({"error": "PDF 파일 필요 (multipart 'file')"}), 400
+    try:
+        _reimb_reports.ensure_schema()
+        dest = _reimb_reports.INBOX_DIR / Path(f.filename).name
+        f.save(str(dest))
+        result = _reimb_reports.ingest_pdf(dest, source="upload")
+        status_code = 200 if result["status"] in ("ingested", "duplicate") else 500
+        return jsonify(result), status_code
+    except Exception as e:
+        logger.error("reimb report upload 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/admin/reimbursement-reports/<int:report_id>/reanalyze")
+@require_auth(role="admin")
+def reimb_report_reanalyze(report_id: int):
+    result = _reimb_reports.reanalyze(report_id)
+    return jsonify(result), (200 if result.get("status") != "error" else 500)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Reimbursement Pipeline — 약평위·암질심 일정/파이프라인/차수 결과 + admin CRUD
+#   비즈니스 로직: agents/reimb_pipeline.py (ValueError→400, LookupError→404)
+# ──────────────────────────────────────────────────────────────────────────────
+
+from agents import reimb_pipeline as _reimb_pipeline
+
+
+def _reimb_pipeline_call(fn, *args, **kwargs):
+    """공통 오류 매핑 래퍼."""
+    try:
+        return jsonify(fn(*args, **kwargs))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except LookupError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        logger.error("reimb pipeline 실패 (%s): %s", fn.__name__, e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/reimbursement/meetings")
+@require_auth()
+def reimb_pipeline_meetings():
+    return _reimb_pipeline_call(
+        lambda: {"items": _reimb_pipeline.list_meetings()})
+
+
+@app.get("/api/reimbursement/pipeline")
+@require_auth()
+def reimb_pipeline_board():
+    return _reimb_pipeline_call(_reimb_pipeline.get_pipeline)
+
+
+@app.get("/api/reimbursement/meetings/<int:session_id>/results")
+@require_auth()
+def reimb_pipeline_meeting_results(session_id: int):
+    return _reimb_pipeline_call(_reimb_pipeline.get_meeting_results, session_id)
+
+
+@app.get("/api/admin/reimb-pipeline/drugs")
+@require_auth(role="admin")
+def reimb_pipeline_admin_drugs_list():
+    return _reimb_pipeline_call(
+        lambda: {"items": _reimb_pipeline.list_drugs_admin()})
+
+
+@app.post("/api/admin/reimb-pipeline/drugs")
+@require_auth(role="admin")
+def reimb_pipeline_admin_drug_create():
+    return _reimb_pipeline_call(
+        _reimb_pipeline.create_drug, request.get_json(silent=True) or {})
+
+
+@app.patch("/api/admin/reimb-pipeline/drugs/<int:drug_id>")
+@require_auth(role="admin")
+def reimb_pipeline_admin_drug_update(drug_id: int):
+    return _reimb_pipeline_call(
+        _reimb_pipeline.update_drug, drug_id, request.get_json(silent=True) or {})
+
+
+@app.delete("/api/admin/reimb-pipeline/drugs/<int:drug_id>")
+@require_auth(role="admin")
+def reimb_pipeline_admin_drug_delete(drug_id: int):
+    return _reimb_pipeline_call(_reimb_pipeline.delete_drug, drug_id)
+
+
+@app.post("/api/admin/reimb-pipeline/drugs/<int:drug_id>/events")
+@require_auth(role="admin")
+def reimb_pipeline_admin_event_add(drug_id: int):
+    return _reimb_pipeline_call(
+        _reimb_pipeline.add_event, drug_id, request.get_json(silent=True) or {})
+
+
+@app.delete("/api/admin/reimb-pipeline/events/<int:event_id>")
+@require_auth(role="admin")
+def reimb_pipeline_admin_event_delete(event_id: int):
+    return _reimb_pipeline_call(_reimb_pipeline.delete_event, event_id)
+
+
+@app.patch("/api/admin/reimb-pipeline/sessions/<int:session_id>")
+@require_auth(role="admin")
+def reimb_pipeline_admin_session_update(session_id: int):
+    return _reimb_pipeline_call(
+        _reimb_pipeline.update_session, session_id,
+        request.get_json(silent=True) or {})
+
+
+@app.post("/api/admin/reimb-pipeline/sessions")
+@require_auth(role="admin")
+def reimb_pipeline_admin_session_create():
+    return _reimb_pipeline_call(
+        _reimb_pipeline.create_session, request.get_json(silent=True) or {})
 
 
 # ──────────────────────────────────────────────────────────────────────────────

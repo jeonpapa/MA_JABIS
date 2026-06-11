@@ -1,0 +1,41 @@
+import { RouteObject } from 'react-router-dom';
+import HomePage from '@/pages/home/page';
+import DomesticPricingPage from '@/pages/domestic-pricing/page';
+import InternationalPricingPage from '@/pages/international-pricing/page';
+import MarketSharePage from '@/pages/market-share/page';
+import CompetitorTrendsPage from '@/pages/competitor-trends/page';
+import DailyMailingPage from '@/pages/daily-mailing/page';
+import ReimbursementStatusPage from '@/pages/reimbursement-status/page';
+import LoginPage from '@/pages/login/page';
+import NotFound from '@/pages/NotFound';
+// admin — 각 페이지가 fetchMe() 로 role 셀프 가드 (v2 패턴)
+import AdminMarketSharePage from '@/pages/admin/market-share/page';
+import AdminMsdPipelinePage from '@/pages/admin/msd-pipeline/page';
+import AdminBrandTrafficPage from '@/pages/admin/brand-traffic/page';
+import AdminCompetitorTrendsPage from '@/pages/admin/competitor-trends/page';
+import AdminKeywordCloudPage from '@/pages/admin/keyword-cloud/page';
+import AdminReimbursementPage from '@/pages/admin/reimbursement/page';
+import AdminReimbursementPipelinePage from '@/pages/admin/reimbursement-pipeline/page';
+import AdminApprovalDocumentsPage from '@/pages/admin/approval-documents/page';
+
+const routes: RouteObject[] = [
+  { path: '/login', element: <LoginPage /> },
+  { path: '/', element: <HomePage /> },
+  { path: '/domestic-pricing', element: <DomesticPricingPage /> },
+  { path: '/international-pricing', element: <InternationalPricingPage /> },
+  { path: '/market-share', element: <MarketSharePage /> },
+  { path: '/competitor-trends', element: <CompetitorTrendsPage /> },
+  { path: '/daily-mailing', element: <DailyMailingPage /> },
+  { path: '/reimbursement-status', element: <ReimbursementStatusPage /> },
+  { path: '/admin/market-share', element: <AdminMarketSharePage /> },
+  { path: '/admin/msd-pipeline', element: <AdminMsdPipelinePage /> },
+  { path: '/admin/brand-traffic', element: <AdminBrandTrafficPage /> },
+  { path: '/admin/competitor-trends', element: <AdminCompetitorTrendsPage /> },
+  { path: '/admin/keyword-cloud', element: <AdminKeywordCloudPage /> },
+  { path: '/admin/reimbursement', element: <AdminReimbursementPage /> },
+  { path: '/admin/reimbursement-pipeline', element: <AdminReimbursementPipelinePage /> },
+  { path: '/admin/approval-documents', element: <AdminApprovalDocumentsPage /> },
+  { path: '*', element: <NotFound /> },
+];
+
+export default routes;

@@ -1,0 +1,76 @@
+{
+  "updated_at": "2026-06-11T15:53:54.165486",
+  "markdown": "- **보건복지부**는 비정상 진료 행위에 대한 행정조사반을 가동하여 의료 현장의 부당 행위를 점검하고, 의료분쟁조정법의 하위법령 마련을 본격화하고 있음.\n- **건강보험심사평가원**은 건강보험 등재 약제의 성과평가를 위한 실제 근거(RWE) 생성 가이드라인을 제정하여 심사체계를 강화하고, K-의료기기의 글로벌 진출을 지원하고 있음.\n- **식품의약품안전처**는 희귀 의약품 허가 수가 증가하고 있으며, 저분자 콜라겐 제품이 기능성을 인정받아 시장에 출시됨.\n\n**함의**: 의료 및 제약 시장에서의 규제 강화와 성과 기반 평가가 진행됨에 따라, 기업들은 이에 맞춘 전략적 접근이 필요함. 또한, K-의료기기 및 의약품의 글로벌 진출 기회가 확대되고 있어, 해외 시장 진출을 위한 준비가 중요함.",
+  "reviewers": [
+    "openai:gpt-4o-mini",
+    "gemini:gemini-2.5-flash"
+  ],
+  "sources": [
+    {
+      "title": "금산군건강생활지원센터, 65세 이상 어르신 대상 노쇠예방관리 시범사업...",
+      "url": "https://www.ggilbo.com/news/articleView.html?idxno=1163206",
+      "source": "ggilbo",
+      "date": "2026-06-11"
+    },
+    {
+      "title": "가짜진료·과잉처방 집중 점검…복지부, 행정조사반 가동",
+      "url": "https://www.korea.kr/news/policyNewsView.do?newsId=148966334&call_from=naver_news",
+      "source": "korea",
+      "date": "2026-06-11"
+    },
+    {
+      "title": "제주대병원, 중증소아 단기입원 서비스 제공",
+      "url": "https://www.headlinejeju.co.kr/news/articleView.html?idxno=594291",
+      "source": "headlinejeju",
+      "date": "2026-06-11"
+    },
+    {
+      "title": "전문병원 의료질평가 기준에 ‘비급여 진료비 비중’ 포함",
+      "url": "https://www.akomnews.com/bbs/board.php?bo_table=news&wr_id=67431",
+      "source": "akomcom",
+      "date": "2026-06-11"
+    },
+    {
+      "title": "한국장기조직기증원, 대한민국 미래경영대상 수상… 생명나눔 문화 확산...",
+      "url": "https://www.kbsm.net/news/view.php?idx=522694",
+      "source": "kbsm",
+      "date": "2026-06-11"
+    },
+    {
+      "title": "의료분쟁조정법 시행 준비 본격화…복지부, 하위법령 논의 착수",
+      "url": "http://www.hemophilia.co.kr/news/articleView.html?idxno=42554",
+      "source": "hemophilia",
+      "date": "2026-06-11"
+    },
+    {
+      "title": "청소년 자살예방사업 실패 요인은? \"부처간 정책 단절 탓\"",
+      "url": "http://www.docdocdoc.co.kr/news/articleView.html?idxno=3039969",
+      "source": "docdocdoc",
+      "date": "2026-06-11"
+    },
+    {
+      "title": "복지부, 의료분쟁조정법 하위법령 마련 본격화",
+      "url": "https://www.bosa.co.kr/news/articleView.html?idxno=3006080",
+      "source": "bosa",
+      "date": "2026-06-11"
+    },
+    {
+      "title": "심평원, 약제 성과평가 가이드라인 마련…심사체계 강화",
+      "url": "https://www.medicaltimes.com/Main/News/NewsView.html?ID=1169204&ref=naverpc",
+      "source": "medicaltimes",
+      "date": "2026-06-11"
+    },
+    {
+      "title": "심평원, 약제성과평가 위한 실제 근거(RWE) 생성 가이드라인 제정·공개",
+      "url": "http://www.chungnamilbo.co.kr/news/articleView.html?idxno=893096",
+      "source": "chungnamilbo",
+      "date": "2026-06-11"
+    }
+  ],
+  "keywords": [
+    "보건복지부",
+    "건강보험심사평가원",
+    "건강보험공단",
+    "식품의약품안전처"
+  ]
+}

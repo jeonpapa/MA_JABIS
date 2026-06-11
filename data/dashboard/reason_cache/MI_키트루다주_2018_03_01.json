@@ -1,8 +1,8 @@
 {
   "mechanism": "actual_transaction",
   "mechanism_label": "실거래가 연동 약가인하",
-  "reason": "키트루다주의 변동률 -0.50%는 소폭 인하로, 실거래가 연동에 의한 약가 인하 가능성이 추정됩니다. 2018.03.01 시점 윈도우 내에서 키트루다의 직접적인 약가 인하 관련 보도는 확인되지 않았으나, MSD가 키트루다의 폐암 급여 신설을 위해 자누비아 등 다른 품목의 약가를 자진 인하한 것으로 알려져 있습니다. 그러나 키트루다 자체의 약가 변동에 대한 공식적인 근거는 확인되지 않았습니다.",
-  "evidence_summary": "한국보건산업진흥원(KHIDI) 보도: 한국MSD가 키트루다 폐암 1차 급여 신설 대신 자누비아 패밀리 등 15개 품목 상한금액 평균 26% 자진 인하 신청(2018년 3월 1일 적용 예정).",
+  "reason": "2018년 3월 1일 키트루다주의 약가가 -0.50% 인하된 것은 실거래가 조사 결과에 따른 미세 조정으로 보입니다. 이 시기에 키트루다는 적응증이 확대되었으나, 공식적인 약가 인하 사유로는 확인되지 않았습니다. 따라서, 약가 인하는 실거래가 연동에 따른 조정으로 추정됩니다.",
+  "evidence_summary": "데일리팜은 키트루다가 여러 적응증으로 사용범위가 확대되었다고 보도했습니다.",
   "confidence": "medium",
   "window": {
     "from": "2017.09",
@@ -11,18 +11,66 @@
   },
   "references": [
     {
-      "title": "키트루다 폐암 급여 신설 대신 자누비아 약가 인하?",
-      "url": "https://www.khidi.or.kr/board/matrixView?linkId=48870313&menuId=MENU01816&titleId=462977&searchCodeNm1=%EB%8F%99%ED%96%A5%2F%EC%A0%95%EC%B1%85%2F%EC%A0%9C%EB%8F%84&searchCodeNm2=%EC%A0%9C%EC%95%BD&searchCode1=0001&searchCode2=0003",
-      "media": "khidi.or.kr",
-      "weight": 2.1,
-      "published_at": "2018.02.28"
+      "title": "[기자의 눈] 약의 신을 기다리는 암환자들을 위해",
+      "url": "http://www.dailypharm.com/News/242890",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "published_at": "2018-08-23",
+      "fetch_verified": true
+    },
+    {
+      "title": "위험분담제 4년...'성과 있다' Vs '첫 단추 잘못뀄다'",
+      "url": "http://www.dailypharm.com/News/240018",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "published_at": "2018-05-21",
+      "fetch_verified": true
+    },
+    {
+      "title": "등재보다 어려운 기준비급여 급여확대 해법을 찾아라",
+      "url": "http://www.dailypharm.com/News/238262",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "published_at": "2018-03-30",
+      "fetch_verified": true
+    },
+    {
+      "title": "222658522056",
+      "url": "https://blog.naver.com/i-doctor/222658522056",
+      "media": "기타",
+      "weight": 0.5,
+      "fetch_verified": false,
+      "published_at": "2226.58.52",
+      "notes": "date_inferred_from_url",
+      "date_unknown": true
+    },
+    {
+      "title": "articleView.html?idxno=51494",
+      "url": "http://m.dailymedipharm.com/news/articleView.html?idxno=51494",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true
+    },
+    {
+      "title": "NWYLD",
+      "url": "http://newstapa.org/article/NWYLD",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true
+    },
+    {
+      "title": "news_view.php?wr_id=921578",
+      "url": "https://www.dailymedi.com/news/news_view.php?wr_id=921578",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true
     }
   ],
-  "notes": "키트루다 직접 약가 인하 기전 확인 자료 없음. 자진 인하 신청 품목에 키트루다 미포함으로 보임. · [enforce] published_at 누락/불량 5건 제거 · [enforce] published_at 누락/불량 7건 제거",
+  "notes": "윈도우 내에서 2018.03.01 키트루다 약가 변동 사유를 직접적으로 특정하는 고시문·보도가 검색되지 않아, KR-RULE-025(사후관리 사용량-약가 연동 인하 구조) 및 변동폭 특성에 기반한 기전 추정이다. 윈도우 내 공식 고시 원문(복지부 고시, 심평원 실거래가 조사 결과) 확보 시 기전 재검증 필요. · [enforce] URL 검증: 3건 published_at 교체, 0건 drop (의심 0건) · published_at 미확인 2건 — date_unknown 마킹 후 보존 · 윈도우 외 references 4건 제거 · [enforce] URL 검증: 3건 published_at 교체, 0건 drop (의심 0건) · published_at 미확인 4건 — date_unknown 마킹 후 보존 · 윈도우 외 references 3건 제거 · [Naver 보강] 윈도우 내 기사 38건 채택 · [enforce] published_at 미확인 4건 — date_unknown 마킹 후 보존 · delta_pct -0.50% (≤10%) — indication_expansion 부적합. 실거래가 연동 약가인하 로 보정",
   "_source": "perplexity-sonar-pro",
   "analysis_meta": {
     "source": "perplexity-sonar-pro",
-    "total_articles": 1,
+    "total_articles": 2,
     "tier_a_count": 0,
     "tier_b_count": 0,
     "tier_c_count": 0,
@@ -31,8 +79,12 @@
     ],
     "top_media": [
       {
-        "media": "khidi.or.kr",
-        "weight": 2.1
+        "media": "기타",
+        "weight": 0.5
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
       }
     ]
   },
@@ -40,15 +92,13 @@
     "source": "perplexity-sonar-pro-research",
     "model": "sonar-pro",
     "citations": [
-      "https://dailypharm.com/user/news/334728",
-      "https://biz.chosun.com/science-chosun/bio/2025/12/23/R57WCJHDCVARHNL7BSRH3YCGHI/",
-      "https://www.hira.or.kr/bbsDummy.do?pgmid=HIRAA020041000100&brdScnBltNo=4&brdBltNo=11416&pageIndex=1&pageIndex2=1",
-      "http://www.newstapa.org/article/HZFyg",
-      "https://www.medicaltimes.com/Main/News/NewsView.html?ID=1168141",
-      "https://v.daum.net/v/20260417174702253",
-      "http://m.yakup.com/news/index.html?mode=view&nid=315607"
+      "https://m.dailypharm.com/newsView.html?ID=285670",
+      "http://newstapa.org/article/NWYLD",
+      "https://www.dailymedi.com/news/news_view.php?wr_id=921578",
+      "https://www.medicaltimes.com/Mobile/News/NewsView.html?ID=1168141",
+      "https://www.newsthevoice.com/news/articleView.html?idxno=44541"
     ],
-    "created_at": "2026-04-18T16:05:42.471066Z"
+    "created_at": "2026-06-11T07:17:27.432525Z"
   },
   "cached": false
 }
