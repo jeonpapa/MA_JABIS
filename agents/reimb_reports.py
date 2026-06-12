@@ -78,10 +78,15 @@ def ensure_schema() -> None:
     ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
     with _connect() as conn:
         conn.executescript(_SCHEMA)
+        # amjilsim_drugs 가 아직 없는 DB(최초 배포 빈 볼륨 등)에선 ALTER 스킵 —
+        # 테이블 생성 시점(amjilsim ingest) 이후 재호출되면 그때 보강된다.
         existing = {r[1] for r in conn.execute("PRAGMA table_info(amjilsim_drugs)")}
-        for col, ddl in _DRUG_ALTERS:
-            if col not in existing:
-                conn.execute(ddl)
+        if existing:
+            for col, ddl in _DRUG_ALTERS:
+                if col not in existing:
+                    conn.execute(ddl)
+        else:
+            logger.info("[reimb_reports] amjilsim_drugs 미존재 — 컬럼 보강 스킵 (빈 DB)")
         conn.commit()
 
 
