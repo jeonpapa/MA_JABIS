@@ -823,7 +823,9 @@ import json as _json
 import urllib.request
 
 SCHEMA_VERSION = 1
-DATA_PATH = BASE_DIR / "data" / "reimb" / "committee_results.json"
+# 큐레이션 소스는 이미지 내(볼륨 밖) — 프로덕션 /app/data 볼륨이 가리지 않도록.
+# 헤르메스 git-pull 경로는 REIMB_DATA_URL 로 별도 지정(파일 위치 무관).
+DATA_PATH = Path(__file__).resolve().parent / "committee_results.json"
 
 # 선존(import DRUGS 외) DB 행 보강 — 브랜드 LIKE 매칭. 웰리렉 등 기존 MSD 행.
 EXISTING_DRUG_SUPPLEMENTS = [
