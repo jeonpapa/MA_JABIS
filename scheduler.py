@@ -9,6 +9,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -256,22 +257,42 @@ def competitor_news_weekly_job():
         logger.exception("Gov Policy News 주간 크롤 실패: %s", e)
 
 
-def amjilsim_daily_crawl_job():
-    """매일 02:00 Seoul — HIRA 공식 보도자료 + 27개 매체 일별 크롤.
+def reimb_data_sync_job():
+    """매일 02:00 Seoul — 헤르메스(또는 사람)가 git 에 커밋한 위원회 데이터 JSON 을
+    가져와 프로덕션 DB 에 멱등 적재. **재배포·재시딩 불필요**.
 
-    1. HIRA 게시판 신규 보도자료 list fetch (https://www.hira.or.kr/bbsDummy.do?pgmid=HIRAA020041000100)
-    2. 신규 약평위/암질심 보도자료 발견 시 본문 fetch + DB 적재
-    3. 27개 의약 전문지 약평위·암질심 키워드 크롤 → media_signals 적재
-    4. 신호 body verification 강제 (signal_attribution_rules.md)
+    소스: 환경변수 REIMB_DATA_URL (git raw URL). 미설정 시 로컬 JSON 파일 사용(로컬 개발).
+    해시 게이트: payload sha256 이 직전 적용분과 같으면 skip (무중복 import).
+    마지막 적용 해시는 data/reimb/.last_applied_hash 에 저장.
     """
-    logger.info("━━━ amjilsim daily crawl 시작 ━━━")
+    logger.info("━━━ Reimbursement 데이터 sync 시작 ━━━")
     try:
-        # TODO: backend python module 구현 후 실제 호출
-        # from agents.amjilsim_tracker.agent import AmjilsimTrackerAgent
-        # AmjilsimTrackerAgent().daily_crawl()
-        logger.info("amjilsim daily crawl placeholder — backend 구현 대기")
+        from agents.ingest import reimb_committee_import as imp
+        from agents import reimb_reports as rr
+
+        source = os.environ.get("REIMB_DATA_URL") or None
+        payload = imp.load_payload(source)
+        new_hash = imp.payload_hash(payload)
+
+        hash_file = BASE_DIR / "data" / "reimb" / ".last_applied_hash"
+        prev_hash = hash_file.read_text().strip() if hash_file.exists() else ""
+        if new_hash == prev_hash:
+            logger.info("Reimbursement sync: 변경 없음 (hash %s) — skip", new_hash[:12])
+            return
+
+        result = imp.run(payload)
+        try:
+            rr.backfill_blobs()  # PDF 파일이 이미지에 있으면 blob 보강 (멱등)
+        except Exception as e:
+            logger.warning("Reimbursement sync: blob backfill 스킵: %s", e)
+
+        hash_file.parent.mkdir(parents=True, exist_ok=True)
+        hash_file.write_text(new_hash)
+        logger.info("Reimbursement sync 완료: 약제 %d · 이벤트 %d (신규 %d) · hash %s · source=%s",
+                    result["drugs_after"], result["events_total"], result["events_added"],
+                    new_hash[:12], source or "local")
     except Exception as e:
-        logger.exception("amjilsim daily crawl 실패: %s", e)
+        logger.exception("Reimbursement 데이터 sync 실패: %s", e)
 
 
 def amjilsim_d_minus_2_reporter_job():
@@ -508,8 +529,8 @@ def main():
         return
 
     if args.amjilsim_daily_crawl_now:
-        logger.info("amjilsim 일별 크롤 즉시 실행")
-        amjilsim_daily_crawl_job()
+        logger.info("Reimbursement 데이터 sync 즉시 실행 (위원회 데이터 git→DB)")
+        reimb_data_sync_job()
         return
 
     if args.hira_fetch_now:
@@ -630,12 +651,12 @@ def main():
 
     # ─── HIRA Pipeline Tracker (암질심·약평위) ────────────────────────────────
 
-    # 매일 02:00 — HIRA 공식 보도자료 + 27개 의약 전문지 일별 크롤
+    # 매일 02:00 — Reimbursement 위원회 데이터 git→DB sync (헤르메스 커밋 자동 반영)
     scheduler.add_job(
-        amjilsim_daily_crawl_job,
+        reimb_data_sync_job,
         trigger=CronTrigger(hour=2, minute=0, timezone="Asia/Seoul"),
-        id="amjilsim_daily_crawl",
-        name="amjilsim·약평위 매일 02:00 일별 크롤",
+        id="reimb_data_sync",
+        name="Reimbursement 위원회 데이터 매일 02:00 git sync",
         replace_existing=True,
     )
 

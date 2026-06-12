@@ -10,10 +10,16 @@
 set -m
 
 # 볼륨이 /app/data 를 덮으므로 (최초 부팅 시 빈 볼륨) 필수 디렉터리 보장
-mkdir -p logs data/db data/cache data/dashboard data/raw \
+mkdir -p logs data/db data/cache data/dashboard data/raw data/reimb \
          data/foreign/exchange_rate data/foreign/us data/foreign/jp \
          data/foreign/it data/foreign/fr data/foreign/ch data/foreign/uk \
          data/foreign/de data/foreign/ca data/research
+
+# 부팅 1회 — 헤르메스 git 위원회 데이터를 즉시 반영 (배포 직후 최신화, 멱등).
+# 실패해도 부팅을 막지 않음 (스케줄러가 매일 02:00 재시도).
+echo "[start] Reimbursement 데이터 sync (부팅 1회)..."
+python scheduler.py --amjilsim-daily-crawl-now >> logs/scheduler.out 2>&1 || \
+    echo "[start] reimb sync 부팅 실행 실패 — 스케줄러 정기 실행에 위임"
 
 python scheduler.py >> logs/scheduler.out 2>&1 &
 SCHED_PID=$!
