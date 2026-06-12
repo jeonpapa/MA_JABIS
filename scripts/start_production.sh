@@ -9,7 +9,11 @@
 # ─────────────────────────────────────────────────────────────────────────────
 set -m
 
-mkdir -p logs
+# 볼륨이 /app/data 를 덮으므로 (최초 부팅 시 빈 볼륨) 필수 디렉터리 보장
+mkdir -p logs data/db data/cache data/dashboard data/raw \
+         data/foreign/exchange_rate data/foreign/us data/foreign/jp \
+         data/foreign/it data/foreign/fr data/foreign/ch data/foreign/uk \
+         data/foreign/de data/foreign/ca data/research
 
 python scheduler.py >> logs/scheduler.out 2>&1 &
 SCHED_PID=$!
