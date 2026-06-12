@@ -17,13 +17,16 @@ const STATUS_BADGE: Record<PipelineDrug['status'], { label: string; dark: string
   waiting:     { label: '심의 대기', dark: 'text-amber-300 bg-amber-400/10 border-amber-400/30',      light: 'text-amber-600 bg-amber-50 border-amber-200' },
 };
 
-function StatusBadge({ status, isDark }: { status: PipelineDrug['status']; isDark: boolean }) {
-  const cfg = STATUS_BADGE[status] ?? STATUS_BADGE.waiting;
+function StatusBadge({ drug, isDark }: { drug: PipelineDrug; isDark: boolean }) {
+  const cfg = STATUS_BADGE[drug.status] ?? STATUS_BADGE.waiting;
+  // 상정예정이면 차수 정보 부기 ("심의 상정예정 · 7차")
+  const suffix = drug.status === 'scheduled' && drug.expectedSessionCycle
+    ? ` · ${drug.expectedSessionCycle}차` : '';
   return (
     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${
       isDark ? cfg.dark : cfg.light
     }`}>
-      {cfg.label}
+      {cfg.label}{suffix}
     </span>
   );
 }
@@ -62,11 +65,16 @@ function DrugCard({ drug, index, isDark, onClick }: {
             {drug.type ?? (drug.msdFlag ? 'MSD' : '—')}
           </span>
         </div>
-        <StatusBadge status={drug.status} isDark={isDark} />
+        <StatusBadge drug={drug} isDark={isDark} />
       </div>
 
       <h4 className={`text-sm font-bold mb-1 leading-snug ${isDark ? 'text-white' : 'text-gray-900'}`}>
         {drug.name}
+        {drug.msdFlag && (
+          <span className={`ml-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded align-middle ${
+            isDark ? 'bg-[#00E5CC]/15 text-[#00E5CC]' : 'bg-teal-50 text-teal-600'
+          }`}>MSD</span>
+        )}
       </h4>
 
       <p className={`text-xs mb-2 truncate ${isDark ? 'text-[#8B9BB4]' : 'text-gray-500'}`}>
@@ -80,20 +88,25 @@ function DrugCard({ drug, index, isDark, onClick }: {
         <span className="truncate font-medium">{drug.company ?? '정보 없음'}</span>
       </div>
 
-      <div className={`flex items-center gap-1.5 text-[10px] ${isDark ? 'text-[#5A6A80]' : 'text-gray-400'}`}>
-        <span className="w-3.5 h-3.5 flex items-center justify-center flex-shrink-0">
-          <i className="ri-calendar-line text-[11px]"></i>
-        </span>
-        <span>{drug.updatedDate ?? '—'}</span>
+      {/* 세부 히스토리/notes 는 카드에서 제거 — 클릭 시 모달에서 확인 (이슈 ②) */}
+      <div className={`flex items-center justify-between gap-2 mt-2 pt-2 border-t ${
+        isDark ? 'border-[#1E2530]' : 'border-gray-100'
+      }`}>
+        {drug.status === 'scheduled' && drug.expectedSessionDate ? (
+          <span className={`text-[10px] font-medium ${isDark ? 'text-teal-400' : 'text-teal-600'}`}>
+            <i className="ri-calendar-event-line text-[11px] mr-1"></i>예정 {drug.expectedSessionDate}
+          </span>
+        ) : (
+          <span className={`text-[10px] ${isDark ? 'text-[#5A6A80]' : 'text-gray-400'}`}>
+            <i className="ri-calendar-line text-[11px] mr-1"></i>{drug.updatedDate ?? '—'}
+          </span>
+        )}
+        {drug.keyIssues.length > 0 && (
+          <span className={`text-[10px] font-medium flex items-center gap-0.5 ${isDark ? 'text-[#8B9BB4]' : 'text-gray-500'}`}>
+            <i className="ri-lightbulb-flash-line text-[11px]"></i>쟁점 {drug.keyIssues.length}
+          </span>
+        )}
       </div>
-
-      {drug.notes && (
-        <p className={`text-[10px] mt-2 pt-2 border-t leading-relaxed ${
-          isDark ? 'text-[#5A6A80] border-[#1E2530]' : 'text-gray-400 border-gray-100'
-        }`}>
-          {drug.notes}
-        </p>
-      )}
     </div>
   );
 }

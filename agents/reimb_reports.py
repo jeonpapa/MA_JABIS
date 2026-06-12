@@ -64,6 +64,8 @@ _DRUG_ALTERS = [
     ("listing_type", "ALTER TABLE amjilsim_drugs ADD COLUMN listing_type TEXT"),
     ("submitted_date", "ALTER TABLE amjilsim_drugs ADD COLUMN submitted_date DATE"),
     ("notes", "ALTER TABLE amjilsim_drugs ADD COLUMN notes TEXT"),
+    # 핵심 쟁점 (JSON 배열) — D±1 보고서 전사. 칸반 모달 인사이트 섹션 소스
+    ("key_issues", "ALTER TABLE amjilsim_drugs ADD COLUMN key_issues TEXT"),
 ]
 
 
@@ -78,6 +80,10 @@ def ensure_schema() -> None:
     ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
     with _connect() as conn:
         conn.executescript(_SCHEMA)
+        # reimb_reports.pdf_blob — PDF 바이너리 (배포 서버는 파일시스템에 PDF 없음 → DB 서빙)
+        rr_cols = {r[1] for r in conn.execute("PRAGMA table_info(reimb_reports)")}
+        if "pdf_blob" not in rr_cols:
+            conn.execute("ALTER TABLE reimb_reports ADD COLUMN pdf_blob BLOB")
         # amjilsim_drugs 가 아직 없는 DB(최초 배포 빈 볼륨 등)에선 ALTER 스킵 —
         # 테이블 생성 시점(amjilsim ingest) 이후 재호출되면 그때 보강된다.
         existing = {r[1] for r in conn.execute("PRAGMA table_info(amjilsim_drugs)")}
@@ -237,16 +243,24 @@ def ingest_pdf(path: Path, source: str = "inbox") -> dict:
         dest = ARCHIVE_DIR / f"{file_hash[:8]}_{path.name}"
     shutil.move(str(path), str(dest))
 
+    # PDF 바이너리 — 배포 서버(파일시스템에 PDF 없음)에서 DB 만으로 다운로드 서빙
+    try:
+        pdf_blob = dest.read_bytes()
+    except Exception as e:
+        pdf_blob = None
+        logger.warning("[reimb_reports] pdf_blob 읽기 실패 %s: %s", dest.name, e)
+
     now = datetime.now().isoformat(timespec="seconds")
     with _connect() as conn:
         cur = conn.execute(
             """INSERT INTO reimb_reports
-               (file_hash, file_name, pdf_path, file_size, pages, title, committee,
+               (file_hash, file_name, pdf_path, pdf_blob, file_size, pages, title, committee,
                 report_type, year, cycle, session_date, summary, highlights_json,
                 analyzed, analysis_model, analysis_error, source, analyzed_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
-                file_hash, path.name, str(dest.relative_to(BASE_DIR)), file_size, pages,
+                file_hash, path.name, str(dest.relative_to(BASE_DIR)), pdf_blob,
+                file_size, pages,
                 analysis.get("title") or path.stem,
                 analysis.get("committee") or hints.get("committee"),
                 analysis.get("report_type") or hints.get("report_type"),
@@ -325,11 +339,51 @@ def list_reports() -> list[dict]:
         except Exception:
             d["highlights"] = []
         d.pop("file_hash", None)
+        blob = d.pop("pdf_blob", None)  # BLOB 은 목록 응답에서 제외 (다운로드 전용)
+        d["has_blob"] = blob is not None
         out.append(d)
     return out
 
 
 def get_report(report_id: int) -> Optional[dict]:
+    """메타만 (pdf_blob 제외 — 직렬화 방지)."""
     with _connect() as conn:
-        row = conn.execute("SELECT * FROM reimb_reports WHERE id = ?", (report_id,)).fetchone()
+        cols = [c[1] for c in conn.execute("PRAGMA table_info(reimb_reports)")]
+        sel = ", ".join(c for c in cols if c != "pdf_blob")
+        row = conn.execute(f"SELECT {sel} FROM reimb_reports WHERE id = ?", (report_id,)).fetchone()
     return dict(row) if row else None
+
+
+def get_pdf_bytes(report_id: int) -> Optional[bytes]:
+    """다운로드 서빙용 — pdf_blob 우선, 없으면 pdf_path 파일 fallback."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT pdf_blob, pdf_path FROM reimb_reports WHERE id = ?", (report_id,)).fetchone()
+    if not row:
+        return None
+    if row["pdf_blob"]:
+        return bytes(row["pdf_blob"])
+    if row["pdf_path"]:
+        p = BASE_DIR / row["pdf_path"]
+        if p.exists():
+            return p.read_bytes()
+    return None
+
+
+def backfill_blobs() -> dict:
+    """기존 행의 pdf_path 파일을 읽어 pdf_blob 채움 (로컬 1회 실행 — 아카이브 파일 존재 시)."""
+    ensure_schema()
+    filled = missing = 0
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT id, pdf_path FROM reimb_reports WHERE pdf_blob IS NULL").fetchall()
+        for r in rows:
+            p = BASE_DIR / (r["pdf_path"] or "")
+            if p.exists() and p.suffix.lower() == ".pdf":
+                conn.execute("UPDATE reimb_reports SET pdf_blob = ? WHERE id = ?",
+                             (p.read_bytes(), r["id"]))
+                filled += 1
+            else:
+                missing += 1
+        conn.commit()
+    return {"filled": filled, "missing_file": missing}

@@ -31,16 +31,23 @@ export default function DrugDetailModal({ drug, stageLabel, isDark, onClose }: D
     };
   }, [onClose]);
 
-  const statusLabel = drug.status === 'scheduled' ? '심의 예정' : drug.status === 'completed' ? '협상완료' : '심의 대기';
+  const statusLabel = drug.status === 'scheduled'
+    ? `심의 상정예정${drug.expectedSessionCycle ? ` · ${drug.expectedSessionCycle}차` : ''}`
+    : drug.status === 'completed' ? '협상완료'
+    : drug.status === 'negotiating' ? '협상중' : '심의 대기';
   const statusColor = drug.status === 'scheduled'
     ? 'text-teal-600 bg-teal-50 border-teal-200'
     : drug.status === 'completed'
     ? 'text-emerald-600 bg-emerald-50 border-emerald-200'
+    : drug.status === 'negotiating'
+    ? 'text-sky-600 bg-sky-50 border-sky-200'
     : 'text-amber-600 bg-amber-50 border-amber-200';
   const statusColorDark = drug.status === 'scheduled'
     ? 'text-teal-300 bg-teal-400/10 border-teal-400/30'
     : drug.status === 'completed'
     ? 'text-emerald-300 bg-emerald-400/10 border-emerald-400/30'
+    : drug.status === 'negotiating'
+    ? 'text-sky-300 bg-sky-400/10 border-sky-400/30'
     : 'text-amber-300 bg-amber-400/10 border-amber-400/30';
 
   const modalBg = isDark ? 'bg-[#161B27] border-[#1E2530]' : 'bg-white border-gray-200';
@@ -105,7 +112,44 @@ export default function DrugDetailModal({ drug, stageLabel, isDark, onClose }: D
               <p className={`text-[10px] font-medium mb-0.5 ${infoLabel}`}>암질심 통과일</p>
               <p className={`text-sm font-bold ${infoValue}`}>{drug.amjilsimPassDate ?? '정보 없음'}</p>
             </div>
+            <div className={`rounded-lg p-3 border ${infoBg}`}>
+              <p className={`text-[10px] font-medium mb-0.5 ${infoLabel}`}>약평위 통과일</p>
+              <p className={`text-sm font-bold ${infoValue}`}>{drug.yakpyungwiPassDate ?? '정보 없음'}</p>
+            </div>
+            {drug.status === 'scheduled' && drug.expectedSessionDate && (
+              <div className={`rounded-lg p-3 border ${isDark ? 'bg-teal-400/5 border-teal-400/20' : 'bg-teal-50/60 border-teal-100'}`}>
+                <p className={`text-[10px] font-medium mb-0.5 ${isDark ? 'text-teal-400/70' : 'text-teal-500'}`}>상정 예정</p>
+                <p className={`text-sm font-bold ${isDark ? 'text-teal-300' : 'text-teal-700'}`}>
+                  {drug.expectedSessionDate}{drug.expectedSessionCycle ? ` (${drug.expectedSessionCycle}차)` : ''}
+                </p>
+              </div>
+            )}
           </div>
+
+          {/* 핵심 쟁점 — D±1 보고서 전사 인사이트 (이슈 ②) */}
+          {drug.keyIssues.length > 0 && (
+            <div className={`rounded-xl p-4 border ${
+              isDark ? 'bg-[#00E5CC]/5 border-[#00E5CC]/20' : 'bg-teal-50/70 border-teal-200'
+            }`}>
+              <h3 className={`text-xs font-bold uppercase tracking-wider mb-2.5 flex items-center gap-1.5 ${
+                isDark ? 'text-[#00E5CC]' : 'text-teal-600'
+              }`}>
+                <i className="ri-lightbulb-flash-line text-sm"></i>핵심 쟁점
+              </h3>
+              <ul className="space-y-2">
+                {drug.keyIssues.map((issue, i) => (
+                  <li key={i} className="flex items-start gap-2">
+                    <span className={`mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                      isDark ? 'bg-[#00E5CC]' : 'bg-teal-500'
+                    }`} />
+                    <span className={`text-sm leading-relaxed ${isDark ? 'text-[#C9D1D9]' : 'text-gray-700'}`}>
+                      {issue}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {/* Indication */}
           <div>
@@ -158,6 +202,11 @@ export default function DrugDetailModal({ drug, stageLabel, isDark, onClose }: D
                         </div>
                         <p className={`text-xs ${contentText}`}>
                           {historyDetail(h)}
+                          {h.synthetic && (
+                            <span className={`ml-1.5 text-[10px] px-1.5 py-0.5 rounded ${
+                              isDark ? 'bg-[#1E2530] text-[#6B7A90]' : 'bg-gray-100 text-gray-400'
+                            }`} title="통과일 컬럼 기반 — 개별 회차 큐 기록 미수집">통과일 기준</span>
+                          )}
                           {h.evidenceUrl && (
                             <>
                               {' · '}
@@ -192,6 +241,8 @@ export default function DrugDetailModal({ drug, stageLabel, isDark, onClose }: D
                         ? 'bg-emerald-500 border-emerald-500'
                         : t.status === 'in_progress'
                         ? 'bg-white border-teal-500 ring-2 ring-teal-100'
+                        : t.status === 'expected'
+                        ? (isDark ? 'bg-teal-400/20 border-teal-400' : 'bg-teal-50 border-teal-400')
                         : t.status === 'rejected'
                         ? 'bg-red-400 border-red-400'
                         : isDark ? 'bg-[#161B27] border-[#2A3545]' : 'bg-white border-gray-300'
@@ -210,6 +261,8 @@ export default function DrugDetailModal({ drug, stageLabel, isDark, onClose }: D
                         ? textSub
                         : t.status === 'in_progress'
                         ? (isDark ? 'text-teal-400' : 'text-teal-700')
+                        : t.status === 'expected'
+                        ? (isDark ? 'text-teal-400/80' : 'text-teal-600')
                         : t.status === 'rejected'
                         ? (isDark ? 'text-red-400' : 'text-red-500')
                         : textMuted
@@ -218,9 +271,13 @@ export default function DrugDetailModal({ drug, stageLabel, isDark, onClose }: D
                       {t.negotiationStatus ? ` · ${t.negotiationStatus}` : ''}
                     </p>
                     <p className={`text-xs ${
-                      t.status === 'in_progress' ? (isDark ? 'text-teal-300' : 'text-teal-600') : textMuted
+                      t.status === 'in_progress' ? (isDark ? 'text-teal-300' : 'text-teal-600')
+                      : t.status === 'expected' ? (isDark ? 'text-teal-400/70' : 'text-teal-500')
+                      : textMuted
                     }`}>
-                      {t.date ?? '미정'}
+                      {t.date ? t.date
+                        : t.expectedDate ? `예상 ${t.expectedDate}`
+                        : t.status === 'expected' ? '예정일 미정' : '미정'}
                     </p>
                   </div>
                 </div>

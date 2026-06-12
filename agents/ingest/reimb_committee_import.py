@@ -35,6 +35,14 @@ MISSING_SESSIONS = [
      "통과약물.md 매체 보도(메디파나 401520) 참조 — 11차 약평위"),
     (2025, 12, 12, "2025-12-04", "YAKPYUNGWI",
      "통과약물.md 매체 보도(메디포뉴스 209530) 참조 — 12차 약평위"),
+    # HIRA 보도자료 직접 크롤로 확인된 2025 누락 차수 (2026-06-12 audit_coverage)
+    (2025, 7, 7, "2025-07-10", "YAKPYUNGWI", "HIRA 5034계열 brdBltNo=11531 — 7차 약평위 (씨트렐린·빌베이)"),
+    (2025, 8, 8, "2025-08-07", "YAKPYUNGWI", "HIRA brdBltNo=11554 — 8차 약평위 (리브말리·이스투리사 + 급여적정성 재평가)"),
+    (2025, 10, 10, "2025-10-02", "YAKPYUNGWI", "HIRA brdBltNo=11623 — 10차 약평위 (오젬픽·하이알플렉스·업리즈나·얼리다 확대)"),
+    (2025, 6, 6, "2025-07-23", "AMJILSIM", "HIRA brdBltNo=11543 — 6차 암질심 (다잘렉스 AL·폴라이비·버제니오 미설정·티쎈트릭·블린사이토)"),
+    (2025, 7, 7, "2025-09-03", "AMJILSIM", "HIRA brdBltNo=11576 — 7차 암질심 (레테브모·리브리반트 단독 설정·린파자 확대)"),
+    (2025, 8, 8, "2025-10-29", "AMJILSIM", "HIRA brdBltNo=11643 — 8차 암질심 (텍베일리·엘렉스피오·파드셉·빌로이·옵디보 식도암)"),
+    (2025, 9, 9, "2025-12-10", "AMJILSIM", "HIRA brdBltNo=11684 — 9차 암질심 (웰리렉 미설정·뉴베카·옥타이로·테빔브라 5적응증 설정)"),
 ]
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -64,13 +72,69 @@ def D(**kw):
 #   session_date 는 전역 UNIQUE 라 date 만으로 세션 해석 가능.
 # ──────────────────────────────────────────────────────────────────────────────
 EXPECTED_NEXT_SESSION: dict[str, str] = {
-    "카보메틱스":   "2026-07-02",  # 후보 6/4·7/2 → 7/2 7차 약평위
-    "사이람자":     "2026-07-02",  # 후보 6/4·7/2
+    # 6/4 6차 약평위 결과(HIRA 5034) 반영: 카보메틱스·사이람자 6차 미진입 → Tier1 상향, 7/2 후보
+    "카보메틱스":   "2026-07-02",  # 6차 미진입 (5개월 경과) → 7/2 7차 Tier1
+    "사이람자":     "2026-07-02",  # 6차 미진입 → 7/2 7차 Tier1
     "옵디보 + 여보이": "2026-07-02",  # 후보 7/2·8/6
     "엘라히어주":   "2026-07-02",  # 후보 7/2(fast-track)·8/6
-    "버제니오정":   "2026-07-02",  # 후보 7/2·8/6·9/3
-    "리브리반트주": "2026-07-02",  # 재상정 후보 6/4·7/2 (약평위 재심의)
+    "버제니오정":   "2026-07-02",  # 6차 미진입 — 7/2 7차 후보 (HIRA 5034 공식)
+    # 리브리반트주: 2026-06-04 6차 통과 → expected 제거 (nhis 단계)
     "림카토주":     "2026-07-08",  # 재상정 희망 7/8 6차 암질심
+}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 세션 상태 보정 — D+1 확인 완료된 차수를 COMPLETED 로 (멱등)
+#   (session_date, status, note)
+# ──────────────────────────────────────────────────────────────────────────────
+SESSION_STATUS_UPDATES: list[tuple[str, str, str]] = [
+    ("2026-06-04", "COMPLETED",
+     "6차 약평위 — 5개 의약품·9개 적응증 전체 통과 (HIRA 보도자료 5034: "
+     "지텍 조건부·빌로이·핀테플라·리브리반트 재상정 통과·테빔브라 RSA 확대 5적응증)."),
+]
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 핵심 쟁점 (key_issues) — D±1 보고서 전사 (faithful). 칸반 모달 인사이트 소스.
+#   brand_kr → list[str]. run() 에서 JSON 으로 amjilsim_drugs.key_issues 저장.
+#   출처: data/hira_pipeline/보고서/D+1_결과_리뷰/*.md + HIRA_보도자료/*.md
+# ──────────────────────────────────────────────────────────────────────────────
+KEY_ISSUES: dict[str, list[str]] = {
+    "리브리반트주": [
+        "5/7 5차 약평위 재심의 후 4주 만에 6/4 6차 재상정·통과 — '재심의→1~2차수 후 재상정' 표준 패턴 검증 (PR-004)",
+        "단독요법(2차 이상)만 우선 통과 — 렉라자 병용 등 타 적응증 트랙은 별도 진행",
+        "2021 허가 후 4년+ trajectory: 암질심 4회+ 미설정 → 자진취하·재신청 → 약평위 재심의 → 통과",
+    ],
+    "테빔브라주 100mg": [
+        "신약 트랙이 아닌 '위험분담(RSA) 확대' 트랙으로 5개 적응증 일괄 통과 — 글로벌 reference 대비 낮은 한국 entry price + RSA 합의 시그널",
+        "PD-1 면역항암제 가격 압박 baseline 변화 — 키트루다 등 동일 클래스 가격·급여 환경에 직접 영향 (MSD 영향 ⭐⭐)",
+        "식도편평세포암 1차 올커머(PD-L1 무관) 급여는 국내 면역항암제 중 유일",
+    ],
+    "빌로이주": [
+        "CLDN18.2 양성·HER2 음성 위암 1차 — 5/22 경제성평가소위 통과 후 6/4 약평위 상정·통과 (소위→약평위 fast 패턴)",
+        "사전 매체 신호가 약했던 위암 신약의 약평위 진입 — 위암 신약 tracking scope 확장 필요 사례",
+    ],
+    "핀테플라": [
+        "드라벳증후군(2세+) 발작 치료 부가요법 — 희귀질환 트랙, 협상 시 희귀질환 별도 트랙 가능",
+    ],
+    "지텍정 75mg": [
+        "종근당 첫 천연물의약품 급여 — '평가금액 이하 수용 시' 조건부 통과 (가격 협상이 등재의 관건)",
+    ],
+    "버제니오정": [
+        "5/27 5차 암질심 통과 (HR+/HER2- 조기 유방암 보조요법) — 동일 차수 키스칼리는 미설정: 'OS 데이터 성숙도' 가 희비 가름",
+        "6/4 6차 약평위 미진입 — 7/2 7차 상정 후보 (HIRA 5034 공식 기록)",
+    ],
+    "엘라히어주": [
+        "5/27 암질심 통과 — 정부 D-14 시점 명시적 약물 거명 → 통과 강한 상관 (PR-001 fast-track 신호)",
+        "FRα 양성 백금저항성 난소암 — 7/2 약평위 후보",
+    ],
+    "카보메틱스": [
+        "1/21 암질심 통과 후 약평위 5개월 미진입 — transition lag 초과, 7/2 7차 진입 가능성 상향 (Tier1)",
+    ],
+    "사이람자": [
+        "1/21 암질심 통과 후 약평위 5개월 미진입 — 7/2 7차 진입 가능성 상향 (Tier1)",
+    ],
+    "림카토주": [
+        "국산 1호 CAR-T — 5/27 암질심 미설정 (데이터 성숙도). 7/8 6차 암질심 재상정 추적",
+    ],
 }
 
 
@@ -448,6 +512,138 @@ D(brand_kr="빌베이", ingredient_inn="odevixibat", manufacturer=None,
                n_th_attempt=1,
                evidence_url="매체 보도 — HIRA 본문 미verified (2025 상반기 재심의)")])
 
+# ── (E) 2026-06-04 6차 약평위 통과 — HIRA 보도자료 5034 (공식, 4매체 독립검증) ──
+# 5개 의약품·9개 적응증 전체 통과. yakpyungwi_pass_date=2026-06-04 → nhis 단계.
+D(brand_kr="리브리반트주", ingredient_inn="amivantamab", manufacturer="한국얀센",
+  msd_flag=0, tracking_priority="competitor_class",
+  amjilsim_pass_date="2025-09-03", yakpyungwi_pass_date="2026-06-04",
+  negotiation_status="IN_PROGRESS",
+  indication="EGFR 엑손20 삽입 변이 NSCLC — 백금기반 화학요법 중/이후 진행, 성인 단독요법(2차 이상)",
+  listing_type="신규",
+  notes="6차 약평위(2026-06-04) 재상정 통과 — 급여 적정성 있음 (HIRA 5034). "
+        "7차 암질심(2025-09-03 brdBltNo=11576): 단독요법(적응증2) 급여기준 설정, 병용 3종 미설정. "
+        "5차 약평위(5/7) 재심의 → 6차 재상정 통과. NHIS 협상 단계 진입 (2026 하반기 예상).",
+  events=[dict(committee="AMJILSIM", state="APPROVED",
+               session_date="2025-09-03", n_th_attempt=1,
+               evidence_url="HIRA brdBltNo=11576 (7차 암질심 단독요법 급여기준 설정)"),
+          dict(committee="YAKPYUNGWI", state="REJECTED_REQUEUE",
+               session_date="2026-05-07", n_th_attempt=1,
+               evidence_url="HIRA brdBltNo=11793 (5차 약평위 재심의)"),
+          dict(committee="YAKPYUNGWI", state="APPROVED",
+               session_date="2026-06-04", n_th_attempt=2,
+               evidence_url="HIRA 보도자료 5034 (6차 약평위 통과)")])
+D(brand_kr="테빔브라주 100mg", ingredient_inn="tislelizumab",
+  manufacturer="비원메디슨코리아", msd_flag=0, tracking_priority="competitor_class",
+  amjilsim_pass_date="2025-12-10", yakpyungwi_pass_date="2026-06-04",
+  negotiation_status="IN_PROGRESS",
+  indication="PD-1 — ①식도편평세포암 1차 병용(올커머) ②위/위식도접합부 선암 1차 병용 "
+             "③비편평 NSCLC 1차 병용(PD-L1≥50%) ④편평 NSCLC 1차 병용 ⑤NSCLC 2차 단독 (5개 적응증)",
+  listing_type="확대",
+  notes="9차 암질심(2025-12-10 brdBltNo=11684) 5개 적응증 급여기준 설정 → "
+        "6차 약평위(2026-06-04 HIRA 5034) 급여범위 확대 적정성 있음 (위험분담 확대 트랙). "
+        "키트루다 등 PD-1 클래스 가격압박 baseline 변화 시그널 (MSD 직접 영향 ⭐⭐).",
+  events=[dict(committee="AMJILSIM", state="APPROVED",
+               session_date="2025-12-10", n_th_attempt=1,
+               evidence_url="HIRA brdBltNo=11684 (9차 암질심 5적응증 급여기준 설정)"),
+          dict(committee="YAKPYUNGWI", state="APPROVED",
+               session_date="2026-06-04", n_th_attempt=1,
+               evidence_url="HIRA 보도자료 5034 (6차 약평위 RSA 확대 통과)")])
+D(brand_kr="빌로이주", ingredient_inn="zolbetuximab", manufacturer="한국아스텔라스제약",
+  msd_flag=0, tracking_priority="competitor_class",
+  amjilsim_pass_date="2025-10-29", yakpyungwi_pass_date="2026-06-04",
+  negotiation_status="IN_PROGRESS",
+  indication="CLDN18.2 양성·HER2 음성 절제불가 국소진행성/전이성 위선암·위식도접합부 선암 1차 "
+             "(플루오로피리미딘계·백금기반 화학요법 병용)",
+  listing_type="신규",
+  notes="8차 암질심(2025-10-29 brdBltNo=11643) 급여기준 설정 → 6차 약평위(2026-06-04 HIRA 5034) 통과. "
+        "5/22 경제성평가소위 통과 → 6/4 약평위 (소위→약평위 fast 패턴).",
+  events=[dict(committee="AMJILSIM", state="APPROVED",
+               session_date="2025-10-29", n_th_attempt=1,
+               evidence_url="HIRA brdBltNo=11643 (8차 암질심 급여기준 설정)"),
+          dict(committee="YAKPYUNGWI", state="APPROVED",
+               session_date="2026-06-04", n_th_attempt=1,
+               evidence_url="HIRA 보도자료 5034 (6차 약평위 통과)")])
+
+# ── (F) HIRA 보도자료 크롤로 확인된 누락 종양 약제 (2025 암질심·약평위 in-progress) ──
+D(brand_kr="뉴베카정", ingredient_inn="darolutamide", manufacturer="바이엘코리아",
+  msd_flag=0, tracking_priority="competitor_class",
+  amjilsim_pass_date="2025-12-10", yakpyungwi_pass_date=None, negotiation_status=None,
+  indication="①고위험 nmCRPC ②mHSPC + ADT 병용 ③mHSPC + 도세탁셀·ADT 병용 (3개 적응증 급여기준 설정)",
+  listing_type="신규",
+  notes="9차 암질심(2025-12-10 brdBltNo=11684) 3개 적응증 급여기준 설정. 약평위 진입 대기.",
+  events=[dict(committee="AMJILSIM", state="APPROVED", session_date="2025-12-10",
+               n_th_attempt=1, evidence_url="HIRA brdBltNo=11684 (9차 암질심)")])
+D(brand_kr="옥타이로캡슐", ingredient_inn="repotrectinib", manufacturer="한국비엠에스제약",
+  msd_flag=0, tracking_priority="competitor_class",
+  amjilsim_pass_date="2025-12-10", yakpyungwi_pass_date=None, negotiation_status=None,
+  indication="ROS1 양성 국소진행성/전이성 NSCLC 급여기준 설정 / NTRK 융합 고형암 미설정",
+  listing_type="신규",
+  notes="9차 암질심(2025-12-10 brdBltNo=11684) ROS1 NSCLC 급여기준 설정, NTRK 고형암 미설정.",
+  events=[dict(committee="AMJILSIM", state="APPROVED", session_date="2025-12-10",
+               n_th_attempt=1, evidence_url="HIRA brdBltNo=11684 (9차 암질심 ROS1 설정)")])
+D(brand_kr="텍베일리주", ingredient_inn="teclistamab", manufacturer="한국얀센",
+  msd_flag=0, tracking_priority="competitor_class",
+  amjilsim_pass_date="2025-10-29", yakpyungwi_pass_date=None, negotiation_status=None,
+  indication="3차 이상 치료받은 재발/불응성 다발골수종 성인 단독요법",
+  listing_type="신규",
+  notes="8차 암질심(2025-10-29 brdBltNo=11643) 급여기준 설정. 약평위 진입 대기.",
+  events=[dict(committee="AMJILSIM", state="APPROVED", session_date="2025-10-29",
+               n_th_attempt=1, evidence_url="HIRA brdBltNo=11643 (8차 암질심)")])
+D(brand_kr="엘렉스피오주", ingredient_inn="elranatamab", manufacturer="한국화이자제약",
+  msd_flag=0, tracking_priority="competitor_class",
+  amjilsim_pass_date="2025-10-29", yakpyungwi_pass_date=None, negotiation_status=None,
+  indication="3차 이상 치료받은 재발/불응성 다발골수종 성인 단독요법",
+  listing_type="신규",
+  notes="8차 암질심(2025-10-29 brdBltNo=11643) 급여기준 설정. 약평위 진입 대기.",
+  events=[dict(committee="AMJILSIM", state="APPROVED", session_date="2025-10-29",
+               n_th_attempt=1, evidence_url="HIRA brdBltNo=11643 (8차 암질심)")])
+D(brand_kr="폴라이비주", ingredient_inn="polatuzumab vedotin", manufacturer="한국로슈",
+  msd_flag=0, tracking_priority="competitor_class",
+  amjilsim_pass_date="2025-07-23", yakpyungwi_pass_date=None, negotiation_status=None,
+  indication="미치료 DLBCL 성인 R-CHP 병용 급여기준 설정 / r/r DLBCL 벤다무스틴·리툭시맙 병용 미설정",
+  listing_type="신규",
+  notes="6차 암질심(2025-07-23 brdBltNo=11543) 1차 DLBCL 급여기준 설정. 약평위 진입 대기.",
+  events=[dict(committee="AMJILSIM", state="APPROVED", session_date="2025-07-23",
+               n_th_attempt=1, evidence_url="HIRA brdBltNo=11543 (6차 암질심)")])
+D(brand_kr="린파자정 확대", ingredient_inn="olaparib", manufacturer="한국아스트라제네카",
+  msd_flag=0, tracking_priority="competitor_class",
+  amjilsim_pass_date="2025-09-03", yakpyungwi_pass_date=None, negotiation_status=None,
+  indication="①BRCA변이 mCRPC 단독 ②mCRPC 아비라테론·프레드니솔론 병용 ③HRD+ 난소·난관·복막암 베바시주맙 유지 (3개 급여기준 설정)",
+  listing_type="확대",
+  notes="7차 암질심(2025-09-03 brdBltNo=11576) 전립선암·난소암 적응증 확대 급여기준 설정. 약평위 진입 대기.",
+  events=[dict(committee="AMJILSIM", state="APPROVED", session_date="2025-09-03",
+               n_th_attempt=1, evidence_url="HIRA brdBltNo=11576 (7차 암질심 확대)")])
+D(brand_kr="업리즈나주", ingredient_inn="inebilizumab", manufacturer="미쓰비시다나베파마코리아",
+  msd_flag=0, tracking_priority="generic_new_drug",
+  amjilsim_pass_date=None, yakpyungwi_pass_date="2025-10-02", negotiation_status="IN_PROGRESS",
+  indication="항AQP4 항체 양성 성인 시신경척수염범주질환(NMOSD)",
+  listing_type="신규",
+  notes="10차 약평위(2025-10-02 brdBltNo=11623) 평가금액 이하 수용 시 급여 적정성 있음. NHIS 협상 단계.",
+  events=[dict(committee="YAKPYUNGWI", state="APPROVED", session_date="2025-10-02",
+               n_th_attempt=1, evidence_url="HIRA brdBltNo=11623 (10차 약평위 조건부)")])
+D(brand_kr="핀테플라", ingredient_inn="fenfluramine", manufacturer="한국유씨비제약",
+  msd_flag=0, tracking_priority="generic_new_drug",
+  amjilsim_pass_date=None, yakpyungwi_pass_date="2026-06-04",
+  negotiation_status="IN_PROGRESS",
+  indication="2세 이상 드라벳증후군 환자 발작 치료 부가요법 (희귀질환)",
+  listing_type="신규",
+  notes="6차 약평위(2026-06-04) 통과 — 급여 적정성 있음 (HIRA 5034). "
+        "희귀질환 별도 협상 트랙 가능.",
+  events=[dict(committee="YAKPYUNGWI", state="APPROVED",
+               session_date="2026-06-04", n_th_attempt=1,
+               evidence_url="HIRA 보도자료 5034 (6차 약평위 통과)")])
+D(brand_kr="지텍정 75mg", ingredient_inn="건조계피추출물", manufacturer="종근당",
+  msd_flag=0, tracking_priority="generic_new_drug",
+  amjilsim_pass_date=None, yakpyungwi_pass_date="2026-06-04",
+  negotiation_status="IN_PROGRESS",
+  indication="급성·만성 위염 위점막 병변 개선 (천연물의약품)",
+  listing_type="신규",
+  notes="6차 약평위(2026-06-04) 조건부 통과 — 평가가격 이하 수용 시 (HIRA 5034). "
+        "종근당 첫 천연물의약품 급여.",
+  events=[dict(committee="YAKPYUNGWI", state="APPROVED",
+               session_date="2026-06-04", n_th_attempt=1,
+               evidence_url="HIRA 보도자료 5034 (6차 약평위 조건부 통과)")])
+
 # ── (D) 암질심 미설정 — 암질심_미설정.md ────────────────────────────────────
 # amjilsim_pass_date null, 큐 이벤트 {AMJILSIM, REJECTED_REQUEUE, 차수} → cancer 단계.
 D(brand_kr="림카토주", ingredient_inn="anbalcabtagene autoleucel",
@@ -641,7 +837,20 @@ def run() -> dict:
             conn.execute("ALTER TABLE amjilsim_drugs ADD COLUMN expected_session_id INTEGER")
             conn.commit()
 
+        # key_issues 컬럼 멱등 보강
+        if "key_issues" not in cols_now:
+            conn.execute("ALTER TABLE amjilsim_drugs ADD COLUMN key_issues TEXT")
+            conn.commit()
+
         session_map = _ensure_sessions(conn)
+
+        # 세션 상태 보정 (D+1 확인된 차수 → COMPLETED)
+        for sdate, status, note in SESSION_STATUS_UPDATES:
+            conn.execute(
+                "UPDATE amjilsim_sessions SET status = ?, note = ? WHERE session_date = ?",
+                (status, note, sdate))
+        conn.commit()
+
         n_sessions = conn.execute(
             "SELECT COUNT(*) c FROM amjilsim_sessions").fetchone()["c"]
         # date → session_id (session_date 전역 UNIQUE) — 상정 예정 후보 해석용
@@ -661,6 +870,33 @@ def run() -> dict:
                 if _upsert_event(conn, drug_id, ev, session_map):
                     events_added += 1
         conn.commit()
+
+        # key_issues 적재 (brand_kr 매칭 — DRUGS 외 선존 행도 포함). JSON 배열.
+        import json as _json
+        ki_updated = 0
+        for brand, issues in KEY_ISSUES.items():
+            cur = conn.execute(
+                "UPDATE amjilsim_drugs SET key_issues = ? WHERE brand_kr = ?",
+                (_json.dumps(issues, ensure_ascii=False), brand))
+            ki_updated += cur.rowcount
+        conn.commit()
+
+        # 웰리렉(선존 MSD 행) — 9차 암질심(2025-12-10) 미설정 이벤트 보강 (멱등)
+        wel = conn.execute(
+            "SELECT drug_id FROM amjilsim_drugs WHERE brand_kr LIKE '웰리렉%'").fetchone()
+        if wel:
+            _upsert_event(conn, wel["drug_id"], dict(
+                committee="AMJILSIM", state="REJECTED_REQUEUE",
+                session_date="2025-12-10", n_th_attempt=1,
+                evidence_url="HIRA brdBltNo=11684 (9차 암질심 VHL병 신세포암 등 미설정)"),
+                session_map)
+            conn.execute(
+                "UPDATE amjilsim_drugs SET key_issues = ? WHERE drug_id = ?",
+                (_json.dumps([
+                    "9차 암질심(2025-12-10 brdBltNo=11684) 미설정 — VHL병 신세포암·CNS 혈관모세포종·췌장 신경내분비종양",
+                    "MSD 핵심 추적 자산 — 재상정 trajectory 관리 (Welireg/belzutifan)",
+                ], ensure_ascii=False), wel["drug_id"]))
+            conn.commit()
 
         drugs_after = conn.execute(
             "SELECT COUNT(*) c FROM amjilsim_drugs").fetchone()["c"]

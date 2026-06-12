@@ -4697,10 +4697,12 @@ def reimb_report_pdf(report_id: int):
     row = _reimb_reports.get_report(report_id)
     if not row:
         return jsonify({"error": "리포트 없음"}), 404
-    pdf = _reimb_reports.BASE_DIR / row["pdf_path"]
-    if not pdf.exists():
-        return jsonify({"error": "PDF 파일 유실"}), 404
-    return send_file(str(pdf), mimetype="application/pdf",
+    # pdf_blob(DB) 우선, 없으면 파일 fallback — 배포 서버는 파일 없이 DB 만으로 서빙
+    pdf_bytes = _reimb_reports.get_pdf_bytes(report_id)
+    if not pdf_bytes:
+        return jsonify({"error": "PDF 데이터 유실 (blob·파일 모두 없음)"}), 404
+    from io import BytesIO
+    return send_file(BytesIO(pdf_bytes), mimetype="application/pdf",
                      as_attachment=False, download_name=row["file_name"])
 
 

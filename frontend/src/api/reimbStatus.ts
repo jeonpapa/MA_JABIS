@@ -109,7 +109,7 @@ export async function fetchMeetings(): Promise<MeetingSchedule[]> {
 // ═════════════════════════════════════════════════════════════════════════════
 
 export interface DrugHistoryItem {
-  id: number;
+  id: number | null;
   date: string | null;        // 'YYYY.MM.DD'
   committee: string;          // '암질심' | '약평위'
   state: string;
@@ -119,12 +119,14 @@ export interface DrugHistoryItem {
   cycle: number | null;
   attempt: number | null;
   evidenceUrl: string | null;
+  synthetic?: boolean;        // 통과일 컬럼 기반 합성 이벤트 (큐 미수집 차수)
 }
 
 export interface TimelineStep {
   phase: string;
-  date: string | null;        // 'YYYY.MM.DD'
-  status: 'done' | 'upcoming' | 'in_progress' | 'rejected';
+  date: string | null;        // 'YYYY.MM.DD' (실측 통과일)
+  expectedDate?: string | null; // 'YYYY.MM.DD' (위원회 일정 기반 예상일 — 실측과 분리)
+  status: 'done' | 'upcoming' | 'in_progress' | 'rejected' | 'expected';
   negotiationStatus?: string | null;
 }
 
@@ -140,11 +142,14 @@ export interface PipelineDrug {
   trackingPriority: string | null;
   status: 'completed' | 'negotiating' | 'scheduled' | 'waiting';
   expectedSessionId?: number | null;
+  expectedSessionDate?: string | null; // 'YYYY.MM.DD' — 상정예정 차수 일정
+  expectedSessionCycle?: number | null; // 상정예정 차수 번호 (배지 "7차")
   submittedDate: string | null;
   amjilsimPassDate: string | null;
   yakpyungwiPassDate: string | null;
   negotiationStatus: string | null;
   notes: string | null;
+  keyIssues: string[];        // 핵심 쟁점 (D±1 보고서 전사)
   updatedDate: string | null; // 'YYYY.MM.DD'
   history: DrugHistoryItem[];
   timeline: TimelineStep[];
@@ -164,6 +169,8 @@ interface RawPipelineDrug extends Omit<PipelineDrug, 'history' | 'timeline'> {
 function adaptDrug(d: RawPipelineDrug): PipelineDrug {
   return {
     ...d,
+    keyIssues: d.keyIssues ?? [],
+    expectedSessionDate: fmtDot(d.expectedSessionDate),
     submittedDate: fmtDot(d.submittedDate),
     amjilsimPassDate: fmtDot(d.amjilsimPassDate),
     yakpyungwiPassDate: fmtDot(d.yakpyungwiPassDate),
@@ -173,7 +180,9 @@ function adaptDrug(d: RawPipelineDrug): PipelineDrug {
       date: fmtDot(h.date),
       sessionDate: fmtDot(h.sessionDate),
     })),
-    timeline: (d.timeline ?? []).map(t => ({ ...t, date: fmtDot(t.date) })),
+    timeline: (d.timeline ?? []).map(t => ({
+      ...t, date: fmtDot(t.date), expectedDate: fmtDot(t.expectedDate),
+    })),
   };
 }
 

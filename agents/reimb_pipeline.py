@@ -156,13 +156,22 @@ def _drug_status(stage: str, drug: sqlite3.Row, queue_rows: list[sqlite3.Row],
     return "waiting"
 
 
-def _history(queue_rows: list[sqlite3.Row]) -> list[dict]:
+def _history(queue_rows: list[sqlite3.Row], drug: Optional[sqlite3.Row] = None) -> list[dict]:
+    """큐 이벤트 이력 + (큐에 없는) pass_date 컬럼 기반 합성 이벤트 보강.
+
+    다수 약제가 pass_date 만 있고 큐 이벤트가 없어 이력이 비어 보이는 문제 해결 —
+    합성 이벤트는 synthetic=True 로 명시 (출처: amjilsim_drugs 통과일 컬럼).
+    """
     items = []
+    covered: set[tuple[str, str]] = set()  # (committee_type, APPROVED date)
     for q in queue_rows:
         observed_date = (q["observed_at"] or "")[:10] or None
+        d = q["queue_entry_date"] or q["session_date"] or observed_date
+        if q["queue_state"] == "APPROVED" and q["session_date"]:
+            covered.add((q["committee_type"], q["session_date"]))
         items.append({
             "id": q["id"],
-            "date": q["queue_entry_date"] or q["session_date"] or observed_date,
+            "date": d,
             "committee": COMMITTEE_KR.get(q["committee_type"], q["committee_type"]),
             "state": q["queue_state"],
             "stateLabel": STATE_LABEL_KR.get(q["queue_state"], q["queue_state"]),
@@ -172,6 +181,24 @@ def _history(queue_rows: list[sqlite3.Row]) -> list[dict]:
             "attempt": q["n_th_attempt"],
             "evidenceUrl": q["evidence_url"],
         })
+    if drug is not None:
+        for committee_type, pass_col in (("AMJILSIM", "amjilsim_pass_date"),
+                                          ("YAKPYUNGWI", "yakpyungwi_pass_date")):
+            d = drug[pass_col]
+            if d and (committee_type, d) not in covered:
+                items.append({
+                    "id": None,
+                    "date": d,
+                    "committee": COMMITTEE_KR.get(committee_type, committee_type),
+                    "state": "APPROVED",
+                    "stateLabel": STATE_LABEL_KR.get("APPROVED", "통과"),
+                    "sessionId": None,
+                    "sessionDate": d,
+                    "cycle": None,
+                    "attempt": None,
+                    "evidenceUrl": None,
+                    "synthetic": True,  # 통과일 컬럼 기반 (큐 이벤트 미수집 차수)
+                })
     items.sort(key=lambda x: (x["date"] or "9999-99-99"))
     return items
 
@@ -186,18 +213,51 @@ def _negotiation_phase_status(negotiation_status: Optional[str]) -> str:
     return "upcoming"  # NULL / 'NONE'
 
 
-def _timeline(drug: sqlite3.Row) -> list[dict]:
-    """실제 날짜 컬럼만으로 구성하는 정직한 단계 타임라인 (날조 금지)."""
-    phases = [
-        ("급여 신청(접수)", drug["submitted_date"]),
-        ("암질심 통과", drug["amjilsim_pass_date"]),
-        ("약평위 통과", drug["yakpyungwi_pass_date"]),
+def _expected_session_date(conn: sqlite3.Connection, session_id) -> Optional[str]:
+    if not session_id:
+        return None
+    row = conn.execute(
+        "SELECT session_date FROM amjilsim_sessions WHERE session_id = ?",
+        (session_id,)).fetchone()
+    return row["session_date"] if row else None
+
+
+def _timeline(drug: sqlite3.Row, conn: Optional[sqlite3.Connection] = None,
+              today: Optional[str] = None) -> list[dict]:
+    """단계 타임라인 — 실측일은 date, 미도래 단계는 위원회 일정 기반 '예상일'(expectedDate).
+
+    날조 금지 원칙 유지: 실제 통과일(date)과 일정 기반 예상일(expectedDate)을
+    분리된 필드로 명시. 예상일 출처 = expected_session_id 차수 일정 / 다음 차수 일정.
+    """
+    today = today or date.today().isoformat()
+    amj_pass = drug["amjilsim_pass_date"]
+    yak_pass = drug["yakpyungwi_pass_date"]
+
+    # 미도래 위원회 단계의 예상일: expected_session_id 일정 → 없으면 다음 차수 일정
+    exp_amj = exp_yak = None
+    if conn is not None:
+        exp_date = _expected_session_date(conn, drug["expected_session_id"])
+        nxt = _next_session_ids(conn, today)
+        if not amj_pass:
+            exp_amj = exp_date or _expected_session_date(conn, nxt.get("AMJILSIM"))
+        if amj_pass and not yak_pass:
+            exp_yak = exp_date or _expected_session_date(conn, nxt.get("YAKPYUNGWI"))
+
+    out = [
+        {"phase": "급여 신청(접수)", "date": drug["submitted_date"],
+         "status": "done" if drug["submitted_date"] else "upcoming"},
+        {"phase": "암질심 통과", "date": amj_pass,
+         "expectedDate": exp_amj if not amj_pass else None,
+         "status": "done" if amj_pass else ("expected" if exp_amj else "upcoming")},
+        {"phase": "약평위 통과", "date": yak_pass,
+         "expectedDate": exp_yak if not yak_pass else None,
+         "status": "done" if yak_pass else ("expected" if exp_yak else "upcoming")},
     ]
-    out = [{"phase": name, "date": d, "status": "done" if d else "upcoming"}
-           for name, d in phases]
     out.append({
         "phase": "건보공단 협상",
         "date": None,
+        # 약평위 통과 후 협상: 국민건강보험법령상 60일 협상 기한 — 일정 기반 예상 구간
+        "expectedDate": None,
         "status": _negotiation_phase_status(drug["negotiation_status"]),
         "negotiationStatus": drug["negotiation_status"],
     })
@@ -213,11 +273,41 @@ _QUEUE_JOIN_SQL = """
 """
 
 
+def _key_issues(drug: sqlite3.Row) -> list[str]:
+    raw = _row_get(drug, "key_issues")
+    if not raw:
+        return []
+    try:
+        val = json.loads(raw)
+        return [str(x) for x in val] if isinstance(val, list) else []
+    except (ValueError, TypeError):
+        return []
+
+
+def _row_get(row: sqlite3.Row, key: str):
+    """sqlite3.Row 에 컬럼이 없을 수도 있는 환경 안전 접근."""
+    try:
+        return row[key]
+    except (IndexError, KeyError):
+        return None
+
+
 def _pipeline_drug_dict(drug: sqlite3.Row, queue_rows: list[sqlite3.Row],
-                        today: str,
+                        today: str, conn: sqlite3.Connection,
                         next_session_ids: dict[str, Optional[int]]) -> tuple[str, dict]:
     stage = _drug_stage(drug, queue_rows)
     observed = [q["observed_at"] for q in queue_rows if q["observed_at"]]
+    status = _drug_status(stage, drug, queue_rows, today, next_session_ids)
+    # 상정예정 차수 정보 (배지: "심의 상정예정 · 7/2 7차")
+    expected_date = expected_cycle = None
+    if status == "scheduled" and drug["expected_session_id"]:
+        srow = conn.execute(
+            "SELECT session_date, COALESCE(ordinal_official, ordinal_assumed) AS ord "
+            "FROM amjilsim_sessions WHERE session_id = ?",
+            (drug["expected_session_id"],)).fetchone()
+        if srow:
+            expected_date = srow["session_date"]
+            expected_cycle = srow["ord"]
     item = {
         "id": drug["drug_id"],
         "name": drug["brand_kr"],
@@ -228,37 +318,50 @@ def _pipeline_drug_dict(drug: sqlite3.Row, queue_rows: list[sqlite3.Row],
         "type": drug["listing_type"],
         "msdFlag": bool(drug["msd_flag"]),
         "trackingPriority": drug["tracking_priority"],
-        "status": _drug_status(stage, drug, queue_rows, today, next_session_ids),
+        "status": status,
         "expectedSessionId": drug["expected_session_id"],
+        "expectedSessionDate": expected_date,
+        "expectedSessionCycle": expected_cycle,
         "submittedDate": drug["submitted_date"],
         "amjilsimPassDate": drug["amjilsim_pass_date"],
         "yakpyungwiPassDate": drug["yakpyungwi_pass_date"],
         "negotiationStatus": drug["negotiation_status"],
         "notes": drug["notes"],
+        "keyIssues": _key_issues(drug),
         "updatedDate": max(observed) if observed else None,
-        "history": _history(queue_rows),
-        "timeline": _timeline(drug),
+        "history": _history(queue_rows, drug),
+        "timeline": _timeline(drug, conn, today),
     }
     return stage, item
 
 
-def get_pipeline() -> dict:
+def get_pipeline(include_completed: bool = False) -> dict:
+    """파이프라인 보드 3단계(cancer/evaluation/nhis).
+
+    include_completed=False (기본): 공단 협상 완료(negotiation_status='AGREED') 약제 제외 —
+    이미 등재 마무리된 건은 '진행 중' 보드에서 빼고 별도 completed 카운트로만 노출.
+    """
     today = date.today().isoformat()
     stages: dict[str, list[dict]] = {"cancer": [], "evaluation": [], "nhis": []}
+    completed_count = 0
     with _connect() as conn:
         next_ids = _next_session_ids(conn, today)
         drugs = conn.execute(
             "SELECT * FROM amjilsim_drugs ORDER BY brand_kr"
         ).fetchall()
         for drug in drugs:
+            if not include_completed and drug["negotiation_status"] == "AGREED":
+                completed_count += 1
+                continue
             queue_rows = conn.execute(_QUEUE_JOIN_SQL, (drug["drug_id"],)).fetchall()
-            stage, item = _pipeline_drug_dict(drug, queue_rows, today, next_ids)
+            stage, item = _pipeline_drug_dict(drug, queue_rows, today, conn, next_ids)
             stages[stage].append(item)
     return {
         "stages": [
             {"id": sid, "count": len(items), "drugs": items}
             for sid, items in stages.items()
-        ]
+        ],
+        "completedExcluded": completed_count,
     }
 
 
@@ -386,7 +489,7 @@ def list_drugs_admin() -> list[dict]:
             queue_rows = conn.execute(_QUEUE_JOIN_SQL, (drug["drug_id"],)).fetchall()
             d = dict(drug)
             d["msd_flag"] = bool(d["msd_flag"])
-            stage, _ = _pipeline_drug_dict(drug, queue_rows, today, next_ids)
+            stage, _ = _pipeline_drug_dict(drug, queue_rows, today, conn, next_ids)
             d["stage"] = stage
             latest = (max(queue_rows, key=lambda q: ((q["observed_at"] or ""), q["id"]))
                       if queue_rows else None)
