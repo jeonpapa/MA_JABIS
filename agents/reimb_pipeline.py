@@ -52,9 +52,12 @@ def _connect() -> sqlite3.Connection:
 
 
 def _ensure_columns() -> None:
-    """expected_session_id 컬럼 멱등 보강 (상정 예정 평가 로직 입력)."""
+    """expected_session_id 컬럼 멱등 보강 (상정 예정 평가 로직 입력).
+    amjilsim_drugs 가 아직 없는 빈 DB(최초 배포 볼륨)에선 스킵 — import 를 막지 않는다."""
     with _connect() as conn:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(amjilsim_drugs)")}
+        if not cols:
+            return  # 테이블 미존재 (빈 DB) — ingest 후 재호출 시 보강
         if "expected_session_id" not in cols:
             conn.execute("ALTER TABLE amjilsim_drugs ADD COLUMN expected_session_id INTEGER")
             conn.commit()
