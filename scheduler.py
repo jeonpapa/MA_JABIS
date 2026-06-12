@@ -271,7 +271,17 @@ def reimb_data_sync_job():
         from agents import reimb_reports as rr
 
         source = os.environ.get("REIMB_DATA_URL") or None
-        payload = imp.load_payload(source)
+        # git URL 우선, 실패(404·네트워크) 시 이미지 내 JSON 으로 폴백 — 견고성
+        if source:
+            try:
+                payload = imp.load_payload(source)
+            except Exception as e:
+                logger.warning("Reimbursement sync: REIMB_DATA_URL fetch 실패(%s) → "
+                               "이미지 로컬 JSON 폴백", e)
+                payload = imp.load_payload(None)
+                source = f"{source} (폴백:local)"
+        else:
+            payload = imp.load_payload(None)
         new_hash = imp.payload_hash(payload)
 
         hash_file = BASE_DIR / "data" / "reimb" / ".last_applied_hash"
