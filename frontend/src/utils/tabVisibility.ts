@@ -12,6 +12,7 @@ const DEFAULT_VISIBILITY: TabVisibility = {
   '/competitor-trends': true,
   '/daily-mailing': true,
   '/reimbursement-status': true,
+  '/analog-search': true,
 };
 
 export function getTabVisibility(): TabVisibility {

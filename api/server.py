@@ -4680,6 +4680,71 @@ except Exception as _e:  # 빈 DB(최초 배포 등)에서 선행 테이블 부�
     logger.warning("reimb_reports.ensure_schema 스킵 (선행 테이블 부재 추정): %s", _e)
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# 약제 등재 아날로그 검색 (Listing Analog Search) — RAG 하이브리드
+#   537 평가보고서 패싯+FTS 코어 / 임베딩 시맨틱 / 허가↔급여 갭 / 재심의 trajectory
+# ──────────────────────────────────────────────────────────────────────────────
+
+from agents.analog import store as _analog
+
+
+@app.get("/api/analog/facets")
+@require_auth()
+def analog_facets():
+    try:
+        return jsonify(_analog.facet_values())
+    except Exception as e:
+        logger.error("analog facets 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/analog/search")
+@require_auth()
+def analog_search():
+    try:
+        facet_keys = ["disease_category", "cancer_type", "line_of_therapy", "committee",
+                      "review_result", "reimbursement_track", "coverage_gap_type",
+                      "generic_name", "brand_name"]
+        filters = {k: request.args.get(k) for k in facet_keys if request.args.get(k)}
+        fts = request.args.get("fts", "").strip() or None
+        semantic = request.args.get("semantic", "").strip() or None
+        limit = min(int(request.args.get("limit", "50")), 200)
+        return jsonify(_analog.search(filters=filters, fts=fts, semantic=semantic, limit=limit))
+    except Exception as e:
+        logger.error("analog search 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/analog/report/<int:report_id>")
+@require_auth()
+def analog_detail(report_id: int):
+    try:
+        d = _analog.get_detail(report_id)
+        if not d:
+            return jsonify({"error": "not found"}), 404
+        return jsonify(d)
+    except Exception as e:
+        logger.error("analog detail 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/analog/brief")
+@require_auth()
+def analog_brief():
+    """선택/검색된 아날로그 사례를 LLM 으로 종합 → 전략 브리프 (캐시·인용 강제)."""
+    try:
+        from agents.analog import brief as _brief
+        body = request.get_json(silent=True) or {}
+        ids = body.get("report_ids") or []
+        query = (body.get("query") or "").strip()
+        if not ids:
+            return jsonify({"error": "report_ids 필요"}), 400
+        return jsonify(_brief.generate_brief(ids, query))
+    except Exception as e:
+        logger.error("analog brief 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @app.get("/api/reimbursement/reports")
 @require_auth()
 def reimb_reports_list():

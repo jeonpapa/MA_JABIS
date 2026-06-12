@@ -21,6 +21,7 @@ const allNavItems = [
   { path: '/competitor-trends', label: 'Competitor Trends', icon: 'ri-radar-line' },
   { path: '/daily-mailing', label: 'Daily Mailing', icon: 'ri-mail-settings-line' },
   { path: '/reimbursement-status', label: 'Reimbursement Status', icon: 'ri-article-line' },
+  { path: '/analog-search', label: 'Listing Analog Search', icon: 'ri-search-eye-line' },
 ];
 
 // admin 전용 — tabVisibility 미적용 (관리 기능은 항상 노출)

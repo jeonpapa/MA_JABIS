@@ -19,3 +19,4 @@ python-dateutil>=2.9.0
 markdown>=3.6
 pdfplumber>=0.11.0
 pypdf>=4.2.0
+numpy>=1.26.0
