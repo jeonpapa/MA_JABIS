@@ -16,6 +16,8 @@ frontend/dist/
 data/db/*.db
 data/db/*.db-shm
 data/db/*.db-wal
+data/db/*.db.bak*
+data/db/*.db.bak.*
 # 루트에 실수로 생성되는 빈 stub DB 차단 (실제 DB 는 data/db 만 사용)
 /drug_prices.db
 /drug_prices.db-shm
