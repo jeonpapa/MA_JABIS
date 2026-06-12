@@ -17,7 +17,8 @@
 ```
 data/hira_pipeline/
 ├── README.md                          # 본 문서
-├── HIRA_보도자료/                       # 1차 권위 — HIRA 공식 본문 archive
+├── hira_committee_master.xlsx         # 누적 약평위/암질심 정량 분석 마스터 엑셀 시트 ⭐
+├── HIRA_보도자료/                       # 1차 권위 — HIRA 공식 본문 및 PDF/HWP 파싱 아카이브
 │   ├── 2026-05-27_암질심_5차.md
 │   ├── 2026-05-07_약평위_5차.md
 │   ├── 2026-04-15_암질심_4차.md

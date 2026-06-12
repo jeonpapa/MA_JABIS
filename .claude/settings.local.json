@@ -12,7 +12,8 @@
       "Bash(python3 -)",
       "WebFetch(domain:www.mhlw.go.jp)",
       "Read(//tmp/**)",
-      "Read(//private/tmp/**)"
+      "Read(//private/tmp/**)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   }
 }
