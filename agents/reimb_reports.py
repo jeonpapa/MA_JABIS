@@ -387,3 +387,181 @@ def backfill_blobs() -> dict:
                 missing += 1
         conn.commit()
     return {"filled": filled, "missing_file": missing}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# git-sync 전달 자동화 — 보고서 매니페스트 (헤르메스/Claude 가 PDF 커밋 + 매니페스트 1줄)
+#   배포 앱이 매니페스트의 git raw URL 에서 신규 보고서를 download+ingest → Intelligence Reports.
+#   data/ 볼륨 가림과 무관 (GitHub 에서 받음). 매니페스트만 비볼륨 이미지 경로.
+# ──────────────────────────────────────────────────────────────────────────────
+
+import urllib.request  # noqa: E402
+
+MANIFEST_PATH = Path(__file__).resolve().parent / "ingest" / "reports_manifest.json"
+GITHUB_RAW_BASE = "https://raw.githubusercontent.com/jeonpapa/AccessRoutineAnalystic/main"
+
+
+def _sha1_bytes(data: bytes) -> str:
+    h = hashlib.sha1()
+    h.update(data)
+    return h.hexdigest()
+
+
+def build_reports_manifest(reports: "list[dict]", out: Path = MANIFEST_PATH,
+                           raw_base: str = GITHUB_RAW_BASE) -> dict:
+    """큐레이션 보고서 목록 → 매니페스트 JSON 생성 (1회/갱신).
+
+    reports: [{repo_path(레포 상대경로), committee, report_type, year, cycle,
+               session_date, title}] — repo_path 의 PDF 를 읽어 file_hash·url 계산.
+    """
+    from urllib.parse import quote
+    entries = []
+    for r in reports:
+        p = BASE_DIR / r["repo_path"]
+        if not p.exists():
+            logger.warning("[reports_manifest] 파일 없음: %s", r["repo_path"])
+            continue
+        data = p.read_bytes()
+        url = raw_base.rstrip("/") + "/" + quote(r["repo_path"])
+        entries.append({
+            "file_name": p.name,
+            "file_hash": _sha1_bytes(data),
+            "url": url,
+            "committee": r.get("committee"),
+            "report_type": r.get("report_type"),
+            "year": r.get("year"),
+            "cycle": r.get("cycle"),
+            "session_date": r.get("session_date"),
+            "title": r.get("title"),
+        })
+    payload = {"schema_version": 1, "reports": entries}
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"path": str(out), "reports": len(entries)}
+
+
+def load_reports_manifest(source: "str | Path | dict | None" = None) -> dict:
+    """매니페스트 로드. source: None→로컬 MANIFEST_PATH, dict→그대로, URL→GET, 경로→읽기."""
+    if isinstance(source, dict):
+        return source
+    if source is None:
+        if MANIFEST_PATH.exists():
+            return json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+        return {"schema_version": 1, "reports": []}
+    src = str(source)
+    if src.startswith(("http://", "https://")):
+        req = urllib.request.Request(src, headers={"User-Agent": "ma-reports-sync/1.0"})
+        token = os.environ.get("REPORTS_DATA_TOKEN") or os.environ.get("REIMB_DATA_TOKEN")
+        if token:
+            req.add_header("Authorization", f"Bearer {token}")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    return json.loads(Path(src).read_text(encoding="utf-8"))
+
+
+def ingest_from_url(url: str, meta: dict) -> dict:
+    """매니페스트 항목의 PDF 를 다운로드 → file_hash dedup → blob+메타로 UPSERT.
+
+    meta(committee/report_type/year/cycle/session_date/title/file_hash/file_name)는 권위값.
+    LLM 분석은 summary/highlights 보조(키 없으면 graceful skip — 메타는 유지).
+    """
+    ensure_schema()
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "ma-reports-sync/1.0"})
+        token = os.environ.get("REPORTS_DATA_TOKEN") or os.environ.get("REIMB_DATA_TOKEN")
+        if token:
+            req.add_header("Authorization", f"Bearer {token}")
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = resp.read()
+    except Exception as e:
+        return {"status": "error", "url": url, "error": f"download 실패: {e}"}
+
+    file_hash = _sha1_bytes(data)
+    with _connect() as conn:
+        dup = conn.execute("SELECT id FROM reimb_reports WHERE file_hash = ?",
+                           (file_hash,)).fetchone()
+    if dup:
+        return {"status": "duplicate", "id": dup["id"], "file_hash": file_hash}
+
+    # 임시파일로 LLM 분석(보조) — 실패해도 메타로 등록
+    import tempfile
+    tmp = Path(tempfile.mktemp(suffix=".pdf"))
+    tmp.write_bytes(data)
+    summary = None
+    highlights: list = []
+    analyzed = 0
+    analysis_error = None
+    try:
+        text, pages = _extract_pdf_text(tmp)
+        if text.strip():
+            try:
+                a = _analyze_llm(text, _filename_hints(meta.get("file_name") or ""),
+                                 meta.get("file_name") or "")
+                summary = a.get("summary")
+                highlights = a.get("highlights") or []
+                analyzed = 1
+            except Exception as e:
+                analysis_error = str(e)[:300]
+    except Exception as e:
+        pages = None
+        analysis_error = f"pdf 추출 실패: {e}"
+    finally:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+
+    now = datetime.now().isoformat(timespec="seconds")
+    with _connect() as conn:
+        cur = conn.execute(
+            """INSERT INTO reimb_reports
+               (file_hash, file_name, pdf_path, pdf_blob, file_size, pages, title, committee,
+                report_type, year, cycle, session_date, summary, highlights_json,
+                analyzed, analysis_model, analysis_error, source, analyzed_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (file_hash, meta.get("file_name") or "report.pdf", url, data, len(data), pages,
+             meta.get("title"), meta.get("committee"), meta.get("report_type"),
+             meta.get("year"), meta.get("cycle"), meta.get("session_date"),
+             summary, json.dumps(highlights, ensure_ascii=False),
+             analyzed, ANALYSIS_MODEL if analyzed else None, analysis_error,
+             "git_sync", now if analyzed else None),
+        )
+        conn.commit()
+        rid = cur.lastrowid
+    return {"status": "ingested", "id": rid, "file": meta.get("file_name"),
+            "analyzed": bool(analyzed), "error": analysis_error}
+
+
+def sync_reports(source: "str | Path | dict | None" = None) -> dict:
+    """매니페스트 기반 보고서 git-sync. 각 항목 file_hash 가 DB 에 없으면 download+ingest.
+
+    반환에 manifest_hash 포함 (스케줄러 해시게이트용). 멱등·무재다운로드(file_hash dedup).
+    """
+    ensure_schema()
+    manifest = load_reports_manifest(source)
+    m_hash = hashlib.sha256(
+        json.dumps(manifest, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+    entries = manifest.get("reports", [])
+
+    with _connect() as conn:
+        existing = {r["file_hash"] for r in conn.execute(
+            "SELECT file_hash FROM reimb_reports").fetchall()}
+
+    ingested, skipped, errors = [], 0, []
+    for e in entries:
+        fh = e.get("file_hash")
+        if fh and fh in existing:
+            skipped += 1
+            continue
+        meta = {k: e.get(k) for k in
+                ("file_name", "committee", "report_type", "year", "cycle",
+                 "session_date", "title")}
+        res = ingest_from_url(e["url"], meta)
+        if res["status"] == "ingested":
+            ingested.append(res.get("file"))
+        elif res["status"] == "duplicate":
+            skipped += 1
+        else:
+            errors.append({"url": e.get("url"), "error": res.get("error")})
+    return {"manifest_hash": m_hash, "reports_in_manifest": len(entries),
+            "ingested": ingested, "skipped": skipped, "errors": errors}

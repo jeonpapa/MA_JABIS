@@ -257,52 +257,86 @@ def competitor_news_weekly_job():
         logger.exception("Gov Policy News 주간 크롤 실패: %s", e)
 
 
+def _reimb_committee_data_sync():
+    """위원회 데이터(JSON) git-sync — 멱등. 데이터 변경 없으면 skip."""
+    from agents.ingest import reimb_committee_import as imp
+    from agents import reimb_reports as rr
+
+    source = os.environ.get("REIMB_DATA_URL") or None
+    if source:  # git URL 우선, 실패 시 이미지 로컬 JSON 폴백
+        try:
+            payload = imp.load_payload(source)
+        except Exception as e:
+            logger.warning("데이터 sync: REIMB_DATA_URL fetch 실패(%s) → 로컬 폴백", e)
+            payload = imp.load_payload(None)
+            source = f"{source} (폴백:local)"
+    else:
+        payload = imp.load_payload(None)
+    new_hash = imp.payload_hash(payload)
+
+    hash_file = BASE_DIR / "data" / "reimb" / ".last_applied_hash"
+    prev_hash = hash_file.read_text().strip() if hash_file.exists() else ""
+    if new_hash == prev_hash:
+        logger.info("데이터 sync: 변경 없음 (hash %s) — skip", new_hash[:12])
+        return
+
+    result = imp.run(payload)
+    try:
+        rr.backfill_blobs()
+    except Exception as e:
+        logger.warning("데이터 sync: blob backfill 스킵: %s", e)
+    hash_file.parent.mkdir(parents=True, exist_ok=True)
+    hash_file.write_text(new_hash)
+    logger.info("데이터 sync 완료: 약제 %d · 이벤트 %d (신규 %d) · hash %s · source=%s",
+                result["drugs_after"], result["events_total"], result["events_added"],
+                new_hash[:12], source or "local")
+
+
+def _reimb_reports_sync():
+    """위원회 전후 보고서 git-sync (매니페스트 → Intelligence Reports) — 멱등."""
+    import hashlib as _hl
+    import json as _j
+    from agents import reimb_reports as rr
+
+    rsrc = os.environ.get("REPORTS_DATA_URL") or None
+    rhash_file = BASE_DIR / "data" / "reimb" / ".last_reports_hash"
+    prev_rhash = rhash_file.read_text().strip() if rhash_file.exists() else ""
+    try:  # 매니페스트 URL 우선, 실패 시 이미지 로컬 폴백
+        manifest = rr.load_reports_manifest(rsrc)
+    except Exception as e:
+        logger.warning("보고서 sync: REPORTS_DATA_URL fetch 실패(%s) → 로컬 매니페스트 폴백", e)
+        manifest = rr.load_reports_manifest(None)
+    m_hash = _hl.sha256(_j.dumps(manifest, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+    if m_hash == prev_rhash:
+        logger.info("보고서 sync: 매니페스트 변경 없음 (hash %s) — skip", m_hash[:12])
+        return
+    rres = rr.sync_reports(manifest)
+    rhash_file.parent.mkdir(parents=True, exist_ok=True)
+    rhash_file.write_text(m_hash)
+    logger.info("보고서 sync 완료: 매니페스트 %d · 신규적재 %d · skip %d · 오류 %d · hash %s",
+                rres["reports_in_manifest"], len(rres["ingested"]), rres["skipped"],
+                len(rres["errors"]), m_hash[:12])
+    if rres["errors"]:
+        logger.warning("보고서 sync 오류: %s", rres["errors"])
+
+
 def reimb_data_sync_job():
-    """매일 02:00 Seoul — 헤르메스(또는 사람)가 git 에 커밋한 위원회 데이터 JSON 을
+    """매일 02:00 Seoul + 부팅 1회 — 헤르메스(또는 사람)가 git 에 커밋한
+    위원회 **데이터**(committee_results.json) + **보고서**(reports_manifest.json) 를
     가져와 프로덕션 DB 에 멱등 적재. **재배포·재시딩 불필요**.
 
-    소스: 환경변수 REIMB_DATA_URL (git raw URL). 미설정 시 로컬 JSON 파일 사용(로컬 개발).
-    해시 게이트: payload sha256 이 직전 적용분과 같으면 skip (무중복 import).
-    마지막 적용 해시는 data/reimb/.last_applied_hash 에 저장.
+    데이터/보고서는 독립 실행 (한쪽 변경 없음·실패가 다른쪽을 막지 않음).
+    소스: REIMB_DATA_URL / REPORTS_DATA_URL (git raw). 미설정 시 이미지 로컬 폴백.
     """
-    logger.info("━━━ Reimbursement 데이터 sync 시작 ━━━")
+    logger.info("━━━ Reimbursement 데이터·보고서 sync 시작 ━━━")
     try:
-        from agents.ingest import reimb_committee_import as imp
-        from agents import reimb_reports as rr
-
-        source = os.environ.get("REIMB_DATA_URL") or None
-        # git URL 우선, 실패(404·네트워크) 시 이미지 내 JSON 으로 폴백 — 견고성
-        if source:
-            try:
-                payload = imp.load_payload(source)
-            except Exception as e:
-                logger.warning("Reimbursement sync: REIMB_DATA_URL fetch 실패(%s) → "
-                               "이미지 로컬 JSON 폴백", e)
-                payload = imp.load_payload(None)
-                source = f"{source} (폴백:local)"
-        else:
-            payload = imp.load_payload(None)
-        new_hash = imp.payload_hash(payload)
-
-        hash_file = BASE_DIR / "data" / "reimb" / ".last_applied_hash"
-        prev_hash = hash_file.read_text().strip() if hash_file.exists() else ""
-        if new_hash == prev_hash:
-            logger.info("Reimbursement sync: 변경 없음 (hash %s) — skip", new_hash[:12])
-            return
-
-        result = imp.run(payload)
-        try:
-            rr.backfill_blobs()  # PDF 파일이 이미지에 있으면 blob 보강 (멱등)
-        except Exception as e:
-            logger.warning("Reimbursement sync: blob backfill 스킵: %s", e)
-
-        hash_file.parent.mkdir(parents=True, exist_ok=True)
-        hash_file.write_text(new_hash)
-        logger.info("Reimbursement sync 완료: 약제 %d · 이벤트 %d (신규 %d) · hash %s · source=%s",
-                    result["drugs_after"], result["events_total"], result["events_added"],
-                    new_hash[:12], source or "local")
+        _reimb_committee_data_sync()
     except Exception as e:
         logger.exception("Reimbursement 데이터 sync 실패: %s", e)
+    try:
+        _reimb_reports_sync()
+    except Exception as e:
+        logger.exception("Reimbursement 보고서 sync 실패: %s", e)
 
 
 def amjilsim_d_minus_2_reporter_job():

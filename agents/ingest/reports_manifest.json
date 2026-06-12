@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "reports": [
+    {
+      "file_name": "2026-06-02_yakpyungwi-6_d_minus_2_v6.pdf",
+      "file_hash": "558223dc32025f04c9d998bcc787372d4ff1f273",
+      "url": "https://raw.githubusercontent.com/jeonpapa/AccessRoutineAnalystic/main/data/hira_pipeline/%EB%B3%B4%EA%B3%A0%EC%84%9C/D-2_%EC%82%AC%EC%A0%84_%EC%98%88%EC%B8%A1/2026-06-02_yakpyungwi-6_d_minus_2_v6.pdf",
+      "committee": "evaluation",
+      "report_type": "pre",
+      "year": 2026,
+      "cycle": 6,
+      "session_date": "2026-06-04",
+      "title": "2026년 6차 약제급여평가위원회 사전 검토 보고"
+    },
+    {
+      "file_name": "2026-06-05_yakpyungwi-6_d_plus_1_v2.pdf",
+      "file_hash": "dd61c3e6980b5486160a170cdc74f58c122e7c88",
+      "url": "https://raw.githubusercontent.com/jeonpapa/AccessRoutineAnalystic/main/data/hira_pipeline/%EB%B3%B4%EA%B3%A0%EC%84%9C/D%2B1_%EA%B2%B0%EA%B3%BC_%EB%A6%AC%EB%B7%B0/2026-06-05_yakpyungwi-6_d_plus_1_v2.pdf",
+      "committee": "evaluation",
+      "report_type": "post",
+      "year": 2026,
+      "cycle": 6,
+      "session_date": "2026-06-04",
+      "title": "2026년 6차 약제급여평가위원회 결과 리뷰 보고"
+    }
+  ]
+}
