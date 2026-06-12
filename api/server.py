@@ -4674,7 +4674,10 @@ def admin_fda_sync():
 
 from agents import reimb_reports as _reimb_reports
 
-_reimb_reports.ensure_schema()
+try:
+    _reimb_reports.ensure_schema()
+except Exception as _e:  # 빈 DB(최초 배포 등)에서 선행 테이블 부재 — 서버 부팅을 막지 않음
+    logger.warning("reimb_reports.ensure_schema 스킵 (선행 테이블 부재 추정): %s", _e)
 
 
 @app.get("/api/reimbursement/reports")
