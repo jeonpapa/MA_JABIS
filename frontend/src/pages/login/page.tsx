@@ -1,6 +1,6 @@
 import { useState, FormEvent, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { login, hasToken, ADMIN_EMAIL } from '@/utils/authUsers';
+import { login, hasToken } from '@/utils/authUsers';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -160,21 +160,6 @@ export default function LoginPage() {
               )}
             </button>
           </form>
-
-          {/* 기본 계정 안내 */}
-          <div className="mt-6 pt-5 border-t border-[#1E2530]">
-            <p className="text-[#4A5568] text-xs text-center mb-2">초기 Admin 계정</p>
-            <div className="bg-[#0D1117] rounded-lg px-3 py-2.5 space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="text-[#4A5568] text-xs">이메일</span>
-                <span className="text-[#8B9BB4] text-xs font-mono">{ADMIN_EMAIL}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[#4A5568] text-xs">비밀번호</span>
-                <span className="text-[#8B9BB4] text-xs font-mono">admin1234</span>
-              </div>
-            </div>
-          </div>
         </div>
 
         <p className="text-center text-[#2A3545] text-xs mt-6">

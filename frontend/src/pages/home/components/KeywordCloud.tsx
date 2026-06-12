@@ -74,13 +74,17 @@ export default function KeywordCloud({ isDark }: Props) {
       return;
     }
     setSelectedBrand(brand);
-    setDrawerNews(brand.news); // 수집 캐시분 즉시 노출
+    // 캐시분도 '최근 top 10' 으로 제한 (날짜 내림차순) — fresh 실패 시에도 10건만 노출
+    const cachedTop10 = [...brand.news]
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+      .slice(0, 10);
+    setDrawerNews(cachedTop10);
     setDrawerLoading(true);
     try {
-      const fresh = await fetchBrandNews(brand.brand, 10);
-      if (fresh.length > 0) setDrawerNews(fresh);
+      const fresh = await fetchBrandNews(brand.brand, 10); // 서버도 최신순 top 10
+      if (fresh.length > 0) setDrawerNews(fresh.slice(0, 10));
     } catch {
-      // 실패 시 초기 캐시분 유지
+      // 실패 시 캐시 top 10 유지
     } finally {
       setDrawerLoading(false);
     }
@@ -206,9 +210,9 @@ export default function KeywordCloud({ isDark }: Props) {
               <div className="flex items-center gap-2 mb-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-teal-500"></span>
                 <span className={`text-xs font-bold ${accentTeal}`}>{selectedKeyword}</span>
-                <span className={`${textMuted} text-xs`}>관련 뉴스 Top 2</span>
+                <span className={`${textMuted} text-xs`}>근거 뉴스 {selectedNews.length}건</span>
               </div>
-              {selectedNews.map((article, idx) => (
+              {selectedNews.slice(0, 3).map((article, idx) => (
                 <a
                   key={idx}
                   href={article.url}
@@ -342,9 +346,9 @@ export default function KeywordCloud({ isDark }: Props) {
               })}
             </div>
 
-            <div className="flex flex-col min-h-0">
+            <div className="relative flex flex-col min-h-0">
               {selectedBrand ? (
-                <div className="flex flex-col h-full">
+                <div className="absolute inset-0 flex flex-col">
                   <div className={`flex items-center gap-2 px-4 py-2.5 border-b ${cardBorder} ${sectionBg}`}>
                     <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: selectedBrand.color, boxShadow: `0 0 6px ${selectedBrand.color}80` }}></span>
                     <span className={`text-xs font-bold ${textMain}`}>{selectedBrand.brand}</span>
@@ -378,7 +382,7 @@ export default function KeywordCloud({ isDark }: Props) {
                     <span className={`${textMuted} text-xs`}>전반기 대비</span>
                   </div>
 
-                  <div className="flex-1 overflow-y-auto">
+                  <div className="flex-1 overflow-y-auto min-h-0">
                     {drawerLoading && drawerNews.length === 0 && (
                       <div className={`px-4 py-6 text-center ${textMuted} text-xs`}>뉴스 로딩 중...</div>
                     )}

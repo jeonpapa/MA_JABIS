@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -63,15 +64,50 @@ class MarketIntelligenceAgent:
     """
 
     def __init__(self, cache_dir: Optional[Path] = None):
+        # 파일 캐시(legacy fallback) — 신규 저장은 DB 우선
         self.cache_dir = cache_dir or BASE_DIR / "data" / "dashboard" / "reason_cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        # 영구 캐시는 메인 DB 테이블 (배포 시 컨테이너 재시작에도 보존 — feedback_cache_db_first)
+        self._db_path = BASE_DIR / "data" / "db" / "drug_prices.db"
+        self._ensure_cache_table()
         apply_calibrated_weights()
 
+    def _ensure_cache_table(self) -> None:
+        try:
+            with sqlite3.connect(str(self._db_path)) as conn:
+                conn.execute(
+                    """CREATE TABLE IF NOT EXISTS change_reason_cache (
+                        cache_key   TEXT PRIMARY KEY,
+                        drug        TEXT,
+                        change_date TEXT,
+                        result_json TEXT NOT NULL,
+                        created_at  TEXT
+                    )""")
+                conn.commit()
+        except Exception as e:
+            logger.warning("[MI Agent] change_reason_cache 테이블 보장 실패: %s", e)
+
+    def _cache_key(self, drug_ko: str, change_date: str) -> str:
+        return re.sub(r"[^\w]", "_", f"MI_{drug_ko}_{change_date}")
+
     def _cache_path(self, drug_ko: str, change_date: str) -> Path:
-        key = re.sub(r"[^\w]", "_", f"MI_{drug_ko}_{change_date}")
-        return self.cache_dir / f"{key}.json"
+        return self.cache_dir / f"{self._cache_key(drug_ko, change_date)}.json"
 
     def get_cached(self, drug_ko: str, change_date: str) -> Optional[dict]:
+        """영구 캐시 조회 — DB 우선, 미스 시 legacy 파일 fallback."""
+        key = self._cache_key(drug_ko, change_date)
+        try:
+            with sqlite3.connect(str(self._db_path)) as conn:
+                row = conn.execute(
+                    "SELECT result_json FROM change_reason_cache WHERE cache_key = ?",
+                    (key,)).fetchone()
+            if row:
+                data = json.loads(row[0])
+                data["cached"] = True
+                return data
+        except Exception as e:
+            logger.debug("[MI Agent] DB 캐시 조회 실패: %s", e)
+        # legacy 파일 fallback (기존 *.json) — 발견 시 그대로 반환(다음 save 시 DB 승격)
         path = self._cache_path(drug_ko, change_date)
         if path.exists():
             with open(path, encoding="utf-8") as f:
@@ -81,9 +117,25 @@ class MarketIntelligenceAgent:
         return None
 
     def save_cache(self, drug_ko: str, change_date: str, result: dict) -> None:
-        path = self._cache_path(drug_ko, change_date)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(result, f, ensure_ascii=False, indent=2)
+        """영구 캐시 저장 — DB upsert (배포 보존). 파일도 호환 위해 병행 기록."""
+        key = self._cache_key(drug_ko, change_date)
+        try:
+            with sqlite3.connect(str(self._db_path)) as conn:
+                conn.execute(
+                    """INSERT OR REPLACE INTO change_reason_cache
+                       (cache_key, drug, change_date, result_json, created_at)
+                       VALUES (?,?,?,?,?)""",
+                    (key, drug_ko, change_date,
+                     json.dumps(result, ensure_ascii=False),
+                     datetime.now().isoformat(timespec="seconds")))
+                conn.commit()
+        except Exception as e:
+            logger.warning("[MI Agent] DB 캐시 저장 실패: %s", e)
+        try:
+            with open(self._cache_path(drug_ko, change_date), "w", encoding="utf-8") as f:
+                json.dump(result, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
 
     def analyze_price_change(
         self,
@@ -182,6 +234,8 @@ class MarketIntelligenceAgent:
 
             # LOE 산수 매칭 시 mechanism 강제 부여 (LLM stochastic 실패 우회)
             result = self._apply_loe_override(result, loe_detection)
+            # 약평위 '확대' 통과 교차검증 — 적응증 확대 HIRA 공식 권위 근거 보강
+            result = self._apply_committee_evidence(result, drug_ko, change_date)
 
             # RSA 키워드 자동 검출 — registry 미등록 약제에서 RSA 단서 발견 시 후보 flag
             self._detect_rsa_signal(result, drug_ko)
@@ -220,6 +274,7 @@ class MarketIntelligenceAgent:
         result = self._deep_research_if_low(result, drug_ko, ingredient_ko, change_date, delta_pct)
         result = enforce_rules(result, change_date, delta_pct=delta_pct)
         result = self._apply_loe_override(result, loe_detection)
+        result = self._apply_committee_evidence(result, drug_ko, change_date)
         result["cached"] = False
         self.save_cache(drug_ko, change_date, result)
         return result
@@ -301,6 +356,104 @@ class MarketIntelligenceAgent:
         existing_notes = (result.get("notes") or "").strip()
         loe_note = f"[LOE override] 가격 산수 → {loe_detection.kr_rule} {loe_detection.stage_label}"
         result["notes"] = (existing_notes + " · " + loe_note).strip(" ·") if existing_notes else loe_note
+        return result
+
+    # ── 약평위 통과 교차검증 (적응증 확대 권위 근거) ─────────────────────────────
+    @staticmethod
+    def _brand_base(name: str) -> str:
+        """제품명 → 브랜드 베이스 (괄호 성분·함량·제형 suffix 제거). 매칭용."""
+        b = re.sub(r"\(.*?\)", "", name or "")
+        b = re.sub(
+            r"(정|주사|주|캡슐|액|시럽|서방정|필름코팅정|흡입제|흡입액|점안액)?\s*"
+            r"\d[\d./·,~]*\s*(mg|밀리그램|㎎|g|그램|㎍|ug|mcg|mL|밀리리터|%|IU)?.*$",
+            "", b)
+        b = re.sub(r"(주사|주|정|캡슐|액|시럽)$", "", b).strip()
+        return b
+
+    def _committee_indication_evidence(self, drug_ko: str, change_date: str) -> Optional[dict]:
+        """약평위 '확대' 통과 이력 교차검증 — 적응증 확대 기전의 HIRA 공식 권위 근거.
+
+        amjilsim_drugs(listing_type='확대', yakpyungwi_pass_date) 중 브랜드 일치 +
+        통과일이 변동일 ±6개월 윈도우 내면 매칭 (LOE 특허 산수처럼 결정적 근거).
+        """
+        base = self._brand_base(drug_ko)
+        if len(base) < 2:
+            return None
+        wf, wt, _, _ = window_bounds(change_date, months=6)
+        if not wf:
+            return None
+        try:
+            with sqlite3.connect(str(self._db_path)) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    """SELECT d.brand_kr, d.indication, d.yakpyungwi_pass_date,
+                              q.evidence_url, s.ordinal_official, s.ordinal_assumed
+                       FROM amjilsim_drugs d
+                       LEFT JOIN amjilsim_drug_queue_status q
+                         ON q.drug_id = d.drug_id AND q.committee_type='YAKPYUNGWI'
+                            AND q.queue_state='APPROVED'
+                       LEFT JOIN amjilsim_sessions s ON s.session_id = q.session_id
+                       WHERE d.listing_type='확대' AND d.yakpyungwi_pass_date IS NOT NULL"""
+                ).fetchall()
+        except Exception as e:
+            logger.debug("[MI Agent] 약평위 교차검증 조회 실패: %s", e)
+            return None
+        for r in rows:
+            cb = self._brand_base(r["brand_kr"])
+            if len(cb) < 2 or not (base in cb or cb in base):
+                continue
+            try:
+                pd = datetime.strptime(r["yakpyungwi_pass_date"], "%Y-%m-%d")
+            except Exception:
+                continue
+            if wf <= pd <= wt:
+                return {
+                    "brand": r["brand_kr"], "pass_date": r["yakpyungwi_pass_date"],
+                    "indication": r["indication"],
+                    "cycle": r["ordinal_official"] or r["ordinal_assumed"],
+                    "evidence_url": r["evidence_url"],
+                }
+        return None
+
+    def _apply_committee_evidence(self, result: dict, drug_ko: str, change_date: str) -> dict:
+        """약평위 확대 통과 매칭 시 권위 근거 ref 추가 + (불확실 시) 적응증 확대 기전 보정."""
+        ev = self._committee_indication_evidence(drug_ko, change_date)
+        if not ev:
+            return result
+        pub = ev["pass_date"].replace("-", ".")  # YYYY.MM.DD (윈도우 게이트 호환)
+        cycle_txt = f"{ev['cycle']}차 " if ev["cycle"] else ""
+        # HIRA 공식(brdBltNo) vs 매체 보도 구분 — date_source 정직성 (CLAUDE.md)
+        ev_url = ev.get("evidence_url") or ""
+        hira_official = ev_url.startswith("HIRA")
+        media = "약평위 (HIRA 공식)" if hira_official else "약평위 (매체 보도)"
+        weight, tier = (3.0, "A") if hira_official else (2.0, "B")
+        ref = {
+            "url": "", "title": f"약평위 {cycle_txt}적응증 확대 급여 통과: {ev.get('indication') or ''}".strip(),
+            "media": media, "weight": weight, "tier": tier,
+            "published_at": pub, "source_note": ev_url or "HIRA 약제급여평가위원회",
+        }
+        refs = result.get("references") or []
+        if not any(r.get("media") == ref["media"] and r.get("published_at") == pub for r in refs):
+            refs.insert(0, ref)
+        result["references"] = refs
+
+        verify_txt = "HIRA 공식" if hira_official else "매체 보도(HIRA 본문 미verified)"
+        note = (f"[약평위 교차검증] {ev['brand']} {cycle_txt}약평위 적응증 확대 통과"
+                f"({ev['pass_date']}, {verify_txt}) — 변동일 ±6개월 윈도우 내")
+        mech = (result.get("mechanism") or "unknown").lower()
+        if mech in ("unknown", "", "indication_expansion"):
+            result["mechanism"] = "indication_expansion"
+            result["mechanism_label"] = "적응증 확대"
+            # HIRA 공식 통과 → high, 매체 보도 → medium (날조 방지)
+            result["confidence"] = "high" if hira_official else "medium"
+            existing = (result.get("reason") or "").strip()
+            anchor = (f"약평위 {cycle_txt}적응증 확대 급여 통과({ev['pass_date']}) 가 변동 시점 ±6개월 내 "
+                      f"확인됨 — 적응증 확대에 따른 약가 조정으로 판단.")
+            result["reason"] = anchor + ("\n\n" + existing if existing else "")
+        else:
+            note += " (기전은 기존 분류 유지 — 근거만 보강)"
+        existing_notes = (result.get("notes") or "").strip()
+        result["notes"] = (existing_notes + " · " + note).strip(" ·") if existing_notes else note
         return result
 
     def _augment_with_naver(

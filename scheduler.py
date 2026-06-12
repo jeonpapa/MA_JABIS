@@ -47,17 +47,25 @@ def load_config() -> dict:
 
 
 async def run_pipeline():
-    """전체 파이프라인: 국내 약가 에이전트 → 대쉬보드 에이전트"""
+    """전체 파이프라인: 국내 약가 월별 catch-up(누락 자동복구) → 대쉬보드.
+
+    매월 1일 09:00 실행. 기존 단발(download_latest)에서 **catch_up** 으로 전환 —
+    스케줄러 미가동/실패로 빠진 달이 있어도 DB 최신일보다 새로운 모든 월을 한 번에 적재.
+    """
     logger.info("━━━ 파이프라인 시작 ━━━")
     config = load_config()
 
-    # 1) 국내 약가 에이전트
-    domestic_agent = DomesticPriceAgent(config, BASE_DIR)
-    meta = await domestic_agent.run()
-
-    if meta is None:
-        logger.error("국내 약가 에이전트 실패 — 대쉬보드 업데이트 건너뜀")
-        return
+    # 1) 국내 약가 월별 catch-up (누락 월 자동 복구 적재)
+    from agents.domestic_catchup import catch_up
+    try:
+        result = await catch_up(config, BASE_DIR)
+        logger.info("국내 약가 catch-up: 신규 적재 %s · 오류 %s",
+                    result.get("ingested"), result.get("errors"))
+        if result.get("errors"):
+            logger.warning("catch-up 일부 오류 — 다음 실행 시 재시도(멱등)")
+    except Exception as e:
+        logger.error("국내 약가 catch-up 실패: %s", e, exc_info=True)
+        # 적재 실패해도 대쉬보드는 기존 데이터로 갱신
 
     # 2) 대쉬보드 에이전트
     dashboard_agent = DashboardAgent(config, BASE_DIR)
@@ -218,6 +226,36 @@ def reimbursement_xnational_sync_job():
 
 # ── HIRA Pipeline Tracker (암질심 + 약평위) — hira-pipeline-tracker skill backend ──
 
+def competitor_news_weekly_job():
+    """매주 월요일 03:30 Seoul — 경쟁사 Tier 1 뉴스 하이브리드 수집 + 1년 보존 정리.
+
+    하이브리드 2축 (agents/competitor_news_agent.crawl):
+      ① Naver News API → 전 매체 검색 후 T1 도메인만 필터 (config/media_tiers.json).
+      ② T1 전문지 직접 검색 (agents/scrapers/tier1_news_sites) — Naver 미인덱싱 갭필러
+         (뉴스더보이스·히트뉴스). canonical URL 로 ①②/페이지 중복 제거.
+    competitor_news 테이블 누적, expires_at(발행일+365)<오늘 자동 삭제. Naver 키 필요(사이트축은 키 불필요).
+    배포 안전: 사이트별/페이지별 try/except·timeout·정중딜레이, 한 소스 실패가 전체를 막지 않음.
+    """
+    logger.info("━━━ Competitor News (Tier1) 주간 크롤 시작 ━━━")
+    try:
+        from agents import competitor_news_agent as cn
+        result = cn.crawl(lookback_days=cn.DEFAULT_LOOKBACK_DAYS, t1_only=True)
+        logger.info("Competitor News 크롤 완료: 신규 %d건, 만료정리 %d건",
+                    result.get("total_stored", 0), result.get("expired_removed", 0))
+    except Exception as e:
+        logger.exception("Competitor News 주간 크롤 실패: %s", e)
+
+    # ── 정부·보건당국 정책 뉴스 아카이브 (Home 키워드 클라우드 소스) ──
+    # 같은 competitor_news 테이블(kind='gov_policy')에 누적 → 키워드↔근거기사 보장.
+    logger.info("━━━ Gov Policy News 주간 크롤 시작 ━━━")
+    try:
+        from agents import gov_policy_news as gpn
+        gov_result = gpn.crawl(lookback_days=gpn.DEFAULT_LOOKBACK_DAYS)
+        logger.info("Gov Policy News 크롤 완료: 신규 %d건", gov_result.get("total_stored", 0))
+    except Exception as e:
+        logger.exception("Gov Policy News 주간 크롤 실패: %s", e)
+
+
 def amjilsim_daily_crawl_job():
     """매일 02:00 Seoul — HIRA 공식 보도자료 + 27개 매체 일별 크롤.
 
@@ -364,7 +402,12 @@ def main():
     parser.add_argument(
         "--run-now",
         action="store_true",
-        help="스케줄 무시하고 즉시 실행",
+        help="스케줄 무시하고 즉시 실행 (국내약가 catch-up + 대쉬보드)",
+    )
+    parser.add_argument(
+        "--domestic-catchup-now",
+        action="store_true",
+        help="국내 약가 월별 catch-up 만 즉시 실행 (누락 월 자동 적재)",
     )
     parser.add_argument(
         "--review-now",
@@ -419,6 +462,14 @@ def main():
     if args.run_now:
         logger.info("수동 즉시 실행 모드")
         asyncio.run(run_pipeline())
+        return
+
+    if args.domestic_catchup_now:
+        logger.info("국내 약가 catch-up 즉시 실행 (누락 월 적재)")
+        from agents.domestic_catchup import run_sync
+        out = run_sync(load_config(), BASE_DIR, max_pages=3)
+        logger.info("catch-up 결과: 신규 적재 %s · 오류 %s",
+                    out.get("ingested"), out.get("errors"))
         return
 
     if args.review_now:
@@ -545,6 +596,20 @@ def main():
         ),
         id="foreign_price_backfill",
         name="ForeignPrice 주간 백필 (8개국)",
+        replace_existing=True,
+    )
+
+    # Competitor News — 매주 월요일 03:30 Seoul (Tier 1 전문지 6개월 크롤 + 1년 보존)
+    scheduler.add_job(
+        competitor_news_weekly_job,
+        trigger=CronTrigger(
+            day_of_week="mon",
+            hour=3,
+            minute=30,
+            timezone="Asia/Seoul",
+        ),
+        id="competitor_news_weekly",
+        name="경쟁사 뉴스 주간 크롤 (Tier 1, 13 브랜드)",
         replace_existing=True,
     )
 

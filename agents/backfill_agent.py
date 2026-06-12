@@ -272,6 +272,9 @@ class BackfillAgent:
             engine = "xlrd" if actual_path.suffix.lower() == ".xls" else None
             xl = pd.ExcelFile(actual_path, engine=engine)
             df = None
+            # 포맷 감지 = map_columns 권위 기반: insurance_code + max_price 가 매핑되는
+            # 헤더행을 사용 (현행 보험코드 / 구형 제품코드+상한금액 / 신포맷 상한금액표 금액
+            # 모두 자동 처리 — 컬럼 별칭은 schema.COL_CANDIDATES 에서 관리).
             for sheet in xl.sheet_names:
                 for skip in range(6):
                     try:
@@ -280,25 +283,12 @@ class BackfillAgent:
                             header=skip, dtype=str, engine=engine
                         )
                         temp.columns = [str(c).strip() for c in temp.columns]
-                        cols = temp.columns.tolist()
-
-                        # 현행 포맷 감지: 보험코드 컬럼 존재
-                        is_modern = any(
-                            any(cand in col for cand in ["보험코드", "보험\n코드", "급여코드"])
-                            for col in cols
-                        )
-                        # 구형 포맷 감지: 제품코드 + 상한금액 컬럼 존재
-                        is_legacy = "제품코드" in cols and "상한금액" in cols
-
-                        if is_modern:
+                        cmap = self.db.map_columns(list(temp.columns))
+                        if "insurance_code" in cmap and "max_price" in cmap:
+                            # 성분 헤더행 등은 upsert 가 code 무효로 자동 skip
                             df = temp
-                            break
-                        elif is_legacy:
-                            # 구형 포맷: 성분 헤더행(제품명이 NaN인 행) 제거
-                            # 제품명이 있는 행만 남김
-                            temp = temp[temp["제품명"].notna() & (temp["제품명"].str.strip() != "")]
-                            df = temp.copy()
-                            logger.info("구형 포맷 감지: %d개 약제 (헤더행 제거 후)", len(df))
+                            logger.info("포맷 감지 OK: 시트='%s' header=%d (%d행)",
+                                        sheet, skip, len(df))
                             break
                     except Exception:
                         pass
@@ -306,7 +296,8 @@ class BackfillAgent:
                     break
 
             if df is None:
-                logger.warning("유효한 데이터 시트 없음: %s", file_path.name)
+                logger.warning("유효한 데이터 시트 없음(insurance_code+max_price 미매핑): %s",
+                               file_path.name)
                 return 0
 
             df = df.dropna(how="all").fillna("")

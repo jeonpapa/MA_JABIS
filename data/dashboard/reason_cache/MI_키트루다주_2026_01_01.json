@@ -1,9 +1,9 @@
 {
   "mechanism": "indication_expansion",
   "mechanism_label": "적응증 확대",
-  "reason": "2026년 1월 1일 키트루다주는 기존 4개 암종에서 9개 암종이 추가되어 총 13개 암종, 17개 요법으로 급여범위가 확대되었다.[4] 적응증 확대에 따른 환자군 증가로 공단의 재협상 과정에서 소폭 인하가 이루어진 것으로 판단된다. 상한금액은 2,103,620원/병에서 2,100,556원/병으로 조정되었으며, 이는 -0.15%의 소폭 인하율에 해당한다.[4]",
+  "reason": "⚠ 위험분담제(RSA) 자산 — 표시가 ≠ 실제가. 정부와의 RSA 계약 하 표시가는 부분 조정만 노출되며 환급·총액제한 차액은 비공개. 표시가 변동률만으로 mechanism 을 단정할 수 없음.\n\n2026년 1월 1일 키트루다주는 기존 4개 암종에서 9개 암종이 추가되어 총 13개 암종, 17개 요법으로 급여범위가 확대되었다.[4] 적응증 확대에 따른 환자군 증가로 공단의 재협상 과정에서 소폭 인하가 이루어진 것으로 판단된다. 상한금액은 2,103,620원/병에서 2,100,556원/병으로 조정되었으며, 이는 -0.15%의 소폭 인하율에 해당한다.[4]",
   "evidence_summary": "보건복지부(mohw.go.kr)는 2026년 1월 1일부터 키트루다주의 급여범위를 비소세포폐암 등 기존 4개 암종에서 두경부암 등 9개 암종이 추가된 13개 암종으로 확대하며 상한금액을 2,103,620원에서 2,100,556원으로 조정했다고 공시했다.[4]",
-  "confidence": "high",
+  "confidence": "medium",
   "window": {
     "from": "2025.07",
     "to": "2026.07",
@@ -47,5 +47,94 @@
       }
     ]
   },
-  "cached": false
+  "cached": true,
+  "review": {
+    "approved": true,
+    "score": 60,
+    "issues": [
+      {
+        "axis": "rule_compliance",
+        "severity": "blocker",
+        "detail": "변동률 -0.15%는 적응증 확대 기전의 통상 인하폭(5~30%)과 불일치하며, 실거래가 연동 기전의 소폭 인하(1~5%)에 더 부합함. 기전 분류 오류."
+      },
+      {
+        "axis": "evidence_quality",
+        "severity": "blocker",
+        "detail": "references 중 하나가 윈도우 내에 있지만, 다른 하나는 윈도우 외에 위치함. 모든 references가 윈도우 내에 있어야 함."
+      },
+      {
+        "axis": "consistency",
+        "severity": "major",
+        "detail": "적응증 확대 기전으로 분류했으나, reason에서 실거래가 연동 기전의 가능성을 언급하며 모호함."
+      },
+      {
+        "axis": "KR-RULE 정합성",
+        "severity": "major",
+        "detail": "적응증 확대 기전의 통상 인하폭과 변동률이 불일치하며, 실거래가 연동 기전의 가능성을 배제하지 않음."
+      }
+    ],
+    "corrective_actions": [
+      "변동률 -0.15%에 적합한 실거래가 연동 기전으로 재분류하고, 관련 근거를 윈도우 내에서 다시 수집하세요.",
+      "모든 references가 윈도우 내에 있는지 확인하고, 윈도우 외 references는 제거하세요.",
+      "기전과 reason의 일관성을 유지하도록 reason을 수정하세요."
+    ],
+    "final_verdict": "패널 과반수 승인 (1/2) — 의견 엇갈림. [openai-gpt-4o] 적응증 확대 기전의 통상 인하폭과 변동률이 불일치하며, 실거래가 연동 기전으로 재분류가 필요합니다. 또한 references 중 하나가 윈도우 외에 위치하여 규칙 위반입니다. | [gemini] MI 에이전트의 결과는 사용자 요청과 룰에 잘 부합하며, 적절한 근거와 설명을 제공했습니다.",
+    "review_mode": "panel-split",
+    "panel": [
+      {
+        "approved": false,
+        "score": 60,
+        "issues": [
+          {
+            "axis": "rule_compliance",
+            "severity": "blocker",
+            "detail": "변동률 -0.15%는 적응증 확대 기전의 통상 인하폭(5~30%)과 불일치하며, 실거래가 연동 기전의 소폭 인하(1~5%)에 더 부합함. 기전 분류 오류."
+          },
+          {
+            "axis": "evidence_quality",
+            "severity": "blocker",
+            "detail": "references 중 하나가 윈도우 내에 있지만, 다른 하나는 윈도우 외에 위치함. 모든 references가 윈도우 내에 있어야 함."
+          },
+          {
+            "axis": "consistency",
+            "severity": "major",
+            "detail": "적응증 확대 기전으로 분류했으나, reason에서 실거래가 연동 기전의 가능성을 언급하며 모호함."
+          },
+          {
+            "axis": "KR-RULE 정합성",
+            "severity": "major",
+            "detail": "적응증 확대 기전의 통상 인하폭과 변동률이 불일치하며, 실거래가 연동 기전의 가능성을 배제하지 않음."
+          }
+        ],
+        "corrective_actions": [
+          "변동률 -0.15%에 적합한 실거래가 연동 기전으로 재분류하고, 관련 근거를 윈도우 내에서 다시 수집하세요.",
+          "모든 references가 윈도우 내에 있는지 확인하고, 윈도우 외 references는 제거하세요.",
+          "기전과 reason의 일관성을 유지하도록 reason을 수정하세요."
+        ],
+        "final_verdict": "적응증 확대 기전의 통상 인하폭과 변동률이 불일치하며, 실거래가 연동 기전으로 재분류가 필요합니다. 또한 references 중 하나가 윈도우 외에 위치하여 규칙 위반입니다.",
+        "review_mode": "llm",
+        "reviewer": "openai-gpt-4o"
+      },
+      {
+        "approved": true,
+        "score": 95,
+        "issues": [],
+        "corrective_actions": [],
+        "final_verdict": "MI 에이전트의 결과는 사용자 요청과 룰에 잘 부합하며, 적절한 근거와 설명을 제공했습니다.",
+        "reviewer": "gemini",
+        "review_mode": "gemini-llm"
+      }
+    ],
+    "panel_size": 2,
+    "consensus": {
+      "yes": 1,
+      "total": 2,
+      "split": true
+    }
+  },
+  "is_rsa": 1,
+  "rsa_type": "combined",
+  "rsa_note": "환급형 + expenditure cap (적응증별 분리). 30+ 적응증, 4회 누적 인하 history.",
+  "rsa_source": "skill msd_assets.md (KPAD v3 ground-truth)",
+  "served_from": "fresh"
 }

@@ -1,9 +1,9 @@
 {
   "mechanism": "patent_expiration",
   "mechanism_label": "특허 만료",
-  "reason": "가격 시계열 산수 분석: 기준가 ₩846 (2023.09.01) → 변동일 ₩453 (누적 산정률 53.5%). 이는 **KR-RULE-009 Year 1+ patent stage** 와 일치 — 특허 만료 1년 후 추가 인하 (누적 53.55% 산정률, 추가 -23.5% 인하). 기준가 대비 누적 -46.45% 인하.\n\n자누비아정100밀리그램의 2024.10.01 약가 -23.48% 인하는 물질특허 만료와 제네릭 제품의 시장 진입에 따른 것입니다. 2024년 9월에 특허가 만료되면서, KR-RULE-009에 따라 오리지널 약가는 제네릭 등재 후 53.55% 수준으로 추가 인하되었습니다. 이는 특허 만료 후 첫 1년 동안의 약가 조정 규정에 부합하는 변동입니다.",
-  "evidence_summary": "데일리팜은 자누비아의 특허 만료로 인해 제네릭 제품들이 시장에 진입했으며, 이에 따라 오리지널 제품의 가격이 인하되었다고 보도했습니다.",
-  "confidence": "high",
+  "reason": "자누비아정 100밀리그램의 2024년 10월 1일 약가 인하는 -23.48%로, 이는 사용량-약가 연동 협상에 따른 조정으로 해석됩니다. 건보공단의 모니터링 대상이 되어 청구금액이 예상액을 초과한 경우, 제약사와의 협상을 통해 상한금액이 인하되는 제도에 따라 발생한 것입니다. 특허 만료에 따른 인하가 아닌 사용량 초과에 따른 단일 기전으로 분류됩니다.",
+  "evidence_summary": "데일리팜은 자누비아의 특허 만료와 제네릭 제품의 시장 진입을 보도하며, 이에 따른 오리지널 약가 인하를 언급했습니다.",
+  "confidence": "medium",
   "window": {
     "from": "2023.10",
     "to": "2025.10",
@@ -35,18 +35,6 @@
       "fetch_verified": true
     },
     {
-      "title": "자누비아 차액보상 책임은?…MSD-종근당 협의 '난항'",
-      "url": "https://dailypharm.com/user/news/4125",
-      "media": "데일리팜",
-      "weight": 3.0,
-      "published_at": "2025-07-14",
-      "id_suspicious": true,
-      "id_suspicious_reason": "dailypharm.com ID=4125 는 2020+ 기사 임계값 (>= 250000) 미달. claimed year 2025 와 불일치 (오래된 기사를 신규로 위조 가능성)",
-      "fetch_verified": true,
-      "published_at_claimed": "2024.10.14",
-      "date_corrected": true
-    },
-    {
       "title": "NewsView.html?ID=56981",
       "url": "https://m.medicaltimes.com/NewsView.html?ID=56981",
       "media": "메디칼타임즈",
@@ -55,45 +43,28 @@
       "date_unknown": true
     },
     {
-      "title": "3545?view_mode=pc",
-      "url": "https://m.dailypharm.com/user/news/3545?view_mode=pc",
-      "media": "데일리팜",
-      "weight": 3.0,
-      "fetch_verified": true,
-      "published_at": "2025-07-31",
-      "date_corrected": true,
-      "id_suspicious": true,
-      "id_suspicious_reason": "dailypharm.com ID=3545 는 2020+ 기사 임계값 (>= 250000) 미달. claimed year 2025 와 불일치 (오래된 기사를 신규로 위조 가능성)"
-    },
-    {
-      "title": "downloadCkd.do?attFileNo=40148&saveFileName=8aa70daa4088b2ad",
-      "url": "https://www.ckdpharm.com/downloadCkd.do?attFileNo=40148&saveFileName=8aa70daa4088b2ad708ab0fac8d3474a81438f32f3f16e2cb13f22e377a34b0e",
+      "title": "222855095293",
+      "url": "https://blog.naver.com/alsdh539/222855095293",
       "media": "기타",
       "weight": 0.5,
-      "date_unknown": true,
-      "fetch_verified": false
+      "fetch_verified": false,
+      "published_at": "2228.55.09",
+      "notes": "date_inferred_from_url",
+      "date_unknown": true
     }
   ],
-  "notes": "판권 이전 후 제네릭 경쟁 환경에서 Year 1+ 인하 확인. 단독품목 아님(KR-RULE-007 미적용). · [enforce] URL 검증: 3건 published_at 교체, 0건 drop (의심 1건) · published_at 미확인 2건 — date_unknown 마킹 후 보존 · 윈도우 외 references 2건 제거 · [enforce] published_at 미확인 2건 — date_unknown 마킹 후 보존 · [Naver 보강] 윈도우 내 기사 26건 채택 · [enforce] published_at 미확인 2건 — date_unknown 마킹 후 보존 · [LOE override] 가격 산수 → KR-RULE-009 Year 1+ patent stage",
+  "notes": "[enforce] URL 검증: 2건 published_at 교체, 0건 drop (의심 1건) · published_at 미확인 2건 — date_unknown 마킹 후 보존 · 윈도우 외 references 2건 제거 · [enforce] published_at 미확인 2건 — date_unknown 마킹 후 보존 · [Naver 보강] 윈도우 내 기사 26건 채택 · [enforce] published_at 미확인 2건 — date_unknown 마킹 후 보존 · ReviewAgent 거부 (근거 충분 → confidence 강등) — 패널 합의 거부. [openai-gpt-4o] 윈도우 외 references 사용과 기전 선택의 모순으로 인해 결과가 거부되었습니다. 윈도우 내 근거를 사용하고 기전을 일관되게 수정해야 합니다. | [gemini] MI Agent의 결과는 기전 분류와 설명이 상충되며, 이는 핵심적인 규칙 위반에 해당하므로 승인할 수 없습니다.",
   "_source": "perplexity-sonar-pro",
   "analysis_meta": {
     "source": "perplexity-sonar-pro",
-    "total_articles": 4,
-    "tier_a_count": 2,
+    "total_articles": 2,
+    "tier_a_count": 0,
     "tier_b_count": 1,
     "tier_c_count": 0,
     "detected_mechanisms": [
-      "특허 만료"
+      "사용량-연동 약가인하"
     ],
     "top_media": [
-      {
-        "media": "데일리팜",
-        "weight": 3.0
-      },
-      {
-        "media": "데일리팜",
-        "weight": 3.0
-      },
       {
         "media": "메디칼타임즈",
         "weight": 2.3
@@ -104,5 +75,128 @@
       }
     ]
   },
-  "cached": false
+  "cached": false,
+  "review": {
+    "approved": false,
+    "score": 30,
+    "issues": [
+      {
+        "axis": "rule_compliance",
+        "severity": "blocker",
+        "detail": "변동 시점의 기사만 참고해야 하는 규칙을 위반하고, 윈도우 외의 references를 사용했습니다."
+      },
+      {
+        "axis": "evidence_quality",
+        "severity": "blocker",
+        "detail": "references에 윈도우 내 published_at이 없는 항목이 포함되어 있습니다."
+      },
+      {
+        "axis": "consistency",
+        "severity": "major",
+        "detail": "mechanism이 'patent_expiration'으로 설정되었으나, reason에서는 '사용량-연동 약가인하'로 설명하고 있어 모순이 있습니다."
+      },
+      {
+        "axis": "KR-RULE 정합성",
+        "severity": "major",
+        "detail": "특허 만료에 따른 인하가 아닌 사용량 초과에 따른 단일 기전으로 분류해야 하는데, 잘못된 기전이 선택되었습니다."
+      },
+      {
+        "axis": "rule_compliance",
+        "severity": "blocker",
+        "detail": "references의 published_at 필드에 윈도우(2023.10 ~ 2025.10) 밖인 2025-02-07, 2025-02-06, 2025-01-20 날짜가 포함되어 있습니다. 윈도우는 2024.10.01 ± 12개월 (특허 만료 기전이므로)인 2023.10.01 ~ 2025.10.01 입니다. 2025년 2월은 윈도우 내에 해당합니다. 하지만, mechanism이 'patent_expiration'으로 분류되었음에도 불구하고, reason 본문에서는 '사용량-약가 연동 협상에 따른 조정'으로 해석하고 있어 기전과 설명이 일치하지 않습니다. 또한, '특허 만료에 따른 인하가 아닌 사용량 초과에 따른 단일 기전으로 분류됩니다.'라고 명시하여 mechanism 필드와 reason 필드의 내용이 상충됩니다."
+      },
+      {
+        "axis": "consistency",
+        "severity": "blocker",
+        "detail": "mechanism 필드는 'patent_expiration'으로 되어 있으나, reason 필드에서는 '사용량-약가 연동 협상에 따른 조정으로 해석됩니다.'라고 설명하며 '특허 만료에 따른 인하가 아닌 사용량 초과에 따른 단일 기전으로 분류됩니다.'라고 명시하여 기전 분류와 설명이 완전히 상충됩니다."
+      },
+      {
+        "axis": "request_alignment",
+        "severity": "major",
+        "detail": "원 사용자 요청의 변동률(-23.48%)은 '특허 만료' 기전의 통상 인하폭(오리지널 59.5% / 70%)과 '사용량-연동' 기전의 변동률 다양성 중 어느 쪽에 더 부합하는지 명확한 설명이 부족합니다. MI Agent 결과는 '사용량-약가 연동 협상'을 언급하면서도 mechanism을 'patent_expiration'으로 설정하여 혼란을 야기합니다."
+      }
+    ],
+    "corrective_actions": [
+      "변동 시점 ±6개월 윈도우 내의 기사만을 사용하여 references를 수정하세요.",
+      "mechanism을 'volume_price'로 수정하고, reason을 이에 맞게 조정하세요.",
+      "published_at 필드가 없는 references는 제거하세요.",
+      "mechanism 필드와 reason 필드의 내용이 일치하도록 수정하세요. 'patent_expiration' 또는 'volume_price' 중 하나의 기전을 명확히 선택하고, 그에 맞는 설명을 제공하세요.",
+      "reason 본문에서 기전과 관련된 설명이 명확하게 일치하도록 수정하세요. 만약 '사용량-약가 연동'이 기전이라면 mechanism을 'volume_price'로 변경하고, '특허 만료'가 기전이라면 reason 본문에서 특허 만료 관련 내용을 명확히 설명하세요.",
+      "references의 published_at 날짜가 윈도우 내에 있는지 다시 한번 확인하고, 윈도우 밖의 날짜는 제거하세요. (현재 제공된 published_at은 윈도우 내에 있습니다. 다만, 기전과 설명의 불일치로 인해 재검토가 필요합니다.)"
+    ],
+    "final_verdict": "패널 합의 거부. [openai-gpt-4o] 윈도우 외 references 사용과 기전 선택의 모순으로 인해 결과가 거부되었습니다. 윈도우 내 근거를 사용하고 기전을 일관되게 수정해야 합니다. | [gemini] MI Agent의 결과는 기전 분류와 설명이 상충되며, 이는 핵심적인 규칙 위반에 해당하므로 승인할 수 없습니다.",
+    "review_mode": "panel",
+    "panel": [
+      {
+        "approved": false,
+        "score": 45,
+        "issues": [
+          {
+            "axis": "rule_compliance",
+            "severity": "blocker",
+            "detail": "변동 시점의 기사만 참고해야 하는 규칙을 위반하고, 윈도우 외의 references를 사용했습니다."
+          },
+          {
+            "axis": "evidence_quality",
+            "severity": "blocker",
+            "detail": "references에 윈도우 내 published_at이 없는 항목이 포함되어 있습니다."
+          },
+          {
+            "axis": "consistency",
+            "severity": "major",
+            "detail": "mechanism이 'patent_expiration'으로 설정되었으나, reason에서는 '사용량-연동 약가인하'로 설명하고 있어 모순이 있습니다."
+          },
+          {
+            "axis": "KR-RULE 정합성",
+            "severity": "major",
+            "detail": "특허 만료에 따른 인하가 아닌 사용량 초과에 따른 단일 기전으로 분류해야 하는데, 잘못된 기전이 선택되었습니다."
+          }
+        ],
+        "corrective_actions": [
+          "변동 시점 ±6개월 윈도우 내의 기사만을 사용하여 references를 수정하세요.",
+          "mechanism을 'volume_price'로 수정하고, reason을 이에 맞게 조정하세요.",
+          "published_at 필드가 없는 references는 제거하세요."
+        ],
+        "final_verdict": "윈도우 외 references 사용과 기전 선택의 모순으로 인해 결과가 거부되었습니다. 윈도우 내 근거를 사용하고 기전을 일관되게 수정해야 합니다.",
+        "review_mode": "llm",
+        "reviewer": "openai-gpt-4o"
+      },
+      {
+        "approved": false,
+        "score": 30,
+        "issues": [
+          {
+            "axis": "rule_compliance",
+            "severity": "blocker",
+            "detail": "references의 published_at 필드에 윈도우(2023.10 ~ 2025.10) 밖인 2025-02-07, 2025-02-06, 2025-01-20 날짜가 포함되어 있습니다. 윈도우는 2024.10.01 ± 12개월 (특허 만료 기전이므로)인 2023.10.01 ~ 2025.10.01 입니다. 2025년 2월은 윈도우 내에 해당합니다. 하지만, mechanism이 'patent_expiration'으로 분류되었음에도 불구하고, reason 본문에서는 '사용량-약가 연동 협상에 따른 조정'으로 해석하고 있어 기전과 설명이 일치하지 않습니다. 또한, '특허 만료에 따른 인하가 아닌 사용량 초과에 따른 단일 기전으로 분류됩니다.'라고 명시하여 mechanism 필드와 reason 필드의 내용이 상충됩니다."
+          },
+          {
+            "axis": "consistency",
+            "severity": "blocker",
+            "detail": "mechanism 필드는 'patent_expiration'으로 되어 있으나, reason 필드에서는 '사용량-약가 연동 협상에 따른 조정으로 해석됩니다.'라고 설명하며 '특허 만료에 따른 인하가 아닌 사용량 초과에 따른 단일 기전으로 분류됩니다.'라고 명시하여 기전 분류와 설명이 완전히 상충됩니다."
+          },
+          {
+            "axis": "request_alignment",
+            "severity": "major",
+            "detail": "원 사용자 요청의 변동률(-23.48%)은 '특허 만료' 기전의 통상 인하폭(오리지널 59.5% / 70%)과 '사용량-연동' 기전의 변동률 다양성 중 어느 쪽에 더 부합하는지 명확한 설명이 부족합니다. MI Agent 결과는 '사용량-약가 연동 협상'을 언급하면서도 mechanism을 'patent_expiration'으로 설정하여 혼란을 야기합니다."
+          }
+        ],
+        "corrective_actions": [
+          "mechanism 필드와 reason 필드의 내용이 일치하도록 수정하세요. 'patent_expiration' 또는 'volume_price' 중 하나의 기전을 명확히 선택하고, 그에 맞는 설명을 제공하세요.",
+          "reason 본문에서 기전과 관련된 설명이 명확하게 일치하도록 수정하세요. 만약 '사용량-약가 연동'이 기전이라면 mechanism을 'volume_price'로 변경하고, '특허 만료'가 기전이라면 reason 본문에서 특허 만료 관련 내용을 명확히 설명하세요.",
+          "references의 published_at 날짜가 윈도우 내에 있는지 다시 한번 확인하고, 윈도우 밖의 날짜는 제거하세요. (현재 제공된 published_at은 윈도우 내에 있습니다. 다만, 기전과 설명의 불일치로 인해 재검토가 필요합니다.)"
+        ],
+        "final_verdict": "MI Agent의 결과는 기전 분류와 설명이 상충되며, 이는 핵심적인 규칙 위반에 해당하므로 승인할 수 없습니다.",
+        "reviewer": "gemini",
+        "review_mode": "gemini-llm"
+      }
+    ],
+    "panel_size": 2,
+    "consensus": {
+      "yes": 0,
+      "total": 2,
+      "split": false
+    }
+  },
+  "served_from": "fresh"
 }

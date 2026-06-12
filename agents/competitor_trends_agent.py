@@ -37,15 +37,8 @@ BASE_DIR = Path(__file__).parent.parent
 # 경쟁 브랜드 → 회사/로고/색상 메타
 # ─────────────────────────────────────────────────────────────────────────────
 
-COMPETITOR_BRANDS: list[dict[str, str]] = [
-    {"query": "옵디보",   "company": "BMS Korea",          "logo": "BMS", "color": "#3B82F6"},
-    {"query": "타그리소", "company": "AstraZeneca Korea",  "logo": "AZ",  "color": "#00E5CC"},
-    {"query": "임핀지",   "company": "AstraZeneca Korea",  "logo": "AZ",  "color": "#00E5CC"},
-    {"query": "린파자",   "company": "AstraZeneca Korea",  "logo": "AZ",  "color": "#00E5CC"},
-    {"query": "테쎈트릭", "company": "Roche Korea",        "logo": "RC",  "color": "#EF4444"},
-    {"query": "레블리미드","company": "BMS Korea",         "logo": "BMS", "color": "#3B82F6"},
-    {"query": "다잘렉스", "company": "Janssen Korea",      "logo": "JNJ", "color": "#F59E0B"},
-]
+# 추적 브랜드 — competitor_news_agent 와 단일 소스 공유 (13 브랜드, 2026-06 사용자 확정)
+from agents.competitor_news_agent import COMPETITOR_BRANDS  # noqa: E402
 
 ALLOWED_BADGES = ["신규 출시", "가격 변동", "임상 진행", "급여 등재", "파이프라인", "전략 변화"]
 BADGE_COLOR = {
@@ -74,6 +67,12 @@ SYSTEM_PROMPT = """당신은 한국 Market Access 담당자를 위한 경쟁사 
 
 badge 값은 아래 6개 중 하나만 사용. 해당 없으면 해당 item 은 drop.
   "신규 출시" | "가격 변동" | "임상 진행" | "급여 등재" | "파이프라인" | "전략 변화"
+
+**충실성 규칙 (반드시 준수)**:
+  - 해당 브랜드가 기사의 **주요 주제**가 아니라 단순 비교·맥락으로만 언급된 경우 → drop.
+    (예: '렉라자 매출 급증' 기사에서 타그리소가 비교로만 나오면 타그리소 카드 만들지 말 것)
+  - headline·detail 은 **링크된 그 기사에 실제로 쓰인 내용만** 반영. 기사에 없는 수치·결론·일자 추측/생성 금지.
+  - news_index 는 반드시 요약 대상 기사의 정확한 index. 다른 기사 내용을 섞지 말 것.
 
 반드시 JSON 만 출력. 다른 텍스트 금지.
 
@@ -278,6 +277,10 @@ def run(days: int = 7, dry_run: bool = False, model: str = DEFAULT_MODEL) -> dic
                     continue
 
                 src_news = fetched[idx]
+                # 제목 관련성 가드 — 브랜드가 기사 제목에 없으면 '본문 스치는 언급'(비교·맥락)일
+                # 확률이 높아 헤드라인 오귀속을 유발 → drop. (카드↔링크 불일치 방지)
+                if brand not in src_news.title:
+                    continue
                 row = {
                     "company": meta["company"],
                     "logo": meta["logo"],

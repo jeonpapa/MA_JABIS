@@ -1,6 +1,16 @@
 # 자격증명 (절대 커밋 금지)
 config/foreign_credentials.json
 config/.env
+# 로그인 세션 쿠키 (Micromedex 등 — 절대 커밋 금지)
+data/foreign/*/storage_state.json
+
+# 프론트엔드 빌드 산출물·의존성
+frontend/node_modules/
+frontend/out/
+frontend/dist/
+
+# 작업용 임시 디렉터리
+.m1tmp/
 
 # DB 파일
 data/db/*.db
@@ -20,8 +30,8 @@ data/uploads/
 # 멀티에이전트 컨텍스트 (Claude Code memory/plans symlinks — 개인정보 포함, git 추적 차단)
 .agent-context/
 
-# 로그
-logs/*.log
+# 로그 (전체 — server.out/scheduler.out 포함)
+logs/
 
 # Python
 __pycache__/

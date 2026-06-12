@@ -1247,6 +1247,19 @@ def change_reason():
         except Exception:
             pass
 
+    # ── 영구 캐시 우선 (자동저장 재사용) ───────────────────────────────────────
+    #   사유분석은 MI 분석 + ReviewAgent 모두 LLM(시간·비용↑). 과거에 분석+리뷰까지
+    #   끝난 건(review 키 보유)은 LLM 없이 저장값을 즉시 반환한다. refresh=1 시만 재분석.
+    if not force_refresh:
+        full_cached = _mi_agent.get_cached(drug, change_date)
+        if full_cached and full_cached.get("review"):
+            # 약평위 교차검증은 결정적·저비용(DB) → 캐시 응답에도 적용(idempotent dedup)해
+            # 최신 약평위 통과 데이터를 항상 반영. LLM 은 호출하지 않음.
+            full_cached = _mi_agent._apply_committee_evidence(full_cached, drug, change_date)
+            full_cached["served_from"] = "cache"
+            full_cached["cached"] = True  # 이 응답은 저장값 재사용 → '캐시' 배지 정확화
+            return jsonify(full_cached)
+
     result = _mi_agent.analyze_price_change(
         drug_ko=drug,
         drug_en=drug_en or drug,
@@ -1354,6 +1367,14 @@ def change_reason():
             result["rsa_source"] = rsa_info.get("source")
     except Exception as e:
         logger.debug("RSA 강등 처리 실패: %s", e)
+
+    # ── 최종 결과(분석 + ReviewAgent 리뷰 + RSA)를 영구 캐시에 저장 ──────────────
+    #   다음 동일 (drug, date) 조회는 위 early-return 으로 LLM 없이 즉시 반환된다.
+    result["served_from"] = "fresh"
+    try:
+        _mi_agent.save_cache(drug, change_date, result)
+    except Exception as e:
+        logger.debug("change-reason 최종 캐시 저장 실패: %s", e)
 
     return jsonify(result)
 
@@ -1484,6 +1505,36 @@ def serve_dashboard_index():
 def serve_dashboard(filename: str):
     """대쉬보드 파일 서빙."""
     return send_from_directory(str(BASE_DIR / "data" / "dashboard"), filename)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# React SPA 서빙 (frontend/out — vite build 산출물)
+# 프로덕션 단일 origin: SPA 와 /api 가 같은 Flask 에서 서빙 → CORS·프록시 불필요.
+# /api/* /dashboard/* 외 모든 GET 은 SPA 로 fallback (react-router 클라이언트 라우팅).
+# ──────────────────────────────────────────────────────────────────────────────
+
+_SPA_DIR = BASE_DIR / "frontend" / "out"
+
+
+@app.get("/")
+def serve_spa_index():
+    if (_SPA_DIR / "index.html").exists():
+        return send_from_directory(str(_SPA_DIR), "index.html")
+    return jsonify({"service": "MA AI Dossier API", "spa": "not built — run `npm run build` in frontend/"}), 200
+
+
+@app.get("/<path:spa_path>")
+def serve_spa(spa_path: str):
+    # API/구형 대쉬보드는 위 라우트가 우선 처리 — 여기 도달한 /api/* 는 404 가 정답
+    if spa_path.startswith(("api/", "dashboard/")):
+        return jsonify({"error": "not found"}), 404
+    candidate = _SPA_DIR / spa_path
+    if candidate.is_file():
+        return send_from_directory(str(_SPA_DIR), spa_path)
+    # SPA fallback (login, /domestic-pricing 등 클라이언트 라우트 새로고침 대응)
+    if (_SPA_DIR / "index.html").exists():
+        return send_from_directory(str(_SPA_DIR), "index.html")
+    return jsonify({"error": "SPA not built"}), 404
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -4785,6 +4836,54 @@ def reimb_pipeline_admin_session_create():
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Competitor News Archive — Tier 1 전문지 6개월 수집 + 1년 누적
+#   브랜드 레지스트리/Tier 매핑: agents/competitor_news_agent.py / config/media_tiers.json
+# ──────────────────────────────────────────────────────────────────────────────
+
+from agents import competitor_news_agent as _comp_news
+
+_comp_news.ensure_schema()
+
+
+@app.get("/api/competitor-news")
+@require_auth()
+def competitor_news_list():
+    """뉴스 아카이브 조회. ?brand= &company= &tier= &days= &limit="""
+    brand = request.args.get("brand") or None
+    company = request.args.get("company") or None
+    tier = request.args.get("tier", type=int)
+    days = request.args.get("days", type=int)
+    limit = request.args.get("limit", default=100, type=int)
+    try:
+        return jsonify({"items": _comp_news.list_news(brand, company, tier, days, limit)})
+    except Exception as e:
+        logger.error("competitor-news list 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/competitor-news/brands")
+@require_auth()
+def competitor_news_brands():
+    """추적 브랜드 레지스트리 + 보유 뉴스 수 (필터 UI 용)."""
+    return jsonify({"brands": _comp_news.brand_registry(), "stats": _comp_news.stats()})
+
+
+@app.post("/api/admin/competitor-news/crawl")
+@require_auth(role="admin")
+def competitor_news_crawl():
+    """Tier 1 경쟁사 뉴스 수집 트리거. body: {lookback_days?, t1_only?, brands?[]}"""
+    body = request.get_json(silent=True) or {}
+    look = int(body.get("lookback_days") or _comp_news.DEFAULT_LOOKBACK_DAYS)
+    t1_only = bool(body.get("t1_only", True))
+    brands = body.get("brands") or None
+    try:
+        return jsonify(_comp_news.crawl(lookback_days=look, t1_only=t1_only, brands=brands))
+    except Exception as e:
+        logger.error("competitor-news crawl 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # 헬스체크
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -4794,5 +4893,8 @@ def health():
 
 
 if __name__ == "__main__":
-    logger.info("대쉬보드 API 서버 시작: http://127.0.0.1:5001")
-    app.run(host="127.0.0.1", port=5001, debug=False)
+    # 로컬 기본 127.0.0.1 — 컨테이너/배포에서는 HOST=0.0.0.0 환경변수로 오버라이드
+    _host = os.environ.get("HOST", "127.0.0.1")
+    _port = int(os.environ.get("PORT", "5001"))
+    logger.info("대쉬보드 API 서버 시작: http://%s:%d", _host, _port)
+    app.run(host=_host, port=_port, debug=False)

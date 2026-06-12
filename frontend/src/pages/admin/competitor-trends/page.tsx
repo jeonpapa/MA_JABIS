@@ -160,7 +160,7 @@ export default function AdminCompetitorTrendsPage() {
     <div className="min-h-screen bg-[#0D1117] text-white px-8 py-8">
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Competitor Trends — 관리</h1>
-        <p className="text-[#8B9BB4] text-sm mt-1">경쟁사 동향 카드 CRUD · 주 1회 자동 크롤 + LLM 필터 (B안)</p>
+        <p className="text-[#8B9BB4] text-sm mt-1">MNC 동향 카드 CRUD · 주 1회 자동 크롤 + LLM 필터 (B안)</p>
       </div>
 
       {/* 자동 크롤 패널 */}

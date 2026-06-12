@@ -18,32 +18,33 @@ function MeetingItem({ m, isDark, onClick }: { m: MeetingSchedule; isDark: boole
 
   return (
     <div
-      className={`flex items-center gap-2 px-2.5 py-2 rounded-lg border transition-all ${itemClasses}`}
+      className={`flex items-center gap-1 px-2 py-1.5 rounded-lg border transition-all overflow-hidden ${itemClasses}`}
       onClick={isClickable ? onClick : undefined}
     >
-      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
         m.type === 'cancer'
           ? (isDark ? 'bg-teal-400' : 'bg-teal-500')
           : (isDark ? 'bg-violet-400' : 'bg-violet-500')
       }`} />
-      <span className={`text-[11px] font-bold w-7 flex-shrink-0 ${isDark ? 'text-[#8B9BB4]' : 'text-gray-500'}`}>
+      <span className={`text-[11px] font-bold flex-shrink-0 ${isDark ? 'text-[#8B9BB4]' : 'text-gray-500'}`}>
         {m.cycle}
       </span>
       <span className={`text-[11px] font-semibold flex-shrink-0 ${isDark ? 'text-white' : 'text-gray-800'}`}>
         {m.date.slice(5)}
       </span>
-      <span className={`text-[10px] flex-shrink-0 ${isDark ? 'text-[#5A6A80]' : 'text-gray-400'}`}>
+      {/* 요일 — 공간 부족 시 줄어들며 잘림 (D-day 오버플로우 방지) */}
+      <span className={`text-[10px] truncate min-w-0 ${isDark ? 'text-[#5A6A80]' : 'text-gray-400'}`}>
         {m.dayOfWeek}
       </span>
       {!m.isPast && (
-        <span className={`text-[11px] font-bold flex-shrink-0 ml-auto ${
+        <span className={`text-[10px] font-bold flex-shrink-0 ml-auto pl-0.5 ${
           isUrgent ? 'text-red-500' : isNear ? 'text-amber-500' : isDark ? 'text-teal-400' : 'text-teal-600'
         }`}>
           D-{m.daysUntil}
         </span>
       )}
       {m.isPast && (
-        <span className={`text-[10px] flex-shrink-0 ml-auto ${isDark ? 'text-[#4A5568]' : 'text-gray-400'}`}>
+        <span className={`text-[10px] flex-shrink-0 ml-auto pl-0.5 ${isDark ? 'text-[#4A5568]' : 'text-gray-400'}`}>
           {isClickable ? '결과' : '완료'}
         </span>
       )}
@@ -56,7 +57,8 @@ export default function AnnualSchedule({ isDark }: { isDark: boolean }) {
   const [selectedMeeting, setSelectedMeeting] = useState<MeetingSchedule | null>(null);
 
   const { data, loading, error, reload } = useApi(fetchMeetings);
-  const meetingSchedules = data ?? [];
+  // 2026년 연간 일정 — 결과 링크용으로 적재한 2025 세션은 캘린더에서 제외
+  const meetingSchedules = (data ?? []).filter(m => m.year === 2026);
 
   const months = [
     '1월', '2월', '3월', '4월', '5월', '6월',

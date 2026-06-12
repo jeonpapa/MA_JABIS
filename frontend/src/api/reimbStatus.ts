@@ -138,7 +138,8 @@ export interface PipelineDrug {
   type: string | null;
   msdFlag: boolean;
   trackingPriority: string | null;
-  status: 'completed' | 'scheduled' | 'waiting';
+  status: 'completed' | 'negotiating' | 'scheduled' | 'waiting';
+  expectedSessionId?: number | null;
   submittedDate: string | null;
   amjilsimPassDate: string | null;
   yakpyungwiPassDate: string | null;

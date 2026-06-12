@@ -266,7 +266,7 @@ export default function DailyMailingPage() {
                 <span className={`w-5 h-5 flex items-center justify-center ${accentColor}`}><i className="ri-bookmark-line text-sm"></i></span>
                 설정 이름
               </h3>
-              <input type="text" name="settingName" placeholder="예: 약가 정책 모니터링, 경쟁사 동향 추적..." value={settingName} onChange={e => setSettingName(e.target.value)}
+              <input type="text" name="settingName" placeholder="예: 약가 정책 모니터링, MNC 동향 추적..." value={settingName} onChange={e => setSettingName(e.target.value)}
                 className={`w-full rounded-xl px-4 py-3 text-sm focus:outline-none transition-colors ${inputBg} ${inputFocus} ${inputText}`} />
             </div>
 

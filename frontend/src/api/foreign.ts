@@ -33,6 +33,24 @@ export interface ForeignDrugListItem {
 
 export type FormType = 'oral' | 'injection' | 'unknown';
 
+/** 조정가 산출 과정 — 사후관리 패널용 (서버 PriceCalculator 중간값 그대로, 프론트 재계산 금지) */
+export interface AdjCalcBreakdown {
+  listedPrice: number;          // 표시가 (pack 단위 국가는 pack 가격)
+  packCount: number;
+  perUnitLocal: number;         // 표시가 / pack_count
+  exchangeRate: number;         // KEB 36개월 평균 매매기준율
+  fxFrom: string;               // 환율 산정 시작월 (YYYYMMDD)
+  fxTo: string;                 // 환율 산정 종료월
+  krwConverted?: number;        // per-unit × FX
+  factoryRatio?: number;        // 국가별 공장도 출하 비율
+  factoryRatioLabel?: string;
+  factoryPriceKrw?: number;     // × factory_ratio
+  vatRate?: number;             // KR VAT 0.10 (한국 기준 상수)
+  vatAppliedKrw?: number;       // × 1.10
+  distributionMargin?: number;  // KR 유통거래폭 0.0869
+  adjustedPriceKrw: number;     // 최종 per-unit 조정가
+}
+
 export interface A8Pricing {
   /** local_price 그대로 (null = 비공개/로그인월 — 임의 값 금지) */
   price: number | null;
@@ -57,6 +75,19 @@ export interface A8Pricing {
   searchedAt: string;
   /** 해당 국가 캐시 행 수 (대표 1건 외 변형 수) */
   variantCount: number;
+  /** 조정가 산출 과정 (가격·환율 모두 있을 때만) — 사후관리 패널용 */
+  calc?: AdjCalcBreakdown;
+}
+
+/** A8 조정가 요약 — 가격 보유 국가 기준 min/max/avg + 제외국 명시 */
+export interface A8Summary {
+  minKrw: number;
+  minCountryKey: string;        // uiKey (usa/uk/…)
+  maxKrw: number;
+  maxCountryKey: string;
+  avgKrw: number;
+  includedKeys: string[];       // 평균 산출에 포함된 uiKey
+  excludedKeys: string[];       // 조정가 없어 제외된 uiKey
 }
 
 export interface CoverageNote {
@@ -73,6 +104,8 @@ export interface PricingTabData {
   a8Pricing: Record<string, A8Pricing | undefined>;
   coverageNotes: Record<string, CoverageNote>;
   hasAnyPrice: boolean;
+  /** 조정가 보유 국가가 1개 이상일 때만 — min/max/avg 카드용 */
+  summary?: A8Summary;
 }
 
 export interface HtaDecisionItem {
@@ -155,6 +188,18 @@ interface RawPricingEntry {
   form_type?: string | null;
   dosage_strength?: string | null;
   pack_count?: number | null;
+  // 조정가 산출 중간값 (서버 get_cached_results 가 PriceCalculator 로 재계산해 내려줌)
+  exchange_rate?: number | null;
+  exchange_rate_from?: string | null;
+  exchange_rate_to?: string | null;
+  per_unit_local?: number | null;
+  krw_converted?: number | null;
+  factory_ratio?: number | null;
+  factory_ratio_label?: string | null;
+  factory_price_krw?: number | null;
+  vat_rate?: number | null;
+  vat_applied_krw?: number | null;
+  distribution_margin?: number | null;
 }
 
 interface RawCoverageNote {
@@ -304,6 +349,32 @@ function mapPricingEntry(raw: RawPricingEntry, variantCount: number): A8Pricing 
   const ft = (raw.form_type || '').toLowerCase();
   const formType: FormType = ft === 'oral' || ft === 'injection' ? ft : 'unknown';
   const explicit = explicitReimbursedSignal(raw.raw_data);
+  // 산출 breakdown — 가격·환율·조정가가 전부 있을 때만 (부분 데이터로 공식 오해 방지)
+  // JPY 는 KEB 가 100엔당 환율로 제공 — 서버 PriceCalculator 의 per-100 safeguard 와 동일하게
+  // per-1 로 정규화해 표시 (단계 곱셈 체인이 표에서 그대로 검증되도록)
+  const fxNormalized =
+    raw.exchange_rate != null && raw.currency === 'JPY' && raw.exchange_rate > 100
+      ? raw.exchange_rate / 100
+      : raw.exchange_rate;
+  const calc: AdjCalcBreakdown | undefined =
+    raw.local_price != null && fxNormalized != null && raw.adjusted_price_krw != null
+      ? {
+          listedPrice: raw.local_price,
+          packCount: raw.pack_count ?? 1,
+          perUnitLocal: raw.per_unit_local ?? raw.local_price / (raw.pack_count || 1),
+          exchangeRate: fxNormalized,
+          fxFrom: raw.exchange_rate_from || '',
+          fxTo: raw.exchange_rate_to || '',
+          krwConverted: raw.krw_converted ?? undefined,
+          factoryRatio: raw.factory_ratio ?? undefined,
+          factoryRatioLabel: raw.factory_ratio_label ?? undefined,
+          factoryPriceKrw: raw.factory_price_krw ?? undefined,
+          vatRate: raw.vat_rate ?? undefined,
+          vatAppliedKrw: raw.vat_applied_krw ?? undefined,
+          distributionMargin: raw.distribution_margin ?? undefined,
+          adjustedPriceKrw: raw.adjusted_price_krw,
+        }
+      : undefined;
   return {
     price: raw.local_price,
     currency: raw.currency,
@@ -323,6 +394,7 @@ function mapPricingEntry(raw: RawPricingEntry, variantCount: number): A8Pricing 
     packCount: raw.pack_count ?? undefined,
     searchedAt: toIsoDate(raw.searched_at),
     variantCount,
+    calc,
   };
 }
 
@@ -350,6 +422,13 @@ function pickRepresentative(rows: RawPricingEntry[]): A8Pricing | undefined {
 const POSITIVE_REIMB = new Set(['recommend', 'restrict', 'optimised', 'optimized']);
 
 // ── Public fetchers ──────────────────────────────────────────────────────────
+
+/** 검색 이력 삭제 — DELETE /api/foreign/drugs/:queryName (가격·HTA·허가 캐시 전부, alias 포함) */
+export async function deleteForeignDrug(queryName: string): Promise<{ deleted: number }> {
+  return api.delete<{ ok: boolean; deleted: number; query_name: string }>(
+    `/api/foreign/drugs/${encodeURIComponent(queryName)}`,
+  );
+}
 
 /** 검색 이력 카드 — GET /api/foreign/drugs */
 export async function fetchForeignDrugList(): Promise<ForeignDrugListItem[]> {
@@ -438,7 +517,30 @@ export async function fetchPricingTab(query: string): Promise<PricingTabData> {
     coverageNotes[uiKey] = { policy: n.policy, sourceHint: n.source_hint, requiresAuth: n.requires_auth };
   }
 
-  return { productName: productName || query, ingredient, lastSearchedAt, a8Pricing, coverageNotes, hasAnyPrice };
+  // ── A8 조정가 요약 (min/max/avg) — per-unit adjusted_price_krw 보유 국가만 포함 ──
+  const priced: { key: string; adj: number }[] = [];
+  const excludedKeys: string[] = [];
+  for (const uiKey of Object.keys(PRICING_COUNTRY_CODE)) {
+    const adj = a8Pricing[uiKey]?.adjustedPriceKrw;
+    if (adj != null && adj > 0) priced.push({ key: uiKey, adj });
+    else excludedKeys.push(uiKey);
+  }
+  let summary: A8Summary | undefined;
+  if (priced.length > 0) {
+    const min = priced.reduce((a, b) => (b.adj < a.adj ? b : a));
+    const max = priced.reduce((a, b) => (b.adj > a.adj ? b : a));
+    summary = {
+      minKrw: min.adj,
+      minCountryKey: min.key,
+      maxKrw: max.adj,
+      maxCountryKey: max.key,
+      avgKrw: Math.round(priced.reduce((s, p) => s + p.adj, 0) / priced.length),
+      includedKeys: priced.map(p => p.key),
+      excludedKeys,
+    };
+  }
+
+  return { productName: productName || query, ingredient, lastSearchedAt, a8Pricing, coverageNotes, hasAnyPrice, summary };
 }
 
 /** HTA 현황 탭 — NICE/CADTH/PBAC/SMC. body 별 최신 1건 + 전체 이력. */

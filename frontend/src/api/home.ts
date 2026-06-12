@@ -361,23 +361,33 @@ export async function fetchBrandNews(brand: string, limit = 10): Promise<BrandNe
 
 // ═════════════════════════════════════════════════════════════════════════════
 // 5. 정부 기관 키워드 요약  (GET /api/home/government-keyword-summary)
-//    LLM(OpenAI+Gemini) 기반 — 느리거나 실패 가능. 이 카드만 독립 degrade.
-//    서버는 keywords(string[]) + sources 만 제공 → weight/색상은 rank 기반 시각 속성,
-//    키워드별 뉴스는 sources 제목 매칭으로만 연결 (매칭 없으면 빈 배열 = '관련 뉴스 없음').
+//    정책뉴스 아카이브(competitor_news kind='gov_policy')에서 LLM 이 키워드를 추출하고
+//    각 키워드 → 실제 근거 기사를 백엔드가 직접 연결(newsByKeyword)·weight(freq×recency) 산정.
+//    → 더 이상 사후 문자열 매칭 없음. 모든 키워드는 근거 기사가 보장됨('관련 뉴스 없음' 해소).
 // ═════════════════════════════════════════════════════════════════════════════
+
+interface RawGovNews {
+  title: string;
+  url: string;
+  source: string;
+  date: string;
+}
 
 interface RawGovSummary {
   updated_at: string;
   markdown: string;
   reviewers: string[];
-  sources: { title: string; url: string; source: string; date: string }[];
-  keywords?: string[];
+  sources: RawGovNews[];
+  keywords?: ({ text: string; weight?: number } | string)[];
+  newsByKeyword?: Record<string, RawGovNews[]>;
+  keyword_source?: string;
+  archive_count?: number;
   error?: string;
 }
 
 export interface KeywordView {
   text: string;
-  weight: number; // 시각 사이징 전용 (rank 기반) — 수치로 노출하지 않음
+  weight: number; // 시각 사이징 전용 (freq×recency 정규화) — 수치로 노출하지 않음
   color: string;
 }
 
@@ -398,27 +408,22 @@ export interface GovKeywordSummaryView {
 
 const KEYWORD_PALETTE = ['#00E5CC', '#F59E0B', '#00C9B1', '#8B9BB4', '#EF4444', '#6B7280'];
 
+const mapGovNews = (arr?: RawGovNews[]): GovNewsView[] =>
+  (arr ?? []).map(s => ({ title: s.title, source: s.source || '', date: s.date || '', url: s.url }));
+
 export async function fetchGovKeywordSummary(): Promise<GovKeywordSummaryView> {
   const raw = await api.get<RawGovSummary>('/api/home/government-keyword-summary');
-  const kwTexts = (raw.keywords ?? []).filter(Boolean);
-  const n = kwTexts.length;
-  const keywords: KeywordView[] = kwTexts.map((text, idx) => ({
-    text,
-    weight: n > 1 ? Math.round(100 - (idx * 50) / (n - 1)) : 100, // 100 → 50 선형
+  // 백엔드가 {text, weight} 객체 배열을 보냄(구형 string[] 도 방어적 수용).
+  const rawKw = (raw.keywords ?? []).map(k => (typeof k === 'string' ? { text: k } : k)).filter(k => k.text);
+  const keywords: KeywordView[] = rawKw.map((k, idx) => ({
+    text: k.text,
+    weight: typeof k.weight === 'number' ? k.weight : 70,
     color: KEYWORD_PALETTE[idx % KEYWORD_PALETTE.length],
   }));
-  const sources: GovNewsView[] = (raw.sources ?? []).map(s => ({
-    title: s.title,
-    source: s.source || '',
-    date: s.date || '',
-    url: s.url,
-  }));
+  // 키워드별 뉴스는 백엔드 제공 매핑을 그대로 사용 (근거 기사 보장).
   const newsByKeyword: Record<string, GovNewsView[]> = {};
-  for (const kw of kwTexts) {
-    const tokens = kw.split(/\s+/).filter(t => t.length >= 2);
-    newsByKeyword[kw] = sources
-      .filter(s => s.title.includes(kw) || tokens.some(t => s.title.includes(t)))
-      .slice(0, 2);
+  for (const k of rawKw) {
+    newsByKeyword[k.text] = mapGovNews(raw.newsByKeyword?.[k.text]);
   }
   return {
     updatedAt: raw.updated_at ?? null,

@@ -1,0 +1,35 @@
+# MA AI Dossier — Fly.io 배포 설정
+# 배포: fly launch --copy-config (최초) → fly deploy
+#
+# 자격증명 주입 (config/.env 는 이미지에 없음 — 코드가 환경변수 우선 읽음):
+#   fly secrets set OPENAI_API_KEY=... GEMINI_API_KEY=... NAVER_API_CLIENT_ID=... \
+#     NAVER_API_CLIENT_SECRET=... MICROMEDEX_US_USERNAME=... MICROMEDEX_US_PASSWORD=... \
+#     ROTE_LISTE_DE_USERNAME=... ROTE_LISTE_DE_PASSWORD=... MFDS_PATENT_API_KEY=... \
+#     JWT_SECRET=...
+#
+# 영구 데이터: fly volumes create ma_data --size 3 --region nrt
+#   최초 배포 후 로컬 DB 시딩: fly ssh sftp shell → put data/db/drug_prices.db 등
+#
+# 단일 머신에 web+scheduler 동시 구동 (scripts/start_production.sh):
+#   sqlite 공유 때문 — Fly [processes] 분리는 머신이 갈라져 volume 공유 불가.
+
+app = "ma-ai-dossier"
+primary_region = "nrt"   # Tokyo — 한국 최저 레이턴시 리전
+
+[build]
+
+[http_service]
+  internal_port = 5001
+  force_https = true
+  auto_stop_machines = false    # 스케줄러 상시 구동 필수 (매월 1일 약가 적재 등 13개 잡)
+  auto_start_machines = true
+  min_machines_running = 1
+
+[mounts]
+  source = "ma_data"
+  destination = "/app/data"
+
+[[vm]]
+  memory = "1gb"               # Playwright chromium 구동 여유
+  cpu_kind = "shared"
+  cpus = 1

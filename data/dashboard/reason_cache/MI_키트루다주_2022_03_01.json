@@ -1,9 +1,9 @@
 {
   "mechanism": "indication_expansion",
   "mechanism_label": "적응증 확대",
-  "reason": "키트루다(펨브롤리주맙)의 비소세포폐암 1차 치료제 급여 확대가 2022년 3월 적용되면서 환자군 증가에 따른 건강보험공단 재협상으로 약가 25.6% 인하 합의. MSD는 키트루다 약가 주당 210만7642원으로 인하하며 자사 다른 품목 약가도 트레이드오프로 인하 제안. 변동폭이 크므로 적응증 확대 기전과 부합.",
+  "reason": "⚠ 위험분담제(RSA) 자산 — 표시가 ≠ 실제가. 정부와의 RSA 계약 하 표시가는 부분 조정만 노출되며 환급·총액제한 차액은 비공개. 표시가 변동률만으로 mechanism 을 단정할 수 없음.\n\n키트루다(펨브롤리주맙)의 비소세포폐암 1차 치료제 급여 확대가 2022년 3월 적용되면서 환자군 증가에 따른 건강보험공단 재협상으로 약가 25.6% 인하 합의. MSD는 키트루다 약가 주당 210만7642원으로 인하하며 자사 다른 품목 약가도 트레이드오프로 인하 제안. 변동폭이 크므로 적응증 확대 기전과 부합.",
   "evidence_summary": "헬스조선 2022.03.14: 키트루다 비소세포폐암 1차 치료 급여 확대, 약가 25.6% 인하 합의(283만→210만). 데일리팜 2022: 키트루다 급여 확대 예상청구액 1762억원.",
-  "confidence": "high",
+  "confidence": "medium",
   "window": {
     "from": "2021.09",
     "to": "2022.09",
@@ -47,5 +47,72 @@
       }
     ]
   },
-  "cached": false
+  "cached": true,
+  "review": {
+    "approved": true,
+    "score": 60,
+    "issues": [
+      {
+        "axis": "rule_compliance",
+        "severity": "blocker",
+        "detail": "references의 모든 항목에 published_at 필드가 존재해야 하지만, 일부 항목에 누락됨."
+      },
+      {
+        "axis": "evidence_quality",
+        "severity": "blocker",
+        "detail": "근거로 사용된 references가 윈도우 내에 존재하지 않음."
+      }
+    ],
+    "corrective_actions": [
+      "모든 references에 published_at 필드를 추가하고, 윈도우 내에 해당하는 기사만 포함하세요.",
+      "윈도우 내 공식 고시(mohw/hira) 확인을 시도하고, 이를 references에 포함하세요."
+    ],
+    "final_verdict": "패널 과반수 승인 (1/2) — 의견 엇갈림. [openai-gpt-4o] 윈도우 내 references가 없고, published_at 필드가 누락된 항목이 있어 규칙을 준수하지 않았습니다. | [gemini] MI Agent의 결과는 사용자 요청과 룰에 부합하며, 약가 변동 사유를 적절하게 설명하고 있습니다.",
+    "review_mode": "panel-split",
+    "panel": [
+      {
+        "approved": false,
+        "score": 60,
+        "issues": [
+          {
+            "axis": "rule_compliance",
+            "severity": "blocker",
+            "detail": "references의 모든 항목에 published_at 필드가 존재해야 하지만, 일부 항목에 누락됨."
+          },
+          {
+            "axis": "evidence_quality",
+            "severity": "blocker",
+            "detail": "근거로 사용된 references가 윈도우 내에 존재하지 않음."
+          }
+        ],
+        "corrective_actions": [
+          "모든 references에 published_at 필드를 추가하고, 윈도우 내에 해당하는 기사만 포함하세요.",
+          "윈도우 내 공식 고시(mohw/hira) 확인을 시도하고, 이를 references에 포함하세요."
+        ],
+        "final_verdict": "윈도우 내 references가 없고, published_at 필드가 누락된 항목이 있어 규칙을 준수하지 않았습니다.",
+        "review_mode": "llm",
+        "reviewer": "openai-gpt-4o"
+      },
+      {
+        "approved": true,
+        "score": 95,
+        "issues": [],
+        "corrective_actions": [],
+        "final_verdict": "MI Agent의 결과는 사용자 요청과 룰에 부합하며, 약가 변동 사유를 적절하게 설명하고 있습니다.",
+        "reviewer": "gemini",
+        "review_mode": "gemini-llm"
+      }
+    ],
+    "panel_size": 2,
+    "consensus": {
+      "yes": 1,
+      "total": 2,
+      "split": true
+    }
+  },
+  "is_rsa": 1,
+  "rsa_type": "combined",
+  "rsa_note": "환급형 + expenditure cap (적응증별 분리). 30+ 적응증, 4회 누적 인하 history.",
+  "rsa_source": "skill msd_assets.md (KPAD v3 ground-truth)",
+  "served_from": "fresh"
 }

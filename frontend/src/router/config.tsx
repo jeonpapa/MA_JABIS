@@ -16,7 +16,6 @@ import AdminCompetitorTrendsPage from '@/pages/admin/competitor-trends/page';
 import AdminKeywordCloudPage from '@/pages/admin/keyword-cloud/page';
 import AdminReimbursementPage from '@/pages/admin/reimbursement/page';
 import AdminReimbursementPipelinePage from '@/pages/admin/reimbursement-pipeline/page';
-import AdminApprovalDocumentsPage from '@/pages/admin/approval-documents/page';
 
 const routes: RouteObject[] = [
   { path: '/login', element: <LoginPage /> },
@@ -34,7 +33,6 @@ const routes: RouteObject[] = [
   { path: '/admin/keyword-cloud', element: <AdminKeywordCloudPage /> },
   { path: '/admin/reimbursement', element: <AdminReimbursementPage /> },
   { path: '/admin/reimbursement-pipeline', element: <AdminReimbursementPipelinePage /> },
-  { path: '/admin/approval-documents', element: <AdminApprovalDocumentsPage /> },
   { path: '*', element: <NotFound /> },
 ];
 

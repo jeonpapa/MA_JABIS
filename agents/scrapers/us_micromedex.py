@@ -148,12 +148,28 @@ class UsMicromedexScraper(BaseScraper):
             return
 
         if not has_login:
-            # 로그인 폼도 없고 logout URL 도 없는 이상 상태 → stale cookie
-            logger.warning("[US] 예상치 못한 페이지 상태 — 쿠키 초기화 후 재시도 필요")
-            raise RuntimeError(
-                "[US] unexpected landing page (no login form, no logout URL) — "
-                "stale storage_state. delete data/foreign/us/storage_state.json"
-            )
+            # 로그인 폼도 없고 logout URL 도 없는 이상 상태 → stale cookie.
+            # 자동 복구: 쿠키/storage_state 초기화 후 1회 재방문 — 로그인 폼이
+            # 나타나면 fresh 로그인으로 진행 (수동 rm 불필요).
+            logger.warning("[US] 예상치 못한 페이지 상태 — stale 세션 자동 초기화 후 재시도")
+            try:
+                await page.context.clear_cookies()
+            except Exception:
+                pass
+            try:
+                if self.storage_state_path and self.storage_state_path.exists():
+                    self.storage_state_path.unlink()
+                    logger.info("[US] stale storage_state 삭제: %s", self.storage_state_path)
+            except Exception as e:
+                logger.warning("[US] storage_state 삭제 실패: %s", e)
+            await page.goto(HOME_URL, wait_until="domcontentloaded", timeout=30_000)
+            await page.wait_for_timeout(3_000)
+            has_login = await page.locator(SEL_LOGIN_USER).count() > 0
+            if not has_login:
+                raise RuntimeError(
+                    "[US] unexpected landing page (no login form, no logout URL) — "
+                    "세션 초기화 후에도 로그인 폼 미노출 (사이트 점검/차단 가능성)"
+                )
 
         user = self.credentials.get("username", "")
         pw   = self.credentials.get("password", "")

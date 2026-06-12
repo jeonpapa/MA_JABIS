@@ -51,6 +51,18 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+def _ensure_columns() -> None:
+    """expected_session_id 컬럼 멱등 보강 (상정 예정 평가 로직 입력)."""
+    with _connect() as conn:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(amjilsim_drugs)")}
+        if "expected_session_id" not in cols:
+            conn.execute("ALTER TABLE amjilsim_drugs ADD COLUMN expected_session_id INTEGER")
+            conn.commit()
+
+
+_ensure_columns()
+
+
 def _valid_date(value: Any, field: str) -> Optional[str]:
     if value in (None, ""):
         return None
@@ -98,20 +110,46 @@ def _drug_stage(drug: sqlite3.Row, queue_rows: list[sqlite3.Row]) -> str:
     return "cancer"
 
 
-def _drug_status(stage: str, queue_rows: list[sqlite3.Row], today: str) -> str:
-    """현재 단계 위원회의 최신 큐 이벤트 기준 상태.
+def _next_session_ids(conn: sqlite3.Connection, today: str) -> dict[str, Optional[int]]:
+    """위원회별 다음(가장 이른 미래) 차수 session_id. 상정 예정 판정 기준."""
+    out: dict[str, Optional[int]] = {}
+    for committee in ("AMJILSIM", "YAKPYUNGWI"):
+        row = conn.execute(
+            "SELECT session_id FROM amjilsim_sessions "
+            "WHERE committee_type = ? AND session_date >= ? "
+            "ORDER BY session_date LIMIT 1",
+            (committee, today),
+        ).fetchone()
+        out[committee] = row["session_id"] if row else None
+    return out
 
-    APPROVED → completed / 미래 차수에 링크 → scheduled / 그 외 → waiting.
+
+def _drug_status(stage: str, drug: sqlite3.Row, queue_rows: list[sqlite3.Row],
+                 today: str, next_session_ids: dict[str, Optional[int]]) -> str:
+    """파이프라인 단계별 상태 (평가 로직).
+
+    - nhis (약평위 통과 → 건보공단 협상 단계):
+        negotiation_status == 'AGREED' → 'completed'(협상 완료, 실제 등재)
+        그 외 → 'negotiating'(협상 중)
+    - evaluation/cancer (심의 대기):
+        expected_session_id == 해당 위원회 '다음 차수' → 'scheduled'(심의 상정예정)
+        또는 큐가 미래 차수에 링크(미통과) → 'scheduled'
+        그 외 → 'waiting'(심의 대기)
     """
+    if stage == "nhis":
+        return "completed" if drug["negotiation_status"] == "AGREED" else "negotiating"
+
     committee = "AMJILSIM" if stage == "cancer" else "YAKPYUNGWI"
-    in_committee = [q for q in queue_rows if q["committee_type"] == committee]
-    if not in_committee:
-        return "waiting"
-    latest = max(in_committee, key=lambda q: ((q["observed_at"] or ""), q["id"]))
-    if latest["queue_state"] == "APPROVED":
-        return "completed"
-    if latest["session_date"] and latest["session_date"] > today:
+    expected = drug["expected_session_id"]
+    if expected is not None and expected == next_session_ids.get(committee):
         return "scheduled"
+
+    in_committee = [q for q in queue_rows if q["committee_type"] == committee]
+    if in_committee:
+        latest = max(in_committee, key=lambda q: ((q["observed_at"] or ""), q["id"]))
+        if (latest["queue_state"] != "APPROVED" and latest["session_date"]
+                and latest["session_date"] > today):
+            return "scheduled"
     return "waiting"
 
 
@@ -173,7 +211,8 @@ _QUEUE_JOIN_SQL = """
 
 
 def _pipeline_drug_dict(drug: sqlite3.Row, queue_rows: list[sqlite3.Row],
-                        today: str) -> tuple[str, dict]:
+                        today: str,
+                        next_session_ids: dict[str, Optional[int]]) -> tuple[str, dict]:
     stage = _drug_stage(drug, queue_rows)
     observed = [q["observed_at"] for q in queue_rows if q["observed_at"]]
     item = {
@@ -186,7 +225,8 @@ def _pipeline_drug_dict(drug: sqlite3.Row, queue_rows: list[sqlite3.Row],
         "type": drug["listing_type"],
         "msdFlag": bool(drug["msd_flag"]),
         "trackingPriority": drug["tracking_priority"],
-        "status": _drug_status(stage, queue_rows, today),
+        "status": _drug_status(stage, drug, queue_rows, today, next_session_ids),
+        "expectedSessionId": drug["expected_session_id"],
         "submittedDate": drug["submitted_date"],
         "amjilsimPassDate": drug["amjilsim_pass_date"],
         "yakpyungwiPassDate": drug["yakpyungwi_pass_date"],
@@ -203,12 +243,13 @@ def get_pipeline() -> dict:
     today = date.today().isoformat()
     stages: dict[str, list[dict]] = {"cancer": [], "evaluation": [], "nhis": []}
     with _connect() as conn:
+        next_ids = _next_session_ids(conn, today)
         drugs = conn.execute(
             "SELECT * FROM amjilsim_drugs ORDER BY brand_kr"
         ).fetchall()
         for drug in drugs:
             queue_rows = conn.execute(_QUEUE_JOIN_SQL, (drug["drug_id"],)).fetchall()
-            stage, item = _pipeline_drug_dict(drug, queue_rows, today)
+            stage, item = _pipeline_drug_dict(drug, queue_rows, today, next_ids)
             stages[stage].append(item)
     return {
         "stages": [
@@ -334,6 +375,7 @@ def list_drugs_admin() -> list[dict]:
     today = date.today().isoformat()
     out = []
     with _connect() as conn:
+        next_ids = _next_session_ids(conn, today)
         drugs = conn.execute(
             "SELECT * FROM amjilsim_drugs ORDER BY drug_id"
         ).fetchall()
@@ -341,7 +383,7 @@ def list_drugs_admin() -> list[dict]:
             queue_rows = conn.execute(_QUEUE_JOIN_SQL, (drug["drug_id"],)).fetchall()
             d = dict(drug)
             d["msd_flag"] = bool(d["msd_flag"])
-            stage, _ = _pipeline_drug_dict(drug, queue_rows, today)
+            stage, _ = _pipeline_drug_dict(drug, queue_rows, today, next_ids)
             d["stage"] = stage
             latest = (max(queue_rows, key=lambda q: ((q["observed_at"] or ""), q["id"]))
                       if queue_rows else None)

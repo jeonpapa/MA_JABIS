@@ -1,0 +1,417 @@
+{
+  "updated_at": "2026-06-12T10:24:23.238755",
+  "markdown": "- **RWE 기반 약제 평가**: 건강보험심사평가원이 실제 근거(RWE) 생성 가이드라인을 제정하여 약제 성과 평가에 활용할 예정이다.\n- **약가 인하 정책**: 보건복지부의 약가 인하 정책이 소아 필수약 생산에 부정적인 영향을 미치고 있다는 우려가 제기되었다.\n- **제네릭 경쟁 심화**: 엑스탄디의 특허 만료를 앞두고 제네릭 약품의 시장 진입이 가속화되고 있다.\n\n이러한 정책 변화는 제약사들의 시장 접근 전략에 영향을 미칠 것으로 보인다.",
+  "reviewers": [
+    "openai:gpt-4o-mini"
+  ],
+  "sources": [
+    {
+      "title": "[미국 특징주] 미국 일부 고용주들, GLP-1 비만 치료제 급여 적용 2027년...",
+      "url": "https://www.newspim.com/news/view/20260612000009",
+      "source": "newspim.com",
+      "date": "2026-06-12"
+    },
+    {
+      "title": "美 기업들, 비만약 보장 축소 움직임… '약값 인하'보다 커진 사용량 부...",
+      "url": "https://it.chosun.com/news/articleView.html?idxno=2023092163749",
+      "source": "조선일보",
+      "date": "2026-06-12"
+    },
+    {
+      "title": "소아의료, 약·기자재 수급·전문 인력·법도 '총체적 위기'",
+      "url": "http://www.whosaeng.com/171252",
+      "source": "후생신보",
+      "date": "2026-06-12"
+    },
+    {
+      "title": "\"혈압 낮추는 신장신경차단 초음파수술기, 임상적 안전·유효\"",
+      "url": "https://www.kpanews.co.kr/news/articleView.html?idxno=536541",
+      "source": "약사공론",
+      "date": "2026-06-12"
+    },
+    {
+      "title": "특허만료 보름 앞두고 '엑스탄디 캡슐제형' 퇴장 수순…제네릭 경쟁 본...",
+      "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539563",
+      "source": "apsk.co.kr",
+      "date": "2026-06-12"
+    },
+    {
+      "title": "\"소아 환자 살릴 기기ㆍ약 사라진다\"…필수의료 공급망 위기",
+      "url": "https://www.bosa.co.kr/news/articleView.html?idxno=3006101",
+      "source": "의약뉴스",
+      "date": "2026-06-12"
+    },
+    {
+      "title": "치료제 없는 루이소체 치매 도전장…릴리 '키순라' 국내 2상 개시",
+      "url": "https://n.news.naver.com/mnews/article/421/0008999654?sid=103",
+      "source": "뉴스1",
+      "date": "2026-06-12"
+    },
+    {
+      "title": "사노피 희귀질환 치료제 '패스터텍주' 수입업무정지 15일 처분",
+      "url": "https://www.mdtoday.co.kr/news/articleView.html?idxno=600528",
+      "source": "메디컬투데이",
+      "date": "2026-06-12"
+    },
+    {
+      "title": "동구바이오, 펠루비 제네릭 허가…2차 시장 진입 '신호탄'",
+      "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539567",
+      "source": "apsk.co.kr",
+      "date": "2026-06-12"
+    },
+    {
+      "title": "일라이 릴리 ‘키순라’, 알츠하이머 넘어 루이소체 치매 치료 도전…글...",
+      "url": "https://n.news.naver.com/mnews/article/366/0001171301?sid=101",
+      "source": "조선비즈",
+      "date": "2026-06-12"
+    },
+    {
+      "title": "‘K블록버스터’ 등장 언제쯤…국산 신약 해외 시장 확장 박차",
+      "url": "https://www.etoday.co.kr/news/view/2592211",
+      "source": "etoday.co.kr",
+      "date": "2026-06-12"
+    },
+    {
+      "title": "글로벌 신약, 국내안착 돕는 '커머셜 플랫폼 기업'이 뜬다",
+      "url": "http://www.medisobizanews.com/news/articleView.html?idxno=139369",
+      "source": "medisobizanews.com",
+      "date": "2026-06-12"
+    },
+    {
+      "title": "제약바이오 심장부로 들어온 AI…신약 찾고 서류 쓰고 공장 돌린다",
+      "url": "https://www.ebn.co.kr/news/articleView.html?idxno=1712112",
+      "source": "ebn.co.kr",
+      "date": "2026-06-12"
+    },
+    {
+      "title": "[단독]\"지방 인재 잡아라\"…중기부, 우대저축공제에 '정부지원 추가' 추...",
+      "url": "https://n.news.naver.com/mnews/article/277/0005775472?sid=101",
+      "source": "아시아경제",
+      "date": "2026-06-12"
+    },
+    {
+      "title": "JAK억제제 '올루미언트', 청소년 원형탈모 적응증 확대",
+      "url": "https://www.dailypharm.com/user/news/339369?REFERER=NP",
+      "source": "데일리팜",
+      "date": "2026-06-12"
+    },
+    {
+      "title": "심평원 현지조사·삭감 등 총괄할 심사평가상임이사 공모",
+      "url": "https://www.kpanews.co.kr/news/articleView.html?idxno=536574",
+      "source": "약사공론",
+      "date": "2026-06-12"
+    },
+    {
+      "title": "대조군 없어도 수십명 전수조사도 인정…심평원, 'RWE 기반' 약제평가 촉...",
+      "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539564",
+      "source": "apsk.co.kr",
+      "date": "2026-06-12"
+    },
+    {
+      "title": "RWE 가이드라인에 업계 \"희귀·항암제 현실 반영 부족\" 우려",
+      "url": "https://www.hitnews.co.kr/news/articleView.html?idxno=76804",
+      "source": "히트뉴스",
+      "date": "2026-06-12"
+    },
+    {
+      "title": "수사권 뺏으면서 뻑하면 합수본·특검…검찰 향한 이중잣대 [현장에서]",
+      "url": "https://n.news.naver.com/mnews/article/025/0003529960?sid=102",
+      "source": "중앙일보",
+      "date": "2026-06-12"
+    },
+    {
+      "title": "제약업계 AX 원년…서류 검토 줄이고 생산 현장 무인화 시동",
+      "url": "https://www.ngetnews.com/news/articleView.html?idxno=550753",
+      "source": "ngetnews.com",
+      "date": "2026-06-12"
+    }
+  ],
+  "keywords": [
+    {
+      "text": "RWE",
+      "weight": 99
+    },
+    {
+      "text": "약가 인하",
+      "weight": 83
+    },
+    {
+      "text": "제네릭",
+      "weight": 100
+    },
+    {
+      "text": "급여 적정성 재평가",
+      "weight": 100
+    },
+    {
+      "text": "신약 등재",
+      "weight": 83
+    },
+    {
+      "text": "희귀질환 치료제",
+      "weight": 83
+    },
+    {
+      "text": "약제 성과 평가",
+      "weight": 83
+    },
+    {
+      "text": "소아 필수약",
+      "weight": 83
+    },
+    {
+      "text": "약가 협상",
+      "weight": 67
+    },
+    {
+      "text": "의료기기 허가",
+      "weight": 66
+    },
+    {
+      "text": "보험급여 확대",
+      "weight": 67
+    },
+    {
+      "text": "약제 사후관리",
+      "weight": 67
+    },
+    {
+      "text": "신약 허가",
+      "weight": 66
+    },
+    {
+      "text": "소아 의료",
+      "weight": 66
+    },
+    {
+      "text": "의약품 수급",
+      "weight": 82
+    },
+    {
+      "text": "약제 평가 기준",
+      "weight": 83
+    },
+    {
+      "text": "혁신형 제약기업",
+      "weight": 67
+    }
+  ],
+  "newsByKeyword": {
+    "RWE": [
+      {
+        "title": "대조군 없어도 수십명 전수조사도 인정…심평원, 'RWE 기반' 약제평가 촉...",
+        "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539564",
+        "source": "apsk.co.kr",
+        "date": "2026-06-12"
+      },
+      {
+        "title": "RWE 가이드라인에 업계 \"희귀·항암제 현실 반영 부족\" 우려",
+        "url": "https://www.hitnews.co.kr/news/articleView.html?idxno=76804",
+        "source": "히트뉴스",
+        "date": "2026-06-12"
+      },
+      {
+        "title": "심사평가원, 약제 평가에 '실제 근거' 제출 기준 마련",
+        "url": "http://www.medical-tribune.co.kr/news/articleView.html?idxno=214214",
+        "source": "medical-tribune.co.kr",
+        "date": "2026-06-11"
+      }
+    ],
+    "약가 인하": [
+      {
+        "title": "\"약가인하 일변도 정부정책, 소아 필수약 생산 포기 부추겨\"",
+        "url": "https://www.dailypharm.com/user/news/339373?REFERER=NP",
+        "source": "데일리팜",
+        "date": "2026-06-12"
+      },
+      {
+        "title": "[현장] \"소아 환자는 작은 어른 아니다\"…인력난·의약품 수급난에 흔들...",
+        "url": "https://n.news.naver.com/mnews/article/119/0003100189?sid=103",
+        "source": "dailian.co.kr",
+        "date": "2026-06-11"
+      }
+    ],
+    "제네릭": [
+      {
+        "title": "특허만료 보름 앞두고 '엑스탄디 캡슐제형' 퇴장 수순…제네릭 경쟁 본...",
+        "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539563",
+        "source": "apsk.co.kr",
+        "date": "2026-06-12"
+      },
+      {
+        "title": "동구바이오, 펠루비 제네릭 허가…2차 시장 진입 '신호탄'",
+        "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539567",
+        "source": "apsk.co.kr",
+        "date": "2026-06-12"
+      },
+      {
+        "title": "펠루비 제네릭 쏟아진다…동구바이오, 품목허가 획득",
+        "url": "https://www.dailypharm.com/user/news/339371?REFERER=NP",
+        "source": "데일리팜",
+        "date": "2026-06-12"
+      }
+    ],
+    "급여 적정성 재평가": [
+      {
+        "title": "美 기업들, 비만약 보장 축소 움직임… '약값 인하'보다 커진 사용량 부...",
+        "url": "https://it.chosun.com/news/articleView.html?idxno=2023092163749",
+        "source": "조선일보",
+        "date": "2026-06-12"
+      },
+      {
+        "title": "특허만료 보름 앞두고 '엑스탄디 캡슐제형' 퇴장 수순…제네릭 경쟁 본...",
+        "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539563",
+        "source": "apsk.co.kr",
+        "date": "2026-06-12"
+      },
+      {
+        "title": "동구바이오, 펠루비 제네릭 허가…2차 시장 진입 '신호탄'",
+        "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539567",
+        "source": "apsk.co.kr",
+        "date": "2026-06-12"
+      }
+    ],
+    "신약 등재": [
+      {
+        "title": "치료제 없는 루이소체 치매 도전장…릴리 '키순라' 국내 2상 개시",
+        "url": "https://n.news.naver.com/mnews/article/421/0008999654?sid=103",
+        "source": "뉴스1",
+        "date": "2026-06-12"
+      },
+      {
+        "title": "일라이 릴리 ‘키순라’, 알츠하이머 넘어 루이소체 치매 치료 도전…글...",
+        "url": "https://n.news.naver.com/mnews/article/366/0001171301?sid=101",
+        "source": "조선비즈",
+        "date": "2026-06-12"
+      }
+    ],
+    "희귀질환 치료제": [
+      {
+        "title": "JAK억제제 '올루미언트', 청소년 원형탈모 적응증 확대",
+        "url": "https://www.dailypharm.com/user/news/339369?REFERER=NP",
+        "source": "데일리팜",
+        "date": "2026-06-12"
+      },
+      {
+        "title": "심평원, 고가 신약 '실제 효과' 따진다…RWE 평가 기준 공개",
+        "url": "https://www.pharmnews.com/news/articleView.html?idxno=304128",
+        "source": "팜뉴스",
+        "date": "2026-06-11"
+      }
+    ],
+    "약제 성과 평가": [
+      {
+        "title": "대조군 없어도 수십명 전수조사도 인정…심평원, 'RWE 기반' 약제평가 촉...",
+        "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539564",
+        "source": "apsk.co.kr",
+        "date": "2026-06-12"
+      },
+      {
+        "title": "심평원, 고가 신약 '실제 효과' 따진다…RWE 평가 기준 공개",
+        "url": "https://www.pharmnews.com/news/articleView.html?idxno=304128",
+        "source": "팜뉴스",
+        "date": "2026-06-11"
+      }
+    ],
+    "소아 필수약": [
+      {
+        "title": "\"약가인하 일변도 정부정책, 소아 필수약 생산 포기 부추겨\"",
+        "url": "https://www.dailypharm.com/user/news/339373?REFERER=NP",
+        "source": "데일리팜",
+        "date": "2026-06-12"
+      },
+      {
+        "title": "[현장] \"소아 환자는 작은 어른 아니다\"…인력난·의약품 수급난에 흔들...",
+        "url": "https://n.news.naver.com/mnews/article/119/0003100189?sid=103",
+        "source": "dailian.co.kr",
+        "date": "2026-06-11"
+      }
+    ],
+    "약가 협상": [
+      {
+        "title": "JAK억제제 '올루미언트', 청소년 원형탈모 적응증 확대",
+        "url": "https://www.dailypharm.com/user/news/339369?REFERER=NP",
+        "source": "데일리팜",
+        "date": "2026-06-12"
+      }
+    ],
+    "의료기기 허가": [
+      {
+        "title": "'신약 허가 240일 시대' 첫 점검, 세계 최단 속도의 한국 신약 허가",
+        "url": "https://www.betanews.net/article/view/beta202606110087",
+        "source": "betanews.net",
+        "date": "2026-06-11"
+      }
+    ],
+    "보험급여 확대": [
+      {
+        "title": "JAK억제제 '올루미언트', 청소년 원형탈모 적응증 확대",
+        "url": "https://www.dailypharm.com/user/news/339369?REFERER=NP",
+        "source": "데일리팜",
+        "date": "2026-06-12"
+      }
+    ],
+    "약제 사후관리": [
+      {
+        "title": "RWE 가이드라인에 업계 \"희귀·항암제 현실 반영 부족\" 우려",
+        "url": "https://www.hitnews.co.kr/news/articleView.html?idxno=76804",
+        "source": "히트뉴스",
+        "date": "2026-06-12"
+      }
+    ],
+    "신약 허가": [
+      {
+        "title": "'신약 허가 240일 시대' 첫 점검, 세계 최단 속도의 한국 신약 허가",
+        "url": "https://www.betanews.net/article/view/beta202606110087",
+        "source": "betanews.net",
+        "date": "2026-06-11"
+      }
+    ],
+    "소아 의료": [
+      {
+        "title": "\"소아의료는 약·기자재 수급, 전문 인력, 법도 총체적 위기이자 난국\"",
+        "url": "http://www.doctorstimes.com/news/articleView.html?idxno=238516",
+        "source": "doctorstimes.com",
+        "date": "2026-06-11"
+      }
+    ],
+    "의약품 수급": [
+      {
+        "title": "\"소아의료는 약·기자재 수급, 전문 인력, 법도 총체적 위기이자 난국\"",
+        "url": "http://www.doctorstimes.com/news/articleView.html?idxno=238516",
+        "source": "doctorstimes.com",
+        "date": "2026-06-11"
+      },
+      {
+        "title": "소아의료, 소송부담·의료자원 부족 '이중고'…\"소청과 붕괴 현실화\"",
+        "url": "https://n.news.naver.com/mnews/article/008/0005370703?sid=103",
+        "source": "머니투데이",
+        "date": "2026-06-11"
+      }
+    ],
+    "약제 평가 기준": [
+      {
+        "title": "대조군 없어도 수십명 전수조사도 인정…심평원, 'RWE 기반' 약제평가 촉...",
+        "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539564",
+        "source": "apsk.co.kr",
+        "date": "2026-06-12"
+      },
+      {
+        "title": "심평원, 고가 신약 '실제 효과' 따진다…RWE 평가 기준 공개",
+        "url": "https://www.pharmnews.com/news/articleView.html?idxno=304128",
+        "source": "팜뉴스",
+        "date": "2026-06-11"
+      }
+    ],
+    "혁신형 제약기업": [
+      {
+        "title": "글로벌 신약, 국내안착 돕는 '커머셜 플랫폼 기업'이 뜬다",
+        "url": "http://www.medisobizanews.com/news/articleView.html?idxno=139369",
+        "source": "medisobizanews.com",
+        "date": "2026-06-12"
+      }
+    ]
+  },
+  "keyword_source": "archive_llm_linked",
+  "archive_count": 80
+}

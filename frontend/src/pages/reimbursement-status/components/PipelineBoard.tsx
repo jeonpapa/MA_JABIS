@@ -10,36 +10,20 @@ const STAGE_META: Record<PipelineStage['id'], { label: string; description: stri
   nhis: { label: '건강보험공단', description: '건강보험공단 등재 및 급여 적용' },
 };
 
+const STATUS_BADGE: Record<PipelineDrug['status'], { label: string; dark: string; light: string }> = {
+  completed:   { label: '협상 완료', dark: 'text-emerald-300 bg-emerald-400/10 border-emerald-400/30', light: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
+  negotiating: { label: '협상 중',   dark: 'text-sky-300 bg-sky-400/10 border-sky-400/30',           light: 'text-sky-600 bg-sky-50 border-sky-200' },
+  scheduled:   { label: '심의 상정예정', dark: 'text-teal-300 bg-teal-400/10 border-teal-400/30',      light: 'text-teal-600 bg-teal-50 border-teal-200' },
+  waiting:     { label: '심의 대기', dark: 'text-amber-300 bg-amber-400/10 border-amber-400/30',      light: 'text-amber-600 bg-amber-50 border-amber-200' },
+};
+
 function StatusBadge({ status, isDark }: { status: PipelineDrug['status']; isDark: boolean }) {
-  if (status === 'completed') {
-    return (
-      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${
-        isDark
-          ? 'text-emerald-300 bg-emerald-400/10 border-emerald-400/30'
-          : 'text-emerald-600 bg-emerald-50 border-emerald-200'
-      }`}>
-        협상완료
-      </span>
-    );
-  }
-  if (status === 'scheduled') {
-    return (
-      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${
-        isDark
-          ? 'text-teal-300 bg-teal-400/10 border-teal-400/30'
-          : 'text-teal-600 bg-teal-50 border-teal-200'
-      }`}>
-        심의 예정
-      </span>
-    );
-  }
+  const cfg = STATUS_BADGE[status] ?? STATUS_BADGE.waiting;
   return (
     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${
-      isDark
-        ? 'text-amber-300 bg-amber-400/10 border-amber-400/30'
-        : 'text-amber-600 bg-amber-50 border-amber-200'
+      isDark ? cfg.dark : cfg.light
     }`}>
-      심의 대기
+      {cfg.label}
     </span>
   );
 }
@@ -52,6 +36,8 @@ function DrugCard({ drug, index, isDark, onClick }: {
 }) {
   const accentBorder = drug.status === 'completed'
     ? 'border-l-emerald-400'
+    : drug.status === 'negotiating'
+    ? 'border-l-sky-400'
     : drug.status === 'scheduled'
     ? 'border-l-teal-400'
     : 'border-l-amber-400';
@@ -122,7 +108,7 @@ export default function PipelineBoard({ isDark }: { isDark: boolean }) {
   const sortedStages = pipelineStages.map(stage => ({
     ...stage,
     drugs: [...stage.drugs].sort((a, b) => {
-      const order: Record<string, number> = { scheduled: 0, waiting: 1, completed: 2 };
+      const order: Record<string, number> = { scheduled: 0, waiting: 1, negotiating: 2, completed: 3 };
       return (order[a.status] ?? 9) - (order[b.status] ?? 9);
     }),
   }));
@@ -218,15 +204,19 @@ export default function PipelineBoard({ isDark }: { isDark: boolean }) {
               <span className={`text-[10px] font-semibold ${isDark ? 'text-[#5A6A80]' : 'text-gray-400'}`}>상태:</span>
               <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-teal-500"></span>
-                <span className={`text-[10px] ${isDark ? 'text-[#8B9BB4]' : 'text-gray-500'}`}>심의 예정</span>
+                <span className={`text-[10px] ${isDark ? 'text-[#8B9BB4]' : 'text-gray-500'}`}>심의 상정예정</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-amber-500"></span>
                 <span className={`text-[10px] ${isDark ? 'text-[#8B9BB4]' : 'text-gray-500'}`}>심의 대기</span>
               </div>
               <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-sky-500"></span>
+                <span className={`text-[10px] ${isDark ? 'text-[#8B9BB4]' : 'text-gray-500'}`}>협상 중</span>
+              </div>
+              <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                <span className={`text-[10px] ${isDark ? 'text-[#8B9BB4]' : 'text-gray-500'}`}>협상완료</span>
+                <span className={`text-[10px] ${isDark ? 'text-[#8B9BB4]' : 'text-gray-500'}`}>협상 완료</span>
               </div>
             </div>
           </>

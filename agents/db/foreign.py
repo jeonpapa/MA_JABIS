@@ -44,14 +44,23 @@ class _ForeignMixin:
 
     def get_foreign_prices(self, query_name: str) -> list[dict]:
         """특정 약제의 최신 해외 약가 조회 (국가별 가장 최근 검색 결과).
-        브랜드/molecule alias 를 canonical key 로 묶어 함께 조회한다."""
+        브랜드/molecule alias 를 canonical key 로 묶어 함께 조회한다.
+
+        국가별 대표 row = **가격 보유 row 중 최신** (없으면 그냥 최신).
+        재검색이 가격벽/파싱 실패로 local_price=None 을 적재해도, 과거에 확보한
+        실가격이 None 에 가려지지 않는다 (cache-db-first — 확보 데이터 보존).
+        """
         names = aliases(query_name)
         placeholders = ",".join(["?"] * len(names))
         sql = f"""
             SELECT f.*
             FROM foreign_drug_prices f
             INNER JOIN (
-                SELECT country, MAX(searched_at) AS latest
+                SELECT country,
+                       COALESCE(
+                           MAX(CASE WHEN local_price IS NOT NULL THEN searched_at END),
+                           MAX(searched_at)
+                       ) AS latest
                 FROM foreign_drug_prices
                 WHERE LOWER(query_name) IN ({placeholders})
                 GROUP BY country
