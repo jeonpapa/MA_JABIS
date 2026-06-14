@@ -1,0 +1,3426 @@
+{
+  "_meta": {
+    "version": "1.0.0",
+    "created": "2026-06-14",
+    "description": "Seed concept/synonym ontology for Korean drug-reimbursement analog-search. Lexically-different but semantically-identical queries resolve to the same concept set.",
+    "coverage": "~110 concepts covering diseases, drug classes, targets, biomarkers, forms, and lines of therapy grounded in the analog_reports dataset."
+  },
+  "concepts": [
+    {
+      "concept_id": "disease-dyslipidemia",
+      "type": "disease",
+      "canonical_ko": "이상지질혈증",
+      "canonical_en": "Dyslipidemia / Hyperlipidemia",
+      "aliases": [
+        "이상지질혈증",
+        "고지혈증",
+        "고지질혈증",
+        "고콜레스테롤혈증",
+        "가족성 고콜레스테롤혈증",
+        "동형접합 가족성 고콜레스테롤혈증",
+        "이형접합 가족성 고콜레스테롤혈증",
+        "Dyslipidemia",
+        "Hyperlipidemia",
+        "Hypercholesterolemia",
+        "Familial Hypercholesterolemia",
+        "FH",
+        "HoFH",
+        "HeFH",
+        "LDL 저하",
+        "LDL 조절",
+        "콜레스테롤"
+      ],
+      "related_concept_ids": [
+        "target-pcsk9",
+        "class-pcsk9-inhibitor",
+        "form-injection",
+        "form-oral"
+      ]
+    },
+    {
+      "concept_id": "target-pcsk9",
+      "type": "target",
+      "canonical_ko": "PCSK9",
+      "canonical_en": "Proprotein convertase subtilisin/kexin type 9 (PCSK9)",
+      "aliases": [
+        "PCSK9",
+        "PCSK-9",
+        "PCSK9 억제제",
+        "PCSK9억제제",
+        "PCSK9 저해제",
+        "프로단백질 전환효소 서브틸리신/켁신 제9형",
+        "Proprotein convertase subtilisin kexin 9"
+      ],
+      "related_concept_ids": [
+        "disease-dyslipidemia",
+        "class-pcsk9-inhibitor"
+      ]
+    },
+    {
+      "concept_id": "class-pcsk9-inhibitor",
+      "type": "drug_class",
+      "canonical_ko": "PCSK9 억제제",
+      "canonical_en": "PCSK9 inhibitor",
+      "aliases": [
+        "PCSK9 억제제",
+        "PCSK9억제제",
+        "PCSK9 저해제",
+        "PCSK9 차단제",
+        "에볼로쿠맙",
+        "알리로쿠맙",
+        "evolocumab",
+        "alirocumab",
+        "레파타",
+        "프랄런트",
+        "Repatha",
+        "Praluent",
+        "PCSK9 inhibitor",
+        "anti-PCSK9"
+      ],
+      "related_concept_ids": [
+        "disease-dyslipidemia",
+        "target-pcsk9",
+        "form-injection"
+      ]
+    },
+    {
+      "concept_id": "disease-nsclc",
+      "type": "disease",
+      "canonical_ko": "비소세포폐암",
+      "canonical_en": "Non-small cell lung cancer (NSCLC)",
+      "aliases": [
+        "비소세포폐암",
+        "비소세포 폐암",
+        "NSCLC",
+        "비소세포성 폐암",
+        "폐선암",
+        "폐편평세포암",
+        "폐대세포암",
+        "Non-small cell lung cancer",
+        "Lung adenocarcinoma",
+        "Lung squamous cell carcinoma",
+        "국소 진행성 폐암",
+        "전이성 폐암",
+        "진행성 비소세포폐암",
+        "ALK 양성 폐암",
+        "EGFR 양성 폐암",
+        "RET 융합 폐암",
+        "MET 폐암",
+        "ROS1 폐암"
+      ],
+      "related_concept_ids": [
+        "biomarker-egfr",
+        "biomarker-alk",
+        "biomarker-pd-l1",
+        "biomarker-ret-fusion",
+        "biomarker-met-ex14",
+        "biomarker-ros1",
+        "biomarker-ntrk-fusion",
+        "class-pd1-pdl1-inhibitor",
+        "class-egfr-tki",
+        "class-alk-inhibitor",
+        "class-ret-inhibitor"
+      ]
+    },
+    {
+      "concept_id": "disease-sclc",
+      "type": "disease",
+      "canonical_ko": "소세포폐암",
+      "canonical_en": "Small cell lung cancer (SCLC)",
+      "aliases": [
+        "소세포폐암",
+        "소세포 폐암",
+        "SCLC",
+        "Small cell lung cancer",
+        "Limited stage SCLC",
+        "Extensive stage SCLC"
+      ],
+      "related_concept_ids": [
+        "class-pd1-pdl1-inhibitor"
+      ]
+    },
+    {
+      "concept_id": "disease-breast-cancer",
+      "type": "disease",
+      "canonical_ko": "유방암",
+      "canonical_en": "Breast cancer (BC)",
+      "aliases": [
+        "유방암",
+        "전이성 유방암",
+        "진행성 유방암",
+        "조기 유방암",
+        "HR 양성 유방암",
+        "HER2 양성 유방암",
+        "삼중음성 유방암",
+        "TNBC",
+        "HR+/HER2- 유방암",
+        "gBRCA 유방암",
+        "Breast cancer",
+        "BC",
+        "Metastatic breast cancer",
+        "MBC",
+        "HR-positive breast cancer",
+        "HER2-positive breast cancer",
+        "Triple-negative breast cancer",
+        "TNBC",
+        "Early breast cancer",
+        "Advanced breast cancer"
+      ],
+      "related_concept_ids": [
+        "biomarker-her2",
+        "biomarker-hr",
+        "biomarker-brca",
+        "class-cdk46-inhibitor",
+        "class-parp-inhibitor",
+        "class-her2-targeted"
+      ]
+    },
+    {
+      "concept_id": "disease-melanoma",
+      "type": "disease",
+      "canonical_ko": "흑색종",
+      "canonical_en": "Melanoma",
+      "aliases": [
+        "흑색종",
+        "악성 흑색종",
+        "전이성 흑색종",
+        "진행성 흑색종",
+        "BRAF 변이 흑색종",
+        "수술 불가 흑색종",
+        "Melanoma",
+        "Malignant melanoma",
+        "Metastatic melanoma",
+        "Unresectable melanoma",
+        "BRAF V600E melanoma"
+      ],
+      "related_concept_ids": [
+        "biomarker-braf-v600",
+        "class-pd1-pdl1-inhibitor",
+        "class-braf-mek-inhibitor"
+      ]
+    },
+    {
+      "concept_id": "disease-multiple-myeloma",
+      "type": "disease",
+      "canonical_ko": "다발골수종",
+      "canonical_en": "Multiple myeloma (MM)",
+      "aliases": [
+        "다발골수종",
+        "다발성골수종",
+        "Multiple myeloma",
+        "MM",
+        "재발/불응성 다발골수종",
+        "RRMM",
+        "Relapsed/refractory multiple myeloma"
+      ],
+      "related_concept_ids": [
+        "class-proteasome-inhibitor",
+        "class-imid",
+        "class-anti-cd38"
+      ]
+    },
+    {
+      "concept_id": "disease-dlbcl",
+      "type": "disease",
+      "canonical_ko": "미만성 거대 B세포 림프종",
+      "canonical_en": "Diffuse large B-cell lymphoma (DLBCL)",
+      "aliases": [
+        "미만성거대B세포림프종",
+        "미만성 거대 B세포 림프종",
+        "DLBCL",
+        "Diffuse large B-cell lymphoma",
+        "Large B-cell lymphoma"
+      ],
+      "related_concept_ids": [
+        "class-anti-cd20",
+        "class-car-t",
+        "biomarker-cd20"
+      ]
+    },
+    {
+      "concept_id": "disease-follicular-lymphoma",
+      "type": "disease",
+      "canonical_ko": "여포형 림프종",
+      "canonical_en": "Follicular lymphoma (FL)",
+      "aliases": [
+        "소포 림프종",
+        "여포형 림프종",
+        "여포 림프종",
+        "Follicular lymphoma",
+        "FL",
+        "저등급 비호지킨 림프종",
+        "Indolent NHL",
+        "CD20+ 소포 림프종"
+      ],
+      "related_concept_ids": [
+        "class-anti-cd20",
+        "biomarker-cd20"
+      ]
+    },
+    {
+      "concept_id": "disease-cll",
+      "type": "disease",
+      "canonical_ko": "만성 림프구성 백혈병",
+      "canonical_en": "Chronic lymphocytic leukemia (CLL)",
+      "aliases": [
+        "만성 림프구성 백혈병",
+        "CLL",
+        "만성림프구성백혈병",
+        "Chronic lymphocytic leukemia",
+        "재발/불응성 CLL"
+      ],
+      "related_concept_ids": [
+        "class-btk-inhibitor",
+        "class-bcl2-inhibitor",
+        "class-anti-cd20",
+        "biomarker-cd20"
+      ]
+    },
+    {
+      "concept_id": "disease-all",
+      "type": "disease",
+      "canonical_ko": "급성 림프구성 백혈병",
+      "canonical_en": "Acute lymphoblastic leukemia (ALL)",
+      "aliases": [
+        "급성 림프구성 백혈병",
+        "ALL",
+        "급성림프모구성백혈병",
+        "전구 B세포 ALL",
+        "Ph 음성 ALL",
+        "Ph+ ALL",
+        "Acute lymphoblastic leukemia",
+        "B-precursor ALL",
+        "재발/불응성 ALL",
+        "소아 ALL"
+      ],
+      "related_concept_ids": [
+        "class-inotuzumab",
+        "class-blinatumomab",
+        "biomarker-ph-chromosome"
+      ]
+    },
+    {
+      "concept_id": "disease-aml",
+      "type": "disease",
+      "canonical_ko": "급성 골수성 백혈병",
+      "canonical_en": "Acute myeloid leukemia (AML)",
+      "aliases": [
+        "급성골수성백혈병",
+        "급성 골수성 백혈병",
+        "AML",
+        "Acute myeloid leukemia",
+        "t-AML",
+        "AML-MRC",
+        "치료 관련 AML",
+        "CD33+ AML",
+        "FLT3+ AML"
+      ],
+      "related_concept_ids": [
+        "biomarker-cd33",
+        "biomarker-flt3"
+      ]
+    },
+    {
+      "concept_id": "disease-cml",
+      "type": "disease",
+      "canonical_ko": "만성 골수성 백혈병",
+      "canonical_en": "Chronic myeloid leukemia (CML)",
+      "aliases": [
+        "만성 골수성 백혈병",
+        "CML",
+        "만성골수성백혈병",
+        "Ph+ CML",
+        "필라델피아 염색체 양성 CML",
+        "Chronic myeloid leukemia",
+        "Philadelphia chromosome-positive CML"
+      ],
+      "related_concept_ids": [
+        "class-bcr-abl-tki",
+        "biomarker-ph-chromosome"
+      ]
+    },
+    {
+      "concept_id": "disease-gastric-cancer",
+      "type": "disease",
+      "canonical_ko": "위암",
+      "canonical_en": "Gastric cancer (GC)",
+      "aliases": [
+        "위암",
+        "위선암",
+        "위식도접합부암",
+        "위식도 접합부 선암",
+        "전이성 위암",
+        "진행성 위암",
+        "국소 재발성 위암",
+        "Gastric cancer",
+        "GC",
+        "Gastric adenocarcinoma",
+        "Gastroesophageal junction cancer",
+        "GEJ",
+        "GC/GEJ",
+        "Advanced gastric cancer",
+        "Metastatic gastric cancer"
+      ],
+      "related_concept_ids": [
+        "class-vegfr2-inhibitor",
+        "biomarker-her2"
+      ]
+    },
+    {
+      "concept_id": "disease-colorectal-cancer",
+      "type": "disease",
+      "canonical_ko": "대장암",
+      "canonical_en": "Colorectal cancer (CRC)",
+      "aliases": [
+        "대장암",
+        "결장직장암",
+        "직결장암",
+        "결장암",
+        "직장암",
+        "전이성 대장암",
+        "전이성 결장직장암",
+        "Colorectal cancer",
+        "CRC",
+        "Colon cancer",
+        "Rectal cancer",
+        "Metastatic colorectal cancer",
+        "mCRC",
+        "KRAS 야생형 대장암",
+        "BRAF V600E 대장암"
+      ],
+      "related_concept_ids": [
+        "biomarker-braf-v600",
+        "biomarker-kras-wt",
+        "biomarker-egfr",
+        "class-egfr-antibody",
+        "class-vegf-inhibitor"
+      ]
+    },
+    {
+      "concept_id": "disease-hepatocellular-carcinoma",
+      "type": "disease",
+      "canonical_ko": "간세포암",
+      "canonical_en": "Hepatocellular carcinoma (HCC)",
+      "aliases": [
+        "간세포암",
+        "간암",
+        "간세포 암종",
+        "간세포 암",
+        "Hepatocellular carcinoma",
+        "HCC",
+        "Liver cancer",
+        "진행성 간세포암",
+        "전이성 간암"
+      ],
+      "related_concept_ids": [
+        "class-pd1-pdl1-inhibitor",
+        "class-vegfr2-inhibitor"
+      ]
+    },
+    {
+      "concept_id": "disease-renal-cell-carcinoma",
+      "type": "disease",
+      "canonical_ko": "신세포암",
+      "canonical_en": "Renal cell carcinoma (RCC)",
+      "aliases": [
+        "신세포암",
+        "신장세포암",
+        "신세포 암종",
+        "신세포암종",
+        "신장암",
+        "진행성 신세포암",
+        "신장 세포암",
+        "Renal cell carcinoma",
+        "RCC",
+        "Kidney cancer",
+        "Advanced renal cell carcinoma",
+        "Clear cell RCC"
+      ],
+      "related_concept_ids": [
+        "class-pd1-pdl1-inhibitor",
+        "class-vegfr-tki",
+        "class-ctla4-inhibitor"
+      ]
+    },
+    {
+      "concept_id": "disease-ovarian-cancer",
+      "type": "disease",
+      "canonical_ko": "난소암",
+      "canonical_en": "Ovarian cancer (OC)",
+      "aliases": [
+        "난소암",
+        "상피성 난소암",
+        "고도 장액성 난소암",
+        "난관암",
+        "일차 복막암",
+        "BRCA 변이 난소암",
+        "백금 민감성 재발성 난소암",
+        "Ovarian cancer",
+        "OC",
+        "Epithelial ovarian cancer",
+        "High-grade serous ovarian cancer",
+        "HGSOC",
+        "Fallopian tube cancer",
+        "Primary peritoneal cancer",
+        "Platinum-sensitive recurrent ovarian cancer"
+      ],
+      "related_concept_ids": [
+        "class-parp-inhibitor",
+        "biomarker-brca",
+        "class-vegf-inhibitor"
+      ]
+    },
+    {
+      "concept_id": "disease-prostate-cancer",
+      "type": "disease",
+      "canonical_ko": "전립선암",
+      "canonical_en": "Prostate cancer (PCa)",
+      "aliases": [
+        "전립선암",
+        "전이성 전립선암",
+        "거세저항성 전립선암",
+        "mCRPC",
+        "전이성 거세저항성 전립선암",
+        "호르몬 반응성 전립선암",
+        "mHSPC",
+        "Prostate cancer",
+        "PCa",
+        "Castration-resistant prostate cancer",
+        "CRPC",
+        "Metastatic CRPC",
+        "mCRPC",
+        "Hormone-sensitive prostate cancer",
+        "mHSPC",
+        "Hormone-refractory prostate cancer"
+      ],
+      "related_concept_ids": [
+        "class-ard-inhibitor",
+        "class-cyp17-inhibitor"
+      ]
+    },
+    {
+      "concept_id": "disease-bladder-cancer",
+      "type": "disease",
+      "canonical_ko": "방광암",
+      "canonical_en": "Urothelial carcinoma (UC)",
+      "aliases": [
+        "방광암",
+        "요로상피암",
+        "요로상피세포암",
+        "이행세포암",
+        "전이성 방광암",
+        "진행성 방광암",
+        "Bladder cancer",
+        "Urothelial carcinoma",
+        "UC",
+        "Transitional cell carcinoma",
+        "TCC",
+        "Locally advanced urothelial carcinoma",
+        "Metastatic urothelial carcinoma"
+      ],
+      "related_concept_ids": [
+        "class-pd1-pdl1-inhibitor",
+        "biomarker-fgfr3"
+      ]
+    },
+    {
+      "concept_id": "disease-esophageal-cancer",
+      "type": "disease",
+      "canonical_ko": "식도암",
+      "canonical_en": "Esophageal cancer (EC)",
+      "aliases": [
+        "식도암",
+        "식도편평세포암",
+        "ESCC",
+        "식도 선암",
+        "식도 편평세포암종",
+        "절제불가 식도암",
+        "Esophageal cancer",
+        "Esophageal squamous cell carcinoma",
+        "ESCC",
+        "Esophageal adenocarcinoma"
+      ],
+      "related_concept_ids": [
+        "class-pd1-pdl1-inhibitor"
+      ]
+    },
+    {
+      "concept_id": "disease-endometrial-cancer",
+      "type": "disease",
+      "canonical_ko": "자궁내막암",
+      "canonical_en": "Endometrial cancer (EC)",
+      "aliases": [
+        "자궁내막암",
+        "자궁내막 암종",
+        "dMMR 자궁내막암",
+        "MSI-H 자궁내막암",
+        "재발성 자궁내막암",
+        "진행성 자궁내막암",
+        "Endometrial cancer",
+        "Uterine cancer",
+        "dMMR/MSI-H endometrial cancer",
+        "Recurrent endometrial cancer"
+      ],
+      "related_concept_ids": [
+        "class-pd1-pdl1-inhibitor",
+        "biomarker-dmmr-msih"
+      ]
+    },
+    {
+      "concept_id": "disease-thyroid-cancer",
+      "type": "disease",
+      "canonical_ko": "갑상선암",
+      "canonical_en": "Thyroid cancer",
+      "aliases": [
+        "갑상선암",
+        "분화 갑상선암",
+        "갑상선 수질암",
+        "방사성 요오드 불응 갑상선암",
+        "RET 변이 갑상선 수질암",
+        "RET 융합 갑상선암",
+        "Thyroid cancer",
+        "Differentiated thyroid cancer",
+        "DTC",
+        "Medullary thyroid cancer",
+        "MTC",
+        "Radioiodine-refractory thyroid cancer"
+      ],
+      "related_concept_ids": [
+        "class-ret-inhibitor",
+        "biomarker-ret-fusion",
+        "class-vegfr-tki"
+      ]
+    },
+    {
+      "concept_id": "disease-pancreatic-cancer",
+      "type": "disease",
+      "canonical_ko": "췌장암",
+      "canonical_en": "Pancreatic cancer",
+      "aliases": [
+        "췌장암",
+        "전이성 췌장암",
+        "췌장 선암",
+        "Pancreatic cancer",
+        "Pancreatic adenocarcinoma",
+        "Metastatic pancreatic cancer"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "disease-net",
+      "type": "disease",
+      "canonical_ko": "신경내분비종양",
+      "canonical_en": "Neuroendocrine tumor (NET)",
+      "aliases": [
+        "신경내분비종양",
+        "위장췌장계 신경내분비종양",
+        "GEP-NET",
+        "소마토스타틴 수용체 양성 종양",
+        "신경내분비 종양",
+        "Neuroendocrine tumor",
+        "NET",
+        "GEP-NET",
+        "Gastroenteropancreatic NET",
+        "Somatostatin receptor-positive NET"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "disease-hodgkin-lymphoma",
+      "type": "disease",
+      "canonical_ko": "호지킨 림프종",
+      "canonical_en": "Hodgkin lymphoma (HL)",
+      "aliases": [
+        "호지킨림프종",
+        "호지킨 림프종",
+        "재발/불응성 호지킨림프종",
+        "Hodgkin lymphoma",
+        "HL",
+        "Relapsed/refractory Hodgkin lymphoma"
+      ],
+      "related_concept_ids": [
+        "biomarker-cd30"
+      ]
+    },
+    {
+      "concept_id": "disease-sarcoma",
+      "type": "disease",
+      "canonical_ko": "연조직 육종",
+      "canonical_en": "Soft tissue sarcoma (STS)",
+      "aliases": [
+        "연조직 육종",
+        "육종",
+        "횡문근육종",
+        "Soft tissue sarcoma",
+        "STS",
+        "Sarcoma",
+        "Rhabdomyosarcoma"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "disease-merkel-cell-carcinoma",
+      "type": "disease",
+      "canonical_ko": "메르켈세포암",
+      "canonical_en": "Merkel cell carcinoma (MCC)",
+      "aliases": [
+        "메르켈세포암",
+        "전이성 메르켈세포암",
+        "Merkel cell carcinoma",
+        "MCC",
+        "Metastatic MCC"
+      ],
+      "related_concept_ids": [
+        "class-pd1-pdl1-inhibitor"
+      ]
+    },
+    {
+      "concept_id": "disease-basal-cell-carcinoma",
+      "type": "disease",
+      "canonical_ko": "기저세포암",
+      "canonical_en": "Basal cell carcinoma (BCC)",
+      "aliases": [
+        "기저세포암",
+        "전이성 기저세포암",
+        "국소 진행성 기저세포암",
+        "Basal cell carcinoma",
+        "BCC",
+        "Metastatic BCC",
+        "Locally advanced BCC"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "disease-ntrk-solid-tumor",
+      "type": "disease",
+      "canonical_ko": "NTRK 융합 양성 고형암",
+      "canonical_en": "NTRK fusion-positive solid tumor",
+      "aliases": [
+        "NTRK 유전자 융합 양성 고형암",
+        "NTRK 융합 양성 종양",
+        "TRK 융합 암",
+        "신경영양 티로신 수용체 인산화효소 융합 암",
+        "NTRK fusion-positive solid tumor",
+        "TRK fusion cancer"
+      ],
+      "related_concept_ids": [
+        "biomarker-ntrk-fusion",
+        "class-trk-inhibitor"
+      ]
+    },
+    {
+      "concept_id": "disease-atopic-dermatitis",
+      "type": "disease",
+      "canonical_ko": "아토피피부염",
+      "canonical_en": "Atopic dermatitis (AD)",
+      "aliases": [
+        "아토피피부염",
+        "아토피 피부염",
+        "중등도 아토피피부염",
+        "중증 아토피피부염",
+        "중등도-중증 아토피피부염",
+        "손습진",
+        "Atopic dermatitis",
+        "AD",
+        "Eczema",
+        "Moderate-to-severe atopic dermatitis"
+      ],
+      "related_concept_ids": [
+        "class-il4-il13-inhibitor",
+        "class-jak-inhibitor"
+      ]
+    },
+    {
+      "concept_id": "disease-psoriasis",
+      "type": "disease",
+      "canonical_ko": "판상 건선",
+      "canonical_en": "Plaque psoriasis",
+      "aliases": [
+        "판상 건선",
+        "건선",
+        "중등도 건선",
+        "중증 건선",
+        "중등도-중증 판상 건선",
+        "건선성 관절염",
+        "Plaque psoriasis",
+        "Psoriasis",
+        "Moderate-to-severe plaque psoriasis",
+        "Psoriatic arthritis",
+        "PsA"
+      ],
+      "related_concept_ids": [
+        "class-il17-inhibitor",
+        "class-il23-inhibitor",
+        "class-il12-23-inhibitor",
+        "class-jak-inhibitor"
+      ]
+    },
+    {
+      "concept_id": "disease-asthma",
+      "type": "disease",
+      "canonical_ko": "천식",
+      "canonical_en": "Asthma",
+      "aliases": [
+        "천식",
+        "호산구성 천식",
+        "중증 호산구성 천식",
+        "기관지 천식",
+        "알레르기성 천식",
+        "중증 천식",
+        "조절되지 않는 천식",
+        "Asthma",
+        "Severe eosinophilic asthma",
+        "Allergic asthma",
+        "Uncontrolled asthma",
+        "Add-on maintenance therapy for asthma"
+      ],
+      "related_concept_ids": [
+        "class-il5-inhibitor",
+        "class-il4-il13-inhibitor",
+        "biomarker-eosinophil"
+      ]
+    },
+    {
+      "concept_id": "disease-copd",
+      "type": "disease",
+      "canonical_ko": "만성폐쇄성폐질환",
+      "canonical_en": "Chronic obstructive pulmonary disease (COPD)",
+      "aliases": [
+        "만성폐쇄성폐질환",
+        "COPD",
+        "만성 기관지염",
+        "폐기종",
+        "Chronic obstructive pulmonary disease",
+        "COPD",
+        "중등도 COPD",
+        "중증 COPD",
+        "Moderate to severe COPD"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "disease-t2dm",
+      "type": "disease",
+      "canonical_ko": "제2형 당뇨병",
+      "canonical_en": "Type 2 diabetes mellitus (T2DM)",
+      "aliases": [
+        "제2형 당뇨병",
+        "2형 당뇨",
+        "당뇨",
+        "T2DM",
+        "제2형 당뇨",
+        "혈당조절",
+        "인슐린 저항성",
+        "Type 2 diabetes mellitus",
+        "Type 2 diabetes",
+        "T2DM",
+        "Diabetes mellitus type 2"
+      ],
+      "related_concept_ids": [
+        "class-sglt2-inhibitor",
+        "class-dpp4-inhibitor",
+        "class-glp1-agonist"
+      ]
+    },
+    {
+      "concept_id": "disease-rheumatoid-arthritis",
+      "type": "disease",
+      "canonical_ko": "류마티스 관절염",
+      "canonical_en": "Rheumatoid arthritis (RA)",
+      "aliases": [
+        "류마티스 관절염",
+        "RA",
+        "중등도 류마티스 관절염",
+        "중증 류마티스 관절염",
+        "활동성 류마티스 관절염",
+        "Rheumatoid arthritis",
+        "RA",
+        "Active RA",
+        "Moderate-to-severe RA"
+      ],
+      "related_concept_ids": [
+        "class-jak-inhibitor",
+        "class-il6-inhibitor",
+        "class-tnf-inhibitor"
+      ]
+    },
+    {
+      "concept_id": "disease-sle",
+      "type": "disease",
+      "canonical_ko": "전신홍반루푸스",
+      "canonical_en": "Systemic lupus erythematosus (SLE)",
+      "aliases": [
+        "전신홍반루푸스",
+        "SLE",
+        "루푸스",
+        "활동성 루푸스",
+        "자가항체 양성 SLE",
+        "Systemic lupus erythematosus",
+        "SLE",
+        "Lupus",
+        "Active SLE",
+        "Autoantibody-positive SLE"
+      ],
+      "related_concept_ids": [
+        "biomarker-autoantibody"
+      ]
+    },
+    {
+      "concept_id": "disease-ms",
+      "type": "disease",
+      "canonical_ko": "다발성 경화증",
+      "canonical_en": "Multiple sclerosis (MS)",
+      "aliases": [
+        "다발성 경화증",
+        "재발 이장성 다발성 경화증",
+        "RRMS",
+        "재발 완화형 다발성 경화증",
+        "Multiple sclerosis",
+        "MS",
+        "Relapsing-remitting MS",
+        "RRMS"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "disease-hepatitis-b",
+      "type": "disease",
+      "canonical_ko": "만성 B형 간염",
+      "canonical_en": "Chronic hepatitis B (CHB)",
+      "aliases": [
+        "만성 B형 간염",
+        "B형 간염",
+        "CHB",
+        "HBV",
+        "Chronic hepatitis B",
+        "HBV infection",
+        "Hepatitis B"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "disease-hepatitis-c",
+      "type": "disease",
+      "canonical_ko": "만성 C형 간염",
+      "canonical_en": "Chronic hepatitis C (CHC)",
+      "aliases": [
+        "만성 C형 간염",
+        "C형 간염",
+        "CHC",
+        "HCV",
+        "유전자형 1형 C형 간염",
+        "유전자형 1b형",
+        "유전자형 3형",
+        "Chronic hepatitis C",
+        "HCV infection",
+        "Hepatitis C",
+        "Genotype 1",
+        "Genotype 1b",
+        "Genotype 3"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "disease-hiv",
+      "type": "disease",
+      "canonical_ko": "HIV 감염",
+      "canonical_en": "HIV-1 infection",
+      "aliases": [
+        "HIV 감염",
+        "HIV-1 감염",
+        "에이즈",
+        "후천성면역결핍증",
+        "바이러스학적으로 억제된 HIV",
+        "HIV infection",
+        "HIV-1 infection",
+        "AIDS",
+        "Virologically suppressed HIV"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "disease-alzheimers",
+      "type": "disease",
+      "canonical_ko": "알츠하이머형 치매",
+      "canonical_en": "Alzheimer's disease (AD)",
+      "aliases": [
+        "알츠하이머형 치매",
+        "알츠하이머병",
+        "치매",
+        "Alzheimer's disease",
+        "AD",
+        "Alzheimer's dementia"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "disease-als",
+      "type": "disease",
+      "canonical_ko": "근위축성 측삭경화증",
+      "canonical_en": "Amyotrophic lateral sclerosis (ALS)",
+      "aliases": [
+        "근위축성측삭경화증",
+        "ALS",
+        "루게릭병",
+        "Amyotrophic lateral sclerosis",
+        "ALS",
+        "Lou Gehrig's disease",
+        "Motor neuron disease"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "disease-sma",
+      "type": "disease",
+      "canonical_ko": "척수성 근위축증",
+      "canonical_en": "Spinal muscular atrophy (SMA)",
+      "aliases": [
+        "척수성 근위축증",
+        "SMA",
+        "5q 척수성 근위축증",
+        "Spinal muscular atrophy",
+        "SMA",
+        "5q SMA",
+        "SMN1"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "disease-pnh",
+      "type": "disease",
+      "canonical_ko": "발작성 야간 혈색소뇨증",
+      "canonical_en": "Paroxysmal nocturnal hemoglobinuria (PNH)",
+      "aliases": [
+        "발작성 야간 혈색소뇨증",
+        "PNH",
+        "Paroxysmal nocturnal hemoglobinuria",
+        "PNH",
+        "C5 inhibitor"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "disease-mds",
+      "type": "disease",
+      "canonical_ko": "골수형성이상증후군",
+      "canonical_en": "Myelodysplastic syndrome (MDS)",
+      "aliases": [
+        "골수형성이상증후군",
+        "MDS",
+        "MDS-RS",
+        "Myelodysplastic syndrome",
+        "MDS",
+        "Myelodysplastic syndrome with ring sideroblasts"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "disease-itp",
+      "type": "disease",
+      "canonical_ko": "면역 혈소판 감소증",
+      "canonical_en": "Immune thrombocytopenia (ITP)",
+      "aliases": [
+        "면역 혈소판 감소증",
+        "ITP",
+        "특발성 혈소판 감소성 자반증",
+        "만성 면역성 혈소판 감소증",
+        "만성 ITP",
+        "Immune thrombocytopenia",
+        "ITP",
+        "Immune thrombocytopenic purpura",
+        "Chronic ITP"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "disease-polycythemia-vera",
+      "type": "disease",
+      "canonical_ko": "진성적혈구증가증",
+      "canonical_en": "Polycythemia vera (PV)",
+      "aliases": [
+        "진성적혈구증가증",
+        "PV",
+        "JAK2 양성 적혈구증가증",
+        "Polycythemia vera",
+        "PV",
+        "JAK2V617F+ PV"
+      ],
+      "related_concept_ids": [
+        "biomarker-jak2"
+      ]
+    },
+    {
+      "concept_id": "disease-osteoporosis",
+      "type": "disease",
+      "canonical_ko": "골다공증",
+      "canonical_en": "Osteoporosis",
+      "aliases": [
+        "골다공증",
+        "폐경 후 골다공증",
+        "남성 골다공증",
+        "Osteoporosis",
+        "Postmenopausal osteoporosis"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "disease-osteoarthritis",
+      "type": "disease",
+      "canonical_ko": "골관절염",
+      "canonical_en": "Osteoarthritis (OA)",
+      "aliases": [
+        "골관절염",
+        "퇴행관절염",
+        "슬관절 골관절염",
+        "Osteoarthritis",
+        "OA",
+        "Knee osteoarthritis"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "disease-glaucoma",
+      "type": "disease",
+      "canonical_ko": "녹내장",
+      "canonical_en": "Glaucoma / Ocular hypertension",
+      "aliases": [
+        "녹내장",
+        "개방각 녹내장",
+        "고안압증",
+        "안압 상승",
+        "Glaucoma",
+        "Open-angle glaucoma",
+        "Ocular hypertension",
+        "OHT"
+      ],
+      "related_concept_ids": [
+        "form-eye-drop"
+      ]
+    },
+    {
+      "concept_id": "disease-amd",
+      "type": "disease",
+      "canonical_ko": "연령관련 황반변성",
+      "canonical_en": "Age-related macular degeneration (AMD)",
+      "aliases": [
+        "황반변성",
+        "연령관련 황반변성",
+        "습성 황반변성",
+        "신생혈관 황반변성",
+        "당뇨병성 황반부종",
+        "DME",
+        "Age-related macular degeneration",
+        "AMD",
+        "nAMD",
+        "Wet AMD",
+        "Neovascular AMD",
+        "Diabetic macular edema",
+        "DME"
+      ],
+      "related_concept_ids": [
+        "class-vegf-inhibitor",
+        "form-injection"
+      ]
+    },
+    {
+      "concept_id": "disease-migraine",
+      "type": "disease",
+      "canonical_ko": "편두통",
+      "canonical_en": "Migraine",
+      "aliases": [
+        "편두통",
+        "만성 편두통",
+        "편두통 예방",
+        "급성 편두통",
+        "Migraine",
+        "Chronic migraine",
+        "Migraine prevention",
+        "Migraine prophylaxis"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "disease-heart-failure",
+      "type": "disease",
+      "canonical_ko": "만성 심부전",
+      "canonical_en": "Heart failure (HF)",
+      "aliases": [
+        "만성 심부전",
+        "심부전",
+        "좌심실 박출률 감소 심부전",
+        "HFrEF",
+        "Heart failure",
+        "HF",
+        "Chronic heart failure",
+        "Heart failure with reduced ejection fraction",
+        "HFrEF"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "disease-atrial-fibrillation",
+      "type": "disease",
+      "canonical_ko": "심방세동",
+      "canonical_en": "Atrial fibrillation (AF)",
+      "aliases": [
+        "심방세동",
+        "비판막성 심방세동",
+        "Atrial fibrillation",
+        "AF",
+        "Non-valvular atrial fibrillation",
+        "혈전색전증 예방"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "disease-gvhd",
+      "type": "disease",
+      "canonical_ko": "이식편대숙주질환",
+      "canonical_en": "Graft-versus-host disease (GvHD)",
+      "aliases": [
+        "이식편대숙주질환",
+        "만성 이식편대숙주질환",
+        "GvHD",
+        "GVHD",
+        "Graft-versus-host disease",
+        "GvHD",
+        "Chronic GvHD"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "disease-tuberculosis",
+      "type": "disease",
+      "canonical_ko": "다제내성 결핵",
+      "canonical_en": "Multidrug-resistant tuberculosis (MDR-TB)",
+      "aliases": [
+        "다제내성 폐결핵",
+        "MDR-TB",
+        "광범위 약제내성 결핵",
+        "XDR-TB",
+        "Multidrug-resistant tuberculosis",
+        "MDR-TB",
+        "Extensively drug-resistant tuberculosis",
+        "XDR-TB"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "disease-fabry",
+      "type": "disease",
+      "canonical_ko": "파브리병",
+      "canonical_en": "Fabry disease",
+      "aliases": [
+        "파브리병",
+        "α-갈락토시다아제 A 결핍",
+        "순응변이 파브리병",
+        "Fabry disease",
+        "Alpha-galactosidase A deficiency",
+        "GLA deficiency"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "disease-gaucher",
+      "type": "disease",
+      "canonical_ko": "고셔병",
+      "canonical_en": "Gaucher disease",
+      "aliases": [
+        "고셔병",
+        "1형 고셔병",
+        "GD1",
+        "Gaucher disease",
+        "Type 1 Gaucher disease",
+        "GD1"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "disease-hemophilia-a",
+      "type": "disease",
+      "canonical_ko": "A형 혈우병",
+      "canonical_en": "Hemophilia A",
+      "aliases": [
+        "A형 혈우병",
+        "혈우병 A",
+        "혈액응고 제8인자 결핍",
+        "Hemophilia A",
+        "Factor VIII deficiency",
+        "Congenital factor VIII deficiency"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "disease-hemophilia-b",
+      "type": "disease",
+      "canonical_ko": "B형 혈우병",
+      "canonical_en": "Hemophilia B",
+      "aliases": [
+        "B형 혈우병",
+        "혈우병 B",
+        "혈액응고 제9인자 결핍",
+        "Hemophilia B",
+        "Factor IX deficiency",
+        "Congenital factor IX deficiency"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "disease-ttr-amyloidosis",
+      "type": "disease",
+      "canonical_ko": "트랜스티레틴 아밀로이드증",
+      "canonical_en": "Transthyretin amyloidosis (ATTR)",
+      "aliases": [
+        "트랜스티레틴 아밀로이드증",
+        "ATTR",
+        "ATTR-CM",
+        "ATTR-PN",
+        "트랜스티레틴 아밀로이드 심근병증",
+        "TTR 가족성 아밀로이드 다발신경병증",
+        "TTR-FAP",
+        "Transthyretin amyloidosis",
+        "ATTR",
+        "ATTR-CM",
+        "Transthyretin amyloid cardiomyopathy",
+        "Transthyretin familial amyloid polyneuropathy",
+        "TTR-FAP"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "disease-pah",
+      "type": "disease",
+      "canonical_ko": "폐동맥고혈압",
+      "canonical_en": "Pulmonary arterial hypertension (PAH)",
+      "aliases": [
+        "폐동맥고혈압",
+        "PAH",
+        "만성 혈전색전성 폐고혈압",
+        "CTEPH",
+        "Pulmonary arterial hypertension",
+        "PAH",
+        "Chronic thromboembolic pulmonary hypertension",
+        "CTEPH"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "disease-infertility",
+      "type": "disease",
+      "canonical_ko": "불임",
+      "canonical_en": "Infertility / Controlled ovarian stimulation",
+      "aliases": [
+        "불임",
+        "난임",
+        "여성 불임",
+        "보조생식술",
+        "과배란 유도",
+        "난소 자극",
+        "배란유도",
+        "체외수정",
+        "IVF",
+        "Infertility",
+        "Female infertility",
+        "Controlled ovarian stimulation",
+        "Assisted reproductive technology",
+        "ART",
+        "IVF",
+        "Ovarian stimulation"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "class-pd1-pdl1-inhibitor",
+      "type": "drug_class",
+      "canonical_ko": "PD-1/PD-L1 면역항암제",
+      "canonical_en": "PD-1 / PD-L1 inhibitor (checkpoint inhibitor)",
+      "aliases": [
+        "PD-1 억제제",
+        "PD-L1 억제제",
+        "면역관문억제제",
+        "면역항암제",
+        "항 PD-1",
+        "항 PD-L1",
+        "pembrolizumab",
+        "nivolumab",
+        "atezolizumab",
+        "durvalumab",
+        "avelumab",
+        "dostarlimab",
+        "tislelizumab",
+        "키트루다",
+        "옵디보",
+        "티쎈트릭",
+        "임핀지",
+        "바벤시오",
+        "젬퍼리",
+        "Keytruda",
+        "Opdivo",
+        "Tecentriq",
+        "Imfinzi",
+        "Bavencio",
+        "Jemperli",
+        "PD-1 inhibitor",
+        "PD-L1 inhibitor",
+        "Checkpoint inhibitor",
+        "Cancer immunotherapy",
+        "IO",
+        "Immuno-oncology"
+      ],
+      "related_concept_ids": [
+        "target-pd1-pdl1",
+        "disease-nsclc",
+        "disease-melanoma",
+        "disease-bladder-cancer",
+        "disease-gastric-cancer",
+        "disease-esophageal-cancer",
+        "disease-endometrial-cancer",
+        "biomarker-pd-l1",
+        "biomarker-dmmr-msih"
+      ]
+    },
+    {
+      "concept_id": "target-pd1-pdl1",
+      "type": "target",
+      "canonical_ko": "PD-1/PD-L1",
+      "canonical_en": "Programmed death-1 / Programmed death-ligand 1",
+      "aliases": [
+        "PD-1",
+        "PD-L1",
+        "Programmed death-1",
+        "Programmed death ligand 1",
+        "CD274",
+        "PDCD1"
+      ],
+      "related_concept_ids": [
+        "class-pd1-pdl1-inhibitor",
+        "biomarker-pd-l1"
+      ]
+    },
+    {
+      "concept_id": "class-ctla4-inhibitor",
+      "type": "drug_class",
+      "canonical_ko": "CTLA-4 억제제",
+      "canonical_en": "CTLA-4 inhibitor",
+      "aliases": [
+        "CTLA-4 억제제",
+        "항 CTLA-4",
+        "ipilimumab",
+        "tremelimumab",
+        "여보이",
+        "이뮤도",
+        "Yervoy",
+        "Imjudo",
+        "CTLA-4 inhibitor",
+        "Anti-CTLA-4"
+      ],
+      "related_concept_ids": [
+        "disease-melanoma",
+        "disease-renal-cell-carcinoma",
+        "disease-hepatocellular-carcinoma"
+      ]
+    },
+    {
+      "concept_id": "class-egfr-tki",
+      "type": "drug_class",
+      "canonical_ko": "EGFR 티로신키나아제 억제제",
+      "canonical_en": "EGFR tyrosine kinase inhibitor (EGFR-TKI)",
+      "aliases": [
+        "EGFR TKI",
+        "EGFR 억제제",
+        "EGFR 저해제",
+        "EGFR 티로신키나아제 억제제",
+        "erlotinib",
+        "gefitinib",
+        "afatinib",
+        "osimertinib",
+        "dacomitinib",
+        "lazertinib",
+        "olmutinib",
+        "타그리소",
+        "렉라자",
+        "비짐프로",
+        "지오트립",
+        "올리타",
+        "Tagrisso",
+        "Lazcluze",
+        "Vizimpro",
+        "Gilotrif",
+        "1세대 EGFR TKI",
+        "2세대 EGFR TKI",
+        "3세대 EGFR TKI",
+        "EGFR tyrosine kinase inhibitor",
+        "EGFR inhibitor"
+      ],
+      "related_concept_ids": [
+        "biomarker-egfr",
+        "disease-nsclc"
+      ]
+    },
+    {
+      "concept_id": "class-alk-inhibitor",
+      "type": "drug_class",
+      "canonical_ko": "ALK 억제제",
+      "canonical_en": "ALK inhibitor",
+      "aliases": [
+        "ALK 억제제",
+        "ALK 저해제",
+        "역형성 림프종 인산화효소 억제제",
+        "crizotinib",
+        "ceritinib",
+        "alectinib",
+        "brigatinib",
+        "lorlatinib",
+        "잴코리",
+        "자이카디아",
+        "알레센자",
+        "알룬브릭",
+        "로비큐아",
+        "Xalkori",
+        "Zykadia",
+        "Alecensa",
+        "Alunbrig",
+        "Lorbrena",
+        "ALK inhibitor",
+        "ALK-positive NSCLC treatment"
+      ],
+      "related_concept_ids": [
+        "biomarker-alk",
+        "disease-nsclc"
+      ]
+    },
+    {
+      "concept_id": "class-ret-inhibitor",
+      "type": "drug_class",
+      "canonical_ko": "RET 억제제",
+      "canonical_en": "RET inhibitor",
+      "aliases": [
+        "RET 억제제",
+        "RET 저해제",
+        "RET 선택적 억제제",
+        "selpercatinib",
+        "pralsetinib",
+        "레테브모",
+        "Retevmo",
+        "Gavreto",
+        "RET inhibitor",
+        "Selective RET inhibitor"
+      ],
+      "related_concept_ids": [
+        "biomarker-ret-fusion",
+        "disease-nsclc",
+        "disease-thyroid-cancer"
+      ]
+    },
+    {
+      "concept_id": "class-trk-inhibitor",
+      "type": "drug_class",
+      "canonical_ko": "TRK 억제제",
+      "canonical_en": "TRK inhibitor (NTRK inhibitor)",
+      "aliases": [
+        "TRK 억제제",
+        "NTRK 억제제",
+        "신경영양 티로신 수용체 억제제",
+        "larotrectinib",
+        "entrectinib",
+        "비트락비",
+        "로즐리트렉",
+        "Vitrakvi",
+        "Rozlytrek",
+        "TRK inhibitor",
+        "NTRK inhibitor",
+        "Pan-TRK inhibitor"
+      ],
+      "related_concept_ids": [
+        "biomarker-ntrk-fusion",
+        "disease-ntrk-solid-tumor"
+      ]
+    },
+    {
+      "concept_id": "class-met-inhibitor",
+      "type": "drug_class",
+      "canonical_ko": "MET 억제제",
+      "canonical_en": "MET inhibitor",
+      "aliases": [
+        "MET 억제제",
+        "MET 저해제",
+        "MET 엑손 14 결손 치료제",
+        "capmatinib",
+        "tepotinib",
+        "타브렉타",
+        "텝메코",
+        "Tabrecta",
+        "Tepmetko",
+        "MET inhibitor",
+        "METex14 inhibitor"
+      ],
+      "related_concept_ids": [
+        "biomarker-met-ex14",
+        "disease-nsclc"
+      ]
+    },
+    {
+      "concept_id": "class-cdk46-inhibitor",
+      "type": "drug_class",
+      "canonical_ko": "CDK4/6 억제제",
+      "canonical_en": "CDK4/6 inhibitor",
+      "aliases": [
+        "CDK4/6 억제제",
+        "CDK4/6 저해제",
+        "사이클린의존성인산화효소 4/6 억제제",
+        "palbociclib",
+        "ribociclib",
+        "abemaciclib",
+        "버제니오",
+        "이브란스",
+        "키스칼리",
+        "Verzenio",
+        "Ibrance",
+        "Kisqali",
+        "CDK4/6 inhibitor",
+        "Cyclin-dependent kinase 4/6 inhibitor"
+      ],
+      "related_concept_ids": [
+        "disease-breast-cancer",
+        "biomarker-hr",
+        "biomarker-her2"
+      ]
+    },
+    {
+      "concept_id": "class-parp-inhibitor",
+      "type": "drug_class",
+      "canonical_ko": "PARP 억제제",
+      "canonical_en": "PARP inhibitor",
+      "aliases": [
+        "PARP 억제제",
+        "PARP 저해제",
+        "폴리 ADP 리보오스 중합효소 억제제",
+        "olaparib",
+        "niraparib",
+        "rucaparib",
+        "린파자",
+        "제줄라",
+        "Lynparza",
+        "Zejula",
+        "PARP inhibitor",
+        "PARPi"
+      ],
+      "related_concept_ids": [
+        "disease-ovarian-cancer",
+        "disease-breast-cancer",
+        "biomarker-brca"
+      ]
+    },
+    {
+      "concept_id": "class-her2-targeted",
+      "type": "drug_class",
+      "canonical_ko": "HER2 표적 치료제",
+      "canonical_en": "HER2-targeted therapy",
+      "aliases": [
+        "HER2 표적 치료제",
+        "항 HER2",
+        "HER2 억제제",
+        "trastuzumab",
+        "trastuzumab deruxtecan",
+        "pertuzumab",
+        "트라스투주맙",
+        "엔허투",
+        "퍼제타",
+        "Herceptin",
+        "Enhertu",
+        "Perjeta",
+        "HER2-targeted",
+        "anti-HER2",
+        "HER2 inhibitor",
+        "ADC HER2"
+      ],
+      "related_concept_ids": [
+        "biomarker-her2",
+        "disease-breast-cancer",
+        "disease-gastric-cancer"
+      ]
+    },
+    {
+      "concept_id": "class-vegf-inhibitor",
+      "type": "drug_class",
+      "canonical_ko": "VEGF/VEGFR 억제제",
+      "canonical_en": "VEGF/VEGFR inhibitor (anti-angiogenic)",
+      "aliases": [
+        "VEGF 억제제",
+        "VEGF 차단제",
+        "항혈관신생 치료제",
+        "항 VEGF",
+        "bevacizumab",
+        "ramucirumab",
+        "faricimab",
+        "brolucizumab",
+        "ranibizumab",
+        "aflibercept",
+        "아바스틴",
+        "사이람자",
+        "바비스모",
+        "비오뷰",
+        "Avastin",
+        "Cyramza",
+        "Vabysmo",
+        "Beovu",
+        "VEGF inhibitor",
+        "Anti-VEGF",
+        "Anti-angiogenic"
+      ],
+      "related_concept_ids": [
+        "disease-colorectal-cancer",
+        "disease-ovarian-cancer",
+        "disease-amd"
+      ]
+    },
+    {
+      "concept_id": "class-vegfr-tki",
+      "type": "drug_class",
+      "canonical_ko": "VEGFR TKI",
+      "canonical_en": "VEGFR tyrosine kinase inhibitor",
+      "aliases": [
+        "VEGFR TKI",
+        "VEGFR 억제제",
+        "다표적 TKI",
+        "axitinib",
+        "cabozantinib",
+        "lenvatinib",
+        "sunitinib",
+        "sorafenib",
+        "인라이타",
+        "카보메틱스",
+        "렌비마",
+        "Inlyta",
+        "Cabometyx",
+        "Lenvima",
+        "VEGFR inhibitor",
+        "Multi-target TKI"
+      ],
+      "related_concept_ids": [
+        "disease-renal-cell-carcinoma",
+        "disease-thyroid-cancer"
+      ]
+    },
+    {
+      "concept_id": "class-vegfr2-inhibitor",
+      "type": "drug_class",
+      "canonical_ko": "VEGFR-2 항체",
+      "canonical_en": "VEGFR-2 antibody (anti-VEGFR2)",
+      "aliases": [
+        "VEGFR-2 항체",
+        "VEGFR2 억제제",
+        "ramucirumab",
+        "사이람자",
+        "Cyramza",
+        "VEGFR-2 antibody",
+        "anti-VEGFR2"
+      ],
+      "related_concept_ids": [
+        "disease-gastric-cancer",
+        "class-vegf-inhibitor"
+      ]
+    },
+    {
+      "concept_id": "class-egfr-antibody",
+      "type": "drug_class",
+      "canonical_ko": "EGFR 항체",
+      "canonical_en": "EGFR monoclonal antibody",
+      "aliases": [
+        "EGFR 항체",
+        "항 EGFR 단클론항체",
+        "cetuximab",
+        "panitumumab",
+        "얼비툭스",
+        "Erbitux",
+        "EGFR antibody",
+        "Anti-EGFR mAb"
+      ],
+      "related_concept_ids": [
+        "biomarker-egfr",
+        "biomarker-kras-wt",
+        "disease-colorectal-cancer"
+      ]
+    },
+    {
+      "concept_id": "class-btk-inhibitor",
+      "type": "drug_class",
+      "canonical_ko": "BTK 억제제",
+      "canonical_en": "BTK inhibitor (Bruton's tyrosine kinase inhibitor)",
+      "aliases": [
+        "BTK 억제제",
+        "BTK 저해제",
+        "브루톤 티로신키나아제 억제제",
+        "ibrutinib",
+        "zanubrutinib",
+        "acalabrutinib",
+        "임브루비카",
+        "브루킨사",
+        "Imbruvica",
+        "Brukinsa",
+        "BTK inhibitor"
+      ],
+      "related_concept_ids": [
+        "disease-cll"
+      ]
+    },
+    {
+      "concept_id": "class-bcl2-inhibitor",
+      "type": "drug_class",
+      "canonical_ko": "BCL-2 억제제",
+      "canonical_en": "BCL-2 inhibitor",
+      "aliases": [
+        "BCL-2 억제제",
+        "BCL-2 저해제",
+        "venetoclax",
+        "벤클렉스타",
+        "Venclexta",
+        "BCL-2 inhibitor"
+      ],
+      "related_concept_ids": [
+        "disease-cll",
+        "disease-aml"
+      ]
+    },
+    {
+      "concept_id": "class-bcr-abl-tki",
+      "type": "drug_class",
+      "canonical_ko": "BCR-ABL TKI",
+      "canonical_en": "BCR-ABL tyrosine kinase inhibitor",
+      "aliases": [
+        "BCR-ABL TKI",
+        "BCR-ABL 억제제",
+        "이마티닙",
+        "닐로티닙",
+        "다사티닙",
+        "bosutinib",
+        "asciminib",
+        "ponatinib",
+        "보술리프",
+        "셈블릭스",
+        "Bosulif",
+        "Scemblix",
+        "BCR-ABL inhibitor",
+        "CML TKI",
+        "Tyrosine kinase inhibitor for CML"
+      ],
+      "related_concept_ids": [
+        "disease-cml",
+        "biomarker-ph-chromosome"
+      ]
+    },
+    {
+      "concept_id": "class-anti-cd20",
+      "type": "drug_class",
+      "canonical_ko": "항 CD20 항체",
+      "canonical_en": "Anti-CD20 monoclonal antibody",
+      "aliases": [
+        "항 CD20",
+        "CD20 항체",
+        "항 CD20 단클론항체",
+        "rituximab",
+        "obinutuzumab",
+        "ofatumumab",
+        "가싸이바",
+        "리툭산",
+        "Gazyva",
+        "Rituxan",
+        "MabThera",
+        "Anti-CD20",
+        "CD20 monoclonal antibody"
+      ],
+      "related_concept_ids": [
+        "biomarker-cd20",
+        "disease-cll",
+        "disease-dlbcl",
+        "disease-follicular-lymphoma"
+      ]
+    },
+    {
+      "concept_id": "class-anti-cd38",
+      "type": "drug_class",
+      "canonical_ko": "항 CD38 항체",
+      "canonical_en": "Anti-CD38 monoclonal antibody",
+      "aliases": [
+        "항 CD38",
+        "CD38 항체",
+        "daratumumab",
+        "isatuximab",
+        "다잘렉스",
+        "사클리사",
+        "Darzalex",
+        "Sarclisa",
+        "Anti-CD38",
+        "CD38 monoclonal antibody"
+      ],
+      "related_concept_ids": [
+        "disease-multiple-myeloma"
+      ]
+    },
+    {
+      "concept_id": "class-car-t",
+      "type": "drug_class",
+      "canonical_ko": "CAR-T 세포 치료제",
+      "canonical_en": "CAR-T cell therapy",
+      "aliases": [
+        "CAR-T",
+        "키메릭 항원 수용체 T세포",
+        "세포 치료제",
+        "유전자 세포 치료제",
+        "CAR-T cell therapy",
+        "Chimeric antigen receptor T-cell",
+        "CAR-T therapy"
+      ],
+      "related_concept_ids": [
+        "disease-dlbcl",
+        "disease-all",
+        "disease-multiple-myeloma"
+      ]
+    },
+    {
+      "concept_id": "class-proteasome-inhibitor",
+      "type": "drug_class",
+      "canonical_ko": "프로테아좀 억제제",
+      "canonical_en": "Proteasome inhibitor",
+      "aliases": [
+        "프로테아좀 억제제",
+        "단백질분해효소 억제제",
+        "bortezomib",
+        "carfilzomib",
+        "ixazomib",
+        "닌라로",
+        "Ninlaro",
+        "Proteasome inhibitor",
+        "PI"
+      ],
+      "related_concept_ids": [
+        "disease-multiple-myeloma"
+      ]
+    },
+    {
+      "concept_id": "class-imid",
+      "type": "drug_class",
+      "canonical_ko": "이미드계 약물",
+      "canonical_en": "Immunomodulatory drug (IMiD)",
+      "aliases": [
+        "면역조절제",
+        "이미드",
+        "탈리도마이드 유사체",
+        "thalidomide",
+        "lenalidomide",
+        "pomalidomide",
+        "레블리미드",
+        "Revlimid",
+        "IMiD",
+        "Immunomodulatory drug",
+        "Thalidomide analogue"
+      ],
+      "related_concept_ids": [
+        "disease-multiple-myeloma"
+      ]
+    },
+    {
+      "concept_id": "class-braf-mek-inhibitor",
+      "type": "drug_class",
+      "canonical_ko": "BRAF/MEK 억제제",
+      "canonical_en": "BRAF/MEK inhibitor",
+      "aliases": [
+        "BRAF 억제제",
+        "MEK 억제제",
+        "BRAF V600 억제제",
+        "vemurafenib",
+        "dabrafenib",
+        "trametinib",
+        "encorafenib",
+        "binimetinib",
+        "매큐셀",
+        "비라토비",
+        "Mekinist",
+        "Braftovi",
+        "BRAF inhibitor",
+        "MEK inhibitor",
+        "BRAF+MEK combination"
+      ],
+      "related_concept_ids": [
+        "biomarker-braf-v600",
+        "disease-melanoma",
+        "disease-colorectal-cancer"
+      ]
+    },
+    {
+      "concept_id": "class-il5-inhibitor",
+      "type": "drug_class",
+      "canonical_ko": "IL-5 억제제",
+      "canonical_en": "IL-5 / IL-5R inhibitor",
+      "aliases": [
+        "IL-5 억제제",
+        "인터루킨-5 억제제",
+        "항 IL-5",
+        "mepolizumab",
+        "benralizumab",
+        "reslizumab",
+        "누칼라",
+        "파센라",
+        "Nucala",
+        "Fasenra",
+        "IL-5 inhibitor",
+        "Anti-IL-5",
+        "IL-5R inhibitor"
+      ],
+      "related_concept_ids": [
+        "disease-asthma",
+        "biomarker-eosinophil"
+      ]
+    },
+    {
+      "concept_id": "class-il4-il13-inhibitor",
+      "type": "drug_class",
+      "canonical_ko": "IL-4/IL-13 억제제",
+      "canonical_en": "IL-4 / IL-13 inhibitor",
+      "aliases": [
+        "IL-4/IL-13 억제제",
+        "인터루킨-4/13 억제제",
+        "항 IL-4/13",
+        "dupilumab",
+        "dupixent",
+        "듀피젠트",
+        "Dupixent",
+        "IL-4 inhibitor",
+        "IL-13 inhibitor",
+        "IL-4/13 blockade",
+        "Th2 억제제"
+      ],
+      "related_concept_ids": [
+        "disease-atopic-dermatitis",
+        "disease-asthma"
+      ]
+    },
+    {
+      "concept_id": "class-il17-inhibitor",
+      "type": "drug_class",
+      "canonical_ko": "IL-17 억제제",
+      "canonical_en": "IL-17 inhibitor",
+      "aliases": [
+        "IL-17 억제제",
+        "인터루킨-17 억제제",
+        "항 IL-17",
+        "secukinumab",
+        "ixekizumab",
+        "bimekizumab",
+        "코센틱스",
+        "탈츠",
+        "빔젤릭스",
+        "Cosentyx",
+        "Taltz",
+        "Bimzelx",
+        "IL-17 inhibitor",
+        "Anti-IL-17"
+      ],
+      "related_concept_ids": [
+        "disease-psoriasis"
+      ]
+    },
+    {
+      "concept_id": "class-il23-inhibitor",
+      "type": "drug_class",
+      "canonical_ko": "IL-23 억제제",
+      "canonical_en": "IL-23 inhibitor",
+      "aliases": [
+        "IL-23 억제제",
+        "인터루킨-23 억제제",
+        "항 IL-23",
+        "risankizumab",
+        "guselkumab",
+        "스카이리치",
+        "Skyrizi",
+        "IL-23 inhibitor",
+        "Anti-IL-23"
+      ],
+      "related_concept_ids": [
+        "disease-psoriasis"
+      ]
+    },
+    {
+      "concept_id": "class-il12-23-inhibitor",
+      "type": "drug_class",
+      "canonical_ko": "IL-12/23 억제제",
+      "canonical_en": "IL-12/23 inhibitor",
+      "aliases": [
+        "IL-12/23 억제제",
+        "우스테키누맙",
+        "ustekinumab",
+        "스텔라라",
+        "Stelara",
+        "IL-12/23 inhibitor",
+        "Anti-IL-12/23"
+      ],
+      "related_concept_ids": [
+        "disease-psoriasis"
+      ]
+    },
+    {
+      "concept_id": "class-il6-inhibitor",
+      "type": "drug_class",
+      "canonical_ko": "IL-6 억제제",
+      "canonical_en": "IL-6 / IL-6R inhibitor",
+      "aliases": [
+        "IL-6 억제제",
+        "인터루킨-6 억제제",
+        "항 IL-6",
+        "tocilizumab",
+        "sarilumab",
+        "악템라",
+        "케브자라",
+        "Actemra",
+        "Kevzara",
+        "IL-6 inhibitor",
+        "Anti-IL-6R"
+      ],
+      "related_concept_ids": [
+        "disease-rheumatoid-arthritis"
+      ]
+    },
+    {
+      "concept_id": "class-tnf-inhibitor",
+      "type": "drug_class",
+      "canonical_ko": "TNF 억제제",
+      "canonical_en": "TNF inhibitor (anti-TNF)",
+      "aliases": [
+        "TNF 억제제",
+        "TNF 차단제",
+        "항 TNF",
+        "adalimumab",
+        "etanercept",
+        "infliximab",
+        "휴미라",
+        "엔브렐",
+        "레미케이드",
+        "Humira",
+        "Enbrel",
+        "Remicade",
+        "TNF inhibitor",
+        "Anti-TNF",
+        "Anti-TNF therapy"
+      ],
+      "related_concept_ids": [
+        "disease-rheumatoid-arthritis",
+        "disease-psoriasis"
+      ]
+    },
+    {
+      "concept_id": "class-jak-inhibitor",
+      "type": "drug_class",
+      "canonical_ko": "JAK 억제제",
+      "canonical_en": "JAK inhibitor",
+      "aliases": [
+        "JAK 억제제",
+        "JAK 저해제",
+        "야누스키나아제 억제제",
+        "tofacitinib",
+        "baricitinib",
+        "upadacitinib",
+        "filgotinib",
+        "ruxolitinib",
+        "deucravacitinib",
+        "린버크",
+        "소틱투",
+        "Rinvoq",
+        "Sotyktu",
+        "JAK inhibitor",
+        "Janus kinase inhibitor"
+      ],
+      "related_concept_ids": [
+        "disease-rheumatoid-arthritis",
+        "disease-atopic-dermatitis",
+        "disease-psoriasis"
+      ]
+    },
+    {
+      "concept_id": "class-sglt2-inhibitor",
+      "type": "drug_class",
+      "canonical_ko": "SGLT2 억제제",
+      "canonical_en": "SGLT2 inhibitor",
+      "aliases": [
+        "SGLT2 억제제",
+        "나트륨-포도당 공동수송체 2 억제제",
+        "empagliflozin",
+        "dapagliflozin",
+        "canagliflozin",
+        "ertugliflozin",
+        "슈글렛",
+        "포시가",
+        "자디앙",
+        "스테글라트로",
+        "Suglat",
+        "Forxiga",
+        "Jardiance",
+        "Steglatro",
+        "SGLT2 inhibitor",
+        "Gliflozin"
+      ],
+      "related_concept_ids": [
+        "disease-t2dm",
+        "disease-heart-failure"
+      ]
+    },
+    {
+      "concept_id": "class-dpp4-inhibitor",
+      "type": "drug_class",
+      "canonical_ko": "DPP-4 억제제",
+      "canonical_en": "DPP-4 inhibitor (gliptin)",
+      "aliases": [
+        "DPP-4 억제제",
+        "DPP4 억제제",
+        "글립틴",
+        "디펩티딜펩티다아제 4 억제제",
+        "sitagliptin",
+        "vildagliptin",
+        "saxagliptin",
+        "linagliptin",
+        "alogliptin",
+        "gemigliptin",
+        "teneligliptin",
+        "가드렛",
+        "네시나",
+        "Januvia",
+        "Galvus",
+        "Onglyza",
+        "Tradjenta",
+        "DPP-4 inhibitor",
+        "DPP4 inhibitor",
+        "Gliptin"
+      ],
+      "related_concept_ids": [
+        "disease-t2dm"
+      ]
+    },
+    {
+      "concept_id": "class-glp1-agonist",
+      "type": "drug_class",
+      "canonical_ko": "GLP-1 수용체 작용제",
+      "canonical_en": "GLP-1 receptor agonist (GLP-1 RA)",
+      "aliases": [
+        "GLP-1 수용체 작용제",
+        "GLP-1 RA",
+        "GLP-1 작용제",
+        "liraglutide",
+        "semaglutide",
+        "dulaglutide",
+        "exenatide",
+        "빅토자",
+        "오젬픽",
+        "트루리시티",
+        "Victoza",
+        "Ozempic",
+        "Trulicity",
+        "GLP-1 receptor agonist",
+        "GLP-1 agonist",
+        "Incretin mimetic"
+      ],
+      "related_concept_ids": [
+        "disease-t2dm"
+      ]
+    },
+    {
+      "concept_id": "class-ard-inhibitor",
+      "type": "drug_class",
+      "canonical_ko": "안드로겐 수용체 억제제",
+      "canonical_en": "Androgen receptor inhibitor (ARi)",
+      "aliases": [
+        "안드로겐 수용체 억제제",
+        "차세대 호르몬 요법",
+        "안드로겐 차단요법",
+        "enzalutamide",
+        "apalutamide",
+        "darolutamide",
+        "엑스탄디",
+        "얼리다",
+        "Xtandi",
+        "Erleada",
+        "Androgen receptor inhibitor",
+        "ARi",
+        "Next-generation hormonal therapy"
+      ],
+      "related_concept_ids": [
+        "disease-prostate-cancer"
+      ]
+    },
+    {
+      "concept_id": "class-cyp17-inhibitor",
+      "type": "drug_class",
+      "canonical_ko": "CYP17 억제제",
+      "canonical_en": "CYP17 inhibitor (androgen synthesis inhibitor)",
+      "aliases": [
+        "CYP17 억제제",
+        "안드로겐 합성 억제제",
+        "abiraterone",
+        "자이티가",
+        "Zytiga",
+        "CYP17 inhibitor",
+        "Androgen synthesis inhibitor"
+      ],
+      "related_concept_ids": [
+        "disease-prostate-cancer"
+      ]
+    },
+    {
+      "concept_id": "class-g-csf",
+      "type": "drug_class",
+      "canonical_ko": "G-CSF (과립구 집락 자극 인자)",
+      "canonical_en": "Granulocyte colony-stimulating factor (G-CSF)",
+      "aliases": [
+        "G-CSF",
+        "과립구 집락 자극 인자",
+        "호중구 감소증 예방",
+        "pegfilgrastim",
+        "filgrastim",
+        "lipegfilgrastim",
+        "뉴라스타",
+        "뉴라펙",
+        "롤론티스",
+        "롱퀵스",
+        "Neulasta",
+        "Neupogen",
+        "G-CSF",
+        "Granulocyte colony-stimulating factor",
+        "발열성 호중구감소증 예방",
+        "CINV 예방"
+      ],
+      "related_concept_ids": [
+        "disease-nsclc"
+      ]
+    },
+    {
+      "concept_id": "class-inotuzumab",
+      "type": "drug_class",
+      "canonical_ko": "이노투주맙 오조가마이신",
+      "canonical_en": "Inotuzumab ozogamicin (anti-CD22 ADC)",
+      "aliases": [
+        "이노투주맙 오조가마이신",
+        "inotuzumab ozogamicin",
+        "베스폰사",
+        "Besponsa",
+        "Anti-CD22 ADC",
+        "CD22 antibody-drug conjugate"
+      ],
+      "related_concept_ids": [
+        "disease-all"
+      ]
+    },
+    {
+      "concept_id": "class-blinatumomab",
+      "type": "drug_class",
+      "canonical_ko": "블리나투모맙",
+      "canonical_en": "Blinatumomab (BiTE antibody)",
+      "aliases": [
+        "블리나투모맙",
+        "blinatumomab",
+        "BlincytoT",
+        "블린사이토",
+        "Blincyto",
+        "BiTE",
+        "CD19xCD3 bispecific T-cell engager"
+      ],
+      "related_concept_ids": [
+        "disease-all"
+      ]
+    },
+    {
+      "concept_id": "biomarker-egfr",
+      "type": "biomarker",
+      "canonical_ko": "EGFR 변이",
+      "canonical_en": "EGFR mutation (exon 19 del / exon 21 L858R / T790M)",
+      "aliases": [
+        "EGFR 변이",
+        "EGFR 양성",
+        "EGFR exon 19 결손",
+        "EGFR exon 21 L858R",
+        "T790M 변이",
+        "EGFR T790M",
+        "EGFR mutation",
+        "EGFR+",
+        "Exon 19 deletion",
+        "Exon 21 L858R",
+        "T790M",
+        "EGFR exon 19 del",
+        "EGFR exon 21"
+      ],
+      "related_concept_ids": [
+        "class-egfr-tki",
+        "disease-nsclc"
+      ]
+    },
+    {
+      "concept_id": "biomarker-alk",
+      "type": "biomarker",
+      "canonical_ko": "ALK 재배열",
+      "canonical_en": "ALK rearrangement / fusion",
+      "aliases": [
+        "ALK 양성",
+        "ALK 재배열",
+        "ALK 융합",
+        "ALK 변이",
+        "역형성 림프종 인산화효소 양성",
+        "ALK+",
+        "ALK positive",
+        "ALK rearrangement",
+        "ALK fusion"
+      ],
+      "related_concept_ids": [
+        "class-alk-inhibitor",
+        "disease-nsclc"
+      ]
+    },
+    {
+      "concept_id": "biomarker-pd-l1",
+      "type": "biomarker",
+      "canonical_ko": "PD-L1 발현",
+      "canonical_en": "PD-L1 expression (TPS / CPS)",
+      "aliases": [
+        "PD-L1 발현",
+        "PD-L1 양성",
+        "PD-L1 TPS",
+        "PD-L1 CPS",
+        "PD-L1 ≥1%",
+        "PD-L1 ≥50%",
+        "PD-L1 고발현",
+        "PD-L1 expression",
+        "PD-L1+",
+        "PD-L1 TPS",
+        "PD-L1 CPS",
+        "Tumor proportion score",
+        "Combined positive score"
+      ],
+      "related_concept_ids": [
+        "class-pd1-pdl1-inhibitor",
+        "disease-nsclc"
+      ]
+    },
+    {
+      "concept_id": "biomarker-brca",
+      "type": "biomarker",
+      "canonical_ko": "BRCA 변이",
+      "canonical_en": "BRCA1/2 mutation",
+      "aliases": [
+        "BRCA 변이",
+        "BRCA1 변이",
+        "BRCA2 변이",
+        "gBRCA",
+        "somatic BRCA",
+        "BRCA 양성",
+        "germline BRCA",
+        "BRCA1/2 mutation",
+        "BRCA+",
+        "gBRCA",
+        "tBRCA",
+        "BRCA1 mutation",
+        "BRCA2 mutation"
+      ],
+      "related_concept_ids": [
+        "class-parp-inhibitor",
+        "disease-ovarian-cancer",
+        "disease-breast-cancer"
+      ]
+    },
+    {
+      "concept_id": "biomarker-her2",
+      "type": "biomarker",
+      "canonical_ko": "HER2 과발현/증폭",
+      "canonical_en": "HER2 overexpression / amplification",
+      "aliases": [
+        "HER2 양성",
+        "HER2 과발현",
+        "HER2 증폭",
+        "HER2+",
+        "HER2 음성",
+        "HER2-",
+        "HER2 positive",
+        "HER2 negative",
+        "HER2-positive",
+        "HER2 overexpression",
+        "HER2 amplification",
+        "IHC 3+",
+        "ISH amplified"
+      ],
+      "related_concept_ids": [
+        "class-her2-targeted",
+        "disease-breast-cancer",
+        "disease-gastric-cancer"
+      ]
+    },
+    {
+      "concept_id": "biomarker-hr",
+      "type": "biomarker",
+      "canonical_ko": "호르몬 수용체 양성",
+      "canonical_en": "Hormone receptor positive (HR+)",
+      "aliases": [
+        "호르몬 수용체 양성",
+        "HR+",
+        "HR 양성",
+        "ER 양성",
+        "PR 양성",
+        "에스트로겐 수용체 양성",
+        "프로게스테론 수용체 양성",
+        "Hormone receptor positive",
+        "HR+",
+        "ER+",
+        "PR+",
+        "Estrogen receptor positive",
+        "Progesterone receptor positive"
+      ],
+      "related_concept_ids": [
+        "class-cdk46-inhibitor",
+        "disease-breast-cancer"
+      ]
+    },
+    {
+      "concept_id": "biomarker-braf-v600",
+      "type": "biomarker",
+      "canonical_ko": "BRAF V600 변이",
+      "canonical_en": "BRAF V600 mutation",
+      "aliases": [
+        "BRAF V600 변이",
+        "BRAF V600E",
+        "BRAF V600K",
+        "BRAF 변이",
+        "BRAF V600E mutation",
+        "BRAF V600K mutation",
+        "BRAF V600",
+        "BRAF mutant"
+      ],
+      "related_concept_ids": [
+        "class-braf-mek-inhibitor",
+        "disease-melanoma",
+        "disease-colorectal-cancer"
+      ]
+    },
+    {
+      "concept_id": "biomarker-kras-wt",
+      "type": "biomarker",
+      "canonical_ko": "KRAS 야생형",
+      "canonical_en": "KRAS wild-type",
+      "aliases": [
+        "KRAS 야생형",
+        "KRAS wt",
+        "KRAS WT",
+        "KRAS wild-type",
+        "KRAS negative",
+        "RAS wild-type"
+      ],
+      "related_concept_ids": [
+        "class-egfr-antibody",
+        "disease-colorectal-cancer"
+      ]
+    },
+    {
+      "concept_id": "biomarker-ret-fusion",
+      "type": "biomarker",
+      "canonical_ko": "RET 융합/변이",
+      "canonical_en": "RET fusion / RET mutation",
+      "aliases": [
+        "RET 융합",
+        "RET 변이",
+        "RET 재배열",
+        "RET 양성",
+        "RET fusion",
+        "RET mutation",
+        "RET+",
+        "RET fusion-positive",
+        "RET-mutant"
+      ],
+      "related_concept_ids": [
+        "class-ret-inhibitor",
+        "disease-nsclc",
+        "disease-thyroid-cancer"
+      ]
+    },
+    {
+      "concept_id": "biomarker-met-ex14",
+      "type": "biomarker",
+      "canonical_ko": "MET 엑손 14 결손",
+      "canonical_en": "MET exon 14 skipping mutation",
+      "aliases": [
+        "MET 엑손 14 결손",
+        "MET ex14 결손",
+        "METex14",
+        "MET exon14 skipping",
+        "MET exon 14 skipping",
+        "METex14+",
+        "MET exon 14 mutation"
+      ],
+      "related_concept_ids": [
+        "class-met-inhibitor",
+        "disease-nsclc"
+      ]
+    },
+    {
+      "concept_id": "biomarker-ros1",
+      "type": "biomarker",
+      "canonical_ko": "ROS1 재배열",
+      "canonical_en": "ROS1 rearrangement / fusion",
+      "aliases": [
+        "ROS1 양성",
+        "ROS1 재배열",
+        "ROS1 융합",
+        "ROS1+",
+        "ROS1 positive",
+        "ROS1 rearrangement",
+        "ROS1 fusion"
+      ],
+      "related_concept_ids": [
+        "disease-nsclc"
+      ]
+    },
+    {
+      "concept_id": "biomarker-ntrk-fusion",
+      "type": "biomarker",
+      "canonical_ko": "NTRK 융합",
+      "canonical_en": "NTRK gene fusion",
+      "aliases": [
+        "NTRK 융합",
+        "NTRK 유전자 융합",
+        "TRK 융합",
+        "NTRK+",
+        "NTRK1 fusion",
+        "NTRK2 fusion",
+        "NTRK3 fusion",
+        "NTRK fusion",
+        "TRK fusion",
+        "NTRK fusion-positive"
+      ],
+      "related_concept_ids": [
+        "class-trk-inhibitor",
+        "disease-ntrk-solid-tumor",
+        "disease-nsclc"
+      ]
+    },
+    {
+      "concept_id": "biomarker-dmmr-msih",
+      "type": "biomarker",
+      "canonical_ko": "불일치 복구 결핍 / 고 미세위성 불안정성",
+      "canonical_en": "Mismatch repair deficient / High microsatellite instability (dMMR/MSI-H)",
+      "aliases": [
+        "dMMR",
+        "MSI-H",
+        "불일치 복구 결핍",
+        "고 미세위성 불안정성",
+        "Mismatch repair deficient",
+        "High microsatellite instability",
+        "dMMR/MSI-H",
+        "MSI-H positive"
+      ],
+      "related_concept_ids": [
+        "class-pd1-pdl1-inhibitor",
+        "disease-endometrial-cancer",
+        "disease-colorectal-cancer"
+      ]
+    },
+    {
+      "concept_id": "biomarker-fgfr3",
+      "type": "biomarker",
+      "canonical_ko": "FGFR3 변이/융합",
+      "canonical_en": "FGFR3 mutation / fusion",
+      "aliases": [
+        "FGFR3 변이",
+        "FGFR3 양성",
+        "FGFR3+",
+        "FGFR2 fusion",
+        "FGFR3 fusion",
+        "FGFR3 mutation",
+        "FGFR3 alteration"
+      ],
+      "related_concept_ids": [
+        "disease-bladder-cancer"
+      ]
+    },
+    {
+      "concept_id": "biomarker-cd20",
+      "type": "biomarker",
+      "canonical_ko": "CD20 양성",
+      "canonical_en": "CD20 positive",
+      "aliases": [
+        "CD20 양성",
+        "CD20+",
+        "CD20 positive",
+        "CD20 expression"
+      ],
+      "related_concept_ids": [
+        "class-anti-cd20",
+        "disease-cll",
+        "disease-dlbcl"
+      ]
+    },
+    {
+      "concept_id": "biomarker-cd33",
+      "type": "biomarker",
+      "canonical_ko": "CD33 양성",
+      "canonical_en": "CD33 positive",
+      "aliases": [
+        "CD33 양성",
+        "CD33+",
+        "CD33 positive"
+      ],
+      "related_concept_ids": [
+        "disease-aml"
+      ]
+    },
+    {
+      "concept_id": "biomarker-flt3",
+      "type": "biomarker",
+      "canonical_ko": "FLT3 변이",
+      "canonical_en": "FLT3 mutation",
+      "aliases": [
+        "FLT3+",
+        "FLT3 변이",
+        "FLT3-ITD",
+        "FLT3 mutation"
+      ],
+      "related_concept_ids": [
+        "disease-aml"
+      ]
+    },
+    {
+      "concept_id": "biomarker-cd30",
+      "type": "biomarker",
+      "canonical_ko": "CD30 양성",
+      "canonical_en": "CD30 positive",
+      "aliases": [
+        "CD30 양성",
+        "CD30+",
+        "CD30 positive"
+      ],
+      "related_concept_ids": [
+        "disease-hodgkin-lymphoma"
+      ]
+    },
+    {
+      "concept_id": "biomarker-ph-chromosome",
+      "type": "biomarker",
+      "canonical_ko": "필라델피아 염색체",
+      "canonical_en": "Philadelphia chromosome (Ph+) / BCR-ABL",
+      "aliases": [
+        "필라델피아 염색체",
+        "Ph 염색체",
+        "Ph+",
+        "BCR-ABL",
+        "Philadelphia chromosome",
+        "Ph chromosome",
+        "BCR-ABL fusion",
+        "t(9;22)"
+      ],
+      "related_concept_ids": [
+        "class-bcr-abl-tki",
+        "disease-cml",
+        "disease-all"
+      ]
+    },
+    {
+      "concept_id": "biomarker-jak2",
+      "type": "biomarker",
+      "canonical_ko": "JAK2 V617F 변이",
+      "canonical_en": "JAK2 V617F mutation",
+      "aliases": [
+        "JAK2 V617F",
+        "JAK2 변이",
+        "JAK2+",
+        "JAK2 V617F mutation",
+        "JAK2 mutation"
+      ],
+      "related_concept_ids": [
+        "disease-polycythemia-vera"
+      ]
+    },
+    {
+      "concept_id": "biomarker-eosinophil",
+      "type": "biomarker",
+      "canonical_ko": "혈중 호산구 수치",
+      "canonical_en": "Blood eosinophil count",
+      "aliases": [
+        "호산구 수치",
+        "혈중 호산구",
+        "호산구 150 cells/μL 이상",
+        "호산구 300 cells/μL 이상",
+        "호산구 400 cells/μL 이상",
+        "Blood eosinophil count",
+        "Eosinophil ≥150",
+        "Eosinophil ≥300"
+      ],
+      "related_concept_ids": [
+        "class-il5-inhibitor",
+        "disease-asthma"
+      ]
+    },
+    {
+      "concept_id": "biomarker-autoantibody",
+      "type": "biomarker",
+      "canonical_ko": "자가항체 양성",
+      "canonical_en": "Autoantibody positive (ANA / anti-dsDNA)",
+      "aliases": [
+        "자가항체 양성",
+        "ANA 양성",
+        "항 dsDNA 항체",
+        "Autoantibody positive",
+        "ANA+",
+        "Anti-dsDNA"
+      ],
+      "related_concept_ids": [
+        "disease-sle"
+      ]
+    },
+    {
+      "concept_id": "form-injection",
+      "type": "form",
+      "canonical_ko": "주사제",
+      "canonical_en": "Injection / Parenteral",
+      "aliases": [
+        "주사제",
+        "주사",
+        "정맥주사",
+        "피하주사",
+        "근육주사",
+        "IV",
+        "SC",
+        "IM",
+        "정맥내",
+        "피하",
+        "IV주사",
+        "SC주사",
+        "프리필드시린지",
+        "오토인젝터",
+        "Injection",
+        "Injectable",
+        "Parenteral",
+        "Intravenous",
+        "IV",
+        "Subcutaneous",
+        "SC",
+        "Intramuscular",
+        "IM",
+        "Prefilled syringe",
+        "Auto-injector",
+        "Pen injector",
+        "주사용 분말",
+        "동결건조분말주사"
+      ],
+      "related_concept_ids": [
+        "class-pcsk9-inhibitor",
+        "class-pd1-pdl1-inhibitor",
+        "class-her2-targeted"
+      ]
+    },
+    {
+      "concept_id": "form-oral",
+      "type": "form",
+      "canonical_ko": "경구제",
+      "canonical_en": "Oral / Tablet / Capsule",
+      "aliases": [
+        "경구",
+        "경구제",
+        "정",
+        "캡슐",
+        "서방정",
+        "장용정",
+        "필름코팅정",
+        "경구 투여",
+        "먹는 약",
+        "알약",
+        "Oral",
+        "Tablet",
+        "Capsule",
+        "Film-coated tablet",
+        "Extended-release tablet",
+        "Enteric-coated tablet",
+        "Soft gel capsule"
+      ],
+      "related_concept_ids": [
+        "class-egfr-tki",
+        "class-btk-inhibitor",
+        "class-parp-inhibitor"
+      ]
+    },
+    {
+      "concept_id": "form-eye-drop",
+      "type": "form",
+      "canonical_ko": "점안액",
+      "canonical_en": "Eye drop / Ophthalmic solution",
+      "aliases": [
+        "점안액",
+        "점안제",
+        "안약",
+        "안과용 액",
+        "Eye drop",
+        "Ophthalmic solution",
+        "Ophthalmic suspension",
+        "Eyedrops"
+      ],
+      "related_concept_ids": [
+        "disease-glaucoma"
+      ]
+    },
+    {
+      "concept_id": "form-patch",
+      "type": "form",
+      "canonical_ko": "패치",
+      "canonical_en": "Transdermal patch",
+      "aliases": [
+        "패취",
+        "패치",
+        "경피 패치",
+        "경피 흡수제",
+        "Patch",
+        "Transdermal patch",
+        "Transdermal system"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "form-inhaler",
+      "type": "form",
+      "canonical_ko": "흡입제",
+      "canonical_en": "Inhaler / Inhalation",
+      "aliases": [
+        "흡입제",
+        "흡입기",
+        "엘립타",
+        "레스피맷",
+        "에어로스피어",
+        "Inhaler",
+        "Inhalation",
+        "Ellipita",
+        "Respimat",
+        "DPI",
+        "MDI",
+        "Dry powder inhaler",
+        "Metered dose inhaler"
+      ],
+      "related_concept_ids": [
+        "disease-asthma",
+        "disease-copd"
+      ]
+    },
+    {
+      "concept_id": "lot-first-line",
+      "type": "line_of_therapy",
+      "canonical_ko": "1차 치료",
+      "canonical_en": "First-line therapy",
+      "aliases": [
+        "1차 치료",
+        "1차 요법",
+        "1차 라인",
+        "초치료",
+        "전치료 없음",
+        "First-line",
+        "1L",
+        "Front-line",
+        "First-line therapy",
+        "치료 미경험",
+        "Naive",
+        "Treatment-naive"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "lot-second-plus-line",
+      "type": "line_of_therapy",
+      "canonical_ko": "2차 이상 치료",
+      "canonical_en": "Second-line or later therapy",
+      "aliases": [
+        "2차 치료",
+        "2차 요법",
+        "2차 이상",
+        "후속 치료",
+        "재발/불응성",
+        "재발성",
+        "불응성",
+        "구제 요법",
+        "Second-line",
+        "2L",
+        "Later-line",
+        "Salvage therapy",
+        "Relapsed/refractory",
+        "R/R",
+        "Relapsed",
+        "Refractory"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "setting-metastatic",
+      "type": "setting",
+      "canonical_ko": "전이성",
+      "canonical_en": "Metastatic / Advanced",
+      "aliases": [
+        "전이성",
+        "진행성",
+        "전이",
+        "국소 진행성",
+        "원격 전이",
+        "Metastatic",
+        "Advanced",
+        "Stage IV",
+        "Disseminated",
+        "Locally advanced",
+        "Unresectable"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "setting-adjuvant",
+      "type": "setting",
+      "canonical_ko": "보조 요법",
+      "canonical_en": "Adjuvant / Perioperative",
+      "aliases": [
+        "보조 요법",
+        "수술 후 보조 요법",
+        "수술 전 보조 요법",
+        "신보조 요법",
+        "Adjuvant",
+        "Neoadjuvant",
+        "Perioperative",
+        "Post-operative",
+        "Pre-operative"
+      ],
+      "related_concept_ids": []
+    },
+    {
+      "concept_id": "setting-maintenance",
+      "type": "setting",
+      "canonical_ko": "유지 요법",
+      "canonical_en": "Maintenance therapy",
+      "aliases": [
+        "유지 요법",
+        "유지 치료",
+        "Maintenance therapy",
+        "Maintenance treatment"
+      ],
+      "related_concept_ids": []
+    }
+  ],
+  "relations": [
+    {
+      "from_concept_id": "disease-dyslipidemia",
+      "to_concept_id": "target-pcsk9",
+      "relation": "has_target"
+    },
+    {
+      "from_concept_id": "class-pcsk9-inhibitor",
+      "to_concept_id": "target-pcsk9",
+      "relation": "has_target"
+    },
+    {
+      "from_concept_id": "class-pcsk9-inhibitor",
+      "to_concept_id": "disease-dyslipidemia",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-pcsk9-inhibitor",
+      "to_concept_id": "form-injection",
+      "relation": "has_form"
+    },
+    {
+      "from_concept_id": "class-pd1-pdl1-inhibitor",
+      "to_concept_id": "target-pd1-pdl1",
+      "relation": "has_target"
+    },
+    {
+      "from_concept_id": "class-pd1-pdl1-inhibitor",
+      "to_concept_id": "disease-nsclc",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-pd1-pdl1-inhibitor",
+      "to_concept_id": "disease-melanoma",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-pd1-pdl1-inhibitor",
+      "to_concept_id": "disease-bladder-cancer",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-pd1-pdl1-inhibitor",
+      "to_concept_id": "disease-gastric-cancer",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-pd1-pdl1-inhibitor",
+      "to_concept_id": "disease-esophageal-cancer",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-pd1-pdl1-inhibitor",
+      "to_concept_id": "disease-endometrial-cancer",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-pd1-pdl1-inhibitor",
+      "to_concept_id": "disease-merkel-cell-carcinoma",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-pd1-pdl1-inhibitor",
+      "to_concept_id": "form-injection",
+      "relation": "has_form"
+    },
+    {
+      "from_concept_id": "class-egfr-tki",
+      "to_concept_id": "biomarker-egfr",
+      "relation": "requires_biomarker"
+    },
+    {
+      "from_concept_id": "class-egfr-tki",
+      "to_concept_id": "disease-nsclc",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-egfr-tki",
+      "to_concept_id": "form-oral",
+      "relation": "has_form"
+    },
+    {
+      "from_concept_id": "class-alk-inhibitor",
+      "to_concept_id": "biomarker-alk",
+      "relation": "requires_biomarker"
+    },
+    {
+      "from_concept_id": "class-alk-inhibitor",
+      "to_concept_id": "disease-nsclc",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-alk-inhibitor",
+      "to_concept_id": "form-oral",
+      "relation": "has_form"
+    },
+    {
+      "from_concept_id": "class-ret-inhibitor",
+      "to_concept_id": "biomarker-ret-fusion",
+      "relation": "requires_biomarker"
+    },
+    {
+      "from_concept_id": "class-ret-inhibitor",
+      "to_concept_id": "disease-nsclc",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-ret-inhibitor",
+      "to_concept_id": "disease-thyroid-cancer",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-trk-inhibitor",
+      "to_concept_id": "biomarker-ntrk-fusion",
+      "relation": "requires_biomarker"
+    },
+    {
+      "from_concept_id": "class-trk-inhibitor",
+      "to_concept_id": "disease-ntrk-solid-tumor",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-met-inhibitor",
+      "to_concept_id": "biomarker-met-ex14",
+      "relation": "requires_biomarker"
+    },
+    {
+      "from_concept_id": "class-met-inhibitor",
+      "to_concept_id": "disease-nsclc",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-cdk46-inhibitor",
+      "to_concept_id": "disease-breast-cancer",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-cdk46-inhibitor",
+      "to_concept_id": "biomarker-hr",
+      "relation": "requires_biomarker"
+    },
+    {
+      "from_concept_id": "class-cdk46-inhibitor",
+      "to_concept_id": "form-oral",
+      "relation": "has_form"
+    },
+    {
+      "from_concept_id": "class-parp-inhibitor",
+      "to_concept_id": "biomarker-brca",
+      "relation": "requires_biomarker"
+    },
+    {
+      "from_concept_id": "class-parp-inhibitor",
+      "to_concept_id": "disease-ovarian-cancer",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-parp-inhibitor",
+      "to_concept_id": "disease-breast-cancer",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-parp-inhibitor",
+      "to_concept_id": "form-oral",
+      "relation": "has_form"
+    },
+    {
+      "from_concept_id": "class-her2-targeted",
+      "to_concept_id": "biomarker-her2",
+      "relation": "requires_biomarker"
+    },
+    {
+      "from_concept_id": "class-her2-targeted",
+      "to_concept_id": "disease-breast-cancer",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-her2-targeted",
+      "to_concept_id": "disease-gastric-cancer",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-braf-mek-inhibitor",
+      "to_concept_id": "biomarker-braf-v600",
+      "relation": "requires_biomarker"
+    },
+    {
+      "from_concept_id": "class-braf-mek-inhibitor",
+      "to_concept_id": "disease-melanoma",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-braf-mek-inhibitor",
+      "to_concept_id": "disease-colorectal-cancer",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-btk-inhibitor",
+      "to_concept_id": "disease-cll",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-bcl2-inhibitor",
+      "to_concept_id": "disease-cll",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-anti-cd20",
+      "to_concept_id": "disease-cll",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-anti-cd20",
+      "to_concept_id": "disease-dlbcl",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-anti-cd20",
+      "to_concept_id": "disease-follicular-lymphoma",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-anti-cd20",
+      "to_concept_id": "biomarker-cd20",
+      "relation": "requires_biomarker"
+    },
+    {
+      "from_concept_id": "class-anti-cd20",
+      "to_concept_id": "form-injection",
+      "relation": "has_form"
+    },
+    {
+      "from_concept_id": "class-anti-cd38",
+      "to_concept_id": "disease-multiple-myeloma",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-anti-cd38",
+      "to_concept_id": "form-injection",
+      "relation": "has_form"
+    },
+    {
+      "from_concept_id": "class-il5-inhibitor",
+      "to_concept_id": "disease-asthma",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-il5-inhibitor",
+      "to_concept_id": "biomarker-eosinophil",
+      "relation": "requires_biomarker"
+    },
+    {
+      "from_concept_id": "class-il5-inhibitor",
+      "to_concept_id": "form-injection",
+      "relation": "has_form"
+    },
+    {
+      "from_concept_id": "class-il4-il13-inhibitor",
+      "to_concept_id": "disease-atopic-dermatitis",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-il4-il13-inhibitor",
+      "to_concept_id": "disease-asthma",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-il4-il13-inhibitor",
+      "to_concept_id": "form-injection",
+      "relation": "has_form"
+    },
+    {
+      "from_concept_id": "class-il17-inhibitor",
+      "to_concept_id": "disease-psoriasis",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-il23-inhibitor",
+      "to_concept_id": "disease-psoriasis",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-jak-inhibitor",
+      "to_concept_id": "disease-rheumatoid-arthritis",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-jak-inhibitor",
+      "to_concept_id": "disease-atopic-dermatitis",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-jak-inhibitor",
+      "to_concept_id": "disease-psoriasis",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-sglt2-inhibitor",
+      "to_concept_id": "disease-t2dm",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-dpp4-inhibitor",
+      "to_concept_id": "disease-t2dm",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-glp1-agonist",
+      "to_concept_id": "disease-t2dm",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-glp1-agonist",
+      "to_concept_id": "form-injection",
+      "relation": "has_form"
+    },
+    {
+      "from_concept_id": "class-bcr-abl-tki",
+      "to_concept_id": "disease-cml",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-bcr-abl-tki",
+      "to_concept_id": "biomarker-ph-chromosome",
+      "relation": "requires_biomarker"
+    },
+    {
+      "from_concept_id": "class-ard-inhibitor",
+      "to_concept_id": "disease-prostate-cancer",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-cyp17-inhibitor",
+      "to_concept_id": "disease-prostate-cancer",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-vegf-inhibitor",
+      "to_concept_id": "disease-colorectal-cancer",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-vegf-inhibitor",
+      "to_concept_id": "disease-amd",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-vegf-inhibitor",
+      "to_concept_id": "form-injection",
+      "relation": "has_form"
+    },
+    {
+      "from_concept_id": "class-vegfr-tki",
+      "to_concept_id": "disease-renal-cell-carcinoma",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-vegfr-tki",
+      "to_concept_id": "disease-thyroid-cancer",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-egfr-antibody",
+      "to_concept_id": "biomarker-kras-wt",
+      "relation": "requires_biomarker"
+    },
+    {
+      "from_concept_id": "class-egfr-antibody",
+      "to_concept_id": "disease-colorectal-cancer",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-egfr-antibody",
+      "to_concept_id": "form-injection",
+      "relation": "has_form"
+    },
+    {
+      "from_concept_id": "class-ctla4-inhibitor",
+      "to_concept_id": "disease-melanoma",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-ctla4-inhibitor",
+      "to_concept_id": "disease-renal-cell-carcinoma",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-ctla4-inhibitor",
+      "to_concept_id": "disease-hepatocellular-carcinoma",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-ctla4-inhibitor",
+      "to_concept_id": "form-injection",
+      "relation": "has_form"
+    },
+    {
+      "from_concept_id": "disease-nsclc",
+      "to_concept_id": "disease-sclc",
+      "relation": "is_a"
+    },
+    {
+      "from_concept_id": "class-g-csf",
+      "to_concept_id": "form-injection",
+      "relation": "has_form"
+    },
+    {
+      "from_concept_id": "class-inotuzumab",
+      "to_concept_id": "disease-all",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-inotuzumab",
+      "to_concept_id": "form-injection",
+      "relation": "has_form"
+    },
+    {
+      "from_concept_id": "class-blinatumomab",
+      "to_concept_id": "disease-all",
+      "relation": "treats"
+    },
+    {
+      "from_concept_id": "class-blinatumomab",
+      "to_concept_id": "form-injection",
+      "relation": "has_form"
+    }
+  ]
+}

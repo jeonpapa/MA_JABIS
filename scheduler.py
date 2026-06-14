@@ -339,6 +339,27 @@ def reimb_data_sync_job():
         logger.exception("Reimbursement 보고서 sync 실패: %s", e)
 
 
+def nhis_negotiation_sync_job():
+    """매주 월요일 02:30 Seoul — 건강보험공단 약가협상 공개자료(신규·확대) 크롤 →
+    nhis_negotiations 멱등 아카이브 + amjilsim_drugs 매칭 교체(NHIS 공식 우선).
+
+    소스(공개, 자격증명 불필요): retrieveMediList.do(신약)·retrieveMediList2.do(확대).
+    - content_hash 멱등 UPSERT(삭제 금지 — 등록 후 1년만 공개되므로 영구 아카이브).
+    - 매칭 시 negotiation_status/완료일을 nhis_official 로 자동 교체, 미매칭은 audit(drug_id NULL).
+    배포 안전: 네트워크/파싱 실패가 전체 스케줄러를 막지 않도록 try/except 격리.
+    """
+    logger.info("━━━ NHIS 약가협상 공개자료 주간 sync 시작 ━━━")
+    try:
+        from agents.ingest import nhis_negotiation_import as imp
+        res = imp.run()
+        logger.info(
+            "NHIS sync 완료: 수집 %d · 신규아카이브 %d · 매칭 drug %d/row %d · 미매칭 %d",
+            res["fetched"], res["inserted"], res["matched_drugs"],
+            res["matched_rows"], res["unmatched_count"])
+    except Exception as e:
+        logger.exception("NHIS 약가협상 sync 실패: %s", e)
+
+
 def amjilsim_d_minus_2_reporter_job():
     """매일 16:00 Seoul — 오늘이 어느 위원회 D-2이면 사전 예측 보고서 발사 (17:00 마감).
 
@@ -519,6 +540,11 @@ def main():
         action="store_true",
         help="HIRA 공식 일정 즉시 fetch",
     )
+    parser.add_argument(
+        "--nhis-sync-now",
+        action="store_true",
+        help="NHIS 약가협상 공개자료 즉시 크롤+매칭 (신규/확대)",
+    )
     args = parser.parse_args()
 
     config = load_config()
@@ -580,6 +606,11 @@ def main():
     if args.hira_fetch_now:
         logger.info("HIRA 공식 일정 즉시 fetch")
         hira_schedule_fetcher_job()
+        return
+
+    if args.nhis_sync_now:
+        logger.info("NHIS 약가협상 공개자료 즉시 sync")
+        nhis_negotiation_sync_job()
         return
 
     # 스케줄러 설정: 매월 1일 09:00
@@ -701,6 +732,15 @@ def main():
         trigger=CronTrigger(hour=2, minute=0, timezone="Asia/Seoul"),
         id="reimb_data_sync",
         name="Reimbursement 위원회 데이터 매일 02:00 git sync",
+        replace_existing=True,
+    )
+
+    # 매주 월요일 02:30 — NHIS 약가협상 공개자료(신규·확대) 크롤 + 매칭 교체
+    scheduler.add_job(
+        nhis_negotiation_sync_job,
+        trigger=CronTrigger(day_of_week="mon", hour=2, minute=30, timezone="Asia/Seoul"),
+        id="nhis_negotiation_sync",
+        name="NHIS 약가협상 공개자료 주간 sync (신규/확대 → 매칭 교체)",
         replace_existing=True,
     )
 

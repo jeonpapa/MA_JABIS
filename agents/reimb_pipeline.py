@@ -292,6 +292,18 @@ def _row_get(row: sqlite3.Row, key: str):
         return None
 
 
+def _nhis_list_type_for_drug(conn: sqlite3.Connection, drug_id: int) -> Optional[str]:
+    """매칭된 NHIS 공개자료의 신규/확대 구분. 보드 카드는 진행 중이므로
+    in_progress(완료연월 빈값) 행을 우선, 없으면 최신 등록 행 기준."""
+    if not _nhis_table_exists(conn):
+        return None
+    row = conn.execute(
+        "SELECT list_type FROM nhis_negotiations WHERE drug_id = ? "
+        "ORDER BY (completed_ym IS NULL OR completed_ym='') DESC, "
+        "registered_ym DESC LIMIT 1", (drug_id,)).fetchone()
+    return row["list_type"] if row else None
+
+
 def _pipeline_drug_dict(drug: sqlite3.Row, queue_rows: list[sqlite3.Row],
                         today: str, conn: sqlite3.Connection,
                         next_session_ids: dict[str, Optional[int]]) -> tuple[str, dict]:
@@ -326,6 +338,13 @@ def _pipeline_drug_dict(drug: sqlite3.Row, queue_rows: list[sqlite3.Row],
         "amjilsimPassDate": drug["amjilsim_pass_date"],
         "yakpyungwiPassDate": drug["yakpyungwi_pass_date"],
         "negotiationStatus": drug["negotiation_status"],
+        # NHIS 공식 협상자료 (건강보험공단 공개자료 매칭 시 채워짐)
+        "negotiationCompleteDate": _row_get(drug, "negotiation_complete_date"),
+        "negotiationDateSource": _row_get(drug, "negotiation_date_source"),
+        "nhisRegisteredYm": _row_get(drug, "nhis_registered_ym"),
+        "efficacyGroup": _row_get(drug, "efficacy_group"),
+        # 신규/확대 구분 (매칭된 NHIS 공개자료 기준 — 보드 필터칩용)
+        "listType": _nhis_list_type_for_drug(conn, drug["drug_id"]),
         "notes": drug["notes"],
         "keyIssues": _key_issues(drug),
         "updatedDate": max(observed) if observed else None,
@@ -363,6 +382,92 @@ def get_pipeline(include_completed: bool = False) -> dict:
         ],
         "completedExcluded": completed_count,
     }
+
+
+def _nhis_row_dict(r: sqlite3.Row) -> dict:
+    return {
+        "id": r["id"],
+        "listType": r["list_type"],
+        "productName": r["product_name"],
+        "manufacturer": r["manufacturer"],
+        "efficacyGroup": r["efficacy_group"],
+        "registeredYm": r["registered_ym"],
+        "result": r["result"],
+        "completedYm": r["completed_ym"],
+        "inProgress": r["completed_ym"] in (None, ""),
+        "matched": r["drug_id"] is not None,
+        "drugId": r["drug_id"],
+        "sourceUrl": r["source_url"],
+        "fetchedAt": r["fetched_at"],
+    }
+
+
+def _nhis_table_exists(conn: sqlite3.Connection) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='nhis_negotiations'"
+    ).fetchone() is not None
+
+
+def list_nhis_negotiations(status: str = "completed",
+                           list_type: Optional[str] = None,
+                           q: Optional[str] = None,
+                           limit: int = 1000) -> dict:
+    """건강보험공단 약가협상 공개자료 조회 (nhis_negotiations 아카이브 직접).
+
+    status: 'completed'(협상완료연월 채워짐) | 'in_progress'(빈값) | 'all'.
+    list_type: '신규' | '확대' | None(전체).
+    q: 제품명·제약사명 부분일치(대소문자/공백 무시).
+    반환: {items, counts:{completed,in_progress,total}}.
+    """
+    if status not in ("completed", "in_progress", "all"):
+        raise ValueError(f"status invalid: {status}")
+    if list_type and list_type not in LISTING_TYPES:
+        raise ValueError(f"list_type invalid: {list_type}")
+
+    where, params = [], []
+    if status == "completed":
+        where.append("completed_ym IS NOT NULL AND completed_ym != ''")
+    elif status == "in_progress":
+        where.append("(completed_ym IS NULL OR completed_ym = '')")
+    if list_type:
+        where.append("list_type = ?")
+        params.append(list_type)
+    if q:
+        needle = f"%{q.strip()}%"
+        where.append("(product_name LIKE ? OR manufacturer LIKE ?)")
+        params.extend([needle, needle])
+    clause = (" WHERE " + " AND ".join(where)) if where else ""
+
+    with _connect() as conn:
+        if not _nhis_table_exists(conn):
+            return {"items": [], "counts": {"completed": 0, "in_progress": 0, "total": 0}}
+        rows = conn.execute(
+            f"SELECT * FROM nhis_negotiations{clause} "
+            f"ORDER BY (completed_ym IS NULL OR completed_ym='') ASC, "
+            f"completed_ym DESC, registered_ym DESC, product_name ASC LIMIT ?",
+            params + [limit]).fetchall()
+        counts = {
+            "completed": conn.execute(
+                "SELECT COUNT(*) FROM nhis_negotiations "
+                "WHERE completed_ym IS NOT NULL AND completed_ym != ''").fetchone()[0],
+            "in_progress": conn.execute(
+                "SELECT COUNT(*) FROM nhis_negotiations "
+                "WHERE completed_ym IS NULL OR completed_ym = ''").fetchone()[0],
+        }
+        counts["total"] = counts["completed"] + counts["in_progress"]
+    return {"items": [_nhis_row_dict(r) for r in rows], "counts": counts}
+
+
+def list_nhis_unmatched(limit: int = 1000) -> dict:
+    """미매칭 NHIS 행(audit) — amjilsim_drugs 와 매칭 안 된 공개자료. 수동 등록 대상."""
+    with _connect() as conn:
+        if not _nhis_table_exists(conn):
+            return {"items": [], "count": 0}
+        rows = conn.execute(
+            "SELECT * FROM nhis_negotiations WHERE drug_id IS NULL "
+            "ORDER BY (completed_ym IS NULL OR completed_ym='') ASC, "
+            "completed_ym DESC, product_name ASC LIMIT ?", (limit,)).fetchall()
+    return {"items": [_nhis_row_dict(r) for r in rows], "count": len(rows)}
 
 
 def _linked_report(conn: sqlite3.Connection, meeting: dict) -> Optional[dict]:

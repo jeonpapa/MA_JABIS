@@ -4,12 +4,14 @@ import {
   listAdminDrugs, createDrug, updateDrug, deleteDrug,
   addDrugEvent, deleteDrugEvent,
   listMeetings, updateSession, createSession,
+  listNhisUnmatched,
   QUEUE_STATES, QUEUE_STATE_LABEL,
   NEGOTIATION_STATUSES, NEGOTIATION_LABEL,
   TRACKING_PRIORITIES, TRACKING_PRIORITY_LABEL,
   COMMITTEE_LABEL, STAGE_LABEL,
   type AdminDrug, type Meeting, type Committee, type QueueState,
   type NegotiationStatus, type TrackingPriority, type ListingType, type Stage,
+  type NhisUnmatched,
 } from '@/api/reimbPipelineAdmin';
 import { fetchMe } from '@/utils/authUsers';
 
@@ -118,6 +120,7 @@ export default function AdminReimbursementPipelinePage() {
 
   const [drugs, setDrugs] = useState<AdminDrug[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [nhisUnmatched, setNhisUnmatched] = useState<NhisUnmatched[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -165,9 +168,10 @@ export default function AdminReimbursementPipelinePage() {
     setLoading(true);
     setError(null);
     try {
-      const [d, m] = await Promise.all([listAdminDrugs(), listMeetings()]);
+      const [d, m, u] = await Promise.all([listAdminDrugs(), listMeetings(), listNhisUnmatched().catch(() => ({ items: [], count: 0 }))]);
       setDrugs(d);
       setMeetings(m);
+      setNhisUnmatched(u.items);
     } catch (e) {
       setError(e instanceof Error ? e.message : '파이프라인 조회 실패');
     } finally {
@@ -591,6 +595,59 @@ export default function AdminReimbursementPipelinePage() {
                         </td>
                       </tr>
                     )
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* NHIS 미매칭 audit — 공단 공개자료 중 추적 약물과 매칭 안 된 행 (수동 등록 검토) */}
+        <div className="bg-[#161B27] rounded-2xl border border-[#1E2530] p-6">
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="text-white font-bold text-base">NHIS 미매칭 검토 ({nhisUnmatched.length})</h2>
+            {nhisUnmatched.length > 0 && (
+              <span className="text-[10px] px-2 py-0.5 rounded bg-[#F59E0B]/10 text-[#F59E0B]">수동 등록 대상</span>
+            )}
+          </div>
+          <p className="text-[#8B9BB4] text-xs mb-4">
+            건강보험공단 공개자료 중 추적 약물과 자동 매칭되지 않은 건. 추적이 필요하면 위 '신규 약물 등록'에서 직접 추가하세요.
+          </p>
+          {loading && <p className="text-[#8B9BB4] text-sm">로드 중…</p>}
+          {!loading && nhisUnmatched.length === 0 && <p className="text-[#4A5568] text-sm">미매칭 건이 없습니다.</p>}
+          {!loading && nhisUnmatched.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-[#8B9BB4] text-xs border-b border-[#1E2530]">
+                    <th className="text-left py-2 pr-3">구분</th>
+                    <th className="text-left py-2 pr-3">제품명</th>
+                    <th className="text-left py-2 pr-3">제약사명</th>
+                    <th className="text-left py-2 pr-3">효능군</th>
+                    <th className="text-left py-2 pr-3 whitespace-nowrap">등록연월</th>
+                    <th className="text-left py-2 pr-3">협상결과</th>
+                    <th className="text-left py-2 pr-3 whitespace-nowrap">완료연월</th>
+                    <th className="text-right py-2">출처</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {nhisUnmatched.map(u => (
+                    <tr key={u.id} className="border-b border-[#1E2530]/50 last:border-b-0 hover:bg-[#1E2530]/30">
+                      <td className="py-2 pr-3 whitespace-nowrap">
+                        <span className={`text-[10px] px-2 py-0.5 rounded ${u.listType === '신규' ? 'bg-[#0EA5E9]/10 text-[#38BDF8]' : 'bg-[#8B5CF6]/10 text-[#A78BFA]'}`}>
+                          {u.listType === '신규' ? '신약' : '사용범위 확대'}
+                        </span>
+                      </td>
+                      <td className="py-2 pr-3 text-white font-medium">{u.productName}</td>
+                      <td className="py-2 pr-3 text-[#8B9BB4]">{u.manufacturer ?? <Dash />}</td>
+                      <td className="py-2 pr-3 text-[#8B9BB4]">{u.efficacyGroup ?? <Dash />}</td>
+                      <td className="py-2 pr-3 text-[#8B9BB4] whitespace-nowrap">{u.registeredYm ?? <Dash />}</td>
+                      <td className="py-2 pr-3 text-[#8B9BB4]">{u.result ?? <Dash />}</td>
+                      <td className={`py-2 pr-3 whitespace-nowrap ${u.completedYm ? 'text-emerald-400' : 'text-[#F59E0B]'}`}>{u.completedYm ?? '진행 중'}</td>
+                      <td className="py-2 text-right whitespace-nowrap">
+                        <a href={u.sourceUrl} target="_blank" rel="noreferrer" className="text-[#00E5CC] text-xs hover:underline">공단</a>
+                      </td>
+                    </tr>
                   ))}
                 </tbody>
               </table>

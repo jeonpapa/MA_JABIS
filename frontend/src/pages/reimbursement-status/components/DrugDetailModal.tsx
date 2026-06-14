@@ -151,6 +151,49 @@ export default function DrugDetailModal({ drug, stageLabel, isDark, onClose }: D
             </div>
           )}
 
+          {/* 건강보험공단 공식 협상자료 (NHIS 공개자료 매칭 시) */}
+          {(drug.negotiationDateSource === 'nhis_official' || drug.nhisRegisteredYm || drug.negotiationCompleteDate) && (
+            <div className={`rounded-xl p-4 border ${
+              isDark ? 'bg-emerald-400/5 border-emerald-400/20' : 'bg-emerald-50/70 border-emerald-200'
+            }`}>
+              <h3 className={`text-xs font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5 ${
+                isDark ? 'text-emerald-300' : 'text-emerald-600'
+              }`}>
+                <i className="ri-verified-badge-line text-sm"></i>건강보험공단 협상 정보
+                {drug.negotiationDateSource === 'nhis_official' && (
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                    isDark ? 'bg-emerald-400/10 text-emerald-300' : 'bg-emerald-100 text-emerald-700'
+                  }`}>공단 공식</span>
+                )}
+              </h3>
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className={`rounded-lg p-3 border ${infoBg}`}>
+                  <p className={`text-[10px] font-medium mb-0.5 ${infoLabel}`}>구분</p>
+                  <p className={`text-sm font-bold ${infoValue}`}>
+                    {drug.listType === '신규' ? '신약' : drug.listType === '확대' ? '사용범위 확대' : '정보 없음'}
+                  </p>
+                </div>
+                <div className={`rounded-lg p-3 border ${infoBg}`}>
+                  <p className={`text-[10px] font-medium mb-0.5 ${infoLabel}`}>효능군</p>
+                  <p className={`text-sm font-bold ${infoValue}`}>{drug.efficacyGroup ?? '정보 없음'}</p>
+                </div>
+                <div className={`rounded-lg p-3 border ${infoBg}`}>
+                  <p className={`text-[10px] font-medium mb-0.5 ${infoLabel}`}>공단 등록연월</p>
+                  <p className={`text-sm font-bold ${infoValue}`}>{drug.nhisRegisteredYm ?? '정보 없음'}</p>
+                </div>
+                <div className={`rounded-lg p-3 border ${infoBg}`}>
+                  <p className={`text-[10px] font-medium mb-0.5 ${infoLabel}`}>협상 완료연월</p>
+                  <p className={`text-sm font-bold ${drug.negotiationCompleteDate ? (isDark ? 'text-emerald-300' : 'text-emerald-600') : infoValue}`}>
+                    {drug.negotiationCompleteDate ?? '협상 진행 중'}
+                  </p>
+                </div>
+              </div>
+              <p className={`text-[10px] mt-2.5 ${textMuted}`}>
+                출처: 국민건강보험공단 약가협상 공개자료
+              </p>
+            </div>
+          )}
+
           {/* Indication */}
           <div>
             <h3 className={`text-xs font-bold uppercase tracking-wider mb-2 ${sectionTitle}`}>적응증</h3>

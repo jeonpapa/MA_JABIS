@@ -4692,7 +4692,13 @@ from agents.analog import store as _analog
 @require_auth()
 def analog_facets():
     try:
-        return jsonify(_analog.facet_values())
+        # cascade: 앞단 선택 필터를 받아 뒷단 옵션을 좁힌다
+        cascade_keys = [
+            "disease_category", "disease_category_detail", "cancer_type", "line_of_therapy",
+            "review_result", "reimbursement_track_ko", "coverage_gap_type", "approval_driver",
+        ]
+        filters = {k: request.args.get(k) for k in cascade_keys if request.args.get(k)}
+        return jsonify(_analog.facet_values(filters))
     except Exception as e:
         logger.error("analog facets 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
@@ -4702,14 +4708,19 @@ def analog_facets():
 @require_auth()
 def analog_search():
     try:
-        facet_keys = ["disease_category", "cancer_type", "line_of_therapy", "committee",
-                      "review_result", "reimbursement_track", "coverage_gap_type",
-                      "generic_name", "brand_name"]
+        facet_keys = [
+            "disease_category", "disease_category_detail", "cancer_type", "line_of_therapy",
+            "committee", "review_result", "reimbursement_track_ko", "coverage_gap_type",
+            "generic_name", "generic_name_en", "brand_name",
+            "medical_necessity", "approval_driver",
+            "has_rsa", "pe_waiver", "has_postmarket_condition",
+        ]
         filters = {k: request.args.get(k) for k in facet_keys if request.args.get(k)}
-        fts = request.args.get("fts", "").strip() or None
-        semantic = request.args.get("semantic", "").strip() or None
+        # 통합 검색어: q 우선, 하위호환으로 fts/semantic 도 수용
+        q = (request.args.get("q") or request.args.get("fts")
+             or request.args.get("semantic") or "").strip() or None
         limit = min(int(request.args.get("limit", "50")), 200)
-        return jsonify(_analog.search(filters=filters, fts=fts, semantic=semantic, limit=limit))
+        return jsonify(_analog.search(filters=filters, q=q, limit=limit))
     except Exception as e:
         logger.error("analog search 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
@@ -4742,6 +4753,46 @@ def analog_brief():
         return jsonify(_brief.generate_brief(ids, query))
     except Exception as e:
         logger.error("analog brief 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/analog/search-feedback")
+@require_auth()
+def analog_search_feedback_add():
+    """검색 결과가 의도와 다를 때 사용자가 남기는 피드백 저장.
+
+    검색어 시멘틱 → 실제 의도 약제 매핑을 축적 → 검색 로직 개선 근거.
+    """
+    try:
+        body = request.get_json(silent=True) or {}
+        intended = (body.get("intended_text") or "").strip()
+        if not intended:
+            return jsonify({"error": "intended_text(실제 찾던 약제) 필요"}), 400
+        fid = _analog.add_search_feedback(
+            query=body.get("query"),
+            filters=body.get("filters") or {},
+            returned_ids=body.get("returned_ids") or [],
+            returned_top=body.get("returned_top"),
+            intended_text=intended,
+            note=body.get("note"),
+        )
+        return jsonify({"ok": True, "id": fid})
+    except Exception as e:
+        logger.error("analog search-feedback 저장 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/analog/search-feedback")
+@require_auth(role="admin")
+def analog_search_feedback_list():
+    """저장된 검색 피드백 조회 (개발/분석용, 최신순). admin 전용."""
+    try:
+        limit = min(int(request.args.get("limit", "200")), 1000)
+        only_unresolved = request.args.get("unresolved") in ("1", "true", "True")
+        return jsonify({"items": _analog.list_search_feedback(
+            limit=limit, only_unresolved=only_unresolved)})
+    except Exception as e:
+        logger.error("analog search-feedback 조회 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 
@@ -4848,6 +4899,25 @@ def reimb_pipeline_board():
 @require_auth()
 def reimb_pipeline_meeting_results(session_id: int):
     return _reimb_pipeline_call(_reimb_pipeline.get_meeting_results, session_id)
+
+
+@app.get("/api/reimbursement/nhis-negotiations")
+@require_auth()
+def reimb_nhis_negotiations():
+    """건강보험공단 약가협상 공개자료 조회(아카이브 직접).
+    params: status=completed|in_progress|all, list_type=신규|확대, q=제품/제약사 검색."""
+    status = request.args.get("status", "completed")
+    list_type = request.args.get("list_type") or None
+    q = request.args.get("q") or None
+    return _reimb_pipeline_call(
+        _reimb_pipeline.list_nhis_negotiations, status, list_type, q)
+
+
+@app.get("/api/admin/reimb-pipeline/nhis-unmatched")
+@require_auth(role="admin")
+def reimb_nhis_unmatched():
+    """미매칭 NHIS 공개자료(audit) — 수동 등록 대상."""
+    return _reimb_pipeline_call(_reimb_pipeline.list_nhis_unmatched)
 
 
 @app.get("/api/admin/reimb-pipeline/drugs")

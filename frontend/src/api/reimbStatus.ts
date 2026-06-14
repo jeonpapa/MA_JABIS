@@ -148,6 +148,12 @@ export interface PipelineDrug {
   amjilsimPassDate: string | null;
   yakpyungwiPassDate: string | null;
   negotiationStatus: string | null;
+  // NHIS 공식 협상자료 (건강보험공단 공개자료 매칭 시)
+  negotiationCompleteDate: string | null; // 'YYYY.MM' 협상완료연월
+  negotiationDateSource: string | null;   // 'nhis_official' | 'manual' | null
+  nhisRegisteredYm: string | null;         // 'YYYY.MM' 공단 등록연월
+  efficacyGroup: string | null;            // 공단 효능군
+  listType: '신규' | '확대' | null;        // NHIS 신규/사용범위 확대 구분 (보드 필터칩)
   notes: string | null;
   keyIssues: string[];        // 핵심 쟁점 (D±1 보고서 전사)
   updatedDate: string | null; // 'YYYY.MM.DD'
@@ -166,6 +172,12 @@ interface RawPipelineDrug extends Omit<PipelineDrug, 'history' | 'timeline'> {
   timeline: TimelineStep[];
 }
 
+/** 'YYYY-MM' → 'YYYY.MM' (협상연월; null 그대로) */
+function fmtYm(s: string | null | undefined): string | null {
+  if (!s) return null;
+  return s.slice(0, 7).replace(/-/g, '.');
+}
+
 function adaptDrug(d: RawPipelineDrug): PipelineDrug {
   return {
     ...d,
@@ -174,6 +186,8 @@ function adaptDrug(d: RawPipelineDrug): PipelineDrug {
     submittedDate: fmtDot(d.submittedDate),
     amjilsimPassDate: fmtDot(d.amjilsimPassDate),
     yakpyungwiPassDate: fmtDot(d.yakpyungwiPassDate),
+    negotiationCompleteDate: fmtYm(d.negotiationCompleteDate),
+    nhisRegisteredYm: fmtYm(d.nhisRegisteredYm),
     updatedDate: fmtDot(d.updatedDate),
     history: (d.history ?? []).map(h => ({
       ...h,
@@ -335,4 +349,58 @@ export async function openReportPdf(reportId: number): Promise<void> {
   window.open(url, '_blank', 'noopener');
   // 새 탭 로드 후 정리
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 5. NHIS 약가협상 공개자료  (GET /api/reimbursement/nhis-negotiations)
+//    건강보험공단 '신약'/'사용범위 확대' 공식 협상 결과 아카이브.
+// ═════════════════════════════════════════════════════════════════════════════
+
+export interface NhisNegotiation {
+  id: number;
+  listType: '신규' | '확대';
+  productName: string;
+  manufacturer: string | null;
+  efficacyGroup: string | null;
+  registeredYm: string | null;   // 'YYYY.MM' 등록연월
+  result: string | null;          // 협상결과 (합의 등)
+  completedYm: string | null;     // 'YYYY.MM' 협상완료연월
+  inProgress: boolean;
+  matched: boolean;
+  drugId: number | null;
+  sourceUrl: string;
+  fetchedAt: string | null;
+}
+
+export interface NhisNegotiationResult {
+  items: NhisNegotiation[];
+  counts: { completed: number; in_progress: number; total: number };
+}
+
+interface RawNhisNegotiation extends Omit<NhisNegotiation, 'registeredYm' | 'completedYm'> {
+  registeredYm: string | null;
+  completedYm: string | null;
+}
+
+function adaptNhis(r: RawNhisNegotiation): NhisNegotiation {
+  return { ...r, registeredYm: fmtYm(r.registeredYm), completedYm: fmtYm(r.completedYm) };
+}
+
+export async function fetchNhisNegotiations(params?: {
+  status?: 'completed' | 'in_progress' | 'all';
+  listType?: '신규' | '확대' | '';
+  q?: string;
+}): Promise<NhisNegotiationResult> {
+  const qs = new URLSearchParams();
+  if (params?.status) qs.set('status', params.status);
+  if (params?.listType) qs.set('list_type', params.listType);
+  if (params?.q) qs.set('q', params.q);
+  const suffix = qs.toString();
+  const res = await api.get<{ items: RawNhisNegotiation[]; counts: NhisNegotiationResult['counts'] }>(
+    `/api/reimbursement/nhis-negotiations${suffix ? `?${suffix}` : ''}`
+  );
+  return {
+    items: (res.items ?? []).map(adaptNhis),
+    counts: res.counts ?? { completed: 0, in_progress: 0, total: 0 },
+  };
 }

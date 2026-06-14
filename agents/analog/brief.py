@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import os
 from datetime import datetime
@@ -49,12 +48,42 @@ def _openai_key() -> str | None:
 
 def _case_block(i: int, d: dict) -> str:
     f = lambda k: d.get(k) or "—"
-    return (f"[사례 {i}] {f('brand_name')} ({f('generic_name')}) · {f('session_date')} "
-            f"{f('committee')} {f('ordinal')}차\n"
-            f"  적응증(급여): {f('disease_name')} / {f('cancer_type')} / {f('line_of_therapy')}\n"
-            f"  결과: {f('review_result')} · 트랙: {f('reimbursement_track')} · RSA: {d.get('rsa_types') or []}\n"
-            f"  허가↔급여 갭: {f('coverage_gap_type')} ({(d.get('coverage_gap_evidence') or '')[:120]})\n"
-            f"  재심의: {f('requeue_count')}회 · 소요: {f('sessions_to_pass')}")
+
+    # 효과지표 요약
+    eff_parts = []
+    if d.get("os_months"):
+        eff_parts.append(f"OS {d['os_months']}개월")
+    if d.get("pfs_months"):
+        eff_parts.append(f"PFS {d['pfs_months']}개월")
+    if d.get("orr_pct"):
+        eff_parts.append(f"ORR {d['orr_pct']}%")
+    if d.get("key_hr"):
+        eff_parts.append(f"HR {d['key_hr']}")
+    eff_str = " / ".join(eff_parts) if eff_parts else "—"
+
+    # 비교약제
+    comps = d.get("comparator_drugs") or []
+    comp_str = ", ".join(comps[:3]) if comps else "—"
+
+    # 임상시험
+    trials = d.get("clinical_trials") or []
+    trials_str = ", ".join(trials[:3]) if trials else "—"
+
+    # 정책 태그
+    tags = d.get("policy_tags") or []
+    tags_str = " | ".join(tags[:3]) if tags else "—"
+
+    return (
+        f"[사례 {i}] {f('brand_name')} ({f('generic_name_en') or f('generic_name')}) "
+        f"· {f('session_date')} 약평위 {f('ordinal')}차\n"
+        f"  질환: {f('disease_name_ko') or f('disease_name')} / {f('cancer_type')} / "
+        f"{f('line_of_therapy')} / {f('treatment_setting')}\n"
+        f"  결과: {f('review_result')} · 트랙: {f('reimbursement_track_ko')}\n"
+        f"  효과지표: {eff_str} · 비교약제: {comp_str} · 임상: {trials_str}\n"
+        f"  허가↔급여 갭: {f('coverage_gap_type')} ({(d.get('coverage_gap_evidence') or '')[:100]})\n"
+        f"  정책: {f('approval_driver')} | {tags_str}\n"
+        f"  재심의: {f('requeue_count')}회 · 소요: {f('sessions_to_pass')}일"
+    )
 
 
 def generate_brief(report_ids: list[int], query: str = "") -> dict:

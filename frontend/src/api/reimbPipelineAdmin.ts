@@ -224,3 +224,26 @@ export async function updateSession(
 export async function createSession(payload: SessionCreate): Promise<{ session_id: number }> {
   return api.post<{ session_id: number }>(`${BASE}/sessions`, payload);
 }
+
+// ── NHIS 미매칭 audit (수동 등록 검토 대상) ─────────────────────────────────────
+
+/** 공단 공개자료 중 amjilsim_drugs 와 매칭 안 된 행 (drug_id NULL). */
+export interface NhisUnmatched {
+  id: number;
+  listType: '신규' | '확대';
+  productName: string;
+  manufacturer: string | null;
+  efficacyGroup: string | null;
+  registeredYm: string | null;
+  result: string | null;
+  completedYm: string | null;
+  inProgress: boolean;
+  matched: boolean;
+  drugId: number | null;
+  sourceUrl: string;
+  fetchedAt: string | null;
+}
+
+export async function listNhisUnmatched(): Promise<{ items: NhisUnmatched[]; count: number }> {
+  return api.get<{ items: NhisUnmatched[]; count: number }>(`${BASE}/nhis-unmatched`);
+}
