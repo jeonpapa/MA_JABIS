@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>MA AI Dossier — 기능 소개 매뉴얼</title>
+<style>
+  @page { size: A4 landscape; margin: 0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body {
+    font-family: "Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    color: #1a2b34; line-height: 1.5; font-size: 13px;
+  }
+  :root{
+    --teal:#00857c; --teal-d:#005c56; --ink:#1a2b34; --muted:#5c7079;
+    --line:#dfe7ea; --bg:#f4f8f8; --amber:#b9770e; --admin:#5b4a8a;
+  }
+  .page{
+    width: 297mm; height: 209.6mm; padding: 14mm 16mm 12mm;
+    page-break-after: always; position: relative; overflow: hidden;
+  }
+  .page:last-child{ page-break-after: auto; }
+
+  /* ---------- Cover ---------- */
+  .cover{ background: linear-gradient(135deg,#00857c 0%,#005c56 60%,#02403c 100%); color:#fff; display:flex; flex-direction:column; justify-content:center; }
+  .cover .kicker{ font-size:15px; letter-spacing:.32em; opacity:.8; font-weight:600; }
+  .cover h1{ font-size:52px; font-weight:800; margin:14px 0 6px; letter-spacing:-1px; }
+  .cover h2{ font-size:22px; font-weight:400; opacity:.92; }
+  .cover .meta{ margin-top:40px; font-size:14px; opacity:.85; line-height:1.9; border-top:1px solid rgba(255,255,255,.25); padding-top:18px; max-width:560px;}
+  .cover .badge-row{ margin-top:28px; display:flex; gap:10px; flex-wrap:wrap;}
+  .cover .b{ background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.3); border-radius:20px; padding:6px 15px; font-size:12.5px;}
+  .cover .corner{ position:absolute; top:14mm; right:16mm; font-size:13px; opacity:.7; text-align:right;}
+
+  /* ---------- Index ---------- */
+  .ptitle{ font-size:24px; font-weight:800; color:var(--teal-d); margin-bottom:3px;}
+  .psub{ font-size:13px; color:var(--muted); margin-bottom:16px;}
+  .idx-grid{ display:grid; grid-template-columns:1fr 1fr; gap:9px 26px; }
+  .idx-sec{ font-size:13px; font-weight:800; color:var(--teal); letter-spacing:.08em; margin:6px 0 2px; grid-column:1/-1;}
+  .idx-sec.adm{ color:var(--admin); }
+  .idx-row{ display:flex; align-items:baseline; gap:10px; padding:6px 10px; background:var(--bg); border-radius:7px; border-left:3px solid var(--teal);}
+  .idx-row.adm{ border-left-color:var(--admin);}
+  .idx-n{ font-weight:800; color:var(--teal); min-width:22px; font-size:13px;}
+  .idx-row.adm .idx-n{ color:var(--admin);}
+  .idx-nm{ font-weight:700; }
+  .idx-ds{ color:var(--muted); font-size:11.5px; margin-left:auto; text-align:right; max-width:54%;}
+
+  /* ---------- Tab page ---------- */
+  .hdr{ display:flex; align-items:center; gap:14px; border-bottom:2.5px solid var(--teal); padding-bottom:11px; margin-bottom:13px;}
+  .hdr.adm{ border-bottom-color:var(--admin);}
+  .num{ width:46px; height:46px; border-radius:12px; background:var(--teal); color:#fff; font-size:22px; font-weight:800; display:flex; align-items:center; justify-content:center; flex:none;}
+  .num.adm{ background:var(--admin);}
+  .htxt h3{ font-size:22px; font-weight:800; color:var(--ink); line-height:1.15;}
+  .htxt .path{ font-size:12px; color:var(--muted); margin-top:2px; font-family:ui-monospace,Menlo,monospace;}
+  .seg{ margin-left:auto; font-size:11px; font-weight:700; color:#fff; background:var(--teal); padding:5px 13px; border-radius:14px; flex:none;}
+  .seg.adm{ background:var(--admin);}
+
+  .lead{ font-size:14px; color:var(--teal-d); font-weight:600; background:var(--bg); border-radius:9px; padding:11px 15px; margin-bottom:13px;}
+  .cols{ display:grid; grid-template-columns: 1.15fr 1.5fr 1fr; gap:18px; }
+  .col h4{ font-size:12px; font-weight:800; letter-spacing:.05em; color:var(--teal); text-transform:uppercase; margin-bottom:8px; padding-bottom:5px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:6px;}
+  .col.adm h4{ color:var(--admin);}
+  ul{ list-style:none; }
+  li{ position:relative; padding-left:15px; margin-bottom:6px; font-size:12.5px; color:#2c3d45;}
+  li::before{ content:""; position:absolute; left:2px; top:7px; width:5px; height:5px; border-radius:50%; background:var(--teal);}
+  .col.adm li::before{ background:var(--admin);}
+  li b{ color:var(--ink); font-weight:700;}
+  .src{ font-size:12px; color:#2c3d45; margin-bottom:6px;}
+  .chip{ display:inline-block; font-size:10.5px; background:#e7f1f0; color:var(--teal-d); border-radius:5px; padding:2px 8px; margin:0 4px 4px 0; font-weight:600;}
+  .chip.off{ background:#eef0f4; color:#5b4a8a;}
+  .tip{ position:absolute; left:16mm; right:16mm; bottom:11mm; font-size:11.5px; color:var(--amber); background:#fdf6e9; border:1px solid #f0e0bf; border-radius:8px; padding:8px 13px;}
+  .tip b{ color:#8a5a06;}
+  .foot{ position:absolute; bottom:5mm; right:16mm; font-size:10px; color:#9fb0b6;}
+  .foot.l{ left:16mm; right:auto;}
+
+  /* closing */
+  .close-grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px 26px; margin-top:6px;}
+  .card{ background:var(--bg); border-radius:10px; padding:14px 16px; border-top:3px solid var(--teal);}
+  .card h4{ font-size:13px; font-weight:800; color:var(--teal-d); margin-bottom:8px;}
+  .card li{ font-size:12px;}
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<section class="page cover">
+  <div class="corner">MSD Korea · Market Access<br>내부 배포용 (Confidential)</div>
+  <div class="kicker">MA AI DOSSIER</div>
+  <h1>기능 소개 매뉴얼</h1>
+  <h2>약가 · 허가 · 급여 · 시장 모니터링 자동화 플랫폼</h2>
+  <div class="badge-row">
+    <span class="b">국내·해외 약가</span>
+    <span class="b">급여 등재 파이프라인</span>
+    <span class="b">시장 점유율</span>
+    <span class="b">경쟁사·정책 동향</span>
+    <span class="b">등재 아날로그 검색</span>
+  </div>
+  <div class="meta">
+    하나의 화면에서 HIRA·식약처·NHIS·해외 8개국·뉴스 데이터를 통합 모니터링합니다.<br>
+    스크레이퍼가 매일·매주 자동 수집 → DB 적재 → 대시보드로 표출하는 단방향 구조로,
+    담당자는 <b>검색·필터·분석</b>에만 집중하면 됩니다.<br>
+    <span style="opacity:.8">버전 2026.06 · 본 문서는 각 탭의 사용 가치와 조작법 중심으로 작성</span>
+  </div>
+</section>
+
+<!-- ============ INDEX ============ -->
+<section class="page">
+  <div class="ptitle">한눈에 보기 — 전체 탭 구성</div>
+  <div class="psub">왼쪽 사이드바는 <b>ANALYTICS</b>(전 사용자) 와 <b>MANAGEMENT</b>(관리자 전용) 두 영역으로 나뉩니다.</div>
+  <div class="idx-grid">
+    <div class="idx-sec">ANALYTICS — 분석 (전 사용자)</div>
+    <div class="idx-row"><span class="idx-n">1</span><span class="idx-nm">홈 대시보드</span><span class="idx-ds">약가변동 Top10·키워드·MSD 요약</span></div>
+    <div class="idx-row"><span class="idx-n">2</span><span class="idx-nm">국내약가</span><span class="idx-ds">HIRA 약가·변동이력·비교약제</span></div>
+    <div class="idx-row"><span class="idx-n">3</span><span class="idx-nm">해외약가</span><span class="idx-ds">A8 8개국 조정가·일일투약비</span></div>
+    <div class="idx-row"><span class="idx-n">4</span><span class="idx-nm">국내 시장 (Korean Market)</span><span class="idx-ds">ATC4 점유율·매출·유닛 추이</span></div>
+    <div class="idx-row"><span class="idx-n">5</span><span class="idx-nm">경쟁사 동향</span><span class="idx-ds">MNC 동향 + Tier1 뉴스 아카이브</span></div>
+    <div class="idx-row"><span class="idx-n">6</span><span class="idx-nm">데일리 메일링</span><span class="idx-ds">키워드 뉴스 자동 메일 발송</span></div>
+    <div class="idx-row"><span class="idx-n">7</span><span class="idx-nm">급여 현황 (Reimbursement)</span><span class="idx-ds">등재 파이프라인·심의 공고</span></div>
+    <div class="idx-row"><span class="idx-n">8</span><span class="idx-nm">등재 아날로그 검색</span><span class="idx-ds">약평위 평가기록·기준약제 탐색</span></div>
+    <div class="idx-sec adm">MANAGEMENT — 관리 (관리자 전용)</div>
+    <div class="idx-row adm"><span class="idx-n">A1</span><span class="idx-nm">시장점유율 업로드</span><span class="idx-ds">IQVIA 분기 Excel 적재</span></div>
+    <div class="idx-row adm"><span class="idx-n">A2</span><span class="idx-nm">MSD 파이프라인</span><span class="idx-ds">개발 단계 제품 관리</span></div>
+    <div class="idx-row adm"><span class="idx-n">A3</span><span class="idx-nm">브랜드 트래픽</span><span class="idx-ds">홈 브랜드 순위·뉴스 관리</span></div>
+    <div class="idx-row adm"><span class="idx-n">A4</span><span class="idx-nm">MNC 동향 관리</span><span class="idx-ds">동향 CRUD + 자동 크롤</span></div>
+    <div class="idx-row adm"><span class="idx-n">A5</span><span class="idx-nm">키워드 클라우드</span><span class="idx-ds">홈 키워드·가중치 관리</span></div>
+    <div class="idx-row adm"><span class="idx-n">A6</span><span class="idx-nm">급여 관리</span><span class="idx-ds">적응증별 급여 boolean·조건</span></div>
+    <div class="idx-row adm"><span class="idx-n">A7</span><span class="idx-nm">심의 파이프라인 관리</span><span class="idx-ds">약평위 대기·회차·NHIS 매칭</span></div>
+  </div>
+  <div class="tip"><b>데이터 흐름 한 줄 요약 —</b> 스크레이퍼(자동 수집) → DB → 대시보드. 화면은 DB만 읽으므로 항상 최신 적재분을 보여줍니다. 출처가 "공식"인지 "추정"인지는 화면에 칩으로 구분 표시됩니다.</div>
+  <div class="foot l">MA AI Dossier · 기능 소개 매뉴얼</div>
+  <div class="foot">02</div>
+</section>
+
+<!-- ============ TAB 1 ============ -->
+<section class="page">
+  <div class="hdr">
+    <div class="num">1</div>
+    <div class="htxt"><h3>홈 대시보드 (Dashboard Overview)</h3><div class="path">/ · 메인 화면</div></div>
+    <div class="seg">ANALYTICS</div>
+  </div>
+  <div class="lead">접속하면 가장 먼저 보이는 모니터링 허브. 시장 동향과 위험 신호를 한 화면에서 조기 감지합니다.</div>
+  <div class="cols">
+    <div class="col">
+      <h4>이 탭으로 무엇을 하나</h4>
+      <ul>
+        <li>전달 대비 <b>약가 변동 Top 10</b> 을 즉시 확인</li>
+        <li>정책·뉴스 <b>키워드 클라우드</b>로 이슈 흐름 파악</li>
+        <li>MSD 자산 등재현황·파이프라인·경쟁 동향 스냅샷</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h4>주요 기능</h4>
+      <ul>
+        <li><b>약가변동 테이블</b> — 제품·성분·제약사·변동전가/현재가·변동률·사유·적용일</li>
+        <li>행 클릭 시 <b>국내약가 탭</b>으로 바로 이동</li>
+        <li><b>키워드 클라우드</b> — 글자 크기=언급 빈도, 클릭 시 근거 기사 연결</li>
+        <li><b>MSD 요약 카드 3종</b> — 등재 / 파이프라인 / 경쟁사</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h4>데이터 출처</h4>
+      <div class="src">월별 자동 수집·집계된 데이터입니다.</div>
+      <span class="chip">HIRA 약제급여목록 고시</span>
+      <span class="chip">네이버 뉴스 API</span>
+      <span class="chip">MSD 내부 파이프라인</span>
+    </div>
+  </div>
+  <div class="tip"><b>활용 팁 —</b> 매일 아침 이 화면만 봐도 "어제까지의 약가 변동·정책 이슈"가 정리됩니다. 변동률이 큰 품목은 행을 눌러 국내약가에서 변동사유까지 확인하세요.</div>
+  <div class="foot l">MA AI Dossier · 기능 소개 매뉴얼</div><div class="foot">03</div>
+</section>
+
+<!-- ============ TAB 2 ============ -->
+<section class="page">
+  <div class="hdr">
+    <div class="num">2</div>
+    <div class="htxt"><h3>국내약가 (Domestic Pricing)</h3><div class="path">/domestic-pricing</div></div>
+    <div class="seg">ANALYTICS</div>
+  </div>
+  <div class="lead">건강보험(HIRA) 약가를 검색하고, 가격 변동 이력과 그 사유, 동일성분 비교약제까지 한 번에 분석합니다.</div>
+  <div class="cols">
+    <div class="col">
+      <h4>이 탭으로 무엇을 하나</h4>
+      <ul>
+        <li>제품·성분·보험코드로 <b>약가 상세 조회</b></li>
+        <li>약가 <b>변동 이력 + 변동 사유</b> 근거 확인</li>
+        <li>동일성분 <b>비교약제</b>와 약가·일일투약비 비교</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h4>주요 기능</h4>
+      <ul>
+        <li><b>검색 + 엑셀 다운로드</b> (검색결과 XLSX)</li>
+        <li><b>기본/상세 카드</b> — 최초 등재일·현 상한가·RSA 여부·허가일·용법용량·일·월·연 치료비</li>
+        <li><b>비교약제 최대 3종</b> 추가 → 기준약제 대비 차이율</li>
+        <li><b>가격 워터폴 차트</b> + 변동이력 테이블</li>
+        <li><b>사유 분석</b> 클릭 → 4대 기전 분류 + 신뢰도 배지 + 근거문헌</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h4>데이터 출처</h4>
+      <span class="chip">HIRA 급여목록 고시</span>
+      <span class="chip">식약처 허가정보 API</span>
+      <span class="chip">PubMed·MA 전문지</span>
+      <div class="src" style="margin-top:8px"><b>출처 표시</b> — 허가일은 식약처 <b>공식</b> 또는 <b>추정</b>으로 구분. RSA 품목은 표시가 ≠ 실거래가(net 비공개) 임을 유의.</div>
+    </div>
+  </div>
+  <div class="tip"><b>활용 팁 —</b> "사유 분석"은 처음 누르면 20~40초 걸리지만 결과는 영구 저장돼 다음부터 즉시 표시됩니다. 신뢰도 '높음' 근거 위주로 보고에 인용하세요.</div>
+  <div class="foot l">MA AI Dossier · 기능 소개 매뉴얼</div><div class="foot">04</div>
+</section>
+
+<!-- ============ TAB 3 ============ -->
+<section class="page">
+  <div class="hdr">
+    <div class="num">3</div>
+    <div class="htxt"><h3>해외약가 (International Pricing)</h3><div class="path">/international-pricing</div></div>
+    <div class="seg">ANALYTICS</div>
+  </div>
+  <div class="lead">A8 8개국 약가를 조사해 한국 기준 조정가(A8 adjusted price)와 일일투약비를 산출합니다. 재정영향분석의 근거 자료가 됩니다.</div>
+  <div class="cols">
+    <div class="col">
+      <h4>이 탭으로 무엇을 하나</h4>
+      <ul>
+        <li>미국·영국·독일·프랑스·캐나다·일본·이탈리아·스위스 약가 조회</li>
+        <li>현지가 → <b>한국 조정가(KRW)</b> 환산</li>
+        <li>국가별 <b>급여 여부</b>와 일일투약비 비교</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h4>주요 기능</h4>
+      <ul>
+        <li><b>조정가 요약 카드</b> — 최저/평균/최고가 + 평균 제외국 사유</li>
+        <li><b>국가별 비교 그래프</b> + 8개국 카드(급여 배지·현지가·조정가·일일비)</li>
+        <li><b>조정가 산출 로직</b> 펼치기 — 표시가→단위가→환율→공장도율→VAT→조정가 전 과정 공개</li>
+        <li>검색 이력 카드 / 신규 검색 / 리포트 다운로드</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h4>데이터 출처</h4>
+      <span class="chip">각국 공개 의약품 DB</span>
+      <span class="chip">US: Micromedex(WAC)</span>
+      <span class="chip">KEB 36개월 평균환율</span>
+      <div class="src" style="margin-top:8px"><b>환율</b> — KEB하나은행 <b>36개월 평균(최종 고시회차)</b>. 매월 2일 자동 갱신되어 모든 조정가에 일괄 반영됩니다.</div>
+    </div>
+  </div>
+  <div class="tip"><b>활용 팁 —</b> 조정가가 비어 있는 국가는 "미등재/가격 미공개" 사실이며 임의 추정값이 아닙니다. 산출 로직을 펼치면 각 단계 수치를 그대로 재정영향분석서에 옮길 수 있습니다.</div>
+  <div class="foot l">MA AI Dossier · 기능 소개 매뉴얼</div><div class="foot">05</div>
+</section>
+
+<!-- ============ TAB 4 ============ -->
+<section class="page">
+  <div class="hdr">
+    <div class="num">4</div>
+    <div class="htxt"><h3>국내 시장 (Korean Market)</h3><div class="path">/market-share</div></div>
+    <div class="seg">ANALYTICS</div>
+  </div>
+  <div class="lead">치료군(ATC4) 단위로 시장 점유율과 분기별 매출·처방량 추이를 분석합니다.</div>
+  <div class="cols">
+    <div class="col">
+      <h4>이 탭으로 무엇을 하나</h4>
+      <ul>
+        <li>특정 약제가 속한 <b>ATC4 시장 점유율</b> 파악</li>
+        <li>경쟁 브랜드와 <b>점유율·매출·유닛</b> 비교</li>
+        <li>분기 추이로 <b>성장/하락</b> 흐름 확인</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h4>주요 기능</h4>
+      <ul>
+        <li><b>제품/성분 검색</b> → 브랜드 상세 카드(점유율·매출·ATC4 순위)</li>
+        <li><b>3가지 뷰 토글</b> — Market Share(도넛+추이) / Unit Trend / Revenue Trend</li>
+        <li>제품별 점유율 요약(상위 6 + Others)</li>
+        <li><b>엑셀 다운로드</b> · 다크/라이트 모드</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h4>데이터 출처</h4>
+      <span class="chip">IQVIA NSA-E Master</span>
+      <span class="chip off">관리자 분기 업로드</span>
+      <div class="src" style="margin-top:8px">분기별 데이터는 관리자가 <b>시장점유율 업로드(A1)</b> 탭에서 IQVIA Excel 을 올려 갱신합니다.</div>
+    </div>
+  </div>
+  <div class="tip"><b>활용 팁 —</b> 검색 후 뷰를 Revenue Trend 로 바꾸면 점유율은 낮아도 매출이 크는 품목을 잡아낼 수 있습니다. 분기 비교는 동일 ATC4 내에서만 의미가 있습니다.</div>
+  <div class="foot l">MA AI Dossier · 기능 소개 매뉴얼</div><div class="foot">06</div>
+</section>
+
+<!-- ============ TAB 5 ============ -->
+<section class="page">
+  <div class="hdr">
+    <div class="num">5</div>
+    <div class="htxt"><h3>경쟁사 동향 (Competitor Trends)</h3><div class="path">/competitor-trends</div></div>
+    <div class="seg">ANALYTICS</div>
+  </div>
+  <div class="lead">주요 MNC 13종의 신규·가격·임상·급여 동향과 관련 전문지 뉴스를 모아 봅니다.</div>
+  <div class="cols">
+    <div class="col">
+      <h4>이 탭으로 무엇을 하나</h4>
+      <ul>
+        <li>경쟁사별 최신 <b>동향 카드</b> 모니터링</li>
+        <li>동향과 연결된 <b>Tier1 전문지 뉴스</b> 확인</li>
+        <li>브랜드·기간별 <b>뉴스 아카이브</b> 검색</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h4>주요 기능</h4>
+      <ul>
+        <li><b>두 가지 뷰</b> — Trends(동향 카드) / Archive(뉴스 아카이브)</li>
+        <li>배지 필터: 신규출시·가격변동·임상·급여등재·파이프라인·전략</li>
+        <li>회사 필터 + 제목/내용 검색</li>
+        <li>Archive: 브랜드별 · 1/3/6개월 기간 필터</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h4>데이터 출처</h4>
+      <span class="chip">Tier1 경제·의료 전문지</span>
+      <span class="chip">네이버 뉴스 API</span>
+      <span class="chip off">관리자 수동 입력</span>
+      <div class="src" style="margin-top:8px">주 1회 자동 크롤 + 관리자 보강. 기사는 <b>6개월 수집 · 1년 보존</b>.</div>
+    </div>
+  </div>
+  <div class="tip"><b>활용 팁 —</b> 동향 카드의 "관련 뉴스"는 클릭 시점에 불러오므로, 근거 기사를 바로 열어 출처를 확인하며 보고에 활용할 수 있습니다.</div>
+  <div class="foot l">MA AI Dossier · 기능 소개 매뉴얼</div><div class="foot">07</div>
+</section>
+
+<!-- ============ TAB 6 ============ -->
+<section class="page">
+  <div class="hdr">
+    <div class="num">6</div>
+    <div class="htxt"><h3>데일리 메일링 (Daily Mailing)</h3><div class="path">/daily-mailing</div></div>
+    <div class="seg">ANALYTICS</div>
+  </div>
+  <div class="lead">관심 키워드 뉴스를 일간/주간으로 지정한 수신자에게 자동 메일 발송합니다.</div>
+  <div class="cols">
+    <div class="col">
+      <h4>이 탭으로 무엇을 하나</h4>
+      <ul>
+        <li>키워드·매체 기준 <b>뉴스 구독</b> 설정</li>
+        <li>팀 <b>수신자 다중 등록</b></li>
+        <li>발송 전 <b>테스트 메일</b>로 내용 확인</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h4>주요 기능</h4>
+      <ul>
+        <li><b>키워드 선택</b> — 프리셋 13종 토글 + 커스텀 추가</li>
+        <li><b>매체 카테고리</b> — 전문지/일간지/경제지/방송 그룹 선택</li>
+        <li><b>일정</b> — Daily(시간 지정) / Weekly(요일 지정)</li>
+        <li>설정 저장·활성토글·삭제 · 테스트 발송</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h4>데이터 출처</h4>
+      <span class="chip">네이버 뉴스 API</span>
+      <span class="chip off">구독설정 DB</span>
+      <div class="src" style="margin-top:8px">기본 수신자는 팀 메일이며, 설정별로 개별 추가/삭제할 수 있습니다.</div>
+    </div>
+  </div>
+  <div class="tip"><b>활용 팁 —</b> 새 설정은 먼저 "테스트 발송"으로 본인에게 보내 키워드·매체 조합이 적절한지 확인한 뒤 활성화하는 것을 권장합니다.</div>
+  <div class="foot l">MA AI Dossier · 기능 소개 매뉴얼</div><div class="foot">08</div>
+</section>
+
+<!-- ============ TAB 7 ============ -->
+<section class="page">
+  <div class="hdr">
+    <div class="num">7</div>
+    <div class="htxt"><h3>급여 현황 (Reimbursement Status)</h3><div class="path">/reimbursement-status</div></div>
+    <div class="seg">ANALYTICS</div>
+  </div>
+  <div class="lead">약제 급여 등재 파이프라인 현황과 심의 회차별 공식 공고·언론 해석을 추적합니다.</div>
+  <div class="cols">
+    <div class="col">
+      <h4>이 탭으로 무엇을 하나</h4>
+      <ul>
+        <li>연간 <b>약평위 회차 일정</b> 확인</li>
+        <li>약제별 <b>등재 진행 단계</b> 추적</li>
+        <li>회차별 <b>공식 공고 + 언론 보도</b> 대조</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h4>주요 기능</h4>
+      <ul>
+        <li><b>연간 일정표</b> — 월별 회차·심의 약제 수</li>
+        <li><b>파이프라인 보드</b> — 제출→암질심→대기→통과 단계별 카드</li>
+        <li><b>Intelligence Reports</b> — 공식 공고와 언론 해석 병렬 표시</li>
+        <li>적응증별 허가→암질심→약평위 타임라인</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h4>데이터 출처</h4>
+      <span class="chip">HIRA 공식 공고</span>
+      <span class="chip">식약처 허가 API</span>
+      <span class="chip">의료전문지</span>
+      <div class="src" style="margin-top:8px">위원회 순서: <b>암질심 → 약평위 → 공단협상</b>. 타임라인은 같은 등재 사이클 내에서만 연결됩니다.</div>
+    </div>
+  </div>
+  <div class="tip"><b>활용 팁 —</b> 공식 공고와 언론 해석을 함께 보면 "결정 사실"과 "시장 해석"을 분리해 파악할 수 있습니다. 미verified 보도는 별도 표시됩니다.</div>
+  <div class="foot l">MA AI Dossier · 기능 소개 매뉴얼</div><div class="foot">09</div>
+</section>
+
+<!-- ============ TAB 8 ============ -->
+<section class="page">
+  <div class="hdr">
+    <div class="num">8</div>
+    <div class="htxt"><h3>등재 아날로그 검색 (Listing Analog Search)</h3><div class="path">/analog-search</div></div>
+    <div class="seg">ANALYTICS</div>
+  </div>
+  <div class="lead">과거 약평위 평가 기록을 검색해 신약 등재 전략의 기준약제와 임상 비교 근거를 찾습니다.</div>
+  <div class="cols">
+    <div class="col">
+      <h4>이 탭으로 무엇을 하나</h4>
+      <ul>
+        <li>유사 적응증의 <b>기준약제(아날로그)</b> 탐색</li>
+        <li>효능 지표(HR/p값) <b>비교 근거</b> 확보</li>
+        <li>허가→암질심→약평위 <b>타임라인</b> 확인</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h4>주요 기능</h4>
+      <ul>
+        <li><b>Facet 필터</b> — 질환·암유형·치료라인·평가결과·급여트랙·갭유형</li>
+        <li>제품/성분 검색 (동의어 인지 + 띄어쓰기 AND)</li>
+        <li><b>상세</b> — 효능지표 표 / 타임라인 / 재심의 횟수 / 총 소요일</li>
+        <li>요약 리포트 생성 · 검색 피드백 제출</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h4>데이터 출처</h4>
+      <span class="chip">약평위 평가결과 (PDF 직접파싱)</span>
+      <span class="chip">암질심 일자</span>
+      <span class="chip">임상 논문</span>
+      <div class="src" style="margin-top:8px">평가결과 PDF 680건을 구조화해 질환·효능·정책 의도까지 보강했습니다.</div>
+    </div>
+  </div>
+  <div class="tip"><b>활용 팁 —</b> 신약과 가장 가까운 적응증·치료라인으로 Facet 을 좁힌 뒤, 통과 사례의 등재 트랙(RSA/경평면제 등)을 보면 협상 전략 시나리오를 빠르게 세울 수 있습니다.</div>
+  <div class="foot l">MA AI Dossier · 기능 소개 매뉴얼</div><div class="foot">10</div>
+</section>
+
+<!-- ============ ADMIN DIVIDER + A1~A7 ============ -->
+<section class="page">
+  <div class="ptitle" style="color:var(--admin)">관리자 영역 (MANAGEMENT)</div>
+  <div class="psub">아래 7개 탭은 <b>관리자 전용</b>입니다. 분석 탭에 표출되는 데이터를 입력·관리하는 백오피스 기능입니다.</div>
+  <div class="close-grid">
+    <div class="card" style="border-top-color:var(--admin)">
+      <h4 style="color:var(--admin)">A1 · 시장점유율 업로드 &nbsp;|&nbsp; A2 · MSD 파이프라인</h4>
+      <ul>
+        <li><b>A1</b> — IQVIA 분기 Excel 업로드 → "국내 시장(4)" 탭 데이터 갱신. 업로드 이력·현황 요약 제공.</li>
+        <li><b>A2</b> — MSD 개발 중 제품(개발단계·적응증·예상출시년) CRUD → 홈 MSD 요약 카드에 반영.</li>
+      </ul>
+    </div>
+    <div class="card" style="border-top-color:var(--admin)">
+      <h4 style="color:var(--admin)">A3 · 브랜드 트래픽 &nbsp;|&nbsp; A4 · MNC 동향 관리</h4>
+      <ul>
+        <li><b>A3</b> — 홈 브랜드 순위(Top10)·7일 스파크라인·뉴스 블럭 관리.</li>
+        <li><b>A4</b> — "경쟁사 동향(5)" 카드 CRUD + 주1회 자동 크롤 실행(Naver+GPT 필터).</li>
+      </ul>
+    </div>
+    <div class="card" style="border-top-color:var(--admin)">
+      <h4 style="color:var(--admin)">A5 · 키워드 클라우드 &nbsp;|&nbsp; A6 · 급여 관리</h4>
+      <ul>
+        <li><b>A5</b> — 홈 키워드 클라우드 단어·가중치·색상 관리.</li>
+        <li><b>A6</b> — 제품별 적응증 급여 여부(boolean)·조건·공고 수동 편집 → "급여 현황(7)" 반영.</li>
+      </ul>
+    </div>
+    <div class="card" style="border-top-color:var(--admin)">
+      <h4 style="color:var(--admin)">A7 · 심의 파이프라인 관리</h4>
+      <ul>
+        <li>약평위 심의 대기 약제 등록·상태 추적(제출~재심의)</li>
+        <li>심의 회차(Session) 생성·편집 + 회차별 이벤트 관리</li>
+        <li>NHIS 약가협상 자료와 <b>미매칭 약제</b> 수동 매칭</li>
+      </ul>
+    </div>
+  </div>
+  <div class="tip" style="color:var(--admin); background:#f3f0fa; border-color:#ddd4ee"><b>관리 원칙 —</b> 모든 관리 입력은 즉시 DB 에 반영되어 분석 탭에 표출됩니다. 자동 수집 데이터는 관리자 수동 편집분을 덮어쓰지 않도록 보존됩니다.</div>
+  <div class="foot l">MA AI Dossier · 기능 소개 매뉴얼</div><div class="foot">11</div>
+</section>
+
+<!-- ============ CLOSING ============ -->
+<section class="page">
+  <div class="ptitle">공통 원칙 · 데이터 신뢰도</div>
+  <div class="psub">모든 탭에 공통으로 적용되는 설계 원칙입니다. 보고·의사결정 시 참고하세요.</div>
+  <div class="close-grid">
+    <div class="card">
+      <h4>데이터 흐름은 단방향</h4>
+      <ul>
+        <li>스크레이퍼(자동 수집) → DB → 대시보드</li>
+        <li>화면은 DB만 읽으므로 매 검색마다 외부를 다시 긁지 않음 → 빠르고 일관됨</li>
+        <li>한 번 확보한 가격·근거는 영구 저장(재조회 불필요)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>출처를 항상 구분 표시</h4>
+      <ul>
+        <li>허가일: <b>식약처 공식</b> vs <b>추정</b> 칩으로 구분</li>
+        <li>급여 net 가격은 비공개 — 표시가는 net 이 아님(RSA)</li>
+        <li>가격 없음은 "미등재/미공개" 사실, 임의값 아님</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>자동 수집 주기</h4>
+      <ul>
+        <li>국내약가: 월별 자동 적재(누락 월 자동 복구)</li>
+        <li>경쟁사·정책 뉴스: 주 1회 크롤</li>
+        <li>해외 환율: <b>매월 2일 36개월 평균(최종회차) 자동 갱신</b></li>
+        <li>급여 위원회 데이터: 매일 동기화</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>품질 관리</h4>
+      <ul>
+        <li>매일 자동 코드·데이터 점검(이상값·회귀 탐지)</li>
+        <li>판단이 애매한 항목은 다수결 리뷰로 결정</li>
+        <li>키트루다(Keytruda) 기준으로 신규 로직 최종 검증</li>
+      </ul>
+    </div>
+  </div>
+  <div class="tip"><b>문의 —</b> 기능 개선 요청·데이터 이상·신규 약제 추가는 MA 자동화 담당(Joseph)에게 전달해 주세요. 본 매뉴얼은 버전 2026.06 기준이며 기능 추가 시 갱신됩니다.</div>
+  <div class="foot l">MA AI Dossier · 기능 소개 매뉴얼 · MSD Korea Market Access</div><div class="foot">12</div>
+</section>
+
+</body>
+</html>
