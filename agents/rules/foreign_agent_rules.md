@@ -132,9 +132,16 @@ scraper 가 pack 가격을 반환하면 pack_count 를 명시해야 per-unit 환
 
 ## 환율 적용 원칙
 - KEB하나은행 36개월 평균 환율
+- **고시회차는 반드시 '최종'.** KEB 폼 라디오 매핑 반직관적: `tmpPbldDvCd_1`(value=1)=최초, `tmpPbldDvCd_2`(value=0)=**최종**. `inputCheck()` 가 제출 시 `pbldDvCd=radiobox.getCheckedValue(tmpPbldDvCd)` 로 hidden 재생성 → **체크된 라디오가 결정적** (hidden 수동설정 덮어써짐). 최초/최종 값 ~0.1% 차이.
 - 환율 조회 실패 시 → adjusted_price_krw = None (DB 저장은 진행)
 - EUR 은 FR/IT/DE 공용
 - **JPY: KEB 가 "100엔당 KRW" 로 고시.** parse 시점에 /100 정규화 + calculator safeguard 이중 방어.
+
+### 환율 캐시 = 단일 소스 (수집 1 / 소비 여럿)
+- **수집(크롤)은 월간 자동갱신 잡 하나뿐**: `scheduler.exchange_rate_refresh_job` (매월 2일 04:00 KST). KEB 최종 → `data/foreign/exchange_rate/keb_avg_rate_{from}_{to}.xlsx` 캐시 덮어씀. chromium 은 Dockerfile 에 설치됨.
+- **검색은 크롤 안 함**: `get_36m_average`→`_load_latest_cache` 로 캐시만 읽음. 신규 검색은 현재 캐시값으로 즉시 계산해 새 행 INSERT (환율 동결).
+- **기존 행 반영**: `save_foreign_price` 는 append-only. 월간 잡이 갱신 직후 `DrugPriceDB.recompute_foreign_fx(rates, meta)` 로 기존 최신 가격행을 **선형 스케일**(new/old rate) 재계산해 새 행 append (adjusted_price_krw 는 환율에 선형 → 재스크레이프 불필요). `get_foreign_prices` 가 최신행 노출.
+- **수동 즉시 반영**: `scheduler.py --fx-refresh-now`(캐시갱신+재계산) / `--fx-recompute-now`(재계산만). 프로덕션은 `flyctl ssh console -C "python scheduler.py --fx-refresh-now"`.
 
 ## DB 저장 시 필수 필드
 `searched_at`, `query_name`, `country`, `product_name`, `ingredient`,
