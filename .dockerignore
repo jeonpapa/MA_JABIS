@@ -12,6 +12,17 @@ config/foreign_credentials.json
 # 런타임 데이터 (볼륨이 /app/data 를 마운트 → 이미지 내용 shadow)
 data/
 
+# 분석 소스 원본 (analog 은 agents/ingest/analog_corpus.json 사용 → PDF 원본 이미지 불필요)
+# 한글 파일명 255바이트 초과로 buildkit 전송 실패도 유발
+DREC Raw/
+front end/
+
+# 런타임 미사용 (참고자료/문서/감사리포트)
+_resource/
+_context/
+docs/
+quality_guard/
+
 # VCS / 가상환경 / 캐시
 .git/
 .venv/
