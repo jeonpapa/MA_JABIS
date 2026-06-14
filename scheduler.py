@@ -230,8 +230,41 @@ def exchange_rate_refresh_job():
             len(rates), meta.get("from", "?"), meta.get("to", "?"),
             {k: rates.get(k) for k in ("USD", "EUR", "JPY", "GBP", "CHF") if k in rates},
         )
+        # 갱신 직후 기존 최신 해외약가 행도 최종환율로 재계산 (주간 백필 대기 없이 즉시 반영)
+        try:
+            from agents.db import DrugPriceDB
+            db = DrugPriceDB(BASE_DIR / "data" / "db" / "drug_prices.db")
+            rc = db.recompute_foreign_fx(rates, meta)
+            logger.info("환율 갱신 후 기존행 재계산: 대상 %d · 갱신 %d · skip %d",
+                        rc["candidates"], rc["updated"], rc["skipped"])
+        except Exception as e:
+            logger.exception("환율 갱신 후 재계산 실패(캐시는 갱신됨): %s", e)
     except Exception as e:
         logger.exception("KEB 환율 갱신 실패: %s", e)
+
+
+def exchange_rate_recompute_job():
+    """기존 최신 해외약가 행을 현재 캐시 환율(최종)로 재계산 — 재스크레이프 없음.
+
+    환율은 adjusted_price_krw 에 선형이라 new/old 비율로 스케일해 새 행을 append.
+    환율 잡(매월 2일)에 이미 포함돼 있고, 이 잡은 캐시는 그대로 두고 재계산만
+    수동 실행할 때 사용 (예: 고시회차 수정 후 기존행 즉시 반영).
+    """
+    logger.info("━━━ 해외약가 FX 재계산 시작 ━━━")
+    try:
+        from agents.exchange_rate import ExchangeRateFetcher
+        from agents.db import DrugPriceDB
+        fetcher = ExchangeRateFetcher()
+        if not fetcher._load_latest_cache():
+            logger.warning("FX 재계산: 환율 캐시 없음 — --fx-refresh-now 먼저 실행 필요")
+            return
+        db = DrugPriceDB(BASE_DIR / "data" / "db" / "drug_prices.db")
+        res = db.recompute_foreign_fx(fetcher._rates, fetcher._rate_meta)
+        logger.info("FX 재계산 완료: 대상 %d · 갱신 %d · skip %d (기간 %s~%s)",
+                    res["candidates"], res["updated"], res["skipped"],
+                    fetcher._rate_meta.get("from"), fetcher._rate_meta.get("to"))
+    except Exception as e:
+        logger.exception("FX 재계산 실패: %s", e)
 
 
 def reimbursement_xnational_sync_job():
@@ -574,7 +607,12 @@ def main():
     parser.add_argument(
         "--fx-refresh-now",
         action="store_true",
-        help="KEB 36개월 평균환율 즉시 갱신 (캐시 최신화)",
+        help="KEB 36개월 평균환율 즉시 갱신 (캐시 최신화 + 기존행 재계산)",
+    )
+    parser.add_argument(
+        "--fx-recompute-now",
+        action="store_true",
+        help="기존 해외약가 행을 현재 캐시 환율로 재계산 (재스크레이프 없음)",
     )
     args = parser.parse_args()
 
@@ -647,6 +685,11 @@ def main():
     if args.fx_refresh_now:
         logger.info("KEB 36개월 평균환율 즉시 갱신")
         exchange_rate_refresh_job()
+        return
+
+    if args.fx_recompute_now:
+        logger.info("해외약가 FX 재계산 즉시 실행 (재스크레이프 없음)")
+        exchange_rate_recompute_job()
         return
 
     # 스케줄러 설정: 매월 1일 09:00

@@ -157,6 +157,74 @@ class _ForeignMixin:
             rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
 
+    def recompute_foreign_fx(self, rates: dict, meta: dict | None = None,
+                             tolerance: float = 1e-4) -> dict:
+        """기존 최신 해외약가 행을 현재 환율(rates: {통화코드: rate})로 재계산.
+
+        adjusted_price_krw 는 환율에 선형(per_unit_local × rate × factory_ratio
+        × (1+VAT) × (1+margin))이므로 **재스크레이프 없이** new/old 비율로
+        factory_price_krw·adjusted_price_krw·daily_cost_krw 를 스케일해 새 행을
+        append 한다 (append-only 모델 유지 → get_foreign_prices 가 최신행을 노출).
+
+        국가별 (query_name, country) 최신 가격보유 행만 대상. 환율 변화가 tolerance
+        이내면 skip. 반환: {candidates, updated, skipped, details}.
+        """
+        from agents.exchange_rate import COUNTRY_CURRENCY
+
+        meta = meta or {}
+        new_from = meta.get("from", "")
+        new_to = meta.get("to", "")
+        now = datetime.now().isoformat(timespec="seconds")
+
+        # (query_name, country) 별 최신 가격보유 행 (없으면 그냥 최신)
+        sql = """
+            SELECT f.*
+            FROM foreign_drug_prices f
+            INNER JOIN (
+                SELECT query_name, country,
+                       COALESCE(
+                           MAX(CASE WHEN local_price IS NOT NULL THEN searched_at END),
+                           MAX(searched_at)
+                       ) AS latest
+                FROM foreign_drug_prices
+                GROUP BY query_name, country
+            ) m ON f.query_name = m.query_name AND f.country = m.country
+                   AND f.searched_at = m.latest
+        """
+        with self._connect() as conn:
+            rows = [dict(r) for r in conn.execute(sql).fetchall()]
+
+        updated, skipped, details = 0, 0, []
+        for r in rows:
+            old_rate = r.get("exchange_rate")
+            cur = COUNTRY_CURRENCY.get(r.get("country"))
+            new_rate = rates.get(cur) if cur else None
+            if (not old_rate or old_rate <= 0 or not new_rate
+                    or r.get("local_price") is None):
+                skipped += 1
+                continue
+            scale = new_rate / old_rate
+            if abs(scale - 1.0) < tolerance:
+                skipped += 1
+                continue
+            rec = {**r}
+            rec.pop("id", None)
+            rec["searched_at"] = now
+            rec["exchange_rate"] = new_rate
+            rec["exchange_rate_from"] = new_from or r.get("exchange_rate_from")
+            rec["exchange_rate_to"] = new_to or r.get("exchange_rate_to")
+            for col in ("factory_price_krw", "adjusted_price_krw", "daily_cost_krw"):
+                if rec.get(col) is not None:
+                    rec[col] = round(rec[col] * scale, 4)
+            self.save_foreign_price(rec)
+            updated += 1
+            details.append({
+                "query": r.get("query_name"), "country": r.get("country"),
+                "old_rate": old_rate, "new_rate": new_rate,
+            })
+        return {"candidates": len(rows), "updated": updated,
+                "skipped": skipped, "details": details}
+
     # ── Cross-national reimbursement ──────────────────────────────────────
 
     def save_xnational_reimbursement(self, record: dict) -> int:
