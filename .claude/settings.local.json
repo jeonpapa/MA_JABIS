@@ -15,7 +15,9 @@
       "Read(//private/tmp/**)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "WebFetch(domain:www.nhis.or.kr)",
-      "Bash(kill -0 58002)"
+      "Bash(kill -0 58002)",
+      "Skill(schedule)",
+      "Skill(schedule:*)"
     ]
   }
 }
