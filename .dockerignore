@@ -1,0 +1,40 @@
+# 프로덕션 이미지에서 제외 — 빌드 컨텍스트 경량화 + 자격증명/대용량 차단
+#
+# 핵심 원칙:
+#  - data/ 는 fly 볼륨(ma_data)이 /app/data 를 마운트해 이미지 내용을 가리므로 무의미 → 전량 제외
+#  - 자격증명(config/.env 등)은 fly secrets(환경변수)로 주입 → 이미지에 절대 미포함
+#  - DB/백업/캐시/로그 등 대용량은 런타임 볼륨에서만 사용
+
+# 자격증명 (이미지 포함 금지)
+config/.env
+config/foreign_credentials.json
+
+# 런타임 데이터 (볼륨이 /app/data 를 마운트 → 이미지 내용 shadow)
+data/
+
+# VCS / 가상환경 / 캐시
+.git/
+.venv/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
+# 프런트엔드 (Dockerfile stage1 이 frontend/ 소스에서 npm build → out 생성)
+frontend/node_modules/
+frontend/out/
+
+# 빌드/세션 임시
+.m1tmp/
+scratch/
+logs/
+*.log
+*.bak
+*.db
+*.db-shm
+*.db-wal
+
+# 에디터/도구 설정
+.claude/
+.vscode/
+.idea/
+.DS_Store
