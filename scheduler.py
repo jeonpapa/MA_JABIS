@@ -208,6 +208,32 @@ def foreign_price_backfill_job():
         logger.exception("ForeignPrice backfill 실패: %s", e)
 
 
+def exchange_rate_refresh_job():
+    """KEB 36개월 평균환율 갱신 — 매월 2일 04:00 Seoul.
+
+    전월 말일이 확정된 직후(2일)에 KEB하나은행 기간평균(36개월 rolling, 매매기준율)
+    엑셀을 Playwright 로 재다운로드해 data/foreign/exchange_rate/ 캐시를 최신화.
+    이후 ForeignPriceAgent 의 A8 조정가 계산이 항상 최신 36개월 창을 사용하도록 보장.
+
+    이전에는 정기 갱신 잡이 없어 누군가 refresh() 를 호출하기 전까지 마지막 xlsx 가
+    계속 쓰였음(KEB 36mo 창 drift 의 원인). chromium 은 Dockerfile 에 이미 설치됨.
+    배포 안전: 네트워크/Playwright 실패가 전체 스케줄러를 막지 않도록 try/except 격리.
+    """
+    logger.info("━━━ KEB 36개월 평균환율 갱신 시작 ━━━")
+    try:
+        from agents.exchange_rate import ExchangeRateFetcher
+        fetcher = ExchangeRateFetcher()
+        rates = asyncio.run(fetcher.refresh(headless=True))
+        meta = fetcher._rate_meta
+        logger.info(
+            "환율 갱신 완료: %d개 통화 (기간 %s~%s) — %s",
+            len(rates), meta.get("from", "?"), meta.get("to", "?"),
+            {k: rates.get(k) for k in ("USD", "EUR", "JPY", "GBP", "CHF") if k in rates},
+        )
+    except Exception as e:
+        logger.exception("KEB 환율 갱신 실패: %s", e)
+
+
 def reimbursement_xnational_sync_job():
     """Cross-national reimbursement sync — 분기 1회 (1·4·7·10월 1일 02:00 Seoul).
 
@@ -545,6 +571,11 @@ def main():
         action="store_true",
         help="NHIS 약가협상 공개자료 즉시 크롤+매칭 (신규/확대)",
     )
+    parser.add_argument(
+        "--fx-refresh-now",
+        action="store_true",
+        help="KEB 36개월 평균환율 즉시 갱신 (캐시 최신화)",
+    )
     args = parser.parse_args()
 
     config = load_config()
@@ -611,6 +642,11 @@ def main():
     if args.nhis_sync_now:
         logger.info("NHIS 약가협상 공개자료 즉시 sync")
         nhis_negotiation_sync_job()
+        return
+
+    if args.fx_refresh_now:
+        logger.info("KEB 36개월 평균환율 즉시 갱신")
+        exchange_rate_refresh_job()
         return
 
     # 스케줄러 설정: 매월 1일 09:00
@@ -721,6 +757,20 @@ def main():
         ),
         id="reimbursement_xnational_sync",
         name="Reimbursement cross-national 분기 sync (NICE/PBAC/CMS/CHUIKYO)",
+        replace_existing=True,
+    )
+
+    # KEB 36개월 평균환율 갱신 — 매월 2일 04:00 Seoul (전월 말일 확정 직후)
+    scheduler.add_job(
+        exchange_rate_refresh_job,
+        trigger=CronTrigger(
+            day=2,
+            hour=4,
+            minute=0,
+            timezone="Asia/Seoul",
+        ),
+        id="exchange_rate_refresh",
+        name="KEB 36개월 평균환율 월간 갱신 (매월 2일 04:00)",
         replace_existing=True,
     )
 
