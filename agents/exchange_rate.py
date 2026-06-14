@@ -102,9 +102,14 @@ async def fetch_keb_excel(
             const rdoPeriod = document.getElementById('inqDvCd_p');
             if (rdoPeriod) {{ rdoPeriod.checked = true; rdoPeriod.click(); }}
 
-            // 2) 고시회차: 최종 (value=1)
-            const rdoFinal = document.getElementById('tmpPbldDvCd_1');
-            if (rdoFinal) {{ rdoFinal.checked = true; }}
+            // 2) 고시회차: 최종 (tmpPbldDvCd_2, value=0).
+            //    주의: tmpPbldDvCd_1(value=1)=최초, tmpPbldDvCd_2(value=0)=최종.
+            //    inputCheck() 가 제출 시 radiobox.getCheckedValue(tmpPbldDvCd) 로
+            //    pbldDvCd hidden 을 재생성하므로 *라디오 체크가 결정적* (hidden 수동
+            //    설정값은 덮어써짐). 반드시 tmpPbldDvCd_2 를 체크해야 최종값이 조회됨.
+            document.getElementsByName('tmpPbldDvCd').forEach(
+                r => {{ r.checked = (r.id === 'tmpPbldDvCd_2'); }}
+            );
 
             // 3) 조회기간 설정
             const setVal = (id, v) => {{ const el = document.getElementById(id); if(el) el.value = v; }};
@@ -112,7 +117,7 @@ async def fetch_keb_excel(
             setVal('inqEndDt',    '{end_str}');
             setVal('tmpInqStrDt_p', '{start_display}');
             setVal('tmpInqEndDt_p', '{end_display}');
-            setVal('pbldDvCd', '1');
+            setVal('pbldDvCd', '0');  // 최종 (inputCheck 가 라디오값으로 재생성하나 일관성 위해 명시)
         }}""")
         await page.wait_for_timeout(500)
         logger.info("[환율] 폼 설정 완료: %s ~ %s", start_display, end_display)
