@@ -159,6 +159,29 @@ class _PricesMixin:
             rows = conn.execute(sql, (kw, kw, kw, limit)).fetchall()
         return [dict(r) for r in rows]
 
+    def search_by_ingredient(self, ingredient: str, exclude_code: str = "",
+                             limit: int = 80) -> list[dict]:
+        """동일 성분(일반명) 약제 조회 — 비교약제(아날로그) 후보용.
+
+        drug_latest(~22K, idx_ingredient)에서 ingredient 정확 일치 행을 가격보유 우선
+        반환. exclude_code(기준약제)는 제외. 검색결과 배열에 의존하지 않고 DB에서 직접
+        동일성분 후보를 확보(국내약가 아날로그 활성화).
+        """
+        if not ingredient:
+            return []
+        cols = ("insurance_code, product_name_kr, company, ingredient, "
+                "dosage_strength, dosage_form, max_price, apply_date")
+        sql = f"""
+            SELECT {cols}
+            FROM drug_latest
+            WHERE ingredient = ? AND insurance_code != ?
+            ORDER BY (max_price IS NULL), max_price DESC, apply_date DESC
+            LIMIT ?
+        """
+        with self._connect() as conn:
+            rows = conn.execute(sql, (ingredient, exclude_code or "", limit)).fetchall()
+        return [dict(r) for r in rows]
+
     def get_price_history(self, insurance_code: str) -> list[dict]:
         """특정 보험코드의 전체 가격 이력 (날짜 오름차순)"""
         sql = """

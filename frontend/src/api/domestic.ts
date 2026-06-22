@@ -33,6 +33,7 @@ export interface DomesticProduct {
   productName: string;              // brand_name 우선
   fullProductName: string;          // HIRA 원문 제품명
   ingredient: string;               // 한글 주성분 (괄호 파싱)
+  hiraIngredient: string;           // HIRA 일반명(영문) — 동일성분 아날로그 조회 키
   insuranceCode: string;
   mergedCodes: string[];
   company: string;
@@ -87,6 +88,7 @@ interface RawProduct {
   product_name: string;
   brand_name: string;
   ingredient: string;
+  hira_ingredient?: string;
   dosage_form: string | null;
   company: string;
   first_date: string;
@@ -203,6 +205,7 @@ function mapProduct(raw: RawProduct, allRaw: RawProduct[]): DomesticProduct {
     productName: raw.brand_name || raw.product_name,
     fullProductName: raw.product_name,
     ingredient: raw.ingredient,
+    hiraIngredient: raw.hira_ingredient ?? raw.ingredient,
     insuranceCode: raw.insurance_code,
     mergedCodes: raw.merged_codes ?? [raw.insurance_code],
     company: raw.company,
@@ -251,6 +254,37 @@ export async function searchDomesticPriceChanges(query: string): Promise<Domesti
     `/api/domestic/price-changes?q=${encodeURIComponent(q)}`,
   );
   return (res.products || []).map(p => mapProduct(p, res.products));
+}
+
+interface RawAnalogue {
+  insurance_code: string;
+  product_name: string;
+  brand_name: string;
+  ingredient: string;
+  company: string;
+  current_price: number | null;
+  normalized_name?: string;
+}
+
+/** 동일 성분(일반명) 비교약제 후보 — 검색결과 무관, DB 직접 조회. */
+export async function fetchAnaloguesByIngredient(
+  ingredient: string, excludeCode: string,
+): Promise<DomesticAnalogue[]> {
+  const ing = (ingredient || '').trim();
+  if (!ing) return [];
+  const res = await api.get<{ analogues: RawAnalogue[] }>(
+    `/api/domestic/analogues?ingredient=${encodeURIComponent(ing)}&exclude=${encodeURIComponent(excludeCode || '')}`,
+  );
+  return (res.analogues || []).map(a => ({
+    name: a.brand_name || a.product_name,
+    ingredient: a.ingredient,
+    price: a.current_price ?? 0,
+    dailyCost: null,
+    company: a.company,
+    normalizedName: a.normalized_name,
+    insuranceCode: a.insurance_code,
+    mergedCodes: [a.insurance_code],
+  }));
 }
 
 // ── on-demand enrichment (허가일·용법·일일투약비 — 캐시 우선, miss 시 LLM) ──

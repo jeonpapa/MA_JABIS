@@ -1007,6 +1007,45 @@ def _export_rows(
     )
 
 
+@app.get("/api/domestic/analogues")
+def domestic_analogues():
+    """동일 성분(일반명) 비교약제(아날로그) 후보 조회.
+
+    GET /api/domestic/analogues?ingredient=<일반명>&exclude=<기준 보험코드>
+    검색결과 배열에 의존하지 않고 drug_latest 에서 동일 ingredient 직접 조회 →
+    국내약가 '약제 비교' 아날로그 선택 활성화. 응답은 프론트 DomesticAnalogue 매핑형.
+    """
+    ingredient = request.args.get("ingredient", "").strip()
+    exclude = request.args.get("exclude", "").strip()
+    if not ingredient:
+        return jsonify({"analogues": []})
+    try:
+        rows = db.search_by_ingredient(ingredient, exclude_code=exclude, limit=80)
+    except Exception as e:
+        logger.warning("[analogues] 조회 실패: %s", e)
+        return jsonify({"analogues": []})
+
+    out, seen = [], set()
+    for r in rows:
+        name = r.get("product_name_kr") or ""
+        parsed = _parse_product(name)
+        norm = _normalize_brand(name)
+        key = norm or r.get("insurance_code")
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({
+            "insurance_code": r.get("insurance_code"),
+            "product_name": name,
+            "brand_name": parsed["brand"],
+            "ingredient": parsed["ingredient"] or ingredient,
+            "company": r.get("company"),
+            "current_price": r.get("max_price"),
+            "normalized_name": norm,
+        })
+    return jsonify({"analogues": out})
+
+
 @app.get("/api/domestic/price-changes/export")
 def price_changes_export():
     """

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   searchDomesticPriceChanges,
+  fetchAnaloguesByIngredient,
   downloadDomesticExport,
   fetchChangeReason,
   enrichBulk,
@@ -97,6 +98,29 @@ export default function DomesticPricingPage() {
     setSelectedDrug(drug);
     setSelectedAnalogues([]);
     setDosageExpanded(false);
+    // 동일성분 비교약제(아날로그) 후보를 DB 에서 직접 조회해 병합 → 아날로그 선택 활성화.
+    // 검색결과 내 동일성분(drug.analogues)과 union, 기준약제·중복(normalizedName) 제거.
+    const ingKey = drug.hiraIngredient || drug.ingredient;
+    if (ingKey) {
+      fetchAnaloguesByIngredient(ingKey, drug.insuranceCode)
+        .then(fetched => {
+          if (!fetched.length) return;
+          setSelectedDrug(prev => {
+            if (!prev || prev.id !== drug.id) return prev;
+            const seen = new Set<string>([prev.normalizedName, prev.insuranceCode]);
+            const merged = [...(prev.analogues || [])];
+            for (const a of merged) { if (a.normalizedName) seen.add(a.normalizedName); if (a.insuranceCode) seen.add(a.insuranceCode); }
+            for (const a of fetched) {
+              const k = a.normalizedName || a.insuranceCode || a.name;
+              if (seen.has(k) || (a.insuranceCode && seen.has(a.insuranceCode))) continue;
+              seen.add(k);
+              merged.push(a);
+            }
+            return { ...prev, analogues: merged, sameIngredientCount: Math.max(prev.sameIngredientCount, merged.length) };
+          });
+        })
+        .catch(() => { /* 조회 실패 시 검색결과 내 동일성분만 사용 */ });
+    }
   };
   const handleToggleAnalogue = (name: string) => {
     setSelectedAnalogues(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]);
