@@ -140,6 +140,14 @@ class DeRoteListeScraper(BaseScraper):
                 logger.error("[DE] DocCheck 로그인 실패 — 자격증명 오류 (%s)", final_url)
                 return False
 
+            # rote-liste.de 세션 확립 — DocCheck OAuth 후 /login 랜딩을 *명시 재방문*해야
+            # 상세 페이지가 Fachkreise 컨텐츠(Packungsangaben 가격표)를 반환한다.
+            # (미방문 시 상세 페이지가 12KB walled 버전만 반환 — 2026-06-23 진단)
+            try:
+                self._session.get(ROTE_LISTE_BASE + "/login", timeout=15)
+            except Exception as e:
+                logger.debug("[DE] /login 랜딩 재방문 실패: %s", e)
+
             # 성공: rote-liste.de/login 으로 리다이렉트
             if "rote-liste.de" in final_url:
                 logger.info("[DE] DocCheck 로그인 성공 (%s)", final_url)
