@@ -47,9 +47,16 @@ from .base import BaseScraper
 logger = logging.getLogger(__name__)
 
 ROTE_LISTE_BASE  = "https://www.rote-liste.de"
+REDIRECT_URI     = "https://www.rote-liste.de/login"
+# 2026-06-23 수정: 구식 login.doccheck.com/code (숫자 client_id, scope 없음)는 로그인은
+# 되나 'profession' 스코프 미전달 → Fachkreise 미인증 → 가격 'nur für Fachkreise' 게이팅.
+# rote-liste 실제 진입점(상세페이지 로그인 링크)에서 추출한 정상 OAuth authorize 사용.
+DOCCHECK_AUTHORIZE   = "https://auth.doccheck.com/de/authorize"
+DOCCHECK_CLIENT_UUID = "da70a3ae-8252-51f4-973b-2413cce0fa6c"
+DOCCHECK_SCOPE       = "unique_id profession country language"
+# 레거시(폴백/참고용)
 DOCCHECK_LOGIN   = "https://login.doccheck.com/"
 DOCCHECK_CLIENT  = "2000000012529"
-REDIRECT_URI     = "https://www.rote-liste.de/login"
 
 HEADERS = {
     "User-Agent": (
@@ -168,8 +175,83 @@ class DeRoteListeScraper(BaseScraper):
             logger.error("[DE] DocCheck 로그인 오류: %s", e)
             return False
 
+    async def _login_playwright(self) -> bool:
+        """정상 DocCheck OAuth(profession 스코프) 로그인 — Playwright.
+
+        rote-liste 상세페이지의 실제 로그인 링크가 가리키는 authorize 엔드포인트로
+        브라우저 로그인 후, 인증 쿠키를 requests 세션(self._session)에 주입.
+        이후 _search/_extract_detail(requests)는 그대로 Fachkreise 가격 접근.
+        """
+        user = self.credentials.get("username", "")
+        pw_ = self.credentials.get("password", "")
+        if not user or not pw_:
+            logger.warning("[DE] DocCheck 자격증명 없음 — 비로그인 모드(가격 None)")
+            return False
+
+        from urllib.parse import urlencode
+        auth_url = DOCCHECK_AUTHORIZE + "?" + urlencode({
+            "grant_type": "authorization_code", "response_type": "code",
+            "client_id": DOCCHECK_CLIENT_UUID, "redirect_uri": REDIRECT_URI,
+            "scope": DOCCHECK_SCOPE,
+        })
+        try:
+            from playwright.async_api import async_playwright
+            async with async_playwright() as pw:
+                browser = await pw.chromium.launch(
+                    headless=self.headless,
+                    args=["--disable-blink-features=AutomationControlled"],
+                )
+                ctx = await browser.new_context(
+                    user_agent=HEADERS["User-Agent"], locale="de-DE",
+                    viewport={"width": 1280, "height": 900},
+                )
+                await ctx.add_init_script(
+                    "Object.defineProperty(navigator,'webdriver',{get:()=>undefined})"
+                )
+                page = await ctx.new_page()
+                await page.goto(auth_url, wait_until="domcontentloaded", timeout=30_000)
+                await page.wait_for_timeout(1500)
+                # 로그인 폼 — auth.doccheck.com: #inputUsername/#inputPassword (구형 fallback 포함)
+                filled = False
+                for su, sp in (("#inputUsername", "#inputPassword"),
+                               ("input[name=username]", "input[name=password]"),
+                               ("#dc_username", "#dc_password")):
+                    if await page.locator(su).count() > 0:
+                        await page.fill(su, user)
+                        await page.fill(sp, pw_)
+                        await page.press(sp, "Enter")
+                        filled = True
+                        break
+                if not filled:
+                    logger.error("[DE] DocCheck 로그인 폼 미발견")
+                    await browser.close()
+                    return False
+                try:
+                    await page.wait_for_url("**rote-liste.de**", timeout=20_000)
+                except Exception:
+                    pass
+                await page.wait_for_timeout(2500)
+                final_url = page.url
+                cookies = await ctx.cookies()
+                await browser.close()
+
+            for ck in cookies:
+                try:
+                    self._session.cookies.set(
+                        ck["name"], ck["value"], domain=ck.get("domain"))
+                except Exception:
+                    pass
+            ok = "rote-liste.de" in final_url and bool(cookies)
+            self._logged_in = ok
+            logger.info("[DE] DocCheck OAuth(profession) 로그인 %s (쿠키 %d, final=%s)",
+                        "성공" if ok else "불확실", len(cookies), final_url)
+            return ok
+        except Exception as e:
+            logger.error("[DE] Playwright DocCheck 로그인 오류: %s", e)
+            return False
+
     async def login(self, page=None) -> None:
-        """BaseScraper 호환 — run()이 직접 _login_requests() 호출"""
+        """BaseScraper 호환 — run()이 직접 _login_playwright() 호출"""
         pass
 
     async def logout(self, page=None) -> None:
@@ -381,9 +463,9 @@ class DeRoteListeScraper(BaseScraper):
         logger.info("[DE] Rote Liste 검색 시작: '%s'", query)
         searched_at = datetime.now().isoformat()
 
-        # DocCheck 로그인
+        # DocCheck 로그인 (정상 OAuth + profession 스코프 — Playwright)
         if not self._logged_in:
-            self._login_requests()
+            await self._login_playwright()
 
         raw_results = await self.search(query)
         logger.info("[DE] 결과: %d건", len(raw_results))
