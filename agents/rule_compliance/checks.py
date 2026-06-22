@@ -565,4 +565,8 @@ SKIP_WITH_REASON: dict[str, str] = {
     "reference_hira_oncology_notice":     "외부 시스템 참조",
     "feedback_rsa_invisible_pricing":     "Intelligence (정적 사실) — RSA registry 운영으로 충족",
     "project_health_kr_primary_source":   "MFDS API 도입 후 보조 소스로 강등 — 운영 정책 (정적)",
+    "feedback_keb_fx_final_round":        "KEB 환율 폼 동작 (외부 시스템 — 월간 자동갱신 잡으로 충족)",
+    "project_flexible_contract_mechanism":"변동사유 5번째 기전 (MI agent 구현체 자체)",
+    "project_foreign_dose_normalization": "해외약가 용량 정규화 (search/cache 경로 구현체 자체)",
+    "project_regimen_cost_tab":           "투약비용비교 탭 (신규 기능 — UI/CRUD 구현체)",
 }
