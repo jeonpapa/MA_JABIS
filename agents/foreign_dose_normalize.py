@@ -1,18 +1,22 @@
-"""국가간 약제 용량(strength) 정규화.
+"""해외약가 제형(formulation)별 그룹핑 + 제형 내 표시단위 보정.
 
-해외약가 A8 비교 시 국가별로 보고 단위 강도가 다르면 per-unit 조정가 비교가
-불공정해진다. 예: Prevymis(letermovir) — 일본은 20mg 정 단가, 타국은 240mg 정 단가.
-일본 가격을 240mg 등가로 보정해야 동일 선상 비교가 된다.
+2026-06-23 재설계: 기존 cross-strength 정규화(240↔480↔20 를 같은 것으로 ×배율)는
+서로 다른 *제형*을 섞는 오류였다. 이제 **제형(강도×투여경로)별로 먼저 그룹핑**하고,
+용량보정은 **같은 제형 내에서 표시단위가 다를 때만** 적용한다.
 
-정책:
-  1) regex 로 국가별 per-unit strength(mg) 를 먼저 추출 → priced 국가들 사이에
-     strength 가 1종이면(=일치) LLM 호출 없이 factor=1 (보정 불필요).
-  2) **불일치 감지 시에만** LLM(GPT-4o)이 기준용량(reference_strength_mg)과
-     국가별 보정계수(factor = reference/unit)를 판단. 동일 제형·동일 활성성분만 보정,
-     복합제·다른 제형은 factor=null(보정 제외) + note.
-  3) adjusted_price_krw_normalized = adjusted_price_krw × factor (per-unit 등가).
+정책 (process_formulations):
+  1) **미국(US)을 기준**으로 canonical 제형 집합 (route, strength_mg) 구성
+     (제형이 가장 빨리 등재되는 국가). US 부재 시 제형 최다 국가 대용.
+  2) 각 행을 canonical 제형에 매칭 — 1차 결정적(route 일치 + strength ±1%),
+     2차 LLM(강도 불명/모호 행만, gpt-4o). canonical 에 없으면 foreign_only(별도 탭).
+  3) **제형 내 표시단위 보정**: dose_norm_factor = canonical_strength / unit_strength
+     (per-ml↔per-vial, 包↔錠 등 같은 제형의 표시단위 차이만). 다른 강도 그룹 간
+     보정은 구조적으로 불가(canonical_strength_mg 동일 그룹 내로 제한).
+  4) adjusted_price_krw_normalized = adjusted_price_krw × factor (제형 내 표시단위 통일).
 
-비교(min/avg/max·그래프·카드)는 normalized 를 기본값으로 사용(없으면 raw fallback).
+산출 컬럼: formulation_key/formulation_label/canonical_strength_mg/route/
+  formulation_source/is_us_listed + dose_norm_factor/adjusted_price_krw_normalized.
+대시보드는 formulation_key 로 탭 그룹핑, 탭 내에서 국가별 normalized 비교.
 """
 from __future__ import annotations
 
@@ -121,8 +125,8 @@ def build_norm_prompt(drug: str, rows: list[dict]) -> tuple[str, str]:
     return sys_prompt, user_prompt
 
 
-def call_norm_model(model: str, sys_prompt: str, user_prompt: str) -> dict | None:
-    """모델명 → 프로바이더 디스패치. JSON dict 반환(실패 None). 시뮬레이션·런타임 공용.
+def _call_json(model: str, sys_prompt: str, user_prompt: str) -> dict | None:
+    """모델명 → 프로바이더 디스패치. 파싱된 JSON dict 반환(실패 None). 검증 없음.
 
     지원: gpt-4o / gpt-4o-mini (OpenAI), gemini-2.5-flash (Gemini),
           sonar-pro / sonar (Perplexity).
@@ -137,7 +141,7 @@ def call_norm_model(model: str, sys_prompt: str, user_prompt: str) -> dict | Non
                 model=model,
                 messages=[{"role": "system", "content": sys_prompt},
                           {"role": "user", "content": user_prompt}],
-                temperature=0.0, max_tokens=700,
+                temperature=0.0, max_tokens=900,
                 response_format={"type": "json_object"},
             )
             raw = resp.choices[0].message.content.strip()
@@ -151,7 +155,7 @@ def call_norm_model(model: str, sys_prompt: str, user_prompt: str) -> dict | Non
                 model=model,
                 messages=[{"role": "system", "content": sys_prompt},
                           {"role": "user", "content": user_prompt}],
-                temperature=0.0, max_tokens=700,
+                temperature=0.0, max_tokens=900,
             )
             raw = resp.choices[0].message.content.strip()
         else:
@@ -161,13 +165,18 @@ def call_norm_model(model: str, sys_prompt: str, user_prompt: str) -> dict | Non
             raw = raw.split("```")[1]
             if raw.lstrip().lower().startswith("json"):
                 raw = raw.lstrip()[4:]
-        result = json.loads(raw)
-        if not isinstance(result.get("countries"), dict):
-            return None
-        return result
+        return json.loads(raw)
     except Exception as e:
         logger.warning("[DoseNorm] 모델 호출 실패(%s): %s", model, e)
         return None
+
+
+def call_norm_model(model: str, sys_prompt: str, user_prompt: str) -> dict | None:
+    """_call_json + 'countries' 키 검증 (시뮬레이션 하니스 호환)."""
+    result = _call_json(model, sys_prompt, user_prompt)
+    if result is None or not isinstance(result.get("countries"), dict):
+        return None
+    return result
 
 
 def _call_gemini(model: str, sys_prompt: str, user_prompt: str) -> str:
@@ -223,83 +232,200 @@ def _sane_factor(f) -> float | None:
     return f
 
 
-def normalize_country_items(drug: str, items: list[dict]) -> list[dict]:
-    """국가간 용량 정규화 후처리. items 각 dict 에 정규화 필드를 in-place 추가.
+def route_of(form_type: str | None) -> str:
+    """form_type → route (oral/injection). unknown 은 oral 로 보수 처리."""
+    ft = (form_type or "").lower()
+    return "injection" if ("inject" in ft or "주사" in ft or "주" == ft) else "oral"
 
-    반환: 정규화 필드가 채워진 행들의 [{id, unit_strength_mg, reference_strength_mg,
-          dose_norm_factor, adjusted_price_krw_normalized, dose_norm_note}] (DB 업데이트용).
+
+def _fmt_strength(mg: float):
+    return int(mg) if abs(mg - round(mg)) < 1e-6 else round(mg, 2)
+
+
+def _fkey(mg: float, route: str) -> str:
+    return f"{_fmt_strength(mg)}mg|{route}"
+
+
+def _flabel(mg: float, route: str) -> str:
+    return f"{_fmt_strength(mg)}mg {'주사' if route == 'injection' else '경구'}"
+
+
+def _strength_of(item: dict) -> float | None:
+    """행의 per-unit 활성성분 mg — 에이전트가 form-aware 로 채운 unit_strength_mg 우선."""
+    v = item.get("unit_strength_mg")
+    if v:
+        try:
+            return float(v)
+        except (ValueError, TypeError):
+            pass
+    return extract_strength_mg(item.get("dosage_strength"))
+
+
+def _emit(it: dict, canon_mg: float, route: str, source: str,
+          is_us: bool, updates: list) -> None:
+    """제형 배정 + 제형 내 표시단위 보정 → 필드 산출(in-place + updates)."""
+    adj = it.get("adjusted_price_krw")
+    unit_mg = it.get("_strength")
+    # 제형 내 표시단위 보정: 같은 제형(canon_mg)인데 행 표시강도가 다르면 보정.
+    factor = 1.0
+    if unit_mg and canon_mg and abs(unit_mg - canon_mg) / canon_mg > 0.01:
+        sf = _sane_factor(canon_mg / unit_mg)
+        if sf:
+            factor = sf
+    normalized = int(round(adj * factor)) if adj is not None else None
+    note = ""
+    if factor != 1.0:
+        note = f"표시단위 보정 {_fmt_strength(unit_mg)}mg→{_fmt_strength(canon_mg)}mg ×{factor:.3g}"
+    elif source == "foreign_only":
+        note = "US 미등재 제형"
+    fields = {
+        "formulation_key": _fkey(canon_mg, route),
+        "formulation_label": _flabel(canon_mg, route),
+        "canonical_strength_mg": _fmt_strength(canon_mg),
+        "route": route,
+        "formulation_source": source,
+        "is_us_listed": 1 if is_us else 0,
+        "unit_strength_mg": unit_mg,
+        "reference_strength_mg": _fmt_strength(canon_mg),
+        "dose_norm_factor": round(factor, 6),
+        "adjusted_price_krw_normalized": normalized,
+        "dose_norm_note": note,
+    }
+    it.update(fields)
+    if it.get("id"):
+        updates.append({"id": it["id"], **fields})
+
+
+def _emit_unmatched(it: dict, updates: list) -> None:
+    """강도 불명 + canonical 매칭 실패 → unmatched(원본가 유지, 별도 탭)."""
+    adj = it.get("adjusted_price_krw")
+    route = it.get("_route") or route_of(it.get("form_type"))
+    label = (it.get("dosage_strength") or "기타")[:30]
+    fields = {
+        "formulation_key": f"unknown|{route}|{label}",
+        "formulation_label": f"{label} ({'주사' if route == 'injection' else '경구'})",
+        "canonical_strength_mg": None, "route": route,
+        "formulation_source": "unmatched", "is_us_listed": 0,
+        "unit_strength_mg": it.get("_strength"), "reference_strength_mg": None,
+        "dose_norm_factor": 1.0,
+        "adjusted_price_krw_normalized": int(adj) if adj is not None else None,
+        "dose_norm_note": "제형 강도 불명 — 매칭 보류(원본가)",
+    }
+    it.update(fields)
+    if it.get("id"):
+        updates.append({"id": it["id"], **fields})
+
+
+def _build_formulation_prompt(drug: str, canonical: dict, rows: list[dict]) -> tuple[str, str]:
+    canon_list = [{"route": r, "strength_mg": _fmt_strength(s)} for (r, _), s in canonical.items()]
+    sys = (
+        "당신은 글로벌 약가 분석가입니다. 각 국가별 의약품 표기를 '미국 기준 제형'에 매칭하세요.\n"
+        "제형 = (투여경로 route: oral/injection) × (최소단위당 활성성분 강도 mg).\n"
+        "규칙: 1) 주사는 농도×부피의 per-vial 총 mg(예: 20mg/mL × 12mL = 240). "
+        "2) 미국 canonical 목록 중 route 일치 + 강도 동일(±2%)이면 그 제형에 매칭. "
+        "3) 매칭되는 canonical 이 없으면 is_us_listed=false 로 자체 강도 반환. "
+        "4) 복합제·강도 불명이면 canonical_strength_mg=null. JSON 만 응답."
+    )
+    user = (
+        f"약제: {drug}\n미국 canonical 제형: {json.dumps(canon_list, ensure_ascii=False)}\n"
+        f"매칭 대상 행:\n{json.dumps(rows, ensure_ascii=False, indent=2)}\n\n"
+        '출력: {"items":[{"idx":<int>,"route":"oral|injection",'
+        '"canonical_strength_mg":<number|null>,"is_us_listed":<bool>,"note":"<짧게>"}]}'
+    )
+    return sys, user
+
+
+def _llm_match(drug: str, pending: list[dict], canonical: dict,
+               us_based: bool, updates: list) -> None:
+    """강도 불명/모호 행만 LLM 으로 canonical 제형 매칭."""
+    rows = [{
+        "idx": i, "country": it.get("country"),
+        "product_name": it.get("product_name") or "",
+        "dosage_strength": it.get("dosage_strength") or "",
+        "package_unit": it.get("package_unit") or "",
+        "form_type": it.get("form_type") or "",
+    } for i, it in enumerate(pending)]
+    sys, user = _build_formulation_prompt(drug, canonical, rows)
+    res = _call_json(NORM_MODEL, sys, user)
+    by_idx = {}
+    if res and isinstance(res.get("items"), list):
+        for o in res["items"]:
+            if isinstance(o, dict) and "idx" in o:
+                by_idx[o["idx"]] = o
+    canon_strengths = {(r, round(s, 2)): s for (r, _), s in canonical.items()}
+    for i, it in enumerate(pending):
+        o = by_idx.get(i)
+        cmg = None
+        if o:
+            try:
+                cmg = float(o["canonical_strength_mg"]) if o.get("canonical_strength_mg") else None
+            except (ValueError, TypeError):
+                cmg = None
+        if not cmg:
+            _emit_unmatched(it, updates)
+            continue
+        route = (o.get("route") or it.get("_route") or "oral").lower()
+        # canonical 에 실제 존재하면 us_canonical, 아니면 foreign_only
+        is_canon = (route, round(cmg, 2)) in canon_strengths
+        src = ("us_canonical" if us_based else "foreign_ref") if is_canon else "foreign_only"
+        _emit(it, cmg, route, src, us_based and is_canon, updates)
+
+
+def process_formulations(drug: str, items: list[dict]) -> list[dict]:
+    """제형(formulation)별 매칭 + 제형 내 표시단위 보정. in-place 필드 추가 + updates 반환.
+
+    각 priced item 은 에이전트가 form-aware unit_strength_mg 를 채워 전달하는 것을 권장
+    (없으면 dosage_strength regex fallback). 미국 canonical 기준, cross-strength 금지.
     """
     priced = [it for it in items if it.get("adjusted_price_krw") is not None]
-    if len(priced) < 2:
+    if not priced:
         return []
-
-    detection = detect_strength_mismatch(items)
-    updates: list[dict] = []
-
-    if not detection["mismatch"]:
-        # 강도 일치 — 보정 불필요(factor=1). normalized = raw 로 채워 비교 일관성 유지.
-        ref = detection["distinct"][0] if detection["distinct"] else None
-        for it in priced:
-            adj = it.get("adjusted_price_krw")
-            fields = {
-                "unit_strength_mg": detection["strengths"].get(it.get("country")),
-                "reference_strength_mg": ref,
-                "dose_norm_factor": 1.0,
-                "adjusted_price_krw_normalized": int(adj),
-                "dose_norm_note": "강도 일치 — 보정 불필요" if ref else None,
-            }
-            it.update(fields)
-            if it.get("id"):
-                updates.append({"id": it["id"], **fields})
-        return updates
-
-    logger.info("[DoseNorm] %s 국가간 strength 불일치 %s → LLM 판단",
-                drug, detection["distinct"])
-    llm = llm_normalize(drug, items)
-    ref_mg = None
-    country_map = {}
-    if llm:
-        try:
-            ref_mg = float(llm.get("reference_strength_mg")) if llm.get("reference_strength_mg") else None
-        except (ValueError, TypeError):
-            ref_mg = None
-        country_map = llm.get("countries") or {}
-
     for it in priced:
-        country = it.get("country")
-        adj = it.get("adjusted_price_krw")
-        cm = country_map.get(country, {}) if isinstance(country_map, dict) else {}
-        factor = _sane_factor(cm.get("factor"))
-        unit_mg = cm.get("unit_strength_mg")
-        note = cm.get("note") or ""
-        # LLM 미응답 국가 → regex strength 로 fallback factor 계산
-        if factor is None and ref_mg:
-            rmg = extract_strength_mg(it.get("dosage_strength"))
-            if rmg and rmg > 0:
-                factor = _sane_factor(ref_mg / rmg)
-                unit_mg = unit_mg or rmg
-                if factor and abs(factor - 1.0) > 1e-6:
-                    note = note or f"regex 보정 {rmg}mg→{ref_mg}mg"
-        if factor:
-            normalized = int(round(adj * factor))
-            fields = {
-                "unit_strength_mg": unit_mg,
-                "reference_strength_mg": ref_mg,
-                "dose_norm_factor": round(factor, 6),
-                "adjusted_price_krw_normalized": normalized,
-                "dose_norm_note": (note or (f"{unit_mg}mg→{ref_mg}mg ×{factor:.3g}"
-                                            if unit_mg and ref_mg else "용량 보정")),
-            }
+        it["_strength"] = _strength_of(it)
+        it["_route"] = route_of(it.get("form_type"))
+
+    # canonical 기준 국가: US 우선, 없으면 제형 최다 국가
+    us_rows = [it for it in priced if (it.get("country") or "").upper() == "US" and it["_strength"]]
+    us_based = bool(us_rows)
+    base_rows = us_rows
+    if not base_rows:
+        from collections import defaultdict
+        by_c = defaultdict(set)
+        for it in priced:
+            if it["_strength"]:
+                by_c[it["country"]].add((it["_route"], round(it["_strength"], 2)))
+        if by_c:
+            cc = max(by_c, key=lambda c: len(by_c[c]))
+            base_rows = [it for it in priced if it.get("country") == cc and it["_strength"]]
+
+    canonical = {}  # (route, round(strength,2)) -> strength
+    for it in base_rows:
+        canonical[(it["_route"], round(it["_strength"], 2))] = it["_strength"]
+
+    updates: list[dict] = []
+    pending = []
+    for it in priced:
+        s, r = it["_strength"], it["_route"]
+        if s is None:
+            pending.append(it)
+            continue
+        # canonical 매칭 (정확 → ±1%)
+        matched = canonical.get((r, round(s, 2)))
+        is_canon = matched is not None
+        if matched is None:
+            for (cr, cs), cval in canonical.items():
+                if cr == r and cs and abs(s - cs) / cs <= 0.01:
+                    matched, is_canon = cval, True
+                    break
+        if matched is None:
+            matched, is_canon = s, False   # foreign_only
+        src = ("us_canonical" if us_based else "foreign_ref") if is_canon else "foreign_only"
+        _emit(it, matched, r, src, us_based and is_canon, updates)
+
+    if pending:
+        if canonical:
+            _llm_match(drug, pending, canonical, us_based, updates)
         else:
-            # 보정 불가(복합제·강도 불명) → normalized=raw, factor 미기록 + 사유
-            fields = {
-                "unit_strength_mg": unit_mg,
-                "reference_strength_mg": ref_mg,
-                "dose_norm_factor": None,
-                "adjusted_price_krw_normalized": int(adj),
-                "dose_norm_note": note or "용량 보정 불가(강도 불명/복합제) — 원본가 사용",
-            }
-        it.update(fields)
-        if it.get("id"):
-            updates.append({"id": it["id"], **fields})
+            for it in pending:
+                _emit_unmatched(it, updates)
     return updates

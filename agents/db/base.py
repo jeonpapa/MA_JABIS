@@ -117,6 +117,14 @@ class _DbBase:
                 ("dose_norm_factor",            "ALTER TABLE foreign_drug_prices ADD COLUMN dose_norm_factor REAL"),
                 ("adjusted_price_krw_normalized", "ALTER TABLE foreign_drug_prices ADD COLUMN adjusted_price_krw_normalized INTEGER"),
                 ("dose_norm_note",              "ALTER TABLE foreign_drug_prices ADD COLUMN dose_norm_note TEXT"),
+                # 제형(formulation)별 구조화 (2026-06-23) — 강도×투여경로 식별, US canonical 기준.
+                # dose_norm_factor 는 이제 *같은 제형 내* 표시단위 보정계수로 의미 재정의.
+                ("formulation_key",       "ALTER TABLE foreign_drug_prices ADD COLUMN formulation_key TEXT"),
+                ("formulation_label",     "ALTER TABLE foreign_drug_prices ADD COLUMN formulation_label TEXT"),
+                ("canonical_strength_mg", "ALTER TABLE foreign_drug_prices ADD COLUMN canonical_strength_mg REAL"),
+                ("route",                 "ALTER TABLE foreign_drug_prices ADD COLUMN route TEXT"),
+                ("formulation_source",    "ALTER TABLE foreign_drug_prices ADD COLUMN formulation_source TEXT"),
+                ("is_us_listed",          "ALTER TABLE foreign_drug_prices ADD COLUMN is_us_listed INTEGER"),
             ):
                 if col not in fp_cols:
                     conn.execute(ddl)

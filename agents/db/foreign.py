@@ -11,9 +11,20 @@ class _ForeignMixin:
     _FOREIGN_OPTIONAL_COLS = (
         "form_type", "pack_count", "per_unit_local", "total_pkg_mg",
         "daily_dose_mg", "daily_cost_krw", "daily_cost_note",
-        # 국가간 용량 정규화
+        # 국가간 용량 정규화 (dose_norm_factor 는 제형 내 표시단위 보정으로 의미 재정의)
         "unit_strength_mg", "reference_strength_mg", "dose_norm_factor",
         "adjusted_price_krw_normalized", "dose_norm_note",
+        # 제형(formulation) 식별
+        "formulation_key", "formulation_label", "canonical_strength_mg",
+        "route", "formulation_source", "is_us_listed",
+    )
+
+    # 검색 후처리(제형 매칭 + 표시단위 보정)가 기존 행에 UPDATE 하는 컬럼
+    _FORMULATION_UPDATE_COLS = (
+        "unit_strength_mg", "reference_strength_mg", "dose_norm_factor",
+        "adjusted_price_krw_normalized", "dose_norm_note",
+        "formulation_key", "formulation_label", "canonical_strength_mg",
+        "route", "formulation_source", "is_us_listed",
     )
 
     def save_foreign_price(self, record: dict) -> int:
@@ -29,6 +40,8 @@ class _ForeignMixin:
                  daily_dose_mg, daily_cost_krw, daily_cost_note,
                  unit_strength_mg, reference_strength_mg, dose_norm_factor,
                  adjusted_price_krw_normalized, dose_norm_note,
+                 formulation_key, formulation_label, canonical_strength_mg,
+                 route, formulation_source, is_us_listed,
                  source_url, source_label, raw_data, form_type)
             VALUES
                 (:searched_at, :query_name, :country, :product_name, :ingredient,
@@ -40,6 +53,8 @@ class _ForeignMixin:
                  :daily_dose_mg, :daily_cost_krw, :daily_cost_note,
                  :unit_strength_mg, :reference_strength_mg, :dose_norm_factor,
                  :adjusted_price_krw_normalized, :dose_norm_note,
+                 :formulation_key, :formulation_label, :canonical_strength_mg,
+                 :route, :formulation_source, :is_us_listed,
                  :source_url, :source_label, :raw_data, :form_type)
         """
         rec = {**record}
@@ -50,14 +65,11 @@ class _ForeignMixin:
         return cur.lastrowid
 
     def update_foreign_dose_norm(self, row_id: int, fields: dict) -> None:
-        """검색 후처리(국가간 용량 정규화) 결과를 기존 행에 반영.
+        """검색 후처리(제형 매칭 + 제형 내 표시단위 보정) 결과를 기존 행에 반영.
 
-        fields: {unit_strength_mg, reference_strength_mg, dose_norm_factor,
-                 adjusted_price_krw_normalized, dose_norm_note} 의 부분집합.
+        fields: _FORMULATION_UPDATE_COLS 의 부분집합 (dose_norm_* + formulation_*).
         """
-        cols = ("unit_strength_mg", "reference_strength_mg", "dose_norm_factor",
-                "adjusted_price_krw_normalized", "dose_norm_note")
-        sets = {k: fields[k] for k in cols if k in fields}
+        sets = {k: fields[k] for k in self._FORMULATION_UPDATE_COLS if k in fields}
         if not sets:
             return
         assignments = ", ".join(f"{k}=:{k}" for k in sets)
