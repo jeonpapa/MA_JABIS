@@ -1,0 +1,249 @@
+{
+  "candidates": [
+    "gpt-4o",
+    "gpt-4o-mini",
+    "gemini-2.5-flash",
+    "sonar-pro"
+  ],
+  "models": {
+    "gpt-4o": {
+      "cases_ok": 6,
+      "cases_total": 6,
+      "factor_pass": 13,
+      "factor_total": 13,
+      "factor_accuracy": 1.0,
+      "determinism": 1.0,
+      "per_case": [
+        {
+          "id": "prevymis_oral",
+          "ref_ok": true,
+          "factor_pass": 3,
+          "factor_total": 3,
+          "ok": true,
+          "deterministic": true
+        },
+        {
+          "id": "keytruda_injection_conc",
+          "ref_ok": true,
+          "factor_pass": 2,
+          "factor_total": 2,
+          "ok": true,
+          "deterministic": true
+        },
+        {
+          "id": "welireg_oral_same",
+          "ref_ok": true,
+          "factor_pass": 2,
+          "factor_total": 2,
+          "ok": true,
+          "deterministic": true
+        },
+        {
+          "id": "combo_no_norm",
+          "ref_ok": true,
+          "factor_pass": 2,
+          "factor_total": 2,
+          "ok": true,
+          "deterministic": true
+        },
+        {
+          "id": "injection_vial_mismatch",
+          "ref_ok": true,
+          "factor_pass": 2,
+          "factor_total": 2,
+          "ok": true,
+          "deterministic": true
+        },
+        {
+          "id": "concentration_total_match",
+          "ref_ok": true,
+          "factor_pass": 2,
+          "factor_total": 2,
+          "ok": true,
+          "deterministic": true
+        }
+      ]
+    },
+    "gpt-4o-mini": {
+      "cases_ok": 4,
+      "cases_total": 6,
+      "factor_pass": 11,
+      "factor_total": 13,
+      "factor_accuracy": 0.8462,
+      "determinism": 0.6667,
+      "per_case": [
+        {
+          "id": "prevymis_oral",
+          "ref_ok": true,
+          "factor_pass": 3,
+          "factor_total": 3,
+          "ok": true,
+          "deterministic": false
+        },
+        {
+          "id": "keytruda_injection_conc",
+          "ref_ok": true,
+          "factor_pass": 2,
+          "factor_total": 2,
+          "ok": true,
+          "deterministic": true
+        },
+        {
+          "id": "welireg_oral_same",
+          "ref_ok": true,
+          "factor_pass": 2,
+          "factor_total": 2,
+          "ok": true,
+          "deterministic": true
+        },
+        {
+          "id": "combo_no_norm",
+          "ref_ok": false,
+          "factor_pass": 0,
+          "factor_total": 2,
+          "ok": false,
+          "deterministic": false
+        },
+        {
+          "id": "injection_vial_mismatch",
+          "ref_ok": true,
+          "factor_pass": 2,
+          "factor_total": 2,
+          "ok": true,
+          "deterministic": true
+        },
+        {
+          "id": "concentration_total_match",
+          "ref_ok": false,
+          "factor_pass": 2,
+          "factor_total": 2,
+          "ok": false,
+          "deterministic": true
+        }
+      ]
+    },
+    "gemini-2.5-flash": {
+      "cases_ok": 6,
+      "cases_total": 6,
+      "factor_pass": 13,
+      "factor_total": 13,
+      "factor_accuracy": 1.0,
+      "determinism": 1.0,
+      "per_case": [
+        {
+          "id": "prevymis_oral",
+          "ref_ok": true,
+          "factor_pass": 3,
+          "factor_total": 3,
+          "ok": true,
+          "deterministic": true
+        },
+        {
+          "id": "keytruda_injection_conc",
+          "ref_ok": true,
+          "factor_pass": 2,
+          "factor_total": 2,
+          "ok": true,
+          "deterministic": true
+        },
+        {
+          "id": "welireg_oral_same",
+          "ref_ok": true,
+          "factor_pass": 2,
+          "factor_total": 2,
+          "ok": true,
+          "deterministic": true
+        },
+        {
+          "id": "combo_no_norm",
+          "ref_ok": true,
+          "factor_pass": 2,
+          "factor_total": 2,
+          "ok": true,
+          "deterministic": true
+        },
+        {
+          "id": "injection_vial_mismatch",
+          "ref_ok": true,
+          "factor_pass": 2,
+          "factor_total": 2,
+          "ok": true,
+          "deterministic": true
+        },
+        {
+          "id": "concentration_total_match",
+          "ref_ok": true,
+          "factor_pass": 2,
+          "factor_total": 2,
+          "ok": true,
+          "deterministic": true
+        }
+      ]
+    },
+    "sonar-pro": {
+      "cases_ok": 5,
+      "cases_total": 6,
+      "factor_pass": 13,
+      "factor_total": 13,
+      "factor_accuracy": 1.0,
+      "determinism": 0.8333,
+      "per_case": [
+        {
+          "id": "prevymis_oral",
+          "ref_ok": true,
+          "factor_pass": 3,
+          "factor_total": 3,
+          "ok": true,
+          "deterministic": true
+        },
+        {
+          "id": "keytruda_injection_conc",
+          "ref_ok": true,
+          "factor_pass": 2,
+          "factor_total": 2,
+          "ok": true,
+          "deterministic": true
+        },
+        {
+          "id": "welireg_oral_same",
+          "ref_ok": true,
+          "factor_pass": 2,
+          "factor_total": 2,
+          "ok": true,
+          "deterministic": true
+        },
+        {
+          "id": "combo_no_norm",
+          "ref_ok": false,
+          "factor_pass": 2,
+          "factor_total": 2,
+          "ok": false,
+          "deterministic": false
+        },
+        {
+          "id": "injection_vial_mismatch",
+          "ref_ok": true,
+          "factor_pass": 2,
+          "factor_total": 2,
+          "ok": true,
+          "deterministic": true
+        },
+        {
+          "id": "concentration_total_match",
+          "ref_ok": true,
+          "factor_pass": 2,
+          "factor_total": 2,
+          "ok": true,
+          "deterministic": true
+        }
+      ]
+    }
+  },
+  "selected": "gpt-4o",
+  "ranking": [
+    "gpt-4o",
+    "gemini-2.5-flash",
+    "sonar-pro",
+    "gpt-4o-mini"
+  ]
+}

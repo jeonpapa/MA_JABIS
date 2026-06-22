@@ -642,7 +642,36 @@ class ForeignPriceAgent:
             self._populate_daily_cost(row, dosing)
 
             by_country.setdefault(country, []).append(row)
+
+        # 국가간 용량 정규화 lazy 보정 — 캐시 경로 수렴점.
+        # priced row ≥2 인데 dose_norm_factor 가 한 번도 계산된 적 없는(NULL) row 가 있으면
+        # 1회 정규화 후 DB 영구 저장(캐시-DB-first). 이후 조회는 저장 factor 재사용.
+        try:
+            self._lazy_normalize_cached(query, by_country)
+        except Exception as e:
+            logger.warning("[DoseNorm] %s 캐시 lazy 보정 실패(원본가 유지): %s", query, e)
+
         return by_country
+
+    def _lazy_normalize_cached(self, query: str, by_country: dict) -> None:
+        """get_cached_results 후처리 — dose_norm_factor 미계산 캐시를 1회 정규화·영구 저장."""
+        from agents.foreign_dose_normalize import normalize_country_items
+
+        all_items = [it for items in by_country.values() for it in (items or [])]
+        priced = [it for it in all_items if it.get("adjusted_price_krw") is not None]
+        if len(priced) < 2:
+            return
+        # 이미 전부 보정 이력(factor 비-NULL) 이면 LLM 호출 없이 skip
+        if all(it.get("dose_norm_factor") is not None for it in priced):
+            return
+        updates = normalize_country_items(query, all_items)
+        for u in updates:
+            if u.get("id"):
+                self.db.update_foreign_dose_norm(u["id"], u)
+        if updates:
+            norm = [u for u in updates if (u.get("dose_norm_factor") or 1) != 1]
+            logger.info("[DoseNorm] %s 캐시 lazy 보정: %d행 저장(보정 적용 %d행)",
+                        query, len(updates), len(norm))
 
 
 def load_config(config_path: Path) -> dict:

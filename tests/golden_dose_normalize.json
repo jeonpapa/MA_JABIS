@@ -1,0 +1,60 @@
+{
+  "_doc": "용량 정규화 LLM 모델 선정용 골든셋. factor=reference/unit. null=보정 불가(복합제/강도불명). sim_dose_normalize_models.py 가 채점.",
+  "cases": [
+    {
+      "id": "prevymis_oral",
+      "drug": "Prevymis (letermovir)",
+      "items": [
+        {"country": "JP", "product_name": "プレバイミス錠20mg", "dosage_strength": "20mg", "form_type": "oral"},
+        {"country": "US", "product_name": "Prevymis 240mg tablet", "dosage_strength": "240mg", "form_type": "oral"},
+        {"country": "DE", "product_name": "Prevymis 240mg Filmtabletten", "dosage_strength": "240 mg", "form_type": "oral"}
+      ],
+      "expect": {"reference_strength_mg": 240, "factors": {"JP": 12.0, "US": 1.0, "DE": 1.0}}
+    },
+    {
+      "id": "keytruda_injection_conc",
+      "drug": "Keytruda (pembrolizumab)",
+      "items": [
+        {"country": "US", "product_name": "Keytruda 100 mg/4 mL vial", "dosage_strength": "100 mg/4 mL", "form_type": "injection"},
+        {"country": "IT", "product_name": "Keytruda 100mg/4mL flaconcino", "dosage_strength": "100mg/4mL", "form_type": "injection"}
+      ],
+      "expect": {"reference_strength_mg": 100, "factors": {"US": 1.0, "IT": 1.0}}
+    },
+    {
+      "id": "welireg_oral_same",
+      "drug": "Welireg (belzutifan)",
+      "items": [
+        {"country": "US", "product_name": "Welireg 40mg tablet", "dosage_strength": "40mg", "form_type": "oral"},
+        {"country": "UK", "product_name": "Welireg 40mg tablet", "dosage_strength": "40 mg", "form_type": "oral"}
+      ],
+      "expect": {"reference_strength_mg": 40, "factors": {"US": 1.0, "UK": 1.0}}
+    },
+    {
+      "id": "combo_no_norm",
+      "drug": "Sitagliptin/Metformin FDC",
+      "items": [
+        {"country": "US", "product_name": "Janumet 50mg/1000mg tablet", "dosage_strength": "50mg/1000mg", "form_type": "oral"},
+        {"country": "DE", "product_name": "Janumet 50mg/1000mg Filmtabletten", "dosage_strength": "50 mg/1000 mg", "form_type": "oral"}
+      ],
+      "expect": {"reference_strength_mg": null, "factors": {"US": null, "DE": null}}
+    },
+    {
+      "id": "injection_vial_mismatch",
+      "drug": "GenericInjectable (single-agent)",
+      "items": [
+        {"country": "US", "product_name": "DrugX 100mg vial", "dosage_strength": "100mg", "form_type": "injection"},
+        {"country": "JP", "product_name": "DrugX 50mg vial", "dosage_strength": "50mg", "form_type": "injection"}
+      ],
+      "expect": {"reference_strength_mg": 100, "factors": {"US": 1.0, "JP": 2.0}}
+    },
+    {
+      "id": "concentration_total_match",
+      "drug": "GenericConcentrate (single-agent)",
+      "items": [
+        {"country": "US", "product_name": "DrugY 25mg/mL 4mL vial", "dosage_strength": "25mg/mL 4mL", "form_type": "injection"},
+        {"country": "DE", "product_name": "DrugY 10mg/mL 10mL Durchstechflasche", "dosage_strength": "10mg/mL 10mL", "form_type": "injection"}
+      ],
+      "expect": {"reference_strength_mg": 100, "factors": {"US": 1.0, "DE": 1.0}}
+    }
+  ]
+}

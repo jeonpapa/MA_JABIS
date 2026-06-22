@@ -87,35 +87,13 @@ def _load_openai_key() -> None:
             pass
 
 
-def llm_normalize(drug: str, items: list[dict]) -> dict | None:
-    """GPT-4o 로 기준용량 + 국가별 보정계수 판단. 실패 시 None.
+# 런타임 정규화 모델 — tests/sim_dose_normalize_models.py 시뮬레이션으로 선정(3c).
+# 결과는 tests/dose_norm_model_report.json 에 기록. 변경 시 시뮬레이션 재실행 권장.
+NORM_MODEL = "gpt-4o"
 
-    입력: 국가별 {country, product_name, dosage_strength, form_type}.
-    출력: {"reference_strength_mg": float,
-           "countries": {country: {"unit_strength_mg": float|null,
-                                    "factor": float|null, "note": str}}}
-    """
-    try:
-        _load_openai_key()
-        from openai import OpenAI
-        client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
-    except Exception as e:
-        logger.warning("[DoseNorm] OpenAI 초기화 실패: %s", e)
-        return None
 
-    rows = [
-        {
-            "country": it.get("country"),
-            "product_name": it.get("product_name") or "",
-            "dosage_strength": it.get("dosage_strength") or "",
-            "form_type": it.get("form_type") or "",
-        }
-        for it in items
-        if it.get("adjusted_price_krw") is not None
-    ]
-    if len(rows) < 2:
-        return None
-
+def build_norm_prompt(drug: str, rows: list[dict]) -> tuple[str, str]:
+    """정규화 LLM 프롬프트 (system, user). 시뮬레이션 하니스와 공유."""
     sys_prompt = (
         "당신은 글로벌 약가 비교 분석가입니다. 국가별로 보고된 의약품의 '최소단위당 "
         "활성성분 강도(mg)'를 판단하고, 국가간 per-unit 약가 비교가 공정하도록 "
@@ -140,25 +118,98 @@ def llm_normalize(drug: str, items: list[dict]) -> dict | None:
         '"countries": {"<country>": {"unit_strength_mg": <number|null>, '
         '"factor": <number|null>, "note": "<짧은 설명>"}}}'
     )
+    return sys_prompt, user_prompt
+
+
+def call_norm_model(model: str, sys_prompt: str, user_prompt: str) -> dict | None:
+    """모델명 → 프로바이더 디스패치. JSON dict 반환(실패 None). 시뮬레이션·런타임 공용.
+
+    지원: gpt-4o / gpt-4o-mini (OpenAI), gemini-2.5-flash (Gemini),
+          sonar-pro / sonar (Perplexity).
+    """
+    _load_openai_key()  # config/.env 의 모든 키 로드
     try:
-        resp = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": sys_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.0,
-            max_tokens=700,
-            response_format={"type": "json_object"},
-        )
-        raw = resp.choices[0].message.content.strip()
+        m = model.lower()
+        if m.startswith("gpt") or m.startswith("o1") or m.startswith("o3"):
+            from openai import OpenAI
+            client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "system", "content": sys_prompt},
+                          {"role": "user", "content": user_prompt}],
+                temperature=0.0, max_tokens=700,
+                response_format={"type": "json_object"},
+            )
+            raw = resp.choices[0].message.content.strip()
+        elif m.startswith("gemini"):
+            raw = _call_gemini(model, sys_prompt, user_prompt)
+        elif m.startswith("sonar"):
+            from openai import OpenAI
+            client = OpenAI(api_key=os.environ.get("PERPLEXITY_API_KEY", ""),
+                            base_url="https://api.perplexity.ai")
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "system", "content": sys_prompt},
+                          {"role": "user", "content": user_prompt}],
+                temperature=0.0, max_tokens=700,
+            )
+            raw = resp.choices[0].message.content.strip()
+        else:
+            logger.warning("[DoseNorm] 미지원 모델: %s", model)
+            return None
+        if "```" in raw:
+            raw = raw.split("```")[1]
+            if raw.lstrip().lower().startswith("json"):
+                raw = raw.lstrip()[4:]
         result = json.loads(raw)
         if not isinstance(result.get("countries"), dict):
             return None
         return result
     except Exception as e:
-        logger.warning("[DoseNorm] LLM 정규화 실패: %s", e)
+        logger.warning("[DoseNorm] 모델 호출 실패(%s): %s", model, e)
         return None
+
+
+def _call_gemini(model: str, sys_prompt: str, user_prompt: str) -> str:
+    """Gemini REST generateContent — JSON 강제, thinkingBudget=0."""
+    import requests
+    key = os.environ.get("GOOGLE_GENAI_API_KEY") or os.environ.get("GEMINI_API_KEY", "")
+    url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
+           f"{model}:generateContent?key={key}")
+    body = {
+        "systemInstruction": {"parts": [{"text": sys_prompt}]},
+        "contents": [{"parts": [{"text": user_prompt}]}],
+        "generationConfig": {"temperature": 0.0, "maxOutputTokens": 2048,
+                             "responseMimeType": "application/json",
+                             "thinkingConfig": {"thinkingBudget": 0}},
+    }
+    r = requests.post(url, json=body, timeout=60)
+    r.raise_for_status()
+    return r.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+
+def llm_normalize(drug: str, items: list[dict], model: str | None = None) -> dict | None:
+    """선정 모델(NORM_MODEL)로 기준용량 + 국가별 보정계수 판단. 실패 시 None.
+
+    입력: 국가별 {country, product_name, dosage_strength, form_type}.
+    출력: {"reference_strength_mg": float,
+           "countries": {country: {"unit_strength_mg": float|null,
+                                    "factor": float|null, "note": str}}}
+    """
+    rows = [
+        {
+            "country": it.get("country"),
+            "product_name": it.get("product_name") or "",
+            "dosage_strength": it.get("dosage_strength") or "",
+            "form_type": it.get("form_type") or "",
+        }
+        for it in items
+        if it.get("adjusted_price_krw") is not None
+    ]
+    if len(rows) < 2:
+        return None
+    sys_prompt, user_prompt = build_norm_prompt(drug, rows)
+    return call_norm_model(model or NORM_MODEL, sys_prompt, user_prompt)
 
 
 def _sane_factor(f) -> float | None:
