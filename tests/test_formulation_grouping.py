@@ -86,8 +86,50 @@ def test_intra_formulation_display_unit_factor():
     assert all(it["formulation_key"] == "240mg|injection" for it in items)
 
 
+def test_prevymis_real_strings():
+    """실제 프로덕션 표기 문자열 → form-aware 강도추출 + 제형 매칭 end-to-end.
+
+    US '20 mg/1 ml' 주사는 package_unit(12ml/24ml)로 240/480 복원, JP 전각·包·錠,
+    CH 'Inf Konz 240 mg/12ml' 등 messy 표기가 올바른 제형 탭에 매칭되는지(LLM 없이).
+    """
+    from agents.foreign_price_agent import ForeignPriceAgent as A
+    P = [
+        ("US", "120 mg", "oral", "30s ea"), ("US", "20 mg", "oral", "30s ea"),
+        ("US", "20 mg/1 ml", "injection", "12 ml"), ("US", "20 mg/1 ml", "injection", "24 ml"),
+        ("US", "240 mg", "oral", "28s ea"), ("US", "480 mg", "oral", "28s ea"),
+        ("JP", "２０ｍｇ１包", "oral", ""), ("JP", "２４０ｍｇ１錠", "oral", ""),
+        ("JP", "２４０ｍｇ１２ｍＬ１瓶", "injection", ""),
+        ("CH", "PREVYMIS Inf Konz 240 mg/12ml", "injection", ""),
+        ("CH", "PREVYMIS Inf Konz 480 mg/24ml", "injection", ""),
+        ("FR", "240 mg", "oral", "28 plaq"), ("UK", "240mg f-c tab, 28", "oral", ""),
+    ]
+    items = []
+    for i, (c, ds, ft, pu) in enumerate(P):
+        items.append({
+            "id": i, "country": c, "dosage_strength": ds, "form_type": ft,
+            "package_unit": pu, "adjusted_price_krw": 100000 + i,
+            "unit_strength_mg": A._extract_per_unit_mg(ft, ds, pu),
+        })
+    # US 주사 농도×부피 복원 검증
+    us_inj = [it for it in items if it["country"] == "US" and it["form_type"] == "injection"]
+    assert {it["unit_strength_mg"] for it in us_inj} == {240.0, 480.0}, "US 주사 240/480 복원 실패"
+
+    process_formulations("Prevymis", items)
+    keys = {it["formulation_key"] for it in items}
+    for k in ("20mg|oral", "120mg|oral", "240mg|oral", "480mg|oral",
+              "240mg|injection", "480mg|injection"):
+        assert k in keys, f"missing {k}"
+    # 240↔480↔20 분리 + 매칭
+    fk = {(it["country"], it["dosage_strength"]): it["formulation_key"] for it in items}
+    assert fk[("JP", "２４０ｍｇ１錠")] == "240mg|oral"
+    assert fk[("CH", "PREVYMIS Inf Konz 240 mg/12ml")] == "240mg|injection"
+    assert fk[("UK", "240mg f-c tab, 28")] == "240mg|oral"
+    assert all(it["is_us_listed"] == 1 for it in items)  # 전부 US canonical
+
+
 if __name__ == "__main__":
     test_route_of()
     test_prevymis_formulation_grouping()
     test_intra_formulation_display_unit_factor()
+    test_prevymis_real_strings()
     print("OK — formulation grouping tests passed")
