@@ -136,16 +136,29 @@ export interface CoverageNote {
   requiresAuth?: boolean;
 }
 
+/** 제형(강도×투여경로) 탭 — 탭 내에서 국가별 a8Pricing/summary 비교 */
+export interface FormulationGroup {
+  key: string;
+  label: string;            // 예: "240mg 경구"
+  strengthMg: number | null;
+  route: string;            // oral | injection
+  isUsListed: boolean;      // false → 'US 미등재' 뱃지
+  a8Pricing: Record<string, A8Pricing | undefined>;
+  summary?: A8Summary;
+}
+
 export interface PricingTabData {
   productName: string;
   ingredient: string;
   lastSearchedAt: string;
-  /** uiKey(usa/uk/germany/…) → 대표 1건. 없으면 undefined → '정보 없음' */
+  /** uiKey(usa/uk/germany/…) → 대표 1건 (레거시/폴백). 제형 탭은 formulations 사용 */
   a8Pricing: Record<string, A8Pricing | undefined>;
   coverageNotes: Record<string, CoverageNote>;
   hasAnyPrice: boolean;
   /** 조정가 보유 국가가 1개 이상일 때만 — min/max/avg 카드용 */
   summary?: A8Summary;
+  /** 제형별 그룹 (US canonical 먼저 강도 오름차순 → foreign_only 뒤). 탭 렌더용 */
+  formulations: FormulationGroup[];
 }
 
 export interface HtaDecisionItem {
@@ -240,6 +253,28 @@ interface RawPricingEntry {
   vat_rate?: number | null;
   vat_applied_krw?: number | null;
   distribution_margin?: number | null;
+  // 용량 정규화 + 제형
+  adjusted_price_krw_normalized?: number | null;
+  unit_strength_mg?: number | null;
+  reference_strength_mg?: number | null;
+  dose_norm_factor?: number | null;
+  dose_norm_note?: string | null;
+  formulation_key?: string | null;
+  formulation_label?: string | null;
+  canonical_strength_mg?: number | null;
+  route?: string | null;
+  formulation_source?: string | null;
+  is_us_listed?: number | null;
+}
+
+interface RawFormulationGroup {
+  formulation_key: string;
+  label: string;
+  canonical_strength_mg: number | null;
+  route: string | null;
+  is_us_listed: number | null;
+  source: string | null;
+  countries: Record<string, RawPricingEntry>;   // 국가코드 → 대표 행
 }
 
 interface RawCoverageNote {
@@ -252,6 +287,7 @@ interface RawCoverageNote {
 interface RawCachedResponse {
   query: string;
   results: Record<string, RawPricingEntry[]>;
+  formulations?: Record<string, RawFormulationGroup>;
   coverage_notes?: Record<string, RawCoverageNote>;
 }
 
@@ -493,6 +529,52 @@ export async function fetchForeignDrugList(): Promise<ForeignDrugListItem[]> {
  * A8 급여약가 탭 — 캐시 가격 + country-overview 급여 신호 병합.
  * country-overview 실패는 가격 표시를 막지 않는다 (allSettled).
  */
+/** 국가별 cells(uiKey→A8Pricing) → min/avg/max 요약. 정규화가 우선(없으면 raw). */
+function _buildSummary(a8: Record<string, A8Pricing | undefined>): A8Summary | undefined {
+  const priced: { key: string; adj: number }[] = [];
+  const excludedKeys: string[] = [];
+  for (const uiKey of Object.keys(PRICING_COUNTRY_CODE)) {
+    const cell = a8[uiKey];
+    const adj = cell?.adjustedPriceKrwNormalized ?? cell?.adjustedPriceKrw;
+    if (adj != null && adj > 0) priced.push({ key: uiKey, adj });
+    else excludedKeys.push(uiKey);
+  }
+  if (!priced.length) return undefined;
+  const min = priced.reduce((a, b) => (b.adj < a.adj ? b : a));
+  const max = priced.reduce((a, b) => (b.adj > a.adj ? b : a));
+  return {
+    minKrw: min.adj, minCountryKey: min.key,
+    maxKrw: max.adj, maxCountryKey: max.key,
+    avgKrw: Math.round(priced.reduce((s, p) => s + p.adj, 0) / priced.length),
+    includedKeys: priced.map(p => p.key), excludedKeys,
+  };
+}
+
+/** overview 의 positive 급여 신호를 a8Pricing cells 에 병합 (국가 단위, 모든 제형 공통). */
+function _applyReimbursement(
+  a8: Record<string, A8Pricing | undefined>, ov: RawCountryOverviewResponse | null,
+): void {
+  if (!ov) return;
+  for (const card of ov.countries || []) {
+    const uiKey = OVERVIEW_TO_A8[card.country];
+    if (!uiKey) continue;
+    const cell = a8[uiKey];
+    if (!cell) continue;
+    const s = (card.reimbursement_summary || '').toLowerCase();
+    if (!POSITIVE_REIMB.has(s)) continue;
+    cell.reimbursed = true; cell.reimbursedKnown = true;
+    cell.reimbursedLabel = s === 'recommend' ? '권고' : '조건부';
+    let latest = '';
+    for (const ind of card.indications || []) {
+      const rb = ind.reimbursement;
+      if (!rb || !rb.decision_type || !POSITIVE_REIMB.has(rb.decision_type.toLowerCase())) continue;
+      const d = toIsoDate(rb.decision_date);
+      if (d > latest) latest = d;
+    }
+    cell.reimbursedDate = latest;
+  }
+}
+
 export async function fetchPricingTab(query: string): Promise<PricingTabData> {
   const [cachedRes, overviewRes] = await Promise.allSettled([
     api.get<RawCachedResponse>(`/api/foreign/cached?q=${encodeURIComponent(query)}`),
@@ -500,94 +582,80 @@ export async function fetchPricingTab(query: string): Promise<PricingTabData> {
   ]);
   if (cachedRes.status === 'rejected') throw cachedRes.reason;
   const cached = cachedRes.value;
+  const ov = overviewRes.status === 'fulfilled' ? overviewRes.value : null;
 
-  const a8Pricing: Record<string, A8Pricing | undefined> = {};
   let productName = '';
   let ingredient = '';
   let lastSearchedAt = '';
   let hasAnyPrice = false;
 
-  for (const [uiKey, code] of Object.entries(PRICING_COUNTRY_CODE)) {
-    const rows = cached.results?.[code] || [];
-    const rep = pickRepresentative(rows);
-    a8Pricing[uiKey] = rep;
-    if (rep) {
-      if (rep.price != null) hasAnyPrice = true;
-      if (!productName) productName = rep.productName;
-      if (rep.searchedAt > lastSearchedAt) lastSearchedAt = rep.searchedAt;
-    }
-    for (const r of rows) {
-      // 짧고 깨끗한 INN 만 채택 (DE Rote Liste 의 잡음 텍스트 배제)
-      const ing = (r.ingredient || '').trim();
-      if (!ingredient && ing && ing.length <= 40 && !/eintrag|fachinformation/i.test(ing)) {
-        ingredient = ing;
-      }
-    }
-  }
+  const pickIngredient = (r: RawPricingEntry) => {
+    const ing = (r.ingredient || '').trim();
+    if (!ingredient && ing && ing.length <= 40 && !/eintrag|fachinformation/i.test(ing)) ingredient = ing;
+  };
 
-  // country-overview 의 positive 급여 신호 병합 (US/UK/JP 만 A8 에 매핑됨)
-  if (overviewRes.status === 'fulfilled') {
-    const ov = overviewRes.value;
-    if (!ingredient && ov.inn) ingredient = ov.inn;
-    for (const card of ov.countries || []) {
-      const uiKey = OVERVIEW_TO_A8[card.country];
-      if (!uiKey) continue;
-      const cell = a8Pricing[uiKey];
-      if (!cell) continue;
-      const summary = (card.reimbursement_summary || '').toLowerCase();
-      if (POSITIVE_REIMB.has(summary)) {
-        cell.reimbursed = true;
-        cell.reimbursedKnown = true;
-        cell.reimbursedLabel = summary === 'recommend' ? '권고' : '조건부';
-        // positive 결정들 중 최신 decision_date (없으면 빈값 유지 — 임의 생성 금지)
-        let latest = '';
-        for (const ind of card.indications || []) {
-          const rb = ind.reimbursement;
-          if (!rb || !rb.decision_type) continue;
-          if (!POSITIVE_REIMB.has(rb.decision_type.toLowerCase())) continue;
-          const d = toIsoDate(rb.decision_date);
-          if (d > latest) latest = d;
-        }
-        cell.reimbursedDate = latest;
-      }
+  // 제형(formulation) 그룹 빌드 — 각 그룹의 countries(국가→대표행)를 a8Pricing 으로
+  const formulations: FormulationGroup[] = [];
+  for (const [fkey, g] of Object.entries(cached.formulations || {})) {
+    const a8: Record<string, A8Pricing | undefined> = {};
+    for (const [uiKey, code] of Object.entries(PRICING_COUNTRY_CODE)) {
+      const raw = g.countries?.[code];
+      if (!raw) { a8[uiKey] = undefined; continue; }
+      const cell = mapPricingEntry(raw, 1);
+      a8[uiKey] = cell;
+      if (cell.price != null) hasAnyPrice = true;
+      if (!productName) productName = cell.productName;
+      if (cell.searchedAt > lastSearchedAt) lastSearchedAt = cell.searchedAt;
+      pickIngredient(raw);
     }
+    _applyReimbursement(a8, ov);
+    formulations.push({
+      key: fkey, label: g.label || fkey,
+      strengthMg: g.canonical_strength_mg, route: g.route || 'oral',
+      isUsListed: g.is_us_listed === 1,
+      a8Pricing: a8, summary: _buildSummary(a8),
+    });
   }
+  // 정렬: US 등재 먼저 → 강도 오름차순 → 라벨
+  formulations.sort((a, b) => {
+    if (a.isUsListed !== b.isUsListed) return a.isUsListed ? -1 : 1;
+    if ((a.strengthMg ?? 1e9) !== (b.strengthMg ?? 1e9)) return (a.strengthMg ?? 1e9) - (b.strengthMg ?? 1e9);
+    return a.label.localeCompare(b.label);
+  });
+
+  // 레거시/폴백: formulations 없으면 기존 country별 대표 매핑으로 단일 그룹 구성
+  let a8Pricing: Record<string, A8Pricing | undefined>;
+  let summary: A8Summary | undefined;
+  if (formulations.length) {
+    a8Pricing = formulations[0].a8Pricing;
+    summary = formulations[0].summary;
+  } else {
+    a8Pricing = {};
+    for (const [uiKey, code] of Object.entries(PRICING_COUNTRY_CODE)) {
+      const rows = cached.results?.[code] || [];
+      const rep = pickRepresentative(rows);
+      a8Pricing[uiKey] = rep;
+      if (rep) {
+        if (rep.price != null) hasAnyPrice = true;
+        if (!productName) productName = rep.productName;
+        if (rep.searchedAt > lastSearchedAt) lastSearchedAt = rep.searchedAt;
+      }
+      rows.forEach(pickIngredient);
+    }
+    _applyReimbursement(a8Pricing, ov);
+    summary = _buildSummary(a8Pricing);
+  }
+  if (!ingredient && ov?.inn) ingredient = ov.inn;
 
   const coverageNotes: Record<string, CoverageNote> = {};
   const codeToUi: Record<string, string> = {};
   for (const [uiKey, code] of Object.entries(PRICING_COUNTRY_CODE)) codeToUi[code] = uiKey;
   for (const [code, n] of Object.entries(cached.coverage_notes || {})) {
     const uiKey = codeToUi[code];
-    if (!uiKey) continue;
-    coverageNotes[uiKey] = { policy: n.policy, sourceHint: n.source_hint, requiresAuth: n.requires_auth };
+    if (uiKey) coverageNotes[uiKey] = { policy: n.policy, sourceHint: n.source_hint, requiresAuth: n.requires_auth };
   }
 
-  // ── A8 조정가 요약 (min/max/avg) — 국가간 용량 정규화가를 기본값으로 비교 ──
-  //    (정규화가 없으면 원본 per-unit adjusted_price_krw fallback)
-  const priced: { key: string; adj: number }[] = [];
-  const excludedKeys: string[] = [];
-  for (const uiKey of Object.keys(PRICING_COUNTRY_CODE)) {
-    const cell = a8Pricing[uiKey];
-    const adj = cell?.adjustedPriceKrwNormalized ?? cell?.adjustedPriceKrw;
-    if (adj != null && adj > 0) priced.push({ key: uiKey, adj });
-    else excludedKeys.push(uiKey);
-  }
-  let summary: A8Summary | undefined;
-  if (priced.length > 0) {
-    const min = priced.reduce((a, b) => (b.adj < a.adj ? b : a));
-    const max = priced.reduce((a, b) => (b.adj > a.adj ? b : a));
-    summary = {
-      minKrw: min.adj,
-      minCountryKey: min.key,
-      maxKrw: max.adj,
-      maxCountryKey: max.key,
-      avgKrw: Math.round(priced.reduce((s, p) => s + p.adj, 0) / priced.length),
-      includedKeys: priced.map(p => p.key),
-      excludedKeys,
-    };
-  }
-
-  return { productName: productName || query, ingredient, lastSearchedAt, a8Pricing, coverageNotes, hasAnyPrice, summary };
+  return { productName: productName || query, ingredient, lastSearchedAt, a8Pricing, coverageNotes, hasAnyPrice, summary, formulations };
 }
 
 /** HTA 현황 탭 — NICE/CADTH/PBAC/SMC. body 별 최신 1건 + 전체 이력. */

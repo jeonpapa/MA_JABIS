@@ -196,23 +196,30 @@ export default function InternationalPricingPage() {
   const headerName = selected ? displayName(selected.query) : '';
   const headerIngredient = selected ? (selected.canonical || pricing.data?.ingredient || '') : '';
 
-  const summary = pricing.data?.summary;
+  // ── 제형(formulation) 탭 — 강도×투여경로. 선택 제형의 a8Pricing/summary 로 렌더 ──
+  const formulations = pricing.data?.formulations ?? [];
+  const [pickedForm, setPickedForm] = useState<string | null>(null);
+  const activeFormKey = (pickedForm && formulations.some(f => f.key === pickedForm))
+    ? pickedForm : (formulations[0]?.key ?? null);
+  const activeGroup = formulations.find(f => f.key === activeFormKey) ?? null;
+  const activeA8: Record<string, A8Pricing | undefined> =
+    activeGroup?.a8Pricing ?? pricing.data?.a8Pricing ?? {};
+  const summary = activeGroup?.summary ?? pricing.data?.summary;
+
   // 그래프 데이터 — 조정가 보유 국가만, 조정가 오름차순
   const chartData = useMemo(() => {
-    if (!pricing.data) return [];
     return A8_COUNTRIES
-      .map(c => { const cell = pricing.data?.a8Pricing[c.key]; return { key: c.key, name: c.label, flag: c.flag, adj: (cell?.adjustedPriceKrwNormalized ?? cell?.adjustedPriceKrw) ?? null }; })
+      .map(c => { const cell = activeA8[c.key]; return { key: c.key, name: c.label, flag: c.flag, adj: (cell?.adjustedPriceKrwNormalized ?? cell?.adjustedPriceKrw) ?? null }; })
       .filter((d): d is { key: string; name: string; flag: string; adj: number } => d.adj != null && d.adj > 0)
       .sort((a, b) => a.adj - b.adj);
-  }, [pricing.data]);
+  }, [activeA8]);
 
   // 산출 로직 테이블 행 — calc breakdown 보유 국가만
   const calcRows = useMemo(() => {
-    if (!pricing.data) return [];
     return A8_COUNTRIES
-      .map(c => ({ meta: c, cell: pricing.data?.a8Pricing[c.key] }))
+      .map(c => ({ meta: c, cell: activeA8[c.key] }))
       .filter((r): r is { meta: typeof A8_COUNTRIES[number]; cell: A8Pricing } => !!r.cell?.calc);
-  }, [pricing.data]);
+  }, [activeA8]);
 
   const fxWindow = calcRows.length > 0 && calcRows[0].cell.calc
     ? `${fxMonth(calcRows[0].cell.calc.fxFrom)} ~ ${fxMonth(calcRows[0].cell.calc.fxTo)}`
@@ -370,6 +377,20 @@ export default function InternationalPricingPage() {
                       </div>
                     )}
 
+                    {/* ── 제형(강도×투여경로) 탭 — US canonical 먼저, foreign_only 뒤 ── */}
+                    {formulations.length > 0 && (
+                      <div className="flex gap-2 flex-wrap items-center">
+                        <span className={`text-xs font-semibold mr-1 ${textSub}`}>제형</span>
+                        {formulations.map(f => (
+                          <button key={f.key} onClick={() => setPickedForm(f.key)}
+                            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border cursor-pointer whitespace-nowrap transition-colors ${activeFormKey === f.key ? 'bg-teal-600 text-white border-teal-600' : `${cardBg} ${cardBorder} ${textSub} hover:${textMain}`}`}>
+                            {f.label}
+                            {!f.isUsListed && <span className="text-[10px] px-1 py-0.5 rounded bg-red-500/15 text-red-400 font-semibold">US 미등재</span>}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
                     {/* ── A8 조정가 요약 카드 (최저 / 평균 / 최고) ── */}
                     {summary && (
                       <div>
@@ -458,7 +479,7 @@ export default function InternationalPricingPage() {
                       </div>
                       <div className="grid grid-cols-4 gap-0">
                         {A8_COUNTRIES.map((country, idx) => {
-                          const cell = pricing.data?.a8Pricing[country.key];
+                          const cell = activeA8[country.key];
                           const cov = pricing.data?.coverageNotes[country.key];
                           return (
                             <div key={country.key} className={`p-5 ${idx % 4 !== 3 ? 'border-r' : ''} ${idx >= 4 ? 'border-t' : ''} ${divider}`}>
@@ -572,7 +593,7 @@ export default function InternationalPricingPage() {
                               <div className="space-y-1">
                                 {summary.excludedKeys.map(k => {
                                   const cov = pricing.data?.coverageNotes[k];
-                                  const cell = pricing.data?.a8Pricing[k];
+                                  const cell = activeA8[k];
                                   const reason = cell == null ? '캐시 데이터 없음 (미수집 또는 미등재)'
                                     : cell.price == null ? (cov?.policy || '가격 미공개')
                                       : '환율/조정가 미산출';

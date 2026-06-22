@@ -665,14 +665,16 @@ class ForeignPriceAgent:
 
         return by_country
 
-    def get_formulation_groups(self, query: str) -> dict:
+    def get_formulation_groups(self, query: str, by_country: dict = None) -> dict:
         """대시보드 제형 탭용 — get_cached_results 를 formulation_key 로 그룹핑.
 
         반환: { formulation_key: {label, canonical_strength_mg, route, is_us_listed,
                 source, countries: {country_code: row}} }.
         US canonical 먼저(강도 오름차순) → foreign_only/unmatched 뒤로 정렬은 호출측.
+        by_country 미전달 시 get_cached_results 를 호출(중복 방지: 엔드포인트는 전달).
         """
-        by_country = self.get_cached_results(query)
+        if by_country is None:
+            by_country = self.get_cached_results(query)
         groups: dict[str, dict] = {}
         for rows in by_country.values():
             for row in rows or []:

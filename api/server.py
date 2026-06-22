@@ -1698,9 +1698,16 @@ def foreign_cached():
         pass
 
     coverage_notes = _compute_coverage_notes(query, AVAILABLE_COUNTRIES, cached)
+    # 제형(formulation)별 그룹 — 대시보드 제형 탭용. results(국가별)는 호환 위해 보존.
+    try:
+        formulations = foreign_agent.get_formulation_groups(query, by_country=cached)
+    except Exception as e:
+        logger.warning("[Formulation] %s 그룹핑 실패: %s", query, e)
+        formulations = {}
     return jsonify({
         "query": query,
         "results": cached,
+        "formulations": formulations,
         "refreshed": not use_cache,
         "coverage_notes": coverage_notes,
     })
