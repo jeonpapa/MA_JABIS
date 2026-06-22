@@ -41,7 +41,24 @@ class _DbBase:
                 logger.warning("FTS5 가상 테이블 생성 실패 (LIKE 폴백 사용): %s", e)
         self._migrate_search_tables()
         self._migrate_indications()
+        self._migrate_regimen()
         logger.info("DB 초기화 완료: %s", self.db_path)
+
+    def _migrate_regimen(self) -> None:
+        """투약비용비교 레지멘 저장 테이블 (payload_json 스냅샷)."""
+        with self._connect() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS regimen_comparisons (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name        TEXT NOT NULL,
+                    owner_email TEXT,
+                    payload_json TEXT NOT NULL,
+                    created_at  TEXT,
+                    updated_at  TEXT
+                )
+                """
+            )
 
     def _migrate_indications(self) -> None:
         """기존 indications_master 에 biomarker_class 컬럼 없으면 추가."""

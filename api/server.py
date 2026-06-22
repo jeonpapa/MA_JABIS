@@ -3860,6 +3860,70 @@ def _coerce_mail_sub_input(body: dict) -> dict | tuple[dict, str]:
     return out
 
 
+@app.get("/api/regimen-comparisons")
+@require_auth()
+def regimen_list():
+    """투약비용비교 레지멘 목록 (소유자 스코프)."""
+    owner = request.user["sub"]  # type: ignore[attr-defined]
+    try:
+        return jsonify({"items": db.list_regimens(owner_email=owner)})
+    except Exception as e:
+        logger.error("regimen_list 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/regimen-comparisons")
+@require_auth()
+def regimen_create():
+    owner = request.user["sub"]  # type: ignore[attr-defined]
+    body = request.get_json(silent=True) or {}
+    name = (body.get("name") or "").strip()
+    payload = body.get("payload")
+    if not name or not isinstance(payload, dict):
+        return jsonify({"error": "name, payload 필요", "code": "INVALID"}), 400
+    try:
+        rid = db.create_regimen(name, payload, owner_email=owner)
+        return jsonify(db.get_regimen(rid)), 201
+    except Exception as e:
+        logger.error("regimen_create 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.put("/api/regimen-comparisons/<int:regimen_id>")
+@require_auth()
+def regimen_update(regimen_id: int):
+    owner = request.user["sub"]  # type: ignore[attr-defined]
+    existing = db.get_regimen(regimen_id)
+    if not existing:
+        return jsonify({"error": "not found"}), 404
+    if existing.get("owner_email") and existing["owner_email"] != owner:
+        return jsonify({"error": "forbidden"}), 403
+    body = request.get_json(silent=True) or {}
+    name = (body.get("name") or existing.get("name") or "").strip()
+    payload = body.get("payload")
+    if not isinstance(payload, dict):
+        return jsonify({"error": "payload 필요", "code": "INVALID"}), 400
+    try:
+        db.update_regimen(regimen_id, name, payload)
+        return jsonify(db.get_regimen(regimen_id))
+    except Exception as e:
+        logger.error("regimen_update 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.delete("/api/regimen-comparisons/<int:regimen_id>")
+@require_auth()
+def regimen_delete(regimen_id: int):
+    owner = request.user["sub"]  # type: ignore[attr-defined]
+    existing = db.get_regimen(regimen_id)
+    if not existing:
+        return jsonify({"error": "not found"}), 404
+    if existing.get("owner_email") and existing["owner_email"] != owner:
+        return jsonify({"error": "forbidden"}), 403
+    db.delete_regimen(regimen_id)
+    return jsonify({"ok": True})
+
+
 @app.get("/api/mail-subscriptions")
 @require_auth()
 def mail_sub_list():

@@ -7,6 +7,7 @@ export interface TabVisibility {
 const DEFAULT_VISIBILITY: TabVisibility = {
   '/': true,
   '/domestic-pricing': true,
+  '/regimen-cost': true,
   '/international-pricing': true,
   '/market-share': true,
   '/competitor-trends': true,

@@ -16,6 +16,7 @@ import { getTabVisibility, setTabVisibility, isTabVisible } from '@/utils/tabVis
 const allNavItems = [
   { path: '/', label: 'Dashboard Overview', icon: 'ri-dashboard-3-line', exact: true },
   { path: '/domestic-pricing', label: 'Domestic Pricing', icon: 'ri-price-tag-3-line' },
+  { path: '/regimen-cost', label: 'Regimen Cost', icon: 'ri-bar-chart-box-line' },
   { path: '/international-pricing', label: 'International Pricing', icon: 'ri-global-line' },
   { path: '/market-share', label: 'Korean Market', icon: 'ri-pie-chart-2-line' },
   { path: '/competitor-trends', label: 'Competitor Trends', icon: 'ri-radar-line' },

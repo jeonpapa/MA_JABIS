@@ -1,6 +1,7 @@
 import { RouteObject } from 'react-router-dom';
 import HomePage from '@/pages/home/page';
 import DomesticPricingPage from '@/pages/domestic-pricing/page';
+import RegimenCostPage from '@/pages/regimen-cost/page';
 import InternationalPricingPage from '@/pages/international-pricing/page';
 import MarketSharePage from '@/pages/market-share/page';
 import CompetitorTrendsPage from '@/pages/competitor-trends/page';
@@ -22,6 +23,7 @@ const routes: RouteObject[] = [
   { path: '/login', element: <LoginPage /> },
   { path: '/', element: <HomePage /> },
   { path: '/domestic-pricing', element: <DomesticPricingPage /> },
+  { path: '/regimen-cost', element: <RegimenCostPage /> },
   { path: '/international-pricing', element: <InternationalPricingPage /> },
   { path: '/market-share', element: <MarketSharePage /> },
   { path: '/competitor-trends', element: <CompetitorTrendsPage /> },
