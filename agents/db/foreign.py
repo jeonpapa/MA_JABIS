@@ -110,6 +110,45 @@ class _ForeignMixin:
             rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
 
+    def get_foreign_presentations(self, query_name: str) -> list[dict]:
+        """제형별 탭용 — 국가×제형(강도·투여경로·포장)별 최신 가격보유 행 전부 반환.
+
+        get_foreign_prices 는 국가당 1건으로 collapse 하지만, 여기선
+        (country, dosage_strength, form_type, package_unit) 조합별 최신 priced 행을
+        모두 반환해 대시보드가 제형(formulation)별로 그룹핑할 수 있게 한다.
+        (US 주사 '20mg/1ml' 12ml=240mg vs 24ml=480mg 처럼 같은 강도문자열이라도
+        package_unit 으로 구분 — 다른 제형.)
+        """
+        names = aliases(query_name)
+        placeholders = ",".join(["?"] * len(names))
+        sql = f"""
+            SELECT f.*
+            FROM foreign_drug_prices f
+            INNER JOIN (
+                SELECT country,
+                       IFNULL(dosage_strength,'') AS ds,
+                       IFNULL(form_type,'')       AS ft,
+                       IFNULL(package_unit,'')    AS pu,
+                       COALESCE(
+                           MAX(CASE WHEN local_price IS NOT NULL THEN searched_at END),
+                           MAX(searched_at)
+                       ) AS latest
+                FROM foreign_drug_prices
+                WHERE LOWER(query_name) IN ({placeholders})
+                GROUP BY country, ds, ft, pu
+            ) m ON f.country = m.country
+               AND IFNULL(f.dosage_strength,'') = m.ds
+               AND IFNULL(f.form_type,'')       = m.ft
+               AND IFNULL(f.package_unit,'')    = m.pu
+               AND f.searched_at = m.latest
+            WHERE LOWER(f.query_name) IN ({placeholders})
+            ORDER BY f.country
+        """
+        params = tuple(names) * 2
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
     def get_foreign_drug_list(self) -> list[dict]:
         """지금까지 검색된 모든 약제 목록 (검색 히스토리 사이드바용).
 

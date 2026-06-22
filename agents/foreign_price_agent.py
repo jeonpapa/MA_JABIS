@@ -359,27 +359,36 @@ class ForeignPriceAgent:
         return results
 
     def _normalize_doses_across_countries(self, query: str, results: dict) -> None:
-        """search_all 결과의 국가간 용량 정규화 후처리.
-
-        normalize_country_items 가 strength 불일치를 감지하면 LLM 으로 기준용량·보정계수를
-        판단하고, adjusted_price_krw_normalized 등 필드를 DB(기존 행)에 UPDATE 한다.
-        강도 일치 시엔 normalized=raw, factor=1 로 채워 비교 일관성 유지.
-        """
-        from agents.foreign_dose_normalize import normalize_country_items
-
+        """search_all 결과의 제형(formulation)별 매칭 + 제형 내 표시단위 보정 후처리."""
         all_items = [it for items in results.values() for it in (items or [])]
-        priced = [it for it in all_items if it.get("adjusted_price_krw") is not None]
-        if len(priced) < 2:
+        self._assign_formulations_and_persist(query, all_items)
+
+    def _assign_formulations_and_persist(self, query: str, all_items: list) -> None:
+        """priced 행에 form-aware unit_strength_mg 부착 → process_formulations(제형 매칭
+        + 제형 내 표시단위 보정) → 결과를 DB(기존 행)에 UPDATE. US canonical 기준."""
+        from agents.foreign_dose_normalize import process_formulations
+
+        if not all_items:
             return
-        updates = normalize_country_items(query, all_items)
+        # form-aware per-unit 활성성분 mg 부착 (주사 농도×부피 복원) — 가격 유무 무관 전 행.
+        # 제형 강도 판정 기준. 미가격 행도 같은 제형 탭에 묶기 위함.
+        for it in all_items:
+            if not it.get("unit_strength_mg"):
+                try:
+                    it["unit_strength_mg"] = self._extract_per_unit_mg(
+                        (it.get("form_type") or "unknown"),
+                        it.get("dosage_strength") or "",
+                        it.get("package_unit") or "",
+                    )
+                except Exception:
+                    it["unit_strength_mg"] = None
+        updates = process_formulations(query, all_items)
         for u in updates:
-            rid = u.get("id")
-            if rid:
-                self.db.update_foreign_dose_norm(rid, u)
+            if u.get("id"):
+                self.db.update_foreign_dose_norm(u["id"], u)
         if updates:
-            norm = [u for u in updates if (u.get("dose_norm_factor") or 1) != 1]
-            logger.info("[DoseNorm] %s: %d행 정규화 반영(보정 적용 %d행)",
-                        query, len(updates), len(norm))
+            nkeys = len({u.get("formulation_key") for u in updates})
+            logger.info("[Formulation] %s: %d행 → %d제형 배정", query, len(updates), nkeys)
 
     def _load_dosing_map(self, query: str, ingredients: list[str]) -> dict:
         """query_name 또는 ingredient 로 foreign_drug_dosing 조회.
@@ -578,7 +587,7 @@ class ForeignPriceAgent:
         저장값을 신뢰하되, local_price/exchange_rate 가 있으면 규칙 변경 반영을 위해
         현재 calculator 로 재계산. adjusted_price_krw 는 per-unit KRW 기준.
         """
-        rows = self.db.get_foreign_prices(query)
+        rows = self.db.get_foreign_presentations(query)   # 국가×제형 전부 (collapse 안 함)
         by_country = {}
         ingredients = [r.get("ingredient", "") for r in rows]
         dosing_map = self._load_dosing_map(query, ingredients)
@@ -643,35 +652,52 @@ class ForeignPriceAgent:
 
             by_country.setdefault(country, []).append(row)
 
-        # 국가간 용량 정규화 lazy 보정 — 캐시 경로 수렴점.
-        # priced row ≥2 인데 dose_norm_factor 가 한 번도 계산된 적 없는(NULL) row 가 있으면
-        # 1회 정규화 후 DB 영구 저장(캐시-DB-first). 이후 조회는 저장 factor 재사용.
+        # 제형 배정 lazy — formulation_key 미설정 priced 행이 있으면 1회 배정·영구 저장
+        # (캐시-DB-first). 이미 전부 배정됐으면 LLM/재배정 skip(저장값 재사용).
         try:
-            self._lazy_normalize_cached(query, by_country)
+            all_items = [it for items in by_country.values() for it in (items or [])]
+            assignable = [it for it in all_items
+                          if it.get("adjusted_price_krw") is not None or it.get("dosage_strength")]
+            if assignable and any(not it.get("formulation_key") for it in assignable):
+                self._assign_formulations_and_persist(query, all_items)
         except Exception as e:
-            logger.warning("[DoseNorm] %s 캐시 lazy 보정 실패(원본가 유지): %s", query, e)
+            logger.warning("[Formulation] %s 캐시 배정 실패(원본 유지): %s", query, e)
 
         return by_country
 
-    def _lazy_normalize_cached(self, query: str, by_country: dict) -> None:
-        """get_cached_results 후처리 — dose_norm_factor 미계산 캐시를 1회 정규화·영구 저장."""
-        from agents.foreign_dose_normalize import normalize_country_items
+    def get_formulation_groups(self, query: str) -> dict:
+        """대시보드 제형 탭용 — get_cached_results 를 formulation_key 로 그룹핑.
 
-        all_items = [it for items in by_country.values() for it in (items or [])]
-        priced = [it for it in all_items if it.get("adjusted_price_krw") is not None]
-        if len(priced) < 2:
-            return
-        # 이미 전부 보정 이력(factor 비-NULL) 이면 LLM 호출 없이 skip
-        if all(it.get("dose_norm_factor") is not None for it in priced):
-            return
-        updates = normalize_country_items(query, all_items)
-        for u in updates:
-            if u.get("id"):
-                self.db.update_foreign_dose_norm(u["id"], u)
-        if updates:
-            norm = [u for u in updates if (u.get("dose_norm_factor") or 1) != 1]
-            logger.info("[DoseNorm] %s 캐시 lazy 보정: %d행 저장(보정 적용 %d행)",
-                        query, len(updates), len(norm))
+        반환: { formulation_key: {label, canonical_strength_mg, route, is_us_listed,
+                source, countries: {country_code: row}} }.
+        US canonical 먼저(강도 오름차순) → foreign_only/unmatched 뒤로 정렬은 호출측.
+        """
+        by_country = self.get_cached_results(query)
+        groups: dict[str, dict] = {}
+        for rows in by_country.values():
+            for row in rows or []:
+                fk = row.get("formulation_key")
+                if not fk:
+                    fk = f"{(row.get('dosage_strength') or '기타')}|{row.get('form_type') or 'unknown'}"
+                g = groups.get(fk)
+                if g is None:
+                    g = {
+                        "formulation_key": fk,
+                        "label": row.get("formulation_label") or row.get("dosage_strength") or fk,
+                        "canonical_strength_mg": row.get("canonical_strength_mg"),
+                        "route": row.get("route") or row.get("form_type"),
+                        "is_us_listed": row.get("is_us_listed"),
+                        "source": row.get("formulation_source"),
+                        "countries": {},
+                    }
+                    groups[fk] = g
+                country = row.get("country")
+                prev = g["countries"].get(country)
+                # 같은 (제형, 국가) 중복 시 priced 우선
+                if prev is None or (prev.get("adjusted_price_krw") is None
+                                    and row.get("adjusted_price_krw") is not None):
+                    g["countries"][country] = row
+        return groups
 
 
 def load_config(config_path: Path) -> dict:
