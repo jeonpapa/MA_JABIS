@@ -3191,12 +3191,19 @@ def market_share_export():
 def market_share_atc4_trend(atc4_code: str):
     """ATC4 시장 — 브랜드별 분기 트렌드 (top-N)."""
     top_n = min(int(request.args.get("top", 6)), 15)
+    from_q = (request.args.get("from_quarter") or "").strip()
+    to_q = (request.args.get("to_quarter") or "").strip()
     try:
         with db._connect() as conn:
-            quarters = _ms_all_quarters(conn)
-            if not quarters:
+            all_quarters = _ms_all_quarters(conn)
+            if not all_quarters:
                 return jsonify({"error": "no data"}), 404
-            latest = quarters[-1]
+            # from/to 범위 필터 (분기 문자열은 'YYYYQn' 사전식 정렬 = 시간순)
+            quarters = [
+                q for q in all_quarters
+                if (not from_q or q >= from_q) and (not to_q or q <= to_q)
+            ] or all_quarters
+            latest = quarters[-1]   # top-N 선정 기준 = 범위 마지막 분기
 
             meta = conn.execute(
                 "SELECT atc4_desc FROM market_share_products WHERE atc4_code=? LIMIT 1",
@@ -3256,9 +3263,10 @@ def market_share_atc4_trend(atc4_code: str):
                 n: {"values": {}, "units": {}, "values_share": {}, "units_share": {}}
                 for n in top_names
             }
+            qset = set(quarters)
             for r in trend_rows:
                 qtr, name, v, u = r[0], r[1], float(r[2] or 0.0), float(r[3] or 0.0)
-                if name not in series:
+                if name not in series or qtr not in qset:
                     continue
                 series[name]["values"][qtr] = v
                 series[name]["units"][qtr] = u
@@ -3269,6 +3277,7 @@ def market_share_atc4_trend(atc4_code: str):
             "atc4_code": atc4_code,
             "atc4_desc": atc4_desc,
             "quarters": quarters,
+            "available_quarters": all_quarters,
             "top_brands": top_names,
             "series": series,
         })

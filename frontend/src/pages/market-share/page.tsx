@@ -97,18 +97,31 @@ export default function KoreanMarketPage() {
     () => (atc4Code ? fetchAtc4(atc4Code) : Promise.resolve(null)),
     [atc4Code],
   );
+  // 그래프 적용 기간 (시작/끝 분기). 빈 값이면 서버가 전체 반환.
+  const [fromQ, setFromQ] = useState<string>('');
+  const [toQ, setToQ] = useState<string>('');
   const trend = useApi<MsTrendResponse | null>(
-    () => (atc4Code ? fetchAtc4Trend(atc4Code, 5) : Promise.resolve(null)),
-    [atc4Code],
+    () => (atc4Code ? fetchAtc4Trend(atc4Code, 5, fromQ || undefined, toQ || undefined) : Promise.resolve(null)),
+    [atc4Code, fromQ, toQ],
   );
 
   useEffect(() => { setActiveIndex(0); }, [atc4Code]);
 
+  // ATC4 변경 시 기본 기간 = 사용 가능한 마지막 6개 분기로 초기화
+  const availableQuarters = market.data?.quarters ?? trend.data?.available_quarters ?? [];
+  useEffect(() => {
+    const qs = market.data?.quarters ?? [];
+    if (qs.length) {
+      setToQ(qs[qs.length - 1]);
+      setFromQ(qs[Math.max(0, qs.length - 6)]);
+    }
+  }, [atc4Code, market.data]);
+
   // ── 어댑터: 실데이터 → readdy 차트 형태 ──────────────────────────────────
   const pieData = useMemo(() => (market.data ? buildPieData(market.data, 5) : []), [market.data]);
-  const shareTrendRows = useMemo(() => (trend.data ? buildTrendRows(trend.data, 'share', 6) : []), [trend.data]);
-  const unitTrendRows = useMemo(() => (trend.data ? buildTrendRows(trend.data, 'units', 6) : []), [trend.data]);
-  const revenueTrendRows = useMemo(() => (trend.data ? buildTrendRows(trend.data, 'revenue', 6) : []), [trend.data]);
+  const shareTrendRows = useMemo(() => (trend.data ? buildTrendRows(trend.data, 'share') : []), [trend.data]);
+  const unitTrendRows = useMemo(() => (trend.data ? buildTrendRows(trend.data, 'units') : []), [trend.data]);
+  const revenueTrendRows = useMemo(() => (trend.data ? buildTrendRows(trend.data, 'revenue') : []), [trend.data]);
   const trendBrands = trend.data?.top_brands ?? [];
 
   const totalUnits = market.data ? Math.round(market.data.totals.dosage_units) : 0;
@@ -243,6 +256,24 @@ export default function KoreanMarketPage() {
                 <i className={downloading ? 'ri-loader-4-line text-sm animate-spin' : 'ri-file-excel-2-line text-sm'}></i>
               </span>{downloading ? '다운로드 중…' : '엑셀 다운로드'}
             </button>
+            {availableQuarters.length > 0 && (
+              <div className={`flex items-center gap-1.5 rounded-lg px-2 py-1 ${tabBg}`} title="그래프 적용 기간">
+                <i className={`ri-calendar-line text-xs ${textSub}`}></i>
+                <select value={fromQ} onChange={e => setFromQ(e.target.value)}
+                  className={`bg-transparent text-xs font-medium outline-none cursor-pointer ${textMain}`}>
+                  {availableQuarters.filter(q => !toQ || q <= toQ).map(q => (
+                    <option key={q} value={q} className={isDark ? 'bg-[#1E2530]' : 'bg-white'}>{quarterLabel(q)}</option>
+                  ))}
+                </select>
+                <span className={`text-xs ${textSub}`}>~</span>
+                <select value={toQ} onChange={e => setToQ(e.target.value)}
+                  className={`bg-transparent text-xs font-medium outline-none cursor-pointer ${textMain}`}>
+                  {availableQuarters.filter(q => !fromQ || q >= fromQ).map(q => (
+                    <option key={q} value={q} className={isDark ? 'bg-[#1E2530]' : 'bg-white'}>{quarterLabel(q)}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className={`flex items-center gap-1 rounded-lg p-1 ${tabBg}`}>
               {[
                 { key: 'donut', label: 'Market Share', icon: 'ri-pie-chart-2-line' },

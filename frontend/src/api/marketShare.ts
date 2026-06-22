@@ -44,6 +44,7 @@ export interface MsTrendResponse {
   atc4_code: string;
   atc4_desc: string;
   quarters: string[];
+  available_quarters?: string[];   // 전체 분기 (기간 셀렉터 옵션)
   top_brands: string[];
   series: Record<string, {
     values: Record<string, number>;
@@ -98,8 +99,13 @@ export function fetchAtc4(code: string, quarter?: string): Promise<MsAtc4Respons
   return api.get<MsAtc4Response>(`/api/market-share/atc4/${encodeURIComponent(code)}${q}`);
 }
 
-export function fetchAtc4Trend(code: string, top = 5): Promise<MsTrendResponse> {
-  return api.get<MsTrendResponse>(`/api/market-share/atc4/${encodeURIComponent(code)}/trend?top=${top}`);
+export function fetchAtc4Trend(
+  code: string, top = 5, fromQuarter?: string, toQuarter?: string,
+): Promise<MsTrendResponse> {
+  const p = new URLSearchParams({ top: String(top) });
+  if (fromQuarter) p.set('from_quarter', fromQuarter);
+  if (toQuarter) p.set('to_quarter', toQuarter);
+  return api.get<MsTrendResponse>(`/api/market-share/atc4/${encodeURIComponent(code)}/trend?${p.toString()}`);
 }
 
 export function fetchBrand(name: string, atc4: string): Promise<MsBrandResponse> {
@@ -311,8 +317,9 @@ export interface TrendRow {
  * - revenue: values_lc 원 → 백만원 (정수)
  * 해당 분기 데이터가 없는 브랜드는 키 자체를 생략 (값 조작 금지 — 라인 단절로 표시).
  */
-export function buildTrendRows(trend: MsTrendResponse, kind: TrendKind, lastN = 6): TrendRow[] {
-  const quarters = trend.quarters.slice(-lastN);
+export function buildTrendRows(trend: MsTrendResponse, kind: TrendKind, lastN?: number): TrendRow[] {
+  // lastN 미지정 시 서버가 반환한 분기 전체 사용(기간 범위는 서버 from/to 로 제어).
+  const quarters = lastN && lastN > 0 ? trend.quarters.slice(-lastN) : trend.quarters;
   return quarters.map(q => {
     const row: TrendRow = { quarter: quarterLabel(q) };
     trend.top_brands.forEach(b => {
