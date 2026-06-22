@@ -1706,6 +1706,41 @@ def foreign_cached():
     })
 
 
+@app.post("/api/foreign/report/export")
+def foreign_report_export():
+    """A8 약가 비교 리포트 다운로드 (xlsx | hwpx).
+
+    POST /api/foreign/report/export?query=keytruda&format=xlsx
+    body: {applied_price_display, applied_price_actual}  (국내 신청가 — 비율 계산용)
+    """
+    from urllib.parse import quote
+    from flask import Response
+    query = request.args.get("query", "").strip()
+    fmt = (request.args.get("format", "xlsx") or "xlsx").lower()
+    if not query:
+        return jsonify({"error": "query 필요"}), 400
+    if fmt not in ("xlsx", "hwpx"):
+        return jsonify({"error": "format 은 xlsx 또는 hwpx"}), 400
+    body = request.get_json(silent=True) or {}
+    try:
+        from agents import foreign_report
+        cached = foreign_agent.get_cached_results(query)
+        data, mime, fname = foreign_report.generate(
+            query, fmt, cached,
+            applied_display=body.get("applied_price_display"),
+            applied_actual=body.get("applied_price_actual"),
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        logger.error("foreign_report_export 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+    return Response(
+        data, mimetype=mime,
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(fname)}"},
+    )
+
+
 @app.get("/api/foreign/drugs")
 def foreign_drug_list():
     """

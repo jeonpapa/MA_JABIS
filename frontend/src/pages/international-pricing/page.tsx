@@ -8,6 +8,7 @@ import {
   fetchForeignDrugList,
   fetchPricingTab,
   searchForeignLive,
+  downloadForeignReport,
 } from '@/api/foreign';
 import type {
   A8Pricing,
@@ -57,6 +58,12 @@ export default function InternationalPricingPage() {
   const [liveError, setLiveError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null); // 삭제 진행 중 queryName
   const [showCalcLogic, setShowCalcLogic] = useState(false);     // 조정가 산출 로직 패널
+  const [showReport, setShowReport] = useState(false);           // 리포트 다운로드 모달
+  const [reportFmt, setReportFmt] = useState<'xlsx' | 'hwpx'>('xlsx');
+  const [appliedDisplay, setAppliedDisplay] = useState('');      // 국내 신청가 표시가
+  const [appliedActual, setAppliedActual] = useState('');        // 국내 신청가 실제가
+  const [reportBusy, setReportBusy] = useState(false);
+  const [reportErr, setReportErr] = useState('');
 
   // ── 데이터 로딩 (캐시/DB 조회 전용 — 라이브 스크레이프는 명시적 버튼 뒤에만) ──
   const history = useApi<ForeignDrugListItem[]>(fetchForeignDrugList, []);
@@ -223,7 +230,9 @@ export default function InternationalPricingPage() {
             <p className={`${textSub} text-sm`}>A8 국가 급여 약가 — 국내 조정가 환산 (KEB 36개월 평균환율 기준)</p>
           </div>
           <div className="flex items-center gap-3">
-            <button className="flex items-center gap-2 bg-teal-600 text-white text-sm font-semibold px-4 py-2 rounded-lg cursor-pointer whitespace-nowrap hover:bg-teal-700 transition-colors">
+            <button onClick={() => { if (selected) { setReportErr(''); setShowReport(true); } }}
+              disabled={!selected}
+              className="flex items-center gap-2 bg-teal-600 text-white text-sm font-semibold px-4 py-2 rounded-lg cursor-pointer whitespace-nowrap hover:bg-teal-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
               <span className="w-4 h-4 flex items-center justify-center"><i className="ri-download-2-line text-sm"></i></span>리포트 다운로드
             </button>
             <button onClick={() => setIsDark(!isDark)}
@@ -590,6 +599,52 @@ export default function InternationalPricingPage() {
           </div>
         )}
       </div>
+
+      {/* 리포트 다운로드 모달 — 형식 선택 + 국내 신청가 입력 */}
+      {showReport && selected && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowReport(false)}>
+          <div className={`w-[420px] rounded-2xl border p-6 ${cardBg} ${cardBorder}`} onClick={e => e.stopPropagation()}>
+            <h3 className={`text-lg font-bold mb-1 ${textMain}`}>리포트 다운로드</h3>
+            <p className={`text-xs mb-4 ${textSub}`}>{headerName} · A8 약가 비교표</p>
+
+            <label className={`text-xs font-semibold ${textSub}`}>파일 형식</label>
+            <div className="flex gap-2 mt-1 mb-4">
+              {(['xlsx', 'hwpx'] as const).map(f => (
+                <button key={f} onClick={() => setReportFmt(f)}
+                  className={`flex-1 text-sm py-2 rounded-lg border ${reportFmt === f ? 'bg-teal-600 text-white border-teal-600' : `${textSub} ${cardBorder}`}`}>
+                  {f === 'xlsx' ? '엑셀 (.xlsx)' : '한글 (.hwpx)'}</button>
+              ))}
+            </div>
+
+            <label className={`text-xs font-semibold ${textSub}`}>국내 신청가격 (선택 — 비율 계산용)</label>
+            <div className="grid grid-cols-2 gap-2 mt-1 mb-1">
+              <input value={appliedDisplay} onChange={e => setAppliedDisplay(e.target.value.replace(/[^0-9]/g, ''))}
+                placeholder="표시가 /정" className={`border rounded-lg px-3 py-2 text-sm ${cardBorder} bg-transparent ${textMain}`} />
+              <input value={appliedActual} onChange={e => setAppliedActual(e.target.value.replace(/[^0-9]/g, ''))}
+                placeholder="실제가 /정" className={`border rounded-lg px-3 py-2 text-sm ${cardBorder} bg-transparent ${textMain}`} />
+            </div>
+            <p className={`text-[11px] mb-4 ${textMuted}`}>※ 실제가(net)는 RSA 등으로 비공개일 수 있으며, 비율 = 조정가 ÷ 실제가.</p>
+
+            {reportErr && <p className="text-xs text-red-500 mb-2">{reportErr}</p>}
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setShowReport(false)} className={`text-sm px-4 py-2 rounded-lg border ${cardBorder} ${textSub}`}>취소</button>
+              <button disabled={reportBusy}
+                onClick={async () => {
+                  setReportBusy(true); setReportErr('');
+                  try {
+                    await downloadForeignReport(selected.query, reportFmt,
+                      appliedDisplay ? Number(appliedDisplay) : null,
+                      appliedActual ? Number(appliedActual) : null);
+                    setShowReport(false);
+                  } catch (e) { setReportErr(e instanceof Error ? e.message : '다운로드 실패'); }
+                  finally { setReportBusy(false); }
+                }}
+                className="text-sm px-4 py-2 rounded-lg bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-50">
+                {reportBusy ? '생성 중…' : '다운로드'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

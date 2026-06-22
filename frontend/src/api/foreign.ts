@@ -1,4 +1,38 @@
 import { api } from './client';
+import { getToken } from './client';
+
+/** A8 비교 리포트 다운로드 (xlsx | hwpx). 국내 신청가(표시가/실제가) 입력 시 비율 계산. */
+export async function downloadForeignReport(
+  query: string, format: 'xlsx' | 'hwpx',
+  appliedDisplay?: number | null, appliedActual?: number | null,
+): Promise<void> {
+  const token = getToken();
+  const res = await fetch(
+    `/api/foreign/report/export?query=${encodeURIComponent(query)}&format=${format}`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ applied_price_display: appliedDisplay ?? null, applied_price_actual: appliedActual ?? null }),
+    },
+  );
+  if (!res.ok) {
+    let msg = `다운로드 실패: HTTP ${res.status}`;
+    try { msg = (await res.json()).error || msg; } catch { /* noop */ }
+    throw new Error(msg);
+  }
+  const blob = await res.blob();
+  const cd = res.headers.get('Content-Disposition') || '';
+  const m = cd.match(/filename\*?=(?:UTF-8'')?([^;]+)/i);
+  const filename = m ? decodeURIComponent(m[1].replace(/^"|"$/g, '')) : `${query}_A8.${format}`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 해외약가 (International Pricing) API 모듈
