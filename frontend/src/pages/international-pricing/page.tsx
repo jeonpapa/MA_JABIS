@@ -194,7 +194,7 @@ export default function InternationalPricingPage() {
   const chartData = useMemo(() => {
     if (!pricing.data) return [];
     return A8_COUNTRIES
-      .map(c => ({ key: c.key, name: c.label, flag: c.flag, adj: pricing.data?.a8Pricing[c.key]?.adjustedPriceKrw ?? null }))
+      .map(c => { const cell = pricing.data?.a8Pricing[c.key]; return { key: c.key, name: c.label, flag: c.flag, adj: (cell?.adjustedPriceKrwNormalized ?? cell?.adjustedPriceKrw) ?? null }; })
       .filter((d): d is { key: string; name: string; flag: string; adj: number } => d.adj != null && d.adj > 0)
       .sort((a, b) => a.adj - b.adj);
   }, [pricing.data]);
@@ -464,7 +464,14 @@ export default function InternationalPricingPage() {
                                     <p className={`text-sm font-semibold mb-1 ${textSub}`}>가격 미공개</p>
                                   )}
                                   {cell.dosageStrength && <p className={`text-xs truncate ${textSub}`} title={cell.dosageStrength}>{cell.dosageStrength}{cell.packCount && cell.packCount > 1 ? ` × ${cell.packCount}` : ''}</p>}
-                                  {cell.adjustedPriceKrw != null && <p className={`text-xs mt-1 ${textSub}`}>조정가 {formatKrw(cell.adjustedPriceKrw)}</p>}
+                                  {cell.doseNormFactor != null && cell.doseNormFactor !== 1 && cell.adjustedPriceKrwNormalized != null ? (
+                                    <>
+                                      <p className={`text-xs mt-1 font-semibold ${textSub}`}>조정가{cell.referenceStrengthMg ? ` (${cell.referenceStrengthMg}mg 기준)` : ''} {formatKrw(cell.adjustedPriceKrwNormalized)}</p>
+                                      <p className={`text-xs ${textMuted}`} title={cell.doseNormNote || ''}>↳ 용량보정 {cell.doseNormNote || `×${cell.doseNormFactor}`} · 원본 {cell.adjustedPriceKrw != null ? formatKrw(cell.adjustedPriceKrw) : '-'}</p>
+                                    </>
+                                  ) : (
+                                    cell.adjustedPriceKrw != null && <p className={`text-xs mt-1 ${textSub}`}>조정가 {formatKrw(cell.adjustedPriceKrw)}</p>
+                                  )}
                                   {cell.dailyCostKrw != null && <p className={`text-xs ${textSub}`}>일일 {formatKrw(cell.dailyCostKrw)}{cell.dosingScheduleLabel ? ` (${cell.dosingScheduleLabel})` : ''}</p>}
                                   {cell.reimbursed && cell.reimbursedDate && <p className={`text-xs mt-1 ${textMuted}`}>급여 결정: {cell.reimbursedDate}</p>}
                                   {!cell.reimbursedKnown && <p className={`text-xs mt-1 ${textMuted}`}>급여정보 없음</p>}

@@ -143,6 +143,21 @@ scraper 가 pack 가격을 반환하면 pack_count 를 명시해야 per-unit 환
 - **기존 행 반영**: `save_foreign_price` 는 append-only. 월간 잡이 갱신 직후 `DrugPriceDB.recompute_foreign_fx(rates, meta)` 로 기존 최신 가격행을 **선형 스케일**(new/old rate) 재계산해 새 행 append (adjusted_price_krw 는 환율에 선형 → 재스크레이프 불필요). `get_foreign_prices` 가 최신행 노출.
 - **수동 즉시 반영**: `scheduler.py --fx-refresh-now`(캐시갱신+재계산) / `--fx-recompute-now`(재계산만). 프로덕션은 `flyctl ssh console -C "python scheduler.py --fx-refresh-now"`.
 
+## 국가간 용량(strength) 정규화 — per-unit 비교 공정성
+
+`adjusted_price_krw` 는 per-unit(정/바이알당) 이라 국가별 **최소단위 강도(mg)가 다르면 비교 불가**.
+예: Prevymis(letermovir) — 일본은 **20mg 정** 단가, 타국은 **240mg 정** 단가 → 일본이 12배 싸 보임.
+
+원칙:
+- **검색 후처리에서 정규화** (`search_all` → `_normalize_doses_across_countries` → `agents/foreign_dose_normalize.py`).
+- **불일치 감지 시에만 LLM 호출**: regex(`extract_strength_mg`)로 priced 국가들의 per-unit strength 를 먼저 추출 → 1종이면 보정 불필요(factor=1). **2종 이상이면** GPT-4o 가 기준용량(`reference_strength_mg`)과 국가별 보정계수(`factor = reference/unit`) 판단.
+- **동일 제형·동일 단일 활성성분만 보정**. 복합제·다른 제형·강도 불명이면 factor=null(미보정) + `dose_norm_note` 사유. factor 안전범위 ×0.001~×1000.
+- `adjusted_price_krw_normalized = adjusted_price_krw × factor` (기준용량 등가 per-unit KRW).
+- **비교(min/avg/max·그래프·카드)는 normalized 를 기본값**으로, 없으면 raw fallback. 원본 per-unit + 보정노트는 카드에 함께 표시(투명성).
+- `get_cached_results` 가 raw adjusted 를 재계산할 때 저장된 factor 를 곱해 normalized 도 일관 갱신.
+- daily_cost_krw 는 이미 mg 정규화돼 있어 영향 없음.
+- DB 컬럼: `unit_strength_mg`·`reference_strength_mg`·`dose_norm_factor`·`adjusted_price_krw_normalized`·`dose_norm_note`.
+
 ## DB 저장 시 필수 필드
 `searched_at`, `query_name`, `country`, `product_name`, `ingredient`,
 `dosage_strength`, `dosage_form`, `package_unit`,

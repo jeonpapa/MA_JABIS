@@ -348,7 +348,38 @@ class ForeignPriceAgent:
 
         # 데이터 손실 검증
         self._validate_data_integrity(query, results)
+
+        # 국가간 용량(strength) 정규화 후처리 — per-unit 비교 공정성.
+        # 전 국가 priced 행을 모아 strength 불일치 감지(regex) → 불일치 시 LLM 보정.
+        try:
+            self._normalize_doses_across_countries(query, results)
+        except Exception as e:
+            logger.warning("[DoseNorm] %s 정규화 후처리 실패(원본가 유지): %s", query, e)
+
         return results
+
+    def _normalize_doses_across_countries(self, query: str, results: dict) -> None:
+        """search_all 결과의 국가간 용량 정규화 후처리.
+
+        normalize_country_items 가 strength 불일치를 감지하면 LLM 으로 기준용량·보정계수를
+        판단하고, adjusted_price_krw_normalized 등 필드를 DB(기존 행)에 UPDATE 한다.
+        강도 일치 시엔 normalized=raw, factor=1 로 채워 비교 일관성 유지.
+        """
+        from agents.foreign_dose_normalize import normalize_country_items
+
+        all_items = [it for items in results.values() for it in (items or [])]
+        priced = [it for it in all_items if it.get("adjusted_price_krw") is not None]
+        if len(priced) < 2:
+            return
+        updates = normalize_country_items(query, all_items)
+        for u in updates:
+            rid = u.get("id")
+            if rid:
+                self.db.update_foreign_dose_norm(rid, u)
+        if updates:
+            norm = [u for u in updates if (u.get("dose_norm_factor") or 1) != 1]
+            logger.info("[DoseNorm] %s: %d행 정규화 반영(보정 적용 %d행)",
+                        query, len(updates), len(norm))
 
     def _load_dosing_map(self, query: str, ingredients: list[str]) -> dict:
         """query_name 또는 ingredient 로 foreign_drug_dosing 조회.
@@ -589,9 +620,18 @@ class ForeignPriceAgent:
                 row["adjusted_price_krw"] = calc["adjusted_price_krw"]     # per-unit KRW
                 row["per_unit_local"] = calc["per_unit_listed"]
                 row["source_type"] = src_type
+                # 용량 정규화가도 재계산된 raw 에 저장된 factor 를 곱해 일관성 유지.
+                factor = row.get("dose_norm_factor")
+                if factor:
+                    row["adjusted_price_krw_normalized"] = int(round(
+                        calc["adjusted_price_krw"] * factor))
+                else:
+                    # factor 미기록(보정 불가/미수행) → 정규화가 = raw (비교 fallback)
+                    row["adjusted_price_krw_normalized"] = calc["adjusted_price_krw"]
             else:
                 row["factory_price_krw"] = None
                 row["adjusted_price_krw"] = None
+                row["adjusted_price_krw_normalized"] = None
                 row["vat_rate"] = None
                 row["distribution_margin"] = None
 

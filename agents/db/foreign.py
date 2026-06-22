@@ -11,6 +11,9 @@ class _ForeignMixin:
     _FOREIGN_OPTIONAL_COLS = (
         "form_type", "pack_count", "per_unit_local", "total_pkg_mg",
         "daily_dose_mg", "daily_cost_krw", "daily_cost_note",
+        # 국가간 용량 정규화
+        "unit_strength_mg", "reference_strength_mg", "dose_norm_factor",
+        "adjusted_price_krw_normalized", "dose_norm_note",
     )
 
     def save_foreign_price(self, record: dict) -> int:
@@ -24,6 +27,8 @@ class _ForeignMixin:
                  factory_price_krw, vat_rate, distribution_margin, adjusted_price_krw,
                  pack_count, per_unit_local, total_pkg_mg,
                  daily_dose_mg, daily_cost_krw, daily_cost_note,
+                 unit_strength_mg, reference_strength_mg, dose_norm_factor,
+                 adjusted_price_krw_normalized, dose_norm_note,
                  source_url, source_label, raw_data, form_type)
             VALUES
                 (:searched_at, :query_name, :country, :product_name, :ingredient,
@@ -33,6 +38,8 @@ class _ForeignMixin:
                  :factory_price_krw, :vat_rate, :distribution_margin, :adjusted_price_krw,
                  :pack_count, :per_unit_local, :total_pkg_mg,
                  :daily_dose_mg, :daily_cost_krw, :daily_cost_note,
+                 :unit_strength_mg, :reference_strength_mg, :dose_norm_factor,
+                 :adjusted_price_krw_normalized, :dose_norm_note,
                  :source_url, :source_label, :raw_data, :form_type)
         """
         rec = {**record}
@@ -41,6 +48,24 @@ class _ForeignMixin:
         with self._connect() as conn:
             cur = conn.execute(sql, rec)
         return cur.lastrowid
+
+    def update_foreign_dose_norm(self, row_id: int, fields: dict) -> None:
+        """검색 후처리(국가간 용량 정규화) 결과를 기존 행에 반영.
+
+        fields: {unit_strength_mg, reference_strength_mg, dose_norm_factor,
+                 adjusted_price_krw_normalized, dose_norm_note} 의 부분집합.
+        """
+        cols = ("unit_strength_mg", "reference_strength_mg", "dose_norm_factor",
+                "adjusted_price_krw_normalized", "dose_norm_note")
+        sets = {k: fields[k] for k in cols if k in fields}
+        if not sets:
+            return
+        assignments = ", ".join(f"{k}=:{k}" for k in sets)
+        params = {**sets, "_id": row_id}
+        with self._connect() as conn:
+            conn.execute(
+                f"UPDATE foreign_drug_prices SET {assignments} WHERE id=:_id", params
+            )
 
     def get_foreign_prices(self, query_name: str) -> list[dict]:
         """특정 약제의 최신 해외 약가 조회 (국가별 가장 최근 검색 결과).

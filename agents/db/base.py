@@ -93,6 +93,13 @@ class _DbBase:
                 ("daily_cost_krw",  "ALTER TABLE foreign_drug_prices ADD COLUMN daily_cost_krw INTEGER"),
                 ("daily_cost_note", "ALTER TABLE foreign_drug_prices ADD COLUMN daily_cost_note TEXT"),
                 ("form_type",       "ALTER TABLE foreign_drug_prices ADD COLUMN form_type TEXT"),
+                # 국가간 용량(strength) 정규화 (2026-06-21) — per-unit 비교가 공정성 확보.
+                # 예: Prevymis JP 20mg vs 타국 240mg → reference 240mg 로 보정.
+                ("unit_strength_mg",            "ALTER TABLE foreign_drug_prices ADD COLUMN unit_strength_mg REAL"),
+                ("reference_strength_mg",       "ALTER TABLE foreign_drug_prices ADD COLUMN reference_strength_mg REAL"),
+                ("dose_norm_factor",            "ALTER TABLE foreign_drug_prices ADD COLUMN dose_norm_factor REAL"),
+                ("adjusted_price_krw_normalized", "ALTER TABLE foreign_drug_prices ADD COLUMN adjusted_price_krw_normalized INTEGER"),
+                ("dose_norm_note",              "ALTER TABLE foreign_drug_prices ADD COLUMN dose_norm_note TEXT"),
             ):
                 if col not in fp_cols:
                     conn.execute(ddl)

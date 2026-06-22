@@ -68,7 +68,13 @@ export interface A8Pricing {
   dosageStrength?: string;
   sourceLabel?: string;
   sourceUrl?: string;
-  adjustedPriceKrw?: number;   // A8 조정가 (per-unit KRW)
+  adjustedPriceKrw?: number;   // A8 조정가 (per-unit KRW, 원본 단위강도 기준)
+  /** 국가간 용량(strength) 정규화가 — 기준용량 등가 per-unit KRW. 비교의 기본값 */
+  adjustedPriceKrwNormalized?: number;
+  unitStrengthMg?: number;      // 해당국 최소단위당 활성성분 mg
+  referenceStrengthMg?: number; // 비교 기준용량 mg
+  doseNormFactor?: number;      // 보정계수 (reference/unit). 1=보정없음, null→미보정
+  doseNormNote?: string;        // 보정 설명 (예: 20mg→240mg ×12)
   dailyCostKrw?: number;
   dosingScheduleLabel?: string;
   packCount?: number;
@@ -389,6 +395,11 @@ function mapPricingEntry(raw: RawPricingEntry, variantCount: number): A8Pricing 
     sourceLabel: raw.source_label,
     sourceUrl: raw.source_url,
     adjustedPriceKrw: raw.adjusted_price_krw ?? undefined,
+    adjustedPriceKrwNormalized: raw.adjusted_price_krw_normalized ?? undefined,
+    unitStrengthMg: raw.unit_strength_mg ?? undefined,
+    referenceStrengthMg: raw.reference_strength_mg ?? undefined,
+    doseNormFactor: raw.dose_norm_factor ?? undefined,
+    doseNormNote: raw.dose_norm_note ?? undefined,
     dailyCostKrw: raw.daily_cost_krw ?? undefined,
     dosingScheduleLabel: raw.dosing_schedule_label ?? undefined,
     packCount: raw.pack_count ?? undefined,
@@ -517,11 +528,13 @@ export async function fetchPricingTab(query: string): Promise<PricingTabData> {
     coverageNotes[uiKey] = { policy: n.policy, sourceHint: n.source_hint, requiresAuth: n.requires_auth };
   }
 
-  // ── A8 조정가 요약 (min/max/avg) — per-unit adjusted_price_krw 보유 국가만 포함 ──
+  // ── A8 조정가 요약 (min/max/avg) — 국가간 용량 정규화가를 기본값으로 비교 ──
+  //    (정규화가 없으면 원본 per-unit adjusted_price_krw fallback)
   const priced: { key: string; adj: number }[] = [];
   const excludedKeys: string[] = [];
   for (const uiKey of Object.keys(PRICING_COUNTRY_CODE)) {
-    const adj = a8Pricing[uiKey]?.adjustedPriceKrw;
+    const cell = a8Pricing[uiKey];
+    const adj = cell?.adjustedPriceKrwNormalized ?? cell?.adjustedPriceKrw;
     if (adj != null && adj > 0) priced.push({ key: uiKey, adj });
     else excludedKeys.push(uiKey);
   }
