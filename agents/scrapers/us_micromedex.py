@@ -66,6 +66,10 @@ LICENSE_LIMIT_PATTERNS = (
     "currently logged in with this license",
 )
 
+# 라이선스 동시접속(1-seat) 경합은 일시적 — seat 가 비면 성공. 백오프 재시도.
+LICENSE_RETRY_MAX = 2          # 추가 재시도 횟수 (총 3회 시도)
+LICENSE_RETRY_WAIT_SEC = 25    # 시도 간 대기 (attempt 배수)
+
 
 class UsMicromedexScraper(BaseScraper):
     COUNTRY        = "US"
@@ -623,7 +627,22 @@ class UsMicromedexScraper(BaseScraper):
                     self._page = await self._ctx.new_page()
 
                     try:
-                        await self.login(self._page)
+                        # 라이선스 동시접속 한도(1-seat)는 일시적 — 백오프 재로그인 재시도.
+                        # login() 은 매번 HOME_URL goto + 한도 재검사하므로 동일 컨텍스트 재시도 가능.
+                        for _att in range(LICENSE_RETRY_MAX + 1):
+                            try:
+                                await self.login(self._page)
+                                break
+                            except RuntimeError as e:
+                                if "license limit" in str(e).lower() and _att < LICENSE_RETRY_MAX:
+                                    wait = LICENSE_RETRY_WAIT_SEC * (_att + 1)
+                                    logger.warning(
+                                        "[US] 라이선스 한도 — %ds 후 재시도 (%d/%d)",
+                                        wait, _att + 1, LICENSE_RETRY_MAX,
+                                    )
+                                    await asyncio.sleep(wait)
+                                    continue
+                                raise
 
                         # 로그인 성공 시 storage_state 저장
                         try:
