@@ -169,9 +169,12 @@ def _llm_filter(news: list[NewsItem], brand: str, model: str) -> list[dict[str, 
 # DB UPSERT (url UNIQUE 기반)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _upsert_trend(db: DrugPriceDB, row: dict[str, Any]) -> bool:
+def _upsert_trend(db: DrugPriceDB, row: dict[str, Any],
+                  source_type: str = "auto_naver") -> bool:
     """url 이 있으면 unique index 로 dedup. 이미 manual 로 저장된 url 은 touch X.
 
+    source_type: 'auto_naver'(주간 크롤) | 'promoted'(아카이브 승격).
+    우선순위 manual > (promoted/auto_naver). manual 은 절대 덮어쓰지 않음.
     Returns True if inserted/updated, False if skipped (manual collision).
     """
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -190,12 +193,12 @@ def _upsert_trend(db: DrugPriceDB, row: dict[str, Any]) -> bool:
                     UPDATE competitor_trend
                        SET company=?, logo=?, color=?, badge=?, badge_color=?,
                            headline=?, detail=?, date=?, source=?,
-                           source_type='auto_naver', importance=?, updated_at=?
+                           source_type=?, importance=?, updated_at=?
                      WHERE id=?
                     """,
                     (row["company"], row["logo"], row["color"], row["badge"],
                      row["badge_color"], row["headline"], row["detail"], row["date"],
-                     row["source"], row["importance"], now, existing[0]),
+                     row["source"], source_type, row["importance"], now, existing[0]),
                 )
                 conn.commit()
                 return True
@@ -208,10 +211,107 @@ def _upsert_trend(db: DrugPriceDB, row: dict[str, Any]) -> bool:
             """,
             (row["company"], row["logo"], row["color"], row["badge"],
              row["badge_color"], row["headline"], row["detail"], row["date"],
-             row["source"], url, "auto_naver", row["importance"], now, now),
+             row["source"], url, source_type, row["importance"], now, now),
         )
         conn.commit()
     return True
+
+
+def _archive_to_newsitems(rows: list[dict]) -> list[NewsItem]:
+    """competitor_news 아카이브 dict → NewsItem (LLM 필터 입력 형태로 변환)."""
+    from datetime import datetime as _dt
+    out = []
+    for r in rows:
+        pd_str = (r.get("pub_date") or "")[:10]
+        try:
+            pd = _dt.strptime(pd_str, "%Y-%m-%d")
+        except Exception:
+            pd = _dt.now()
+        url = r.get("url") or ""
+        out.append(NewsItem(
+            title=r.get("title") or "",
+            link=url,
+            original_link=url,
+            description=r.get("description") or "",
+            pub_date=pd,
+            source=r.get("source_name") or "",
+        ))
+    return out
+
+
+def promote_from_archive(days: int = 1, dry_run: bool = False,
+                         model: str = DEFAULT_MODEL) -> dict[str, Any]:
+    """아카이브(competitor_news) 최근 N일 뉴스 → 동향 카드 자동 승격 (매일).
+
+    신규 Naver 크롤 없이 이미 수집·보존된 아카이브를 소스로 사용. LLM 필터(badge/
+    importance)로 의미있는 기사만 competitor_trend 에 source_type='promoted' 로 UPSERT.
+    manual 카드는 보존. run()(주간 신규 크롤)과 상보적.
+    """
+    env_path = BASE_DIR / "config" / ".env"
+    if env_path.exists():
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(env_path, override=False)
+        except ImportError:
+            pass
+    from agents.competitor_news_agent import list_news
+
+    db = DrugPriceDB(BASE_DIR / "data" / "db" / "drug_prices.db")
+    results: list[CrawlResult] = []
+
+    for meta in COMPETITOR_BRANDS:
+        brand = meta["query"]
+        rows = list_news(brand=brand, days=days, limit=30)
+        if not rows:
+            results.append(CrawlResult(brand, meta["company"], 0, 0, 0, 0, []))
+            continue
+        news = _archive_to_newsitems(rows)
+        llm_items = _llm_filter(news, brand, model)
+        accepted = upserted = 0
+        errors: list[str] = []
+        for it in llm_items:
+            try:
+                idx = int(it.get("news_index", -1))
+                if idx < 0 or idx >= len(news):
+                    continue
+                badge = it.get("badge", "")
+                if badge not in ALLOWED_BADGES:
+                    continue
+                headline = (it.get("headline") or "").strip()
+                detail = (it.get("detail") or "").strip()
+                importance = it.get("importance", "moderate")
+                if importance not in ("critical", "moderate") or not headline or not detail:
+                    continue
+                src = news[idx]
+                if brand not in src.title:   # 제목 관련성 가드(오귀속 방지)
+                    continue
+                row = {
+                    "company": meta["company"], "logo": meta["logo"], "color": meta["color"],
+                    "badge": badge, "badge_color": BADGE_COLOR.get(badge, ""),
+                    "headline": headline[:120], "detail": detail[:500],
+                    "date": src.date_str, "source": src.source or "네이버뉴스",
+                    "url": src.original_link or src.link, "importance": importance,
+                }
+                accepted += 1
+                if dry_run:
+                    logger.info("[DRY-PROMOTE] %s | %s | %s", brand, badge, headline)
+                elif _upsert_trend(db, row, source_type="promoted"):
+                    upserted += 1
+            except Exception as e:
+                errors.append(str(e))
+        results.append(CrawlResult(brand, meta["company"], len(news), accepted,
+                                   len(news) - len(llm_items), upserted, errors))
+        logger.info("[Promote] %s: archive=%d accepted=%d upserted=%d",
+                    brand, len(news), accepted, upserted)
+
+    return {
+        "ok": True, "dry_run": dry_run, "days": days, "model": model, "source": "archive",
+        "totals": {
+            "archive": sum(r.fetched for r in results),
+            "accepted": sum(r.accepted for r in results),
+            "upserted": sum(r.upserted for r in results),
+        },
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────

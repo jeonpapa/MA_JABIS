@@ -316,6 +316,24 @@ def competitor_news_weekly_job():
         logger.exception("Gov Policy News 주간 크롤 실패: %s", e)
 
 
+def competitor_trend_promote_job():
+    """매일 07:00 Seoul — 아카이브(competitor_news) 최근 1일 뉴스 → 동향 카드 승격.
+
+    주간 신규 크롤(competitor_news_weekly_job)과 별개로, 이미 수집·보존된 아카이브를
+    소스로 LLM 필터(badge/importance) 후 competitor_trend 에 source_type='promoted'
+    UPSERT. manual 카드 보존. 동향 카드가 매일 아카이브 기준으로 갱신되도록 한다.
+    """
+    logger.info("━━━ Competitor Trend 승격 (아카이브→카드) 시작 ━━━")
+    try:
+        from agents import competitor_trends_agent as ct
+        res = ct.promote_from_archive(days=1)
+        t = res.get("totals", {})
+        logger.info("Trend 승격 완료: archive=%s accepted=%s upserted=%s",
+                    t.get("archive"), t.get("accepted"), t.get("upserted"))
+    except Exception as e:
+        logger.exception("Competitor Trend 승격 실패: %s", e)
+
+
 def _reimb_committee_data_sync():
     """위원회 데이터(JSON) git-sync — 멱등. 데이터 변경 없으면 skip."""
     from agents.ingest import reimb_committee_import as imp
@@ -614,6 +632,11 @@ def main():
         action="store_true",
         help="기존 해외약가 행을 현재 캐시 환율로 재계산 (재스크레이프 없음)",
     )
+    parser.add_argument(
+        "--promote-trends-now",
+        action="store_true",
+        help="아카이브 뉴스 → 경쟁사 동향 카드 승격 즉시 실행",
+    )
     args = parser.parse_args()
 
     config = load_config()
@@ -690,6 +713,11 @@ def main():
     if args.fx_recompute_now:
         logger.info("해외약가 FX 재계산 즉시 실행 (재스크레이프 없음)")
         exchange_rate_recompute_job()
+        return
+
+    if args.promote_trends_now:
+        logger.info("경쟁사 동향 카드 승격 즉시 실행 (아카이브→카드)")
+        competitor_trend_promote_job()
         return
 
     # 스케줄러 설정: 매월 1일 09:00
@@ -785,6 +813,15 @@ def main():
         ),
         id="competitor_news_weekly",
         name="경쟁사 뉴스 주간 크롤 (Tier 1, 13 브랜드)",
+        replace_existing=True,
+    )
+
+    # Competitor Trend 승격 — 매일 07:00 Seoul (아카이브→동향 카드, LLM badge 분류)
+    scheduler.add_job(
+        competitor_trend_promote_job,
+        trigger=CronTrigger(hour=7, minute=0, timezone="Asia/Seoul"),
+        id="competitor_trend_promote",
+        name="경쟁사 동향 카드 일일 승격 (아카이브→카드)",
         replace_existing=True,
     )
 
