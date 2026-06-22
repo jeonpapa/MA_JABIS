@@ -569,4 +569,5 @@ SKIP_WITH_REASON: dict[str, str] = {
     "project_flexible_contract_mechanism":"변동사유 5번째 기전 (MI agent 구현체 자체)",
     "project_foreign_dose_normalization": "해외약가 용량 정규화 (search/cache 경로 구현체 자체)",
     "project_regimen_cost_tab":           "투약비용비교 탭 (신규 기능 — UI/CRUD 구현체)",
+    "feedback_deploy_confirm_gate":       "배포 워크플로 (개발 관행 — 런타임 신호 없음)",
 }
