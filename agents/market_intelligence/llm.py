@@ -42,6 +42,15 @@ SYSTEM_PROMPT_MA = """
    실제 병·의원 구매가 < 보험 상한금액 → HIRA 실거래가 조사 → 상한금액 인하
    매년 또는 격년 조사 결과 반영, 소폭(1~5%) 인하가 일반적
 
+=== 약가 인상 기전 (delta_pct > 0) ===
+
+5. 약가 유연계약제 (Flexible Pricing Contract, flexible_contract) — KR-RULE-028
+   건보공단·제약사가 표시가(상한금액)와 별도로 실제 상한금액을 합의(2026 상반기 시행).
+   해외 참조가격·환자 접근성 목적으로 **표시가를 인상**하되 실제 계약가는 별도 통제.
+   RSA 환급과 다름(처음부터 별도금액 청구). 표시가↑ ≠ 실제가↑.
+   => delta_pct 가 양(+)인 약가 인상은 4대 인하 기전이 아니라 flexible_contract 우선 검토.
+      단, 윈도우 내 매체·고시에서 "유연계약"·"표시가 인상" 이 실제 언급될 때만 확정. 없으면 unknown.
+
 === 중요: 정보 출처 ===
 아래 검색 결과는 한국 의약전문 뉴스 매체(데일리팜, 약업신문, 메디파나 등)의
 기사들입니다. 매체별 신뢰도 가중치(weight)가 부여되어 있으니 높은 가중치 매체를
@@ -49,7 +58,7 @@ SYSTEM_PROMPT_MA = """
 
 === 출력 형식 (JSON만 응답) ===
 {
-  "mechanism": "indication_expansion | patent_expiration | volume_price | actual_transaction | unknown",
+  "mechanism": "indication_expansion | patent_expiration | volume_price | actual_transaction | flexible_contract | unknown",
   "mechanism_label": "한글 기전명",
   "reason": "3~5문장 한국어 설명 (불확실하면 '추정:' 접두)",
   "evidence_summary": "가장 신뢰도 높은 매체의 핵심 보도 내용 요약 1~2문장",
@@ -125,7 +134,7 @@ def openai_analyze(drug_ko: str, change_date: str,
             f"=== 수집된 의약전문 뉴스 (윈도우 내 · 가중치 정렬) ===\n{art_text}\n\n"
             f"요구사항:\n"
             f"1. 윈도우 밖 연도 일반 서술 금지\n"
-            f"2. 4대 기전 중 하나 분류 (indication_expansion / patent_expiration / volume_price / actual_transaction / unknown)\n"
+            f"2. 기전 분류 (인하: indication_expansion / patent_expiration / volume_price / actual_transaction · 인상(delta>0): flexible_contract · 불확실: unknown)\n"
             f"3. references 의 published_at 유지\n"
             f"4. **KR-RULE 번호 인용 의무** — reason 본문에 적용한 KR-RULE 번호 명시 (일반론 금지)\n"
             f"5. **KR-RULE-009 단계 인식**: 특허 만료 첫 1년은 70% 산정률 (-30% 인하), Year 1 이후 53.55% (추가 -23.5% 인하)\n"
@@ -236,7 +245,7 @@ def perplexity_analyze(
             f"2. references 의 published_at YYYY-MM-DD 명시\n"
             f"3. **KR-RULE 번호 인용 의무** — reason 본문에 적용한 KR-RULE 번호(예: KR-RULE-009) 명시.\n"
             f"   일반론 ('약평위에서 검토 가능' 같은 generic 표현) 금지.\n"
-            f"4. 4대 기전 중 하나 분류 (indication_expansion / patent_expiration / volume_price / actual_transaction / unknown)\n"
+            f"4. 기전 분류 (인하: indication_expansion / patent_expiration / volume_price / actual_transaction · 인상(delta>0): flexible_contract · 불확실: unknown)\n"
             f"5. **단일 기전 단정형** — '복합 기전' '~과 결합' 양가 서술 금지\n"
             f"6. **mechanism ↔ reason 일관성** — mechanism=patent_expiration 인데 reason 본문이 PVA 만 다루면 잘못\n"
             f"7. **KR-RULE-009 단계별 인하 인식**:\n"

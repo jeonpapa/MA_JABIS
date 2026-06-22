@@ -49,7 +49,16 @@ _MSD_ASSETS = ("키트루다", "웰리렉", "브리디온", "저박사", "에멘
                "pembrolizumab", "belzutifan", "sugammadex")
 
 _LOE_KEYWORDS = ("특허", "제네릭", "loe", "patent", "특허만료")
-_REFORM_KEYWORDS = ("2026 개편", "floor rule", "그룹 1", "그룹 2", "11년", "45%", "53.55%")
+_REFORM_KEYWORDS = ("2026 개편", "floor rule", "그룹 1", "그룹 2", "11년", "45%", "53.55%",
+                    "유연계약", "표시가 인상", "약가 인상", "flexible_contract", "kr-rule-028")
+
+
+def _is_price_increase(reason_hint: str) -> bool:
+    """reason_hint(=str(delta_pct)) 가 양(+)의 변동률이면 약가 인상 → 유연계약 검토 대상."""
+    try:
+        return float(reason_hint) > 0
+    except (TypeError, ValueError):
+        return False
 
 
 def build_kr_rule_context(drug_name: str = "", reason_hint: str = "") -> str:
@@ -78,11 +87,11 @@ def build_kr_rule_context(drug_name: str = "", reason_hint: str = "") -> str:
         if pr:
             sections.append("## Pricing Rules 상세 (KR-RULE-001~009)\n\n" + pr)
 
-    # 3) reform_2026 — 2026 개편안 키워드 시 추가
-    if any(k in blob for k in _REFORM_KEYWORDS):
+    # 3) reform_2026 — 2026 개편안 키워드 OR 약가 인상(양수 delta, 유연계약 검토) 시 추가
+    if any(k in blob for k in _REFORM_KEYWORDS) or _is_price_increase(reason_hint):
         rf = _read("reform_2026.md")
         if rf:
-            sections.append("## 2026 약가제도 개편안 (KR-RULE-031~037)\n\n" + rf)
+            sections.append("## 2026 약가제도 개편안 (KR-RULE-031~037, 유연계약 KR-RULE-028)\n\n" + rf)
 
     # 4) MSD 자산 — 명시적 자산명 등장 시 deep dive 추가
     if any(k in blob for k in _MSD_ASSETS):

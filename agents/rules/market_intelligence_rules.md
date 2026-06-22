@@ -13,7 +13,9 @@
 - **MUST**: 변동 시점(change_date) **±6개월** 윈도우(특허만료는 ±12개월) 내 기사·고시만 사용.
 - **MUST**: `references`의 모든 항목에 `published_at` 필드(YYYY.MM.DD) 존재. **없으면 포함 금지**.
 - **MUST**: `reason` 본문에 숫자 연도(19xx·20xx)가 등장하는 경우, 그 연도는 **반드시 윈도우 연도 집합** `{window.from.year, window.to.year}` 에 속해야 함.
-- **MUST**: 한국 약가 사후관리 **4대 기전 중 하나**로 분류. 불확실 → `unknown`.
+- **MUST**: 한국 약가 변동을 아래 기전 중 하나로 분류. 불확실 → `unknown`.
+  - 약가 **인하**(delta_pct < 0): 4대 인하 기전 (적응증확대·특허만료·사용량연동·실거래가).
+  - 약가 **인상**(delta_pct > 0): `flexible_contract`(약가 유연계약제) 우선 검토. 인하 기전은 인상을 설명할 수 없음.
 - **MUST NOT**: 윈도우 밖 연도·월의 사실을 근거·비교·배경으로 서술.
 - **MUST NOT**: `published_at` 없는 URL을 단순히 "공식 출처" 이유로 포함.
 - **MUST NOT**: 근거 없이 단정. 불확실 시 `reason` 맨 앞에 `"추정:"` 접두.
@@ -35,10 +37,22 @@
 | `volume_price` | 사용량-연동 | 예상 사용량(보장금액) 초과 → 차기 협상기 인하·환급 | 변동률 다양 |
 | `actual_transaction` | 실거래가 연동 | HIRA 실거래가 조사 결과 상한금액 하향 | 1~5% (소폭) |
 
+> 위 4대 기전은 모두 약가 **인하**(delta_pct < 0) 기전이다. 약가 **인상**은 4대 기전으로 설명 금지.
+
+## 1-A. 약가 인상 기전 (delta_pct > 0)
+
+| id | 라벨 | 트리거 | 비고 |
+|---|---|---|---|
+| `flexible_contract` | 약가 유연계약제 (표시가 인상) | 건보공단·제약사가 표시가와 별도로 실제 상한금액을 합의(KR-RULE-028, 2026 상반기 시행). 해외참조가·접근성 목적으로 **표시가를 인상**하되 실제 계약가는 별도 통제 | RSA 환급과 다름(처음부터 별도금액 청구). 표시가↑ ≠ 실제가↑. 대상: 신규신약·특허만료 오리지널·환급종료 신약·개량신약·바이오시밀러 |
+
+- 실예(2026.06): **파슬로덱스(fulvestrant), 엔블로정** 표시가 인상 — 약가 유연계약제 적용.
+- **검증 필수**: 윈도우 내 매체(데일리팜·약업신문·뉴스더보이스 등)·공식 고시에서 "유연계약" 또는 "표시가 인상" 이 실제 언급되어야 `flexible_contract` 확정. 언급 없으면 `unknown`.
+
 ### 변동률 → 기전 힌트
-- `|δ| > 20%` → 적응증 확대 또는 특허 만료 우선 검토
-- `|δ| ≤ 5%` → 실거래가 연동 우선 검토
-- 중간 → 사용량-연동 또는 적응증 확대
+- `δ > 0` (인상) → `flexible_contract` 우선 검토 (인하 기전 적용 금지)
+- `|δ| > 20%` (인하) → 적응증 확대 또는 특허 만료 우선 검토
+- `|δ| ≤ 5%` (인하) → 실거래가 연동 우선 검토
+- 중간 (인하) → 사용량-연동 또는 적응증 확대
 
 ---
 
@@ -73,8 +87,8 @@
 
 ```json
 {
-  "mechanism": "indication_expansion | patent_expiration | volume_price | actual_transaction | unknown",
-  "mechanism_label": "적응증 확대 | 특허 만료 | 사용량-연동 약가인하 | 실거래가 연동 약가인하 | 미분류",
+  "mechanism": "indication_expansion | patent_expiration | volume_price | actual_transaction | flexible_contract | unknown",
+  "mechanism_label": "적응증 확대 | 특허 만료 | 사용량-연동 약가인하 | 실거래가 연동 약가인하 | 약가 유연계약제 (표시가 인상) | 미분류",
   "reason": "3~5문장 한국어. 윈도우 내 사실만. 숫자 연도는 허용 연도 집합만. 불확실 시 '추정:' 접두.",
   "evidence_summary": "윈도우 내 최상위 tier 출처의 핵심 내용 1~2문장 (매체명·일자 포함)",
   "confidence": "high | medium | low",
@@ -100,7 +114,8 @@
 
 ## 5. 자가 점검 체크리스트 (응답 직전)
 
-1. [ ] `mechanism` 이 4대 기전 id 또는 `unknown` 인가?
+1. [ ] `mechanism` 이 허용 id(4대 인하 기전 / `flexible_contract` / `unknown`) 중 하나인가?
+   - delta_pct > 0(인상)인데 인하 기전을 배정하지 않았는가? (인상 = `flexible_contract` 또는 `unknown`)
 2. [ ] 모든 `references[i].published_at` 이 윈도우 내이고 YYYY.MM.DD 형식인가?
 3. [ ] `reason` 본문의 모든 19xx/20xx 숫자 연도가 `{window.from.year, window.to.year}` 집합인가?
 4. [ ] `mechanism ≠ unknown` 인데 `references` 가 비어있지 않은가?

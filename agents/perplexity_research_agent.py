@@ -264,11 +264,12 @@ def research_price_change_reason(
 [필수 준수 규칙]
 1) **시점 제약**: 근거는 반드시 {window_from} ~ {window_to} 윈도우 내 보도·고시·협상결과만 사용.
    윈도우 밖 연도의 일반 시장동향·매출 추이 서술 금지 (퀄리티 미달로 간주).
-2) **4대 기전 분류**: 다음 중 하나로 판정 (해당 없으면 '미분류' + 사유 명시).
-   - indication_expansion (적응증 확대)
-   - patent_expiration (특허 만료, 제네릭/바이오시밀러 등재)
-   - volume_price (사용량-연동)
-   - actual_transaction (실거래가 연동)
+2) **기전 분류**: 다음 중 하나로 판정 (해당 없으면 '미분류' + 사유 명시).
+   - [인하] indication_expansion (적응증 확대)
+   - [인하] patent_expiration (특허 만료, 제네릭/바이오시밀러 등재)
+   - [인하] volume_price (사용량-연동)
+   - [인하] actual_transaction (실거래가 연동)
+   - [인상] flexible_contract (약가 유연계약제, 표시가 인상 — KR-RULE-028). delta_pct>0 인상은 인하 기전 금지, 유연계약/표시가 인상 언급 확인 시만 확정
 3) **우선 매체**: dailypharm.com, yakup.com, medipana.com, hitnews.co.kr, mohw.go.kr, hira.or.kr, law.go.kr.
 4) 근거 없으면 "추정:" 접두, 꾸며내지 말 것. 각 수치마다 URL 출처.
 

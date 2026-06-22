@@ -83,6 +83,25 @@ def _apply_delta_sanity(result: dict, delta_pct: float | None) -> str | None:
     mech = (result.get("mechanism") or "").lower()
     abs_delta = abs(delta_pct)
     big_impact = ("patent_expiration", "indication_expansion")
+    decrease_mechs = ("indication_expansion", "patent_expiration",
+                      "volume_price", "actual_transaction")
+
+    # 약가 인상(delta_pct > 0)인데 인하 기전 배정 = 모순. 유연계약(표시가 인상) 근거가
+    # 본문/요약에 있으면 flexible_contract 로 보정, 없으면 unknown 하향(근거 없는 단정 금지).
+    if delta_pct > 0 and mech in decrease_mechs:
+        text = ((result.get("reason") or "") + " "
+                + (result.get("evidence_summary") or "")).lower()
+        if any(k in text for k in ("유연계약", "표시가 인상", "표시가와 별도",
+                                   "별도 상한", "별도계약", "flexible")):
+            result["mechanism"] = "flexible_contract"
+            result["mechanism_label"] = "약가 유연계약제 (표시가 인상)"
+            return (f"delta_pct {delta_pct:+.2f}% (인상) — 인하 기전 {mech} 부적합. "
+                    f"유연계약 근거 확인 → flexible_contract 로 보정")
+        result["mechanism"] = "unknown"
+        result["mechanism_label"] = "미분류"
+        result["confidence"] = "low"
+        return (f"delta_pct {delta_pct:+.2f}% (인상) — 인하 기전 {mech} 모순. "
+                f"유연계약 근거 미확인 → unknown 하향")
 
     # 작은 변동 + 큰-임팩트 기전 = 잘못된 분류
     if abs_delta <= 10 and mech in big_impact:

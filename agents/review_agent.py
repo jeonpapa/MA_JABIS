@@ -230,7 +230,8 @@ class ReviewAgent:
 
         # (a) mechanism 필드 존재 여부
         allowed = {"indication_expansion", "patent_expiration",
-                   "volume_price", "actual_transaction", "unknown"}
+                   "volume_price", "actual_transaction",
+                   "flexible_contract", "unknown"}
         if result.get("mechanism") not in allowed:
             issues.append({
                 "axis": "rule_compliance", "severity": "blocker",
