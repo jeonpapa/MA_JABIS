@@ -61,6 +61,18 @@ def build() -> dict:
             g["listing_date"] = r["first_reimbursement_date"]
         if not g["brand"] and brand:
             g["brand"] = brand
+    # 혼합-브랜드 경고: 같은 성분 키에 brand-core prefix 2종+ → 다른 제품 병합 위험
+    # (예: trastuzumab 에 엔허투주[T-DXd] vs 캐싸일라주[T-DM1]). 제형 변형(누칼라주/오토인젝터)은 무해.
+    id_brand = {r["id"]: _clean(r["brand_name"]) for r in rows}
+    warnings = []
+    for g in groups.values():
+        prefixes = {id_brand.get(rid, "")[:3] for rid in g["report_ids"]}
+        if len(prefixes) > 1:
+            warnings.append(f"  ⚠ {g['key']}: {[id_brand.get(r) for r in g['report_ids']]} (prefixes={prefixes})")
+    if warnings:
+        print("[worklist] 혼합-브랜드 그룹(수동 확인 필요 — 다른 제품일 수 있음):")
+        print("\n".join(warnings))
+
     work = []
     for g in groups.values():
         wf, wt = _window(g["listing_date"])
