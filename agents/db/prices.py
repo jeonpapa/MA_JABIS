@@ -195,6 +195,51 @@ class _PricesMixin:
             rows = conn.execute(sql, (insurance_code,)).fetchall()
         return [dict(r) for r in rows]
 
+    def get_price_at_date(self, insurance_code: str, as_of: str) -> dict | None:
+        """특정 시점(as_of)에 유효한 약가 1건 — apply_date <= as_of 중 최신.
+
+        투약비용비교 as-of 가격용. as_of 는 drug_prices.apply_date 와 동일 포맷
+        ('YYYY.MM.DD', zero-padded → 문자열 정렬 = 날짜 정렬). max_price NULL(비급여/
+        삭제) 행은 제외. 예: 기준일 2023.01.01 → 2022.12 등재가 반환.
+        """
+        if not insurance_code or not as_of:
+            return None
+        sql = """
+            SELECT apply_date, insurance_code, product_name_kr, company,
+                   ingredient, dosage_strength, dosage_form, package_unit,
+                   max_price, coverage_start, remark
+            FROM drug_prices
+            WHERE insurance_code = ? AND apply_date <= ? AND max_price IS NOT NULL
+            ORDER BY apply_date DESC
+            LIMIT 1
+        """
+        with self._connect() as conn:
+            row = conn.execute(sql, (insurance_code, as_of)).fetchone()
+        return dict(row) if row else None
+
+    def find_by_ingredient_strength(self, inn: str, limit: int = 60) -> list[dict]:
+        """영문 INN prefix 로 drug_latest 동일성분 후보 — WAP 규격↔대표제품 매핑용.
+
+        WAP API ingredient_name(영문)과 drug_prices.ingredient(영문)는 포맷이 달라
+        (예 '0.3(10mg/mL)' vs '0.3g(0.1g/mL)') 문자열 정확 일치가 안 됨. INN prefix 로
+        후보를 추린 뒤, 호출측이 총강도(_extract_strength_mg)로 대표제품을 고른다.
+        가격보유·최신 우선.
+        """
+        if not inn:
+            return []
+        cols = ("insurance_code, product_name_kr, company, ingredient, "
+                "dosage_strength, dosage_form, package_unit, max_price, apply_date")
+        sql = f"""
+            SELECT {cols}
+            FROM drug_latest
+            WHERE ingredient LIKE ?
+            ORDER BY (max_price IS NULL), max_price DESC, apply_date DESC
+            LIMIT ?
+        """
+        with self._connect() as conn:
+            rows = conn.execute(sql, (inn.strip() + "%", limit)).fetchall()
+        return [dict(r) for r in rows]
+
     def get_stats(self) -> dict:
         """DB 통계"""
         with self._connect() as conn:

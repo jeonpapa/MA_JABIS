@@ -3966,6 +3966,183 @@ def regimen_delete(regimen_id: int):
     return jsonify({"ok": True})
 
 
+# ── 투약비용비교 as-of 가격 (국내 brand + 주성분 가중평균 WAP) ──────────────────
+#   기준일(as-of) 1개로 brand=우리 DB 이력 최신가, WAP=외부 HIRA API 단위가 조회 후
+#   _enrichment_agent.get(current_price=...) 로 일/월/연 치료비 재계산. 표시가 기반.
+
+_WAP_CONC_PAREN_RE = re.compile(r"\([^)]*?/\s*m?[lL][^)]*?\)")  # 농도 괄호 (.../mL)
+_WAP_NUM_RE = re.compile(r"\d+(?:\.\d+)?")
+_WAP_INN_RE = re.compile(r"[a-zA-Z][a-zA-Z\-]+")
+
+
+def _wap_strength_sig(text: str | None) -> frozenset:
+    """성분명에서 농도 괄호(.../mL) 제거 후 숫자 집합 — WAP 규격↔제품 강도 매칭용.
+
+    WAP 'ravulizumab 0.3(10mg/mL)' / DB 'ravulizumab 0.3g(0.1g/mL)' → 둘 다 {0.3}.
+    HIRA 동일 출처라 단위(g)가 일관 → 숫자 비교로 충분.
+    """
+    if not text:
+        return frozenset()
+    s = _WAP_CONC_PAREN_RE.sub("", text)
+    out = set()
+    for x in _WAP_NUM_RE.findall(s):
+        try:
+            out.add(round(float(x), 4))
+        except ValueError:
+            pass
+    return frozenset(out)
+
+
+def _wap_pick_representative(ingredient_name: str | None) -> dict | None:
+    """WAP ingredient_name(영문) → INN + 총강도 매칭으로 대표 국내제품 1건.
+
+    용법용량(daily_dose_units/cycle)은 강도에 종속되므로 같은 강도 제품을 골라야
+    WAP 단위가와 정합. 정확 매칭 우선, 실패 시 가격보유 최신(cands[0]) 대용.
+    """
+    if not ingredient_name:
+        return None
+    m = _WAP_INN_RE.match(ingredient_name.strip())
+    if not m:
+        return None
+    cands = db.find_by_ingredient_strength(m.group(0))
+    if not cands:
+        return None
+    target = _wap_strength_sig(ingredient_name)
+    matched = [c for c in cands if _wap_strength_sig(c.get("ingredient")) == target] or cands
+    # 강도 일치 후보 중 enrichment(용법) 보유 제품 우선 → WAP 단위가×용법 비용 산출률↑.
+    try:
+        norm_keys = {_normalize_brand(c.get("product_name_kr") or ""): c for c in matched}
+        with db._connect() as conn:
+            ph = ",".join(["?"] * len(norm_keys))
+            rows = conn.execute(
+                f"SELECT normalized_name FROM drug_enrichment "
+                f"WHERE normalized_name IN ({ph}) AND daily_dose_units IS NOT NULL",
+                tuple(norm_keys.keys()),
+            ).fetchall()
+        for r in rows:
+            if r[0] in norm_keys:
+                return norm_keys[r[0]]
+    except Exception as e:
+        logger.debug("[wap] enriched 대표 선정 실패: %s", e)
+    return matched[0]
+
+
+@app.get("/api/regimen/wap")
+@require_auth()
+def regimen_wap():
+    """주성분 가중평균가(WAP) 외부 API 프록시 — 검색(q) / 재가격(code).
+
+    GET /api/regimen/wap?date=YYYY-MM-DD&q=<영문성분>   → 다수 규격 picklist
+    GET /api/regimen/wap?date=YYYY-MM-DD&code=<주성분코드> → 단일 규격
+    """
+    date = (request.args.get("date") or "").strip()
+    q = (request.args.get("q") or "").strip() or None
+    code = (request.args.get("code") or "").strip() or None
+    if not date or (not q and not code):
+        return jsonify({"error": "date 와 q/code 중 하나 필요", "code": "INVALID"}), 400
+    from agents.scrapers import ingredient_wap
+    return jsonify(ingredient_wap.lookup(date, q=q, code=code))
+
+
+@app.post("/api/regimen/price-as-of")
+@require_auth()
+def regimen_price_as_of():
+    """기준일(as-of) 기준 약제별 가격·치료비 배치 산출.
+
+    Body: {date:'YYYY-MM-DD', items:[
+            {source:'domestic', insuranceCode, normalizedName, productName?, ingredient?, codes?} |
+            {source:'weighted_avg', mainIngredientCode, ingredientName?}
+          ]}
+    각 item → {price, priceDate, dailyCost, monthlyCost, yearlyCost, name, ingredient,
+               source, available, isRsa}. 순서 보존.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    from agents.scrapers import ingredient_wap
+
+    body = request.get_json(silent=True) or {}
+    date = (body.get("date") or "").strip()
+    items = body.get("items") or []
+    if not date or not isinstance(items, list):
+        return jsonify({"error": "date, items 필요", "code": "INVALID"}), 400
+    dot_date = date.replace("-", ".")  # drug_prices.apply_date 포맷
+    items = items[:40]
+
+    def _cost(norm, price, *, code="", codes=None, product_name="", ingredient=""):
+        """_enrichment_agent.get(current_price=price) → (treatment_cost, is_rsa)."""
+        if not norm or price is None:
+            return {"daily": None, "monthly": None, "annual": None}, None
+        try:
+            r = _enrichment_agent.get(
+                norm, representative_code=code or "", insurance_codes=codes or [],
+                product_name=product_name or "", ingredient=ingredient or "",
+                current_price=float(price),
+            )
+            return r.get("treatment_cost") or {}, r.get("is_rsa")
+        except Exception as e:
+            logger.warning("[price-as-of] enrich %s 실패: %s", norm, e)
+            return {"daily": None, "monthly": None, "annual": None}, None
+
+    def _one(item: dict) -> dict:
+        source = item.get("source") or "domestic"
+        if source == "weighted_avg":
+            code = (item.get("mainIngredientCode") or "").strip()
+            wap = ingredient_wap.lookup(date, code=code)
+            if not wap.get("available") or not wap.get("results"):
+                return {"source": source, "available": False,
+                        "reason": wap.get("reason") or "가중평균 데이터 없음",
+                        "price": None, "dailyCost": None, "monthlyCost": None, "yearlyCost": None}
+            row = wap["results"][0]
+            price = row.get("weighted_avg_price")
+            ingredient_name = row.get("ingredient_name") or item.get("ingredientName") or ""
+            rep = _wap_pick_representative(ingredient_name)
+            cost, is_rsa = ({}, None)
+            name = ingredient_name
+            if rep:
+                norm = _normalize_brand(rep.get("product_name_kr") or "")
+                cost, is_rsa = _cost(
+                    norm, price, code=rep.get("insurance_code") or "",
+                    product_name=rep.get("product_name_kr") or "",
+                    ingredient=rep.get("ingredient") or "",
+                )
+                name = rep.get("product_name_kr") or ingredient_name
+            return {
+                "source": source, "available": True,
+                "price": price, "priceDate": wap.get("period"),
+                "dailyCost": cost.get("daily"), "monthlyCost": cost.get("monthly"),
+                "yearlyCost": cost.get("annual"),
+                "name": name, "ingredient": ingredient_name,
+                "mainIngredientCode": code, "isRsa": is_rsa,
+                "fallbackPrevious": wap.get("fallback_previous"),
+            }
+        # domestic
+        ins = (item.get("insuranceCode") or "").strip()
+        norm = (item.get("normalizedName") or "").strip()
+        row = db.get_price_at_date(ins, dot_date)
+        if not row:
+            return {"source": source, "available": False,
+                    "reason": "해당 시점 약가 없음", "price": None,
+                    "dailyCost": None, "monthlyCost": None, "yearlyCost": None}
+        price = row.get("max_price")
+        cost, is_rsa = _cost(
+            norm, price, code=ins, codes=item.get("codes"),
+            product_name=item.get("productName") or row.get("product_name_kr") or "",
+            ingredient=item.get("ingredient") or row.get("ingredient") or "",
+        )
+        return {
+            "source": source, "available": True,
+            "price": price, "priceDate": row.get("apply_date"),
+            "dailyCost": cost.get("daily"), "monthlyCost": cost.get("monthly"),
+            "yearlyCost": cost.get("annual"),
+            "name": item.get("name") or row.get("product_name_kr"),
+            "ingredient": row.get("ingredient"),
+            "insuranceCode": ins, "isRsa": is_rsa,
+        }
+
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        results = list(ex.map(_one, items))
+    return jsonify({"results": results, "asOfDate": date})
+
+
 @app.get("/api/mail-subscriptions")
 @require_auth()
 def mail_sub_list():

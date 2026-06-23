@@ -3,14 +3,22 @@ import { api } from './client';
 // 투약비용비교 — 국내약가 기반 레지멘(약제 2~5개) 구성 → 일/월/연 치료비 비교.
 // 비용은 enrichBulk 스냅샷(저장 시점). 서버 DB(regimen_comparisons)에 payload 통째 저장.
 
+export type PriceSource = 'domestic' | 'weighted_avg';
+
 export interface RegimenDrug {
-  insuranceCode: string;
+  insuranceCode: string;          // domestic: 보험코드. WAP: '' (mainIngredientCode 사용)
   name: string;
   ingredient: string;
-  currentPrice: number | null;
+  currentPrice: number | null;    // 해당 기준일 as-of 가격(표시가)
   dailyCost: number | null;
   monthlyCost: number | null;
   yearlyCost: number | null;
+  // ── as-of/소스 (append-only — 기존 저장본 로드 호환) ──
+  source?: PriceSource;
+  normalizedName?: string;        // domestic 재가격용 enrichment 키
+  mainIngredientCode?: string;    // weighted_avg 재가격용 주성분코드
+  priceDate?: string;             // 실제 적용일(domestic=apply_date, WAP="YYYY 반기")
+  available?: boolean;            // false → 해당 시점 가격 없음
 }
 
 export interface Regimen {
@@ -21,7 +29,63 @@ export interface Regimen {
 export interface RegimenPayload {
   base: Regimen;
   comparators: Regimen[]; // 최대 5개
-  snapshotDate?: string;
+  asOfDate?: string;      // 비교 기준일 'YYYY-MM-DD'
+  snapshotDate?: string;  // (구) 저장 시점 — asOfDate 없을 때 fallback
+}
+
+// ── 주성분 가중평균(WAP) 외부 API ──
+export interface WapResult {
+  main_ingredient_code: string;
+  ingredient_name: string;
+  weighted_avg_price: number | null;
+  match_mode?: string;
+  period?: string;
+}
+export interface WapResponse {
+  available: boolean;
+  reason?: string;
+  period?: string;
+  fallback_previous?: boolean;
+  results?: WapResult[];
+}
+
+export async function wapSearch(q: string, date: string): Promise<WapResponse> {
+  return api.get<WapResponse>(
+    `/api/regimen/wap?date=${encodeURIComponent(date)}&q=${encodeURIComponent(q)}`);
+}
+
+// ── 기준일 as-of 가격·치료비 배치 산출 ──
+export interface PriceAsOfItem {
+  source: PriceSource;
+  insuranceCode?: string;
+  normalizedName?: string;
+  productName?: string;
+  ingredient?: string;
+  codes?: string[];
+  mainIngredientCode?: string;
+  ingredientName?: string;
+}
+export interface PriceAsOfResult {
+  source: PriceSource;
+  available: boolean;
+  reason?: string;
+  price: number | null;
+  priceDate?: string;
+  dailyCost: number | null;
+  monthlyCost: number | null;
+  yearlyCost: number | null;
+  name?: string;
+  ingredient?: string;
+  insuranceCode?: string;
+  mainIngredientCode?: string;
+  isRsa?: boolean | null;
+  fallbackPrevious?: boolean;
+}
+
+export async function priceAsOf(date: string, items: PriceAsOfItem[]): Promise<PriceAsOfResult[]> {
+  const res = await api.post<{ results: PriceAsOfResult[] }>(
+    '/api/regimen/price-as-of', { date, items });
+  return res.results || [];
 }
 
 export interface RegimenComparison {
