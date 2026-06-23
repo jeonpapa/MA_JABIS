@@ -43,6 +43,22 @@ def _norm_date(s: str | None) -> str | None:
     return s.strip().replace(".", "-").replace("/", "-")
 
 
+def _clean_brand_for_price(brand: str | None) -> str:
+    """약가 매칭용 브랜드 정제: '평가결과' 접두 · '_2024년 제N차' 꼬리 · 함량/회사 제거.
+
+    리포트 brand_name 에 차수 suffix('일라리스주사액_2024년 제2, 4차') 가 남아 prefix range
+    매칭이 빗나가는 것을 방지(→ product_name_kr 'X(...)' 가 'X_2024…' 보다 앞서 range 밖).
+    """
+    import re as _re
+    from agents.analog.pdf_parser import _clean_brand, _normalize
+    b = _normalize(brand or "")
+    b = _re.sub(r"^평가결과[_\s]+", "", b)
+    b = _re.sub(r"_?\d{4}년.*$", "", b)
+    b = _clean_brand(b)
+    b = _re.sub(r"[,(].*$", "", b)
+    return b.strip()
+
+
 # ── API 키 로딩 ───────────────────────────────────────────────────────────────
 
 def _load_env() -> None:
@@ -990,7 +1006,7 @@ def enrich_reimbursement_date() -> dict:
             "SELECT id, brand_name, generic_name_en, mfds_permit_date FROM analog_reports"
         ).fetchall()
         for r in rows:
-            brand = (r["brand_name"] or "").strip()
+            brand = _clean_brand_for_price(r["brand_name"])
             first = key = None
             # range 쿼리(>= prefix AND < prefix+U+FFFF)로 인덱스 사용 — LIKE 는 case-insensitive 라 풀스캔
             if brand:

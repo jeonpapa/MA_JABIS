@@ -1,6 +1,6 @@
 {
  "generated_at": "static",
- "count": 73,
+ "count": 75,
  "items": [
   {
    "key": "암부트라프리필드시린지주",
@@ -96,38 +96,12 @@
    "window_to": "2026-04-02"
   },
   {
-   "key": "canakinumab",
-   "brand": "일라리스주사액",
-   "ingredient": "canakinumab",
-   "listing_date": "2026-02-01",
-   "report_ids": [
-    1252
-   ],
-   "has_rsa": 1,
-   "has_postmarket": 1,
-   "window_from": "2025-12-03",
-   "window_to": "2026-04-02"
-  },
-  {
    "key": "dinutuximab",
    "brand": "콰지바주4.5mg-mL",
    "ingredient": "dinutuximab",
    "listing_date": "2026-02-01",
    "report_ids": [
     1379
-   ],
-   "has_rsa": 1,
-   "has_postmarket": 0,
-   "window_from": "2025-12-03",
-   "window_to": "2026-04-02"
-  },
-  {
-   "key": "burosumab",
-   "brand": "크리스비타주사액10",
-   "ingredient": "burosumab",
-   "listing_date": "2026-02-01",
-   "report_ids": [
-    1387
    ],
    "has_rsa": 1,
    "has_postmarket": 0,
@@ -144,19 +118,6 @@
    ],
    "has_rsa": 1,
    "has_postmarket": 0,
-   "window_from": "2025-12-03",
-   "window_to": "2026-04-02"
-  },
-  {
-   "key": "pemigatinib",
-   "brand": "페마자이레정4.5",
-   "ingredient": "pemigatinib",
-   "listing_date": "2026-02-01",
-   "report_ids": [
-    1498
-   ],
-   "has_rsa": 1,
-   "has_postmarket": 1,
    "window_from": "2025-12-03",
    "window_to": "2026-04-02"
   },
@@ -185,6 +146,19 @@
    "has_postmarket": 0,
    "window_from": "2025-10-02",
    "window_to": "2026-01-30"
+  },
+  {
+   "key": "빌베이캡슐200",
+   "brand": "빌베이캡슐200",
+   "ingredient": "",
+   "listing_date": "2025-10-01",
+   "report_ids": [
+    869
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2025-08-02",
+   "window_to": "2025-11-30"
   },
   {
    "key": "pirtobrutinib",
@@ -255,6 +229,19 @@
    "window_to": "2025-07-31"
   },
   {
+   "key": "pemigatinib",
+   "brand": "페마자이레정4.5",
+   "ingredient": "pemigatinib",
+   "listing_date": "2025-05-01",
+   "report_ids": [
+    1498
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 1,
+   "window_from": "2025-03-02",
+   "window_to": "2025-06-30"
+  },
+  {
    "key": "tislelizumab",
    "brand": "테빔브라주",
    "ingredient": "tislelizumab",
@@ -308,6 +295,19 @@
    "window_to": "2025-01-30"
   },
   {
+   "key": "캄지오스캡슐2.5",
+   "brand": "캄지오스캡슐2.5",
+   "ingredient": "",
+   "listing_date": "2024-12-01",
+   "report_ids": [
+    1355
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2024-10-02",
+   "window_to": "2025-01-30"
+  },
+  {
    "key": "remdesivir",
    "brand": "베클루리주정맥주사용동결건조분말",
    "ingredient": "remdesivir",
@@ -332,6 +332,19 @@
    "has_postmarket": 0,
    "window_from": "2024-09-02",
    "window_to": "2024-12-31"
+  },
+  {
+   "key": "canakinumab",
+   "brand": "일라리스주사액",
+   "ingredient": "canakinumab",
+   "listing_date": "2024-08-01",
+   "report_ids": [
+    1252
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 1,
+   "window_from": "2024-06-02",
+   "window_to": "2024-09-30"
   },
   {
    "key": "benralizumab",
@@ -398,6 +411,19 @@
    "has_postmarket": 0,
    "window_from": "2023-06-02",
    "window_to": "2023-09-30"
+  },
+  {
+   "key": "burosumab",
+   "brand": "크리스비타주사액10",
+   "ingredient": "burosumab",
+   "listing_date": "2023-05-01",
+   "report_ids": [
+    1387
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2023-03-02",
+   "window_to": "2023-06-30"
   },
   {
    "key": "얼리다정",
