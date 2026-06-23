@@ -1,4 +1,4 @@
-import { api } from './client';
+import { api, getToken } from './client';
 
 // 투약비용비교 — 국내약가 기반 레지멘(약제 2~5개) 구성 → 일/월/연 치료비 비교.
 // 비용은 enrichBulk 스냅샷(저장 시점). 서버 DB(regimen_comparisons)에 payload 통째 저장.
@@ -150,6 +150,35 @@ export async function drugDosing(inn: string, ingredient?: string): Promise<Onco
 /** 사용자 수정 dosing 영구 저장. */
 export async function saveDrugDosing(inn: string, row: Partial<OncoDrug>): Promise<void> {
   await api.post('/api/regimen/drug-dosing', { inn, ...row });
+}
+
+/** 투약비용비교 전체를 수식 살아있는 xlsx 로 다운로드. */
+export async function exportRegimenXlsx(date: string, source: PriceSource, patient: Patient, regimens: Regimen[]): Promise<void> {
+  const payload = {
+    date, source, patient,
+    regimens: regimens.map(r => ({
+      name: r.name,
+      drugs: (r.oncoDrugs || []).map(d => ({
+        ingredient: d.ingredient, dose_value: d.dose_value, unit: d.unit, dose_days: d.dose_days,
+        per_cycle: d.per_cycle, cycle_days: d.cycle_days, total_cycles: d.total_cycles,
+        price_source: d.price_source, price_ref: d.price_ref, price_inn: d.price_inn,
+      })),
+    })).filter(r => r.drugs.length),
+  };
+  const token = getToken();
+  const res = await fetch('/api/regimen/onco/export', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) { let m = `다운로드 실패: HTTP ${res.status}`; try { m = (await res.json()).error || m; } catch { /* */ } throw new Error(m); }
+  const blob = await res.blob();
+  const cd = res.headers.get('Content-Disposition') || '';
+  const mm = cd.match(/filename\*?=(?:UTF-8'')?([^;]+)/i);
+  const filename = mm ? decodeURIComponent(mm[1].replace(/^"|"$/g, '')) : `투약비용비교_${date}.xlsx`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
 }
 
 // ── 주성분 가중평균(WAP) 외부 API ──

@@ -4336,6 +4336,42 @@ def onco_cost():
                     "drugs": out_drugs, "totals": totals})
 
 
+@app.post("/api/regimen/onco/export")
+@require_auth()
+def onco_export():
+    """투약비용비교 전체를 수식 살아있는 xlsx 로 내보내기.
+
+    Body: {date, source, patient, regimens:[{name, drugs:[{ingredient, dose_value, unit,
+           per_cycle, cycle_days, total_cycles, dose_days, price_source?, price_ref?, price_inn?}]}]}
+    """
+    body = request.get_json(silent=True) or {}
+    date = (body.get("date") or "").strip()
+    source = body.get("source") or "weighted_avg"
+    patient = body.get("patient") or {}
+    regimens = body.get("regimens") or []
+    if not date or not isinstance(regimens, list):
+        return jsonify({"error": "date, regimens 필요", "code": "INVALID"}), 400
+    dot_date = date.replace("-", ".")
+    # 약제별 약가(단위가·함량) 재조회해 첨부 (수식 시트의 값 셀)
+    for reg in regimens:
+        for d in (reg.get("drugs") or []):
+            inn = d.get("price_inn") or d.get("ingredient")
+            pm = _onco_unit_price(inn, d.get("price_source") or source, date, dot_date,
+                                  ref=d.get("price_ref") or "")
+            d["price"] = pm
+    try:
+        from agents.regimen_export import build_regimen_xlsx
+        buf = build_regimen_xlsx(date, source, patient, regimens)
+    except ImportError:
+        return jsonify({"error": "openpyxl 미설치"}), 500
+    from urllib.parse import quote
+    fname = f"투약비용비교_{date}.xlsx"
+    resp = send_file(buf, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                     as_attachment=True, download_name=fname)
+    resp.headers["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(fname)}"
+    return resp
+
+
 @app.get("/api/regimen/wap")
 @require_auth()
 def regimen_wap():

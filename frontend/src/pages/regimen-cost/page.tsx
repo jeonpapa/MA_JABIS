@@ -5,7 +5,7 @@ import {
 import { searchDomesticPriceChanges, DomesticProduct } from '@/api/domestic';
 import {
   listRegimens, createRegimen, updateRegimen, deleteRegimen,
-  wapSearch, oncoSearch, oncoGet, customRegimenGet, saveCustomRegimen, oncoCost, drugDosing, saveDrugDosing,
+  wapSearch, oncoSearch, oncoGet, customRegimenGet, saveCustomRegimen, oncoCost, drugDosing, saveDrugDosing, exportRegimenXlsx,
   WapResult, OncoDrug, OncoRegimenHit, Patient, PATIENT_DEFAULT,
   Regimen, RegimenComparison, RegimenPayload, PriceSource,
 } from '@/api/regimenCost';
@@ -218,6 +218,11 @@ export default function RegimenCostPage() {
   };
   const onDelete = async (id: number) => { await deleteRegimen(id); setSaved(await listRegimens()); if (currentId === id) { setCurrentId(null); setMsg('삭제됨'); } };
   const onNew = () => { setCurrentId(null); setCompareName('새 비교'); setRegimens([emptyRegimen('기준 레지멘'), emptyRegimen('비교 레지멘 1')]); };
+  const onExport = async () => {
+    if (!regimens.some(r => (r.oncoDrugs || []).length)) { setMsg('내보낼 약제가 없습니다'); return; }
+    try { await exportRegimenXlsx(asOfDate, source, patient, regimens); setMsg('엑셀 다운로드 완료 (수식 포함)'); }
+    catch (e) { setMsg(String((e as Error).message || '다운로드 실패')); }
+  };
 
   const setP = (k: keyof Patient, v: string) => setPatient(p => ({ ...p, [k]: k === 'sex' ? (v as 'M' | 'F') : Number(v) }));
   const pm = patientMetricsLocal(patient);
@@ -234,6 +239,8 @@ export default function RegimenCostPage() {
             <input value={compareName} onChange={e => setCompareName(e.target.value)} className="border rounded-lg px-3 py-1.5 text-sm w-40" placeholder="비교 이름" />
             <button onClick={onSave} disabled={busy} className="bg-teal-600 text-white text-sm px-4 py-1.5 rounded-lg hover:bg-teal-700 disabled:opacity-50">{currentId ? '업데이트' : '저장'}</button>
             <button onClick={onNew} className="border text-sm px-3 py-1.5 rounded-lg hover:bg-gray-100">새로</button>
+            <button onClick={onExport} title="수식이 살아있는 엑셀로 다운로드"
+              className="inline-flex items-center gap-1 border text-sm px-3 py-1.5 rounded-lg hover:bg-gray-100"><i className="ri-file-excel-2-line text-green-600"></i>엑셀</button>
           </div>
         </div>
         {msg && <p className="text-xs text-teal-700 mb-2">{msg}</p>}
