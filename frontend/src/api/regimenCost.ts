@@ -91,6 +91,7 @@ export interface Regimen {
   metrics?: { bsa: number; gfr: number; crcl: number };  // 산출 스냅샷
   oncoTotals?: { cycle: number; course: number; monthly: number; yearly: number;
                  daily: number; hasMissing: boolean };
+  saved?: boolean;              // (transient UI) 라이브러리 저장됨 — 편집 시 해제
 }
 
 export interface RegimenPayload {

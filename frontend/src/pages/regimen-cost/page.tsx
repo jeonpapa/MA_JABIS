@@ -114,7 +114,7 @@ export default function RegimenCostPage() {
 
   const appendRows = (ri: number, rows: OncoDrug[]) => {
     const withUid = rows.map(r => ({ ...r, uid: r.uid ?? uidRef.current++ }));
-    setRegimens(p => p.map((r, i) => i === ri ? { ...r, oncoDrugs: [...(r.oncoDrugs || []), ...withUid] } : r));
+    setRegimens(p => p.map((r, i) => i === ri ? { ...r, oncoDrugs: [...(r.oncoDrugs || []), ...withUid], saved: false } : r));
     setAddTarget(null); setQuery(''); setOncoHits([]); setResults([]); setWapResults([]);
     setTimeout(() => recompute(ri), 0);
     return withUid;
@@ -156,7 +156,7 @@ export default function RegimenCostPage() {
 
   const editRow = (ri: number, di: number, patch: Partial<OncoDrug>) =>
     setRegimens(p => p.map((r, i) => i !== ri ? r : {
-      ...r, oncoDrugs: (r.oncoDrugs || []).map((d, j) => j === di ? { ...d, ...patch, dose_source: 'manual' } : d),
+      ...r, saved: false, oncoDrugs: (r.oncoDrugs || []).map((d, j) => j === di ? { ...d, ...patch, dose_source: 'manual' } : d),
     }));
 
   // 편집 확정 → 재계산 + 영구 저장(다음 추가 시 자동 표출)
@@ -172,17 +172,20 @@ export default function RegimenCostPage() {
     }
   };
   const removeRow = (ri: number, di: number) => {
-    setRegimens(p => p.map((r, i) => i !== ri ? r : { ...r, oncoDrugs: (r.oncoDrugs || []).filter((_, j) => j !== di) }));
+    setRegimens(p => p.map((r, i) => i !== ri ? r : { ...r, saved: false, oncoDrugs: (r.oncoDrugs || []).filter((_, j) => j !== di) }));
     setTimeout(() => recompute(ri), 0);
   };
 
-  const renameRegimen = (ri: number, name: string) => setRegimens(p => p.map((r, i) => i === ri ? { ...r, name } : r));
+  const renameRegimen = (ri: number, name: string) => setRegimens(p => p.map((r, i) => i === ri ? { ...r, name, saved: false } : r));
   // 현재 레지멘(약제 조합+이름)을 영구 라이브러리에 저장 → 다음 '레지멘' 검색에 노출(공유)
   const saveAsRegimen = async (ri: number) => {
     const r = ref.current.regimens[ri];
     if (!r?.oncoDrugs?.length) { setMsg('저장할 약제가 없습니다'); return; }
-    try { await saveCustomRegimen(r.name, r.oncoDrugs); setMsg(`'${r.name}' 레지멘 저장됨 — 다음 레지멘 검색에서 불러올 수 있어요`); }
-    catch { setMsg('레지멘 저장 실패 (로그인 필요)'); }
+    try {
+      await saveCustomRegimen(r.name, r.oncoDrugs);
+      setRegimens(p => p.map((rg, i) => i === ri ? { ...rg, saved: true } : rg));
+      setMsg(`'${r.name}' 레지멘 저장됨 — 다음 레지멘 검색에서 불러올 수 있어요`);
+    } catch { setMsg('레지멘 저장 실패 (로그인 필요)'); }
   };
   const addBlank = () => regimens.length < MAX_REGIMENS && setRegimens(p => [...p, emptyRegimen(`비교 레지멘 ${p.length}`)]);
   const removeRegimen = (ri: number) => ri > 0 && setRegimens(p => p.filter((_, i) => i !== ri));
@@ -191,7 +194,8 @@ export default function RegimenCostPage() {
     name: r.name || `레지멘 ${i + 1}`, value: r.oncoTotals?.[metric] ?? 0, idx: i,
   })), [regimens, metric]);
 
-  const payload = (): RegimenPayload => ({ base: regimens[0], comparators: regimens.slice(1), asOfDate, source, patient });
+  const stripSaved = ({ saved, ...r }: Regimen): Regimen => r;
+  const payload = (): RegimenPayload => ({ base: stripSaved(regimens[0]), comparators: regimens.slice(1).map(stripSaved), asOfDate, source, patient });
   const onSave = async () => {
     setBusy(true); setMsg('');
     try {
@@ -306,8 +310,10 @@ export default function RegimenCostPage() {
                   <input value={r.name} onChange={e => renameRegimen(ri, e.target.value)} className="font-semibold text-sm flex-1 min-w-0 bg-transparent outline-none border-b border-transparent focus:border-gray-300" />
                   {r.metrics && <span className="text-[11px] text-gray-400">BSA {r.metrics.bsa} · GFR {r.metrics.gfr}</span>}
                   {rows.length > 0 && (
-                    <button onClick={() => saveAsRegimen(ri)} title="이 레지멘을 라이브러리에 저장(다음 검색에 노출)"
-                      className="inline-flex items-center gap-1 text-[11px] text-gray-400 hover:text-teal-600 border rounded-md px-1.5 py-0.5"><i className="ri-bookmark-line"></i>레지멘 저장</button>
+                    <button onClick={() => saveAsRegimen(ri)}
+                      title={r.saved ? '저장됨 — 편집 시 다시 저장하세요' : '이 레지멘을 라이브러리에 저장(다음 검색에 노출)'}
+                      className={`inline-flex items-center gap-1 text-[11px] border rounded-md px-1.5 py-0.5 ${r.saved ? 'text-teal-600 border-teal-300 bg-teal-50' : 'text-gray-400 hover:text-teal-600'}`}>
+                      <i className={r.saved ? 'ri-bookmark-fill' : 'ri-bookmark-line'}></i>{r.saved ? '저장됨' : '레지멘 저장'}</button>
                   )}
                   {ri > 0 && <button onClick={() => removeRegimen(ri)} className="text-gray-300 hover:text-red-500"><i className="ri-delete-bin-line"></i></button>}
                 </div>
