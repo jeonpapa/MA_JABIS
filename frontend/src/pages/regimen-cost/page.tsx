@@ -93,10 +93,12 @@ export default function RegimenCostPage() {
       setRegimens(p => p.map((r, i) => i === ri ? { ...r, oncoTotals: undefined } : r));
       return;
     }
-    const res = await oncoCost(cur.asOfDate, cur.source, cur.patient, list);
-    setRegimens(p => p.map((r, i) => i !== ri ? r : {
-      ...r, oncoDrugs: res.drugs.map((d, j) => ({ ...list[j], ...d })), metrics: res.metrics, oncoTotals: res.totals,
-    }));
+    try {
+      const res = await oncoCost(cur.asOfDate, cur.source, cur.patient, list);
+      setRegimens(p => p.map((r, i) => i !== ri ? r : {
+        ...r, oncoDrugs: res.drugs.map((d, j) => ({ ...list[j], ...d })), metrics: res.metrics, oncoTotals: res.totals,
+      }));
+    } catch { setMsg('치료비 계산 실패 — 다시 시도해 주세요'); }
   }, []);
 
   const recomputeAll = useCallback(async () => {
@@ -114,9 +116,10 @@ export default function RegimenCostPage() {
 
   const appendRows = (ri: number, rows: OncoDrug[]) => {
     const withUid = rows.map(r => ({ ...r, uid: r.uid ?? uidRef.current++ }));
-    setRegimens(p => p.map((r, i) => i === ri ? { ...r, oncoDrugs: [...(r.oncoDrugs || []), ...withUid], saved: false } : r));
+    const newList = [...(ref.current.regimens[ri]?.oncoDrugs || []), ...withUid];
+    setRegimens(p => p.map((r, i) => i === ri ? { ...r, oncoDrugs: newList, saved: false } : r));
     setAddTarget(null); setQuery(''); setOncoHits([]); setResults([]); setWapResults([]);
-    setTimeout(() => recompute(ri), 0);
+    setTimeout(() => recompute(ri, newList), 0);  // 명시적 리스트 전달(ref 타이밍 비의존)
     return withUid;
   };
 
