@@ -75,6 +75,7 @@ def run() -> dict:
         return {"error": "data/rsa_media 없음"}
     conn = sqlite3.connect(str(DB_PATH))
     conn.executescript(_SCHEMA)
+    conn.execute("DELETE FROM rsa_media_signals")  # .md 전체 재빌드(중복 방지)
     now = datetime.now().isoformat(timespec="seconds")
     files = sorted(p for p in MD_DIR.glob("*.md") if not p.name.startswith("_"))
     loaded = applied = found_n = 0
