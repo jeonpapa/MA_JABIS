@@ -253,6 +253,16 @@ _NEW_COLS: list[tuple[str, str]] = [
     ("result_meta", "TEXT"),              # 메타 원문 결과(급여/비급여/조건부…)
     ("result_source", "TEXT"),            # review_result 출처: pdf | meta
     ("review_result_pdf", "TEXT"),        # 메타 교정 전 PDF 원본 결과(추적)
+    # 급여 등재일(국내약가 최초 등재) — 허가→급여 타임라인
+    ("first_reimbursement_date", "TEXT"),  # MIN(drug_prices.apply_date) 매칭
+    ("reimbursement_match_key", "TEXT"),   # 매칭 근거: brand | ingredient
+    # RSA/사후조건 미디어 보완 (PDF 원본과 분리, 근거 보존)
+    ("rsa_media_types", "TEXT"),          # JSON [refund, expenditure_cap, …]
+    ("rsa_media_conditions", "TEXT"),     # JSON 구체 조건
+    ("rsa_media_monitoring", "TEXT"),     # JSON 사후 모니터링(기간·지표·재평가)
+    ("rsa_media_sources", "TEXT"),        # JSON [{title,url,media,date}]
+    ("rsa_media_confidence", "TEXT"),     # high|medium|low
+    ("rsa_media_fetched_at", "TEXT"),
 ]
 
 # corpus 에서 ingest 할 컬럼 목록 (embedding 제외)

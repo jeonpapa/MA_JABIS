@@ -60,6 +60,12 @@ export interface AnalogReport {
   post_url?: string | null;                // 약평위 HIRA 게시물 링크(메타 매칭)
   result_meta?: string | null;             // 메타 원문 결과(급여/비급여/조건부)
   post_blt_no?: number | null;
+  first_reimbursement_date?: string | null;  // 국내약가 최초 등재일(급여 등재)
+  // RSA/사후조건 미디어 보완(별도 — PDF 원본과 분리)
+  rsa_media_conditions?: string | null;    // JSON 구체 조건
+  rsa_media_monitoring?: string | null;    // JSON 사후 모니터링
+  rsa_media_sources?: string | null;       // JSON [{title,url,media,date}]
+  rsa_media_confidence?: string | null;
   reimbursement_track: string | null;      // 기존 호환
   reimbursement_track_ko: string | null;   // 한국어 트랙
   has_rsa: number | null;

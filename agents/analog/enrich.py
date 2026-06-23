@@ -974,6 +974,60 @@ def enrich_tags(limit: int = None) -> dict:
 
 # ── 전체 실행 ─────────────────────────────────────────────────────────────────
 
+def enrich_reimbursement_date() -> dict:
+    """국내약가(drug_prices)에서 최초 약가 등재일(MIN apply_date) → first_reimbursement_date.
+
+    매칭(인덱스 prefix only — 3.8M행 풀스캔 금지):
+      ① 브랜드: product_name_kr LIKE '{brand_name}%' (idx_name)  ← 우선
+      ② 성분:  LOWER(ingredient) LIKE '{generic_name_en 첫토큰}%' (idx_ingredient)  ← fallback
+    정합성: first_reimbursement_date ≥ mfds_permit_date(허가 후). 위반/미매칭 skip.
+    apply_date 는 'YYYY.MM.DD' 문자열 — zero-padded 라 MIN() 문자열정렬=날짜정렬.
+    """
+    ensure_schema()
+    filled = skipped = reverted = 0
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT id, brand_name, generic_name_en, mfds_permit_date FROM analog_reports"
+        ).fetchall()
+        for r in rows:
+            brand = (r["brand_name"] or "").strip()
+            first = key = None
+            # range 쿼리(>= prefix AND < prefix+U+FFFF)로 인덱스 사용 — LIKE 는 case-insensitive 라 풀스캔
+            if brand:
+                x = conn.execute(
+                    "SELECT MIN(apply_date) FROM drug_prices WHERE product_name_kr >= ? AND product_name_kr < ? AND apply_date IS NOT NULL",
+                    (brand, brand + "￿"),
+                ).fetchone()
+                if x and x[0]:
+                    first, key = x[0], "brand"
+            if not first and (r["generic_name_en"] or "").strip():
+                inn = r["generic_name_en"].strip().split()[0]
+                if len(inn) >= 4:
+                    x = conn.execute(
+                        "SELECT MIN(apply_date) FROM drug_prices WHERE ingredient >= ? AND ingredient < ? AND apply_date IS NOT NULL",
+                        (inn, inn + "￿"),
+                    ).fetchone()
+                    if x and x[0]:
+                        first, key = x[0], "ingredient"
+            if not first:
+                skipped += 1
+                continue
+            nd = _norm_date(first)
+            permit = _norm_date(r["mfds_permit_date"])
+            if permit and nd and nd < permit:   # 약가가 허가보다 앞 → 매칭 오류
+                reverted += 1
+                continue
+            conn.execute(
+                "UPDATE analog_reports SET first_reimbursement_date=?, reimbursement_match_key=? WHERE id=?",
+                (nd, key, r["id"]),
+            )
+            filled += 1
+        conn.commit()
+    res = {"total": len(rows), "filled": filled, "skipped_no_match": skipped, "skipped_before_permit": reverted}
+    logger.info("[enrich.reimbursement_date] %s", res)
+    return res
+
+
 def enrich_all(limit: int = None) -> dict:
     dis = enrich_disease(limit)
     eff = enrich_efficacy(limit)
@@ -1014,6 +1068,7 @@ if __name__ == "__main__":
         "gap": lambda: enrich_gap(lim),
         "committee": lambda: enrich_committee(lim),
         "amjilsim_join": enrich_amjilsim_join,
+        "reimbursement_date": enrich_reimbursement_date,
         "dosage": enrich_dosage,
         "trajectory": enrich_trajectory,
         "tags": lambda: enrich_tags(lim),

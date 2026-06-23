@@ -78,6 +78,15 @@ function EfficacyTable({ data }: { data: EfficacyEndpoint[] }) {
 const _normDate = (s: string | null | undefined): string | null =>
   s ? s.trim().replace(/[./]/g, '-') : null;
 
+function safeParse(s: string | null | undefined): Record<string, unknown> | null {
+  if (!s) return null;
+  try { const v = JSON.parse(s); return v && typeof v === 'object' ? v as Record<string, unknown> : null; } catch { return null; }
+}
+function parseJsonArr(s: string | null | undefined): unknown[] {
+  if (!s) return [];
+  try { const v = JSON.parse(s); return Array.isArray(v) ? v : []; } catch { return []; }
+}
+
 function Timeline({ r }: { r: AnalogReport }) {
   const events: { date: string; label: string; type: string }[] = [];
   const permit = _normDate(r.mfds_permit_date);
@@ -107,6 +116,8 @@ function Timeline({ r }: { r: AnalogReport }) {
       type: 'committee',
     });
   });
+  const reimb = _normDate(r.first_reimbursement_date);
+  if (reimb) events.push({ date: reimb, label: '급여 등재 (최초 약가)', type: 'reimbursement' });
   events.sort((a, b) => a.date.localeCompare(b.date));
   if (events.length === 0) return null;
 
@@ -115,26 +126,36 @@ function Timeline({ r }: { r: AnalogReport }) {
     amjilsim: { dot: 'bg-orange-500', chip: 'bg-orange-50 text-orange-700 border-orange-200' },
     subcommittee: { dot: 'bg-indigo-500', chip: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
     committee: { dot: 'bg-teal-500', chip: 'bg-teal-50 text-teal-700 border-teal-200' },
+    reimbursement: { dot: 'bg-emerald-500', chip: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
   };
 
-  // 전체 소요일 = 최초 허가 → 약평위 통과(없으면 최종 약평위)
-  // group-level lag(lag_days_approval_to_reimb)가 없으면 타임라인 이벤트로 직접 계산
+  // 강조 구간: 최초 허가 → 급여 등재 (없으면 허가 → 약평위 통과 fallback)
   const passEvent = [...events].reverse().find(e => e.type === 'committee');
-  let total = r.lag_days_approval_to_reimb;
-  if (total == null && permit && passEvent) {
-    const d = (Date.parse(passEvent.date) - Date.parse(permit)) / 86400000;
+  let total: number | null = null;
+  let lagLabel = '최초 허가 → 급여 등재';
+  if (permit && reimb) {
+    const d = (Date.parse(reimb) - Date.parse(permit)) / 86400000;
     if (Number.isFinite(d) && d >= 0) total = Math.round(d);
   }
+  if (total == null) {  // 급여등재일 없으면 기존 허가→약평위
+    lagLabel = '최초 허가 → 약평위';
+    total = r.lag_days_approval_to_reimb;
+    if (total == null && permit && passEvent) {
+      const d = (Date.parse(passEvent.date) - Date.parse(permit)) / 86400000;
+      if (Number.isFinite(d) && d >= 0) total = Math.round(d);
+    }
+  }
+  const lagAnchor = reimb || passEvent?.date;
 
   return (
     <div className="space-y-3">
       {/* 전체 소요일 요약 배너 */}
-      {total != null && permit && passEvent && (
-        <div className="flex items-center gap-3 rounded-lg bg-gradient-to-r from-blue-50 to-teal-50 border border-teal-200 px-3 py-2">
-          <i className="ri-time-line text-teal-600"></i>
+      {total != null && permit && lagAnchor && (
+        <div className="flex items-center gap-3 rounded-lg bg-gradient-to-r from-blue-50 to-emerald-50 border border-emerald-200 px-3 py-2">
+          <i className="ri-time-line text-emerald-600"></i>
           <div className="text-xs">
-            <span className="text-gray-500">최초 허가 → 약평위</span>
-            <span className="font-bold text-teal-700 mx-1.5 text-sm tabular-nums">
+            <span className="text-gray-500">{lagLabel}</span>
+            <span className="font-bold text-emerald-700 mx-1.5 text-sm tabular-nums">
               {total.toLocaleString()}일
             </span>
             <span className="text-gray-400">({(total / 365).toFixed(1)}년)</span>
@@ -362,6 +383,44 @@ function DetailModal({ r, onClose }: { r: AnalogReport; onClose: () => void }) {
               )}
             </div>
           </div>
+
+          {/* 위험분담제(RSA) 미디어 보완 조건 — Tier1 전문지(급여등재 ±2개월), PDF 원본과 분리 */}
+          {(() => {
+            const conds = parseJsonArr(r.rsa_media_conditions);
+            const sources = parseJsonArr(r.rsa_media_sources);
+            const mon = r.rsa_media_monitoring ? safeParse(r.rsa_media_monitoring) : null;
+            if (!conds.length && !sources.length) return null;
+            return (
+              <div className="rounded-lg border border-violet-200 bg-violet-50/40 p-3">
+                <p className="text-[11px] font-bold text-violet-700 mb-1.5 flex items-center gap-1.5">
+                  <i className="ri-newspaper-line"></i>RSA·사후조건 미디어 보완 (급여 등재 시점 Tier1 전문지)
+                  {r.rsa_media_confidence && <span className="text-[10px] font-normal text-violet-400">신뢰도 {r.rsa_media_confidence}</span>}
+                </p>
+                {conds.length > 0 && (
+                  <ul className="text-xs text-gray-700 space-y-0.5 list-disc pl-4">
+                    {conds.map((c, i) => <li key={i}>{String(c)}</li>)}
+                  </ul>
+                )}
+                {mon && (mon.duration_months || (mon.metrics && mon.metrics.length) || mon.review) && (
+                  <p className="text-[11px] text-gray-500 mt-1.5">
+                    사후 모니터링: {mon.duration_months ? `${mon.duration_months}개월 ` : ''}
+                    {Array.isArray(mon.metrics) && mon.metrics.length ? `· 지표 ${mon.metrics.join(', ')} ` : ''}
+                    {mon.review ? `· ${mon.review}` : ''}
+                  </p>
+                )}
+                {sources.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {sources.map((s, i) => (
+                      <a key={i} href={(s as { url?: string }).url} target="_blank" rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-[10px] text-violet-600 hover:text-violet-800 border border-violet-200 bg-white rounded px-1.5 py-0.5">
+                        <i className="ri-external-link-line"></i>{(s as { media?: string }).media || '출처'}{(s as { date?: string }).date ? ` ${(s as { date?: string }).date}` : ''}
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* 효과 보완 카드 — 대체약제 / 외국 등재국가수 / 의견조회 학회 */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

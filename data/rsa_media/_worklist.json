@@ -1,0 +1,964 @@
+{
+ "generated_at": "static",
+ "count": 73,
+ "items": [
+  {
+   "key": "암부트라프리필드시린지주",
+   "brand": "암부트라프리필드시린지주",
+   "ingredient": "",
+   "listing_date": "2026-04-01",
+   "report_ids": [
+    1627
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2026-01-31",
+   "window_to": "2026-05-31"
+  },
+  {
+   "key": "epcoritamab",
+   "brand": "엡킨리주",
+   "ingredient": "epcoritamab",
+   "listing_date": "2026-04-01",
+   "report_ids": [
+    1630
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 1,
+   "window_from": "2026-01-31",
+   "window_to": "2026-05-31"
+  },
+  {
+   "key": "erdafitinib",
+   "brand": "발베사정3",
+   "ingredient": "erdafitinib",
+   "listing_date": "2026-03-01",
+   "report_ids": [
+    782,
+    1616
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2025-12-31",
+   "window_to": "2026-04-30"
+  },
+  {
+   "key": "lanadelumab",
+   "brand": "탁자이로프리필드시린지주",
+   "ingredient": "lanadelumab",
+   "listing_date": "2026-03-01",
+   "report_ids": [
+    1427,
+    1645
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2025-12-31",
+   "window_to": "2026-04-30"
+  },
+  {
+   "key": "tremelimumab",
+   "brand": "이뮤도주",
+   "ingredient": "tremelimumab",
+   "listing_date": "2026-03-01",
+   "report_ids": [
+    1511
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2025-12-31",
+   "window_to": "2026-04-30"
+  },
+  {
+   "key": "레주록정",
+   "brand": "레주록정",
+   "ingredient": "",
+   "listing_date": "2026-02-01",
+   "report_ids": [
+    679
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2025-12-03",
+   "window_to": "2026-04-02"
+  },
+  {
+   "key": "ramucirumab",
+   "brand": "사이람자주10밀리그램-밀리리터",
+   "ingredient": "ramucirumab",
+   "listing_date": "2026-02-01",
+   "report_ids": [
+    877
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2025-12-03",
+   "window_to": "2026-04-02"
+  },
+  {
+   "key": "canakinumab",
+   "brand": "일라리스주사액",
+   "ingredient": "canakinumab",
+   "listing_date": "2026-02-01",
+   "report_ids": [
+    1252
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 1,
+   "window_from": "2025-12-03",
+   "window_to": "2026-04-02"
+  },
+  {
+   "key": "dinutuximab",
+   "brand": "콰지바주4.5mg-mL",
+   "ingredient": "dinutuximab",
+   "listing_date": "2026-02-01",
+   "report_ids": [
+    1379
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2025-12-03",
+   "window_to": "2026-04-02"
+  },
+  {
+   "key": "burosumab",
+   "brand": "크리스비타주사액10",
+   "ingredient": "burosumab",
+   "listing_date": "2026-02-01",
+   "report_ids": [
+    1387
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2025-12-03",
+   "window_to": "2026-04-02"
+  },
+  {
+   "key": "dabrafenib",
+   "brand": "타핀라캡슐",
+   "ingredient": "dabrafenib",
+   "listing_date": "2026-02-01",
+   "report_ids": [
+    1425
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2025-12-03",
+   "window_to": "2026-04-02"
+  },
+  {
+   "key": "pemigatinib",
+   "brand": "페마자이레정4.5",
+   "ingredient": "pemigatinib",
+   "listing_date": "2026-02-01",
+   "report_ids": [
+    1498
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 1,
+   "window_from": "2025-12-03",
+   "window_to": "2026-04-02"
+  },
+  {
+   "key": "리브말리액",
+   "brand": "리브말리액",
+   "ingredient": "",
+   "listing_date": "2026-01-01",
+   "report_ids": [
+    725
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2025-11-02",
+   "window_to": "2026-03-02"
+  },
+  {
+   "key": "이스투리사필름코팅정",
+   "brand": "이스투리사필름코팅정",
+   "ingredient": "",
+   "listing_date": "2025-12-01",
+   "report_ids": [
+    1227
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2025-10-02",
+   "window_to": "2026-01-30"
+  },
+  {
+   "key": "pirtobrutinib",
+   "brand": "제이퍼카",
+   "ingredient": "pirtobrutinib",
+   "listing_date": "2025-10-01",
+   "report_ids": [
+    1297
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 1,
+   "window_from": "2025-08-02",
+   "window_to": "2025-11-30"
+  },
+  {
+   "key": "빌베이캡슐",
+   "brand": "빌베이캡슐",
+   "ingredient": "",
+   "listing_date": "2025-10-01",
+   "report_ids": [
+    1620
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2025-08-02",
+   "window_to": "2025-11-30"
+  },
+  {
+   "key": "베스레미주",
+   "brand": "베스레미주",
+   "ingredient": "",
+   "listing_date": "2025-09-01",
+   "report_ids": [
+    790,
+    1617
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2025-07-03",
+   "window_to": "2025-10-31"
+  },
+  {
+   "key": "lebrikizumab",
+   "brand": "엡글리스오토인젝터주",
+   "ingredient": "lebrikizumab",
+   "listing_date": "2025-07-01",
+   "report_ids": [
+    1133,
+    1629
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2025-05-02",
+   "window_to": "2025-08-30"
+  },
+  {
+   "key": "sacituzumab",
+   "brand": "트로델비주",
+   "ingredient": "sacituzumab",
+   "listing_date": "2025-06-01",
+   "report_ids": [
+    1451,
+    1647
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2025-04-02",
+   "window_to": "2025-07-31"
+  },
+  {
+   "key": "tislelizumab",
+   "brand": "테빔브라주",
+   "ingredient": "tislelizumab",
+   "listing_date": "2025-04-01",
+   "report_ids": [
+    1431
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2025-01-31",
+   "window_to": "2025-05-31"
+  },
+  {
+   "key": "tepotinib",
+   "brand": "텝메코정",
+   "ingredient": "tepotinib",
+   "listing_date": "2025-04-01",
+   "report_ids": [
+    1433
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2025-01-31",
+   "window_to": "2025-05-31"
+  },
+  {
+   "key": "빈다맥스캡슐",
+   "brand": "빈다맥스캡슐",
+   "ingredient": "",
+   "listing_date": "2025-03-01",
+   "report_ids": [
+    866,
+    867
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2024-12-31",
+   "window_to": "2025-04-30"
+  },
+  {
+   "key": "빅시오스리포좀주",
+   "brand": "빅시오스리포좀주",
+   "ingredient": "",
+   "listing_date": "2024-12-01",
+   "report_ids": [
+    862
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2024-10-02",
+   "window_to": "2025-01-30"
+  },
+  {
+   "key": "remdesivir",
+   "brand": "베클루리주정맥주사용동결건조분말",
+   "ingredient": "remdesivir",
+   "listing_date": "2024-11-01",
+   "report_ids": [
+    795
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2024-09-02",
+   "window_to": "2024-12-31"
+  },
+  {
+   "key": "nirmatrelvir",
+   "brand": "팍스로비드정",
+   "ingredient": "nirmatrelvir",
+   "listing_date": "2024-11-01",
+   "report_ids": [
+    1481
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2024-09-02",
+   "window_to": "2024-12-31"
+  },
+  {
+   "key": "benralizumab",
+   "brand": "파센라프리필드시린지주",
+   "ingredient": "benralizumab",
+   "listing_date": "2024-07-01",
+   "report_ids": [
+    1468
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2024-05-02",
+   "window_to": "2024-08-30"
+  },
+  {
+   "key": "encorafenib",
+   "brand": "비라토비캡슐",
+   "ingredient": "encorafenib",
+   "listing_date": "2024-02-01",
+   "report_ids": [
+    836
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2023-12-03",
+   "window_to": "2024-04-01"
+  },
+  {
+   "key": "dostarlimab",
+   "brand": "젬퍼리주",
+   "ingredient": "dostarlimab",
+   "listing_date": "2023-12-01",
+   "report_ids": [
+    1310
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2023-10-02",
+   "window_to": "2024-01-30"
+  },
+  {
+   "key": "mepolizumab",
+   "brand": "누칼라주",
+   "ingredient": "mepolizumab",
+   "listing_date": "2023-11-01",
+   "report_ids": [
+    593,
+    1601
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2023-09-02",
+   "window_to": "2023-12-31"
+  },
+  {
+   "key": "오뉴렉정",
+   "brand": "오뉴렉정",
+   "ingredient": "",
+   "listing_date": "2023-08-01",
+   "report_ids": [
+    1138
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2023-06-02",
+   "window_to": "2023-09-30"
+  },
+  {
+   "key": "얼리다정",
+   "brand": "얼리다정",
+   "ingredient": "",
+   "listing_date": "2023-04-01",
+   "report_ids": [
+    1075
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2023-01-31",
+   "window_to": "2023-05-31"
+  },
+  {
+   "key": "졸겐스마주",
+   "brand": "졸겐스마주",
+   "ingredient": "",
+   "listing_date": "2022-08-01",
+   "report_ids": [
+    1322
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2022-06-02",
+   "window_to": "2022-09-30"
+  },
+  {
+   "key": "larotrectinib",
+   "brand": "비트락비액",
+   "ingredient": "larotrectinib",
+   "listing_date": "2022-04-01",
+   "report_ids": [
+    854
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2022-01-31",
+   "window_to": "2022-05-31"
+  },
+  {
+   "key": "킴리아주",
+   "brand": "킴리아주",
+   "ingredient": "",
+   "listing_date": "2022-04-01",
+   "report_ids": [
+    1404
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2022-01-31",
+   "window_to": "2022-05-31"
+  },
+  {
+   "key": "olaparib",
+   "brand": "린파자정",
+   "ingredient": "olaparib",
+   "listing_date": "2021-10-01",
+   "report_ids": [
+    746
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2021-08-02",
+   "window_to": "2021-11-30"
+  },
+  {
+   "key": "ipilimumab",
+   "brand": "여보이주",
+   "ingredient": "ipilimumab",
+   "listing_date": "2021-10-01",
+   "report_ids": [
+    1136
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2021-08-02",
+   "window_to": "2021-11-30"
+  },
+  {
+   "key": "오니바이드주",
+   "brand": "오니바이드주",
+   "ingredient": "",
+   "listing_date": "2021-08-01",
+   "report_ids": [
+    1139
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2021-06-02",
+   "window_to": "2021-09-30"
+  },
+  {
+   "key": "lazertinib",
+   "brand": "렉라자정",
+   "ingredient": "lazertinib",
+   "listing_date": "2021-07-01",
+   "report_ids": [
+    688
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2021-05-02",
+   "window_to": "2021-08-30"
+  },
+  {
+   "key": "닌라로캡슐",
+   "brand": "닌라로캡슐",
+   "ingredient": "",
+   "listing_date": "2021-04-01",
+   "report_ids": [
+    609
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2021-01-31",
+   "window_to": "2021-05-31"
+  },
+  {
+   "key": "belimumab",
+   "brand": "벤리스타주",
+   "ingredient": "belimumab",
+   "listing_date": "2021-02-01",
+   "report_ids": [
+    803
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2020-12-03",
+   "window_to": "2021-04-02"
+  },
+  {
+   "key": "ribociclib",
+   "brand": "키스칼리정",
+   "ingredient": "ribociclib",
+   "listing_date": "2020-11-01",
+   "report_ids": [
+    1398
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2020-09-02",
+   "window_to": "2020-12-31"
+  },
+  {
+   "key": "avelumab",
+   "brand": "바벤시오주",
+   "ingredient": "avelumab",
+   "listing_date": "2020-10-01",
+   "report_ids": [
+    775
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2020-08-02",
+   "window_to": "2020-11-30"
+  },
+  {
+   "key": "abemaciclib",
+   "brand": "버제니오정",
+   "ingredient": "abemaciclib",
+   "listing_date": "2020-06-01",
+   "report_ids": [
+    786
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2020-04-02",
+   "window_to": "2020-07-31"
+  },
+  {
+   "key": "emicizumab",
+   "brand": "헴리브라피하주사",
+   "ingredient": "emicizumab",
+   "listing_date": "2020-05-01",
+   "report_ids": [
+    1590
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 1,
+   "window_from": "2020-03-02",
+   "window_to": "2020-06-30"
+  },
+  {
+   "key": "durvalumab",
+   "brand": "임핀지주",
+   "ingredient": "durvalumab",
+   "listing_date": "2020-04-01",
+   "report_ids": [
+    1255
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2020-02-01",
+   "window_to": "2020-05-31"
+  },
+  {
+   "key": "dupilumab",
+   "brand": "듀피젠트프리필드주",
+   "ingredient": "dupilumab",
+   "listing_date": "2020-01-01",
+   "report_ids": [
+    645,
+    1605
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2019-11-02",
+   "window_to": "2020-03-01"
+  },
+  {
+   "key": "niraparib",
+   "brand": "제줄라캡슐",
+   "ingredient": "niraparib",
+   "listing_date": "2019-11-01",
+   "report_ids": [
+    1298
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2019-09-02",
+   "window_to": "2019-12-31"
+  },
+  {
+   "key": "inotuzumab",
+   "brand": "베스폰사주",
+   "ingredient": "inotuzumab",
+   "listing_date": "2019-10-01",
+   "report_ids": [
+    791
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2019-08-02",
+   "window_to": "2019-11-30"
+  },
+  {
+   "key": "daratumumab",
+   "brand": "다잘렉스주",
+   "ingredient": "daratumumab",
+   "listing_date": "2019-05-01",
+   "report_ids": [
+    611
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2019-03-02",
+   "window_to": "2019-06-30"
+  },
+  {
+   "key": "스핀라자주",
+   "brand": "스핀라자주",
+   "ingredient": "",
+   "listing_date": "2019-05-01",
+   "report_ids": [
+    937
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2019-03-02",
+   "window_to": "2019-06-30"
+  },
+  {
+   "key": "파슬로덱스주",
+   "brand": "파슬로덱스주",
+   "ingredient": "",
+   "listing_date": "2019-05-01",
+   "report_ids": [
+    1469
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2019-03-02",
+   "window_to": "2019-06-30"
+  },
+  {
+   "key": "cabozantinib",
+   "brand": "카보메틱스정",
+   "ingredient": "cabozantinib",
+   "listing_date": "2019-02-01",
+   "report_ids": [
+    1341
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2018-12-03",
+   "window_to": "2019-04-02"
+  },
+  {
+   "key": "피라지르프리필드시린지",
+   "brand": "피라지르프리필드시린지",
+   "ingredient": "",
+   "listing_date": "2018-09-01",
+   "report_ids": [
+    1571
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2018-07-03",
+   "window_to": "2018-10-31"
+  },
+  {
+   "key": "자이티가정",
+   "brand": "자이티가정",
+   "ingredient": "",
+   "listing_date": "2018-05-01",
+   "report_ids": [
+    1271
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2018-03-02",
+   "window_to": "2018-06-30"
+  },
+  {
+   "key": "키프롤리스주",
+   "brand": "키프롤리스주",
+   "ingredient": "",
+   "listing_date": "2018-02-01",
+   "report_ids": [
+    1400
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2017-12-03",
+   "window_to": "2018-04-02"
+  },
+  {
+   "key": "osimertinib",
+   "brand": "타그리소정",
+   "ingredient": "osimertinib",
+   "listing_date": "2018-01-01",
+   "report_ids": [
+    1405
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2017-11-02",
+   "window_to": "2018-03-02"
+  },
+  {
+   "key": "olmutinib",
+   "brand": "올리타정",
+   "ingredient": "olmutinib",
+   "listing_date": "2017-12-01",
+   "report_ids": [
+    1164
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2017-10-02",
+   "window_to": "2018-01-30"
+  },
+  {
+   "key": "palbociclib",
+   "brand": "입랜스캡슐",
+   "ingredient": "palbociclib",
+   "listing_date": "2017-11-01",
+   "report_ids": [
+    1258
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2017-09-02",
+   "window_to": "2017-12-31"
+  },
+  {
+   "key": "alectinib",
+   "brand": "알레센자캡슐",
+   "ingredient": "alectinib",
+   "listing_date": "2017-10-01",
+   "report_ids": [
+    1034
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2017-08-02",
+   "window_to": "2017-11-30"
+  },
+  {
+   "key": "nivolumab",
+   "brand": "옵디보주",
+   "ingredient": "nivolumab",
+   "listing_date": "2017-09-01",
+   "report_ids": [
+    1171
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2017-07-03",
+   "window_to": "2017-10-31"
+  },
+  {
+   "key": "pembrolizumab",
+   "brand": "키트루다주",
+   "ingredient": "pembrolizumab",
+   "listing_date": "2017-09-01",
+   "report_ids": [
+    1399
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2017-07-03",
+   "window_to": "2017-10-31"
+  },
+  {
+   "key": "trastuzumab",
+   "brand": "엔허투주",
+   "ingredient": "trastuzumab",
+   "listing_date": "2017-08-01",
+   "report_ids": [
+    1122,
+    1356
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2017-06-02",
+   "window_to": "2017-09-30"
+  },
+  {
+   "key": "vemurafenib",
+   "brand": "젤보라프정",
+   "ingredient": "vemurafenib",
+   "listing_date": "2017-07-01",
+   "report_ids": [
+    1305
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2017-05-02",
+   "window_to": "2017-08-30"
+  },
+  {
+   "key": "pertuzumab",
+   "brand": "퍼제타주",
+   "ingredient": "pertuzumab",
+   "listing_date": "2017-06-01",
+   "report_ids": [
+    1488
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2017-04-02",
+   "window_to": "2017-07-31"
+  },
+  {
+   "key": "포말리스트",
+   "brand": "포말리스트",
+   "ingredient": "",
+   "listing_date": "2017-01-01",
+   "report_ids": [
+    1512
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2016-11-02",
+   "window_to": "2017-03-02"
+  },
+  {
+   "key": "regorafenib",
+   "brand": "스티바가정",
+   "ingredient": "regorafenib",
+   "listing_date": "2016-06-01",
+   "report_ids": [
+    932
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2016-04-02",
+   "window_to": "2016-07-31"
+  },
+  {
+   "key": "피레스파정",
+   "brand": "피레스파정",
+   "ingredient": "",
+   "listing_date": "2015-11-03",
+   "report_ids": [
+    1572
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2015-09-04",
+   "window_to": "2016-01-02"
+  },
+  {
+   "key": "crizotinib",
+   "brand": "잴코리캡슐",
+   "ingredient": "crizotinib",
+   "listing_date": "2015-05-01",
+   "report_ids": [
+    1279
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2015-03-02",
+   "window_to": "2015-06-30"
+  },
+  {
+   "key": "엑스탄디연질캡슐",
+   "brand": "엑스탄디연질캡슐",
+   "ingredient": "",
+   "listing_date": "2014-12-01",
+   "report_ids": [
+    1113
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2014-10-02",
+   "window_to": "2015-01-30"
+  },
+  {
+   "key": "레블리미드캡슐",
+   "brand": "레블리미드캡슐",
+   "ingredient": "",
+   "listing_date": "2014-04-01",
+   "report_ids": [
+    675
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2014-01-31",
+   "window_to": "2014-05-31"
+  },
+  {
+   "key": "cetuximab",
+   "brand": "얼비툭스주",
+   "ingredient": "cetuximab",
+   "listing_date": "2014-04-01",
+   "report_ids": [
+    1076
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2014-01-31",
+   "window_to": "2014-05-31"
+  },
+  {
+   "key": "에볼트라주",
+   "brand": "에볼트라주",
+   "ingredient": "",
+   "listing_date": "2014-01-01",
+   "report_ids": [
+    1101
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2013-11-02",
+   "window_to": "2014-03-02"
+  },
+  {
+   "key": "eculizumab",
+   "brand": "솔리리스주",
+   "ingredient": "eculizumab",
+   "listing_date": "2012-10-01",
+   "report_ids": [
+    905
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2012-08-02",
+   "window_to": "2012-11-30"
+  }
+ ]
+}
