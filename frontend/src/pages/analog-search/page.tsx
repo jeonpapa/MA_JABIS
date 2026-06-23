@@ -215,12 +215,19 @@ function DetailModal({ r, onClose }: { r: AnalogReport; onClose: () => void }) {
         {/* 헤더 */}
         <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-start justify-between z-10">
           <div>
-            <h2 className="text-xl font-bold">
+            <h2 className="text-xl font-bold flex items-center gap-2 flex-wrap">
               {r.brand_name ?? '(약제명 미상)'}
               {r.dosage && (
-                <span className="ml-2 align-middle text-sm font-semibold text-gray-500 bg-gray-100 border border-gray-200 rounded px-2 py-0.5">
+                <span className="align-middle text-sm font-semibold text-gray-500 bg-gray-100 border border-gray-200 rounded px-2 py-0.5">
                   {r.dosage}
                 </span>
+              )}
+              {r.post_url && (
+                <a href={r.post_url} target="_blank" rel="noopener noreferrer"
+                  title="약평위 게시물 열기 (HIRA)"
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-teal-600 hover:text-teal-700 border border-teal-200 bg-teal-50 rounded-md px-2 py-0.5">
+                  <i className="ri-external-link-line"></i>약평위 게시물
+                </a>
               )}
             </h2>
             <p className="text-sm text-gray-500">

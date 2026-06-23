@@ -57,6 +57,9 @@ export interface AnalogReport {
   session_date: string | null;
   review_result: string | null;            // APPROVED/REJECTED/...
   review_result_ko: string | null;
+  post_url?: string | null;                // 약평위 HIRA 게시물 링크(메타 매칭)
+  result_meta?: string | null;             // 메타 원문 결과(급여/비급여/조건부)
+  post_blt_no?: number | null;
   reimbursement_track: string | null;      // 기존 호환
   reimbursement_track_ko: string | null;   // 한국어 트랙
   has_rsa: number | null;

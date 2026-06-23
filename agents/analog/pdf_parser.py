@@ -192,11 +192,10 @@ def _parse_filename(fname: str) -> dict:
     # .pdf 제거
     if stem.lower().endswith('.pdf'):
         stem = stem[:-4]
-    # _평가결과 제거
-    for suffix in ('_평가결과', '_평가결과'):
-        if stem.endswith(suffix):
-            stem = stem[:-len(suffix)]
-            break
+    # '평가결과' 접두/접미 제거 (DREC 추가 폴더 형식 '평가결과_브랜드(회사)' / '브랜드_평가결과' 대응)
+    stem = re.sub(r'^평가결과[_\s]+', '', stem)
+    stem = re.sub(r'[_\s]*평가결과$', '', stem)
+    stem = stem.strip(' _')
 
     # 연도/차수 파싱 — 파일명 전체에서 첫 번째 매칭
     year = ordinal = None

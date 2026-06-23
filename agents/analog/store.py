@@ -247,6 +247,12 @@ _NEW_COLS: list[tuple[str, str]] = [
     ("future_conditions", "TEXT"),
     ("decision_reason", "TEXT"),
     ("tags_text", "TEXT"),    # concept canonical+alias 그림자 컬럼 (FTS 동의어 색인용)
+    # 약평위 메타(엑셀) 매칭 — 게시물 링크 + 결과 검증/보완
+    ("post_url", "TEXT"),                 # HIRA 약평위 게시물 URL
+    ("post_blt_no", "INTEGER"),           # 게시물 번호(bltNo)
+    ("result_meta", "TEXT"),              # 메타 원문 결과(급여/비급여/조건부…)
+    ("result_source", "TEXT"),            # review_result 출처: pdf | meta
+    ("review_result_pdf", "TEXT"),        # 메타 교정 전 PDF 원본 결과(추적)
 ]
 
 # corpus 에서 ingest 할 컬럼 목록 (embedding 제외)
