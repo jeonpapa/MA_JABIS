@@ -377,26 +377,29 @@ def process_formulations(drug: str, items: list[dict]) -> list[dict]:
     각 priced item 은 에이전트가 form-aware unit_strength_mg 를 채워 전달하는 것을 권장
     (없으면 dosage_strength regex fallback). 미국 canonical 기준, cross-strength 금지.
     """
-    priced = [it for it in items if it.get("adjusted_price_krw") is not None]
-    if not priced:
+    # 가격 유무와 무관하게 강도 있는 모든 행에 제형 배정(미가격 행도 같은 탭에 '가격 미공개').
+    targets = [it for it in items
+               if it.get("adjusted_price_krw") is not None or it.get("dosage_strength")
+               or it.get("unit_strength_mg")]
+    if not targets:
         return []
-    for it in priced:
+    for it in targets:
         it["_strength"] = _strength_of(it)
         it["_route"] = route_of(it.get("form_type"))
 
-    # canonical 기준 국가: US 우선, 없으면 제형 최다 국가
-    us_rows = [it for it in priced if (it.get("country") or "").upper() == "US" and it["_strength"]]
+    # canonical 기준 국가: US 우선(강도 있는 행, 가격 무관), 없으면 제형 최다 국가
+    us_rows = [it for it in targets if (it.get("country") or "").upper() == "US" and it["_strength"]]
     us_based = bool(us_rows)
     base_rows = us_rows
     if not base_rows:
         from collections import defaultdict
         by_c = defaultdict(set)
-        for it in priced:
+        for it in targets:
             if it["_strength"]:
                 by_c[it["country"]].add((it["_route"], round(it["_strength"], 2)))
         if by_c:
             cc = max(by_c, key=lambda c: len(by_c[c]))
-            base_rows = [it for it in priced if it.get("country") == cc and it["_strength"]]
+            base_rows = [it for it in targets if it.get("country") == cc and it["_strength"]]
 
     canonical = {}  # (route, round(strength,2)) -> strength
     for it in base_rows:
@@ -404,7 +407,7 @@ def process_formulations(drug: str, items: list[dict]) -> list[dict]:
 
     updates: list[dict] = []
     pending = []
-    for it in priced:
+    for it in targets:
         s, r = it["_strength"], it["_route"]
         if s is None:
             pending.append(it)
