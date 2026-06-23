@@ -4137,7 +4137,9 @@ def _onco_unit_price(inn: str, source: str, date: str, dot_date: str, ref: str =
         if not row:
             continue
         price = row.get("max_price")
-        content = _total_content_mg(row.get("dosage_strength"), row.get("ingredient"))
+        # 함량: drug_latest rep(영문 ingredient·함량) 우선, 이력행 보조 (이력행 ingredient/strength 는 종종 비거나 'mL')
+        content = _total_content_mg(rep.get("ingredient"), rep.get("dosage_strength"),
+                                    row.get("dosage_strength"), row.get("ingredient"))
         if price and content:
             return {"available": True, "source": source, "label": row.get("product_name_kr"),
                     "code": rep.get("insurance_code"), "unit_price": price, "content_mg": content,

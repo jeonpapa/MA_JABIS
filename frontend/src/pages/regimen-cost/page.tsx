@@ -14,7 +14,7 @@ const MAX_REGIMENS = 6;
 const COLORS = ['#00857c', '#1f6fb2', '#c2780c', '#6a4ea3', '#0f9d58', '#d23f57'];
 const UNITS = ['mg/m2', 'mg/m2/day', 'mg/kg', 'mg/kg/day', 'AUC', 'mg', 'g/m2', '정', 'unit', 'mcg'];
 const DOSE_SRC_LABEL: Record<string, string> = {
-  saved: '저장됨', onco_db: '레지멘DB', mfds_label: '허가사항', manual: '수동', none: '미입력',
+  saved: '저장됨', onco_db: '레지멘DB', mfds_label: '허가사항', manual: '수동', none: '미입력', loading: '조회중',
 };
 
 type Metric = 'daily' | 'monthly' | 'yearly';
@@ -63,6 +63,7 @@ export default function RegimenCostPage() {
 
   const ref = useRef({ regimens, asOfDate, source, patient });
   ref.current = { regimens, asOfDate, source, patient };
+  const uidRef = useRef(1);
 
   useEffect(() => { listRegimens().then(setSaved).catch(() => {}); }, []);
 
@@ -112,9 +113,11 @@ export default function RegimenCostPage() {
   }, [asOfDate, source, patient, recomputeAll]);
 
   const appendRows = (ri: number, rows: OncoDrug[]) => {
-    setRegimens(p => p.map((r, i) => i === ri ? { ...r, oncoDrugs: [...(r.oncoDrugs || []), ...rows] } : r));
+    const withUid = rows.map(r => ({ ...r, uid: r.uid ?? uidRef.current++ }));
+    setRegimens(p => p.map((r, i) => i === ri ? { ...r, oncoDrugs: [...(r.oncoDrugs || []), ...withUid] } : r));
     setAddTarget(null); setQuery(''); setOncoHits([]); setResults([]); setWapResults([]);
     setTimeout(() => recompute(ri), 0);
+    return withUid;
   };
 
   // 레지멘 로드 = 행 추가(대체 아님)
@@ -131,15 +134,24 @@ export default function RegimenCostPage() {
     } finally { setBusyCalc(false); }
   };
 
-  // 단일 약제 추가 (WAP/브랜드) → drugDosing 으로 기본 용법 채워 1행
+  // 단일 약제 추가 (WAP/브랜드) — 행 즉시 표시(낙관적) 후 용법 비동기 채움(실패해도 행 유지)
   const addDrug = async (ri: number, opts: { inn: string; display: string; price_source: PriceSource; price_ref: string }) => {
+    const [row] = appendRows(ri, [{
+      ingredient: opts.display, dose_value: null, unit: 'mg', per_cycle: 1, cycle_days: 1, total_cycles: null,
+      dose_days: null, cycle_label: null, route: null,
+      price_source: opts.price_source, price_ref: opts.price_ref, price_inn: opts.inn, dose_source: 'loading',
+    }]);
     setBusyCalc(true);
     try {
       const dose = await drugDosing(opts.inn, opts.display);
-      appendRows(ri, [{
-        ...dose, ingredient: opts.display, price_source: opts.price_source, price_ref: opts.price_ref, price_inn: opts.inn,
-      }]);
-    } finally { setBusyCalc(false); }
+      setRegimens(p => p.map((r, i) => i !== ri ? r : {
+        ...r, oncoDrugs: (r.oncoDrugs || []).map(d => d.uid === row.uid ? {
+          ...d, ...dose, uid: row.uid, ingredient: opts.display,
+          price_source: opts.price_source, price_ref: opts.price_ref, price_inn: opts.inn,
+        } : d),
+      }));
+    } catch { /* 용법 미상 — 빈 행 유지(사용자 수동 입력) */ }
+    finally { setBusyCalc(false); recompute(ri); }
   };
 
   const editRow = (ri: number, di: number, patch: Partial<OncoDrug>) =>
@@ -297,7 +309,7 @@ export default function RegimenCostPage() {
                       </tr></thead>
                       <tbody>
                         {rows.map((d, di) => (
-                          <tr key={di} className="border-b last:border-0">
+                          <tr key={d.uid ?? di} className="border-b last:border-0">
                             <td className="px-1.5 py-1 font-medium whitespace-nowrap max-w-[180px] truncate" title={`${d.ingredient}${d.price?.label ? ` · ${d.price.label}` : ''}`}>
                               {d.ingredient}
                               {d.verify === '검증필요' && <span title="검증필요" className="ml-1 text-amber-500">⚠</span>}

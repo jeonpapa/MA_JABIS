@@ -54,6 +54,7 @@ export interface Patient {
 export const PATIENT_DEFAULT: Patient = { height: 165, weight: 62, age: 60, sex: 'M', scr: 0.9 };
 
 export interface OncoDrug {
+  uid?: number;                // 클라이언트 행 식별자(렌더·낙관적 업데이트용)
   ingredient: string;          // 영문 INN (표시·dosing)
   dose_value: number | null;
   unit: string | null;         // mg/m2 | mg/kg | AUC | mg | 정 …
