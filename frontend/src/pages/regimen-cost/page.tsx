@@ -32,11 +32,6 @@ function patientMetricsLocal(p: Patient) {
   const crcl = ((140 - p.age) * p.weight * k) / (72 * p.scr);
   return { bsa: bsa.toFixed(3), crcl: crcl.toFixed(1), gfr: Math.min(crcl, 125).toFixed(1) };
 }
-const sumCost = (rows: OncoDrug[] | undefined, k: 'cycle' | 'course' | 'daily' | 'monthly' | 'yearly') => {
-  let s = 0, miss = false;
-  for (const d of rows || []) { const v = d.cost?.[k]; if (v == null) miss = true; else s += v; }
-  return { sum: s, miss };
-};
 
 export default function RegimenCostPage() {
   const [regimens, setRegimens] = useState<Regimen[]>([emptyRegimen('기준 레지멘'), emptyRegimen('비교 레지멘 1')]);
@@ -276,6 +271,45 @@ export default function RegimenCostPage() {
           </ResponsiveContainer>
         </div>
 
+        {/* 레지멘별 비용 비교 테이블 */}
+        <div className="bg-white rounded-2xl border p-5 mb-4">
+          <h2 className="font-bold text-sm mb-3">레지멘별 비용 비교</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="text-gray-400 border-b text-xs">
+                <th className="text-left font-medium py-1.5">레지멘</th>
+                <th className="text-right font-medium px-3 whitespace-nowrap">1사이클</th>
+                <th className="text-right font-medium px-3 whitespace-nowrap">전체코스</th>
+                <th className="text-right font-medium px-3">일</th>
+                <th className="text-right font-medium px-3">월</th>
+                <th className="text-right font-medium px-3">연</th>
+              </tr></thead>
+              <tbody>
+                {regimens.map((r, i) => {
+                  const t = r.oncoTotals;
+                  const hasCycle = (r.oncoDrugs || []).some(d => (d.cycle_days ?? 1) > 1);
+                  return (
+                    <tr key={i} className="border-b last:border-0">
+                      <td className="py-2 whitespace-nowrap">
+                        <span className="inline-block w-2.5 h-2.5 rounded-full mr-2 align-middle" style={{ background: COLORS[i % COLORS.length] }}></span>
+                        {r.name || `레지멘 ${i + 1}`}
+                        {i === 0 && <span className="ml-1.5 text-[10px] px-1 py-0.5 rounded bg-teal-100 text-teal-700">기준</span>}
+                        {t?.hasMissing && <span className="ml-1 text-amber-500" title="일부 약가/용량 미상 (합산 제외)">⚠</span>}
+                      </td>
+                      <td className="text-right px-3 whitespace-nowrap">{hasCycle ? fmt(t?.cycle) : '—'}</td>
+                      <td className="text-right px-3 whitespace-nowrap font-bold text-teal-700">{hasCycle ? fmt(t?.course) : '—'}</td>
+                      <td className="text-right px-3 whitespace-nowrap">{fmt(t?.daily)}</td>
+                      <td className="text-right px-3 whitespace-nowrap font-semibold">{fmt(t?.monthly)}</td>
+                      <td className="text-right px-3 whitespace-nowrap font-semibold">{fmt(t?.yearly)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[11px] text-gray-400 mt-2">1사이클·전체코스는 항암 레지멘(주기 투여)에만 표시 · 일반약제는 일/월/연만</p>
+        </div>
+
         {/* 컨트롤 (테이블 인접) */}
         <div className="bg-white rounded-2xl border px-5 py-3 mb-3 flex items-center gap-5 flex-wrap">
           <label className="flex items-center gap-2 text-sm"><i className="ri-calendar-event-line text-teal-600"></i><span className="text-gray-600">기준 시점</span>
@@ -311,7 +345,6 @@ export default function RegimenCostPage() {
         <div className="space-y-3">
           {regimens.map((r, ri) => {
             const rows = r.oncoDrugs || [];
-            const cyc = sumCost(rows, 'cycle'), course = sumCost(rows, 'course');
             return (
               <div key={ri} className="bg-white rounded-2xl border p-4" style={{ borderLeftColor: COLORS[ri % COLORS.length], borderLeftWidth: 4 }}>
                 <div className="flex items-center gap-2 mb-2">
@@ -364,7 +397,7 @@ export default function RegimenCostPage() {
                   </div>
                 )}
 
-                <div className="flex items-end justify-between gap-4 mt-2">
+                <div className="mt-2">
                   <div className="relative">
                     {addTarget === ri ? (
                       <div className="flex items-start gap-2">
@@ -401,16 +434,6 @@ export default function RegimenCostPage() {
                     ) : (
                       <button onClick={() => { setAddTarget(ri); setAddMode('onco'); setQuery(''); }} className="inline-flex items-center gap-1 border border-dashed rounded-lg px-3 py-1.5 text-xs text-gray-500 hover:border-teal-400 hover:text-teal-600"><i className="ri-add-line"></i> 레지멘/약제 추가</button>
                     )}
-                  </div>
-
-                  <div className="text-right text-xs space-y-0.5 min-w-[240px]">
-                    <div className="flex justify-end gap-4"><span className="text-gray-400">1사이클</span><span className="font-semibold">{rows.length ? fmt(cyc.sum) : '—'}</span><span className="text-gray-400">전체코스</span><span className="font-bold text-teal-700">{rows.length ? fmt(course.sum) : '—'}</span></div>
-                    <div className="flex justify-end gap-4">
-                      <span className="text-gray-400">일</span><span>{fmt(r.oncoTotals?.daily)}</span>
-                      <span className="text-gray-400">월</span><span className="font-semibold">{fmt(r.oncoTotals?.monthly)}</span>
-                      <span className="text-gray-400">연</span><span className="font-semibold">{fmt(r.oncoTotals?.yearly)}</span>
-                    </div>
-                    {r.oncoTotals?.hasMissing && <p className="text-amber-600 text-[10px]">일부 약가/용량 미상 (합산 제외)</p>}
                   </div>
                 </div>
               </div>
