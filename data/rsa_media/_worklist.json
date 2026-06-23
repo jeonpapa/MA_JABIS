@@ -1,6 +1,6 @@
 {
  "generated_at": "static",
- "count": 75,
+ "count": 77,
  "items": [
   {
    "key": "암부트라프리필드시린지주",
@@ -76,32 +76,6 @@
    "listing_date": "2026-02-01",
    "report_ids": [
     679
-   ],
-   "has_rsa": 1,
-   "has_postmarket": 0,
-   "window_from": "2025-12-03",
-   "window_to": "2026-04-02"
-  },
-  {
-   "key": "ramucirumab",
-   "brand": "사이람자주10밀리그램-밀리리터",
-   "ingredient": "ramucirumab",
-   "listing_date": "2026-02-01",
-   "report_ids": [
-    877
-   ],
-   "has_rsa": 1,
-   "has_postmarket": 0,
-   "window_from": "2025-12-03",
-   "window_to": "2026-04-02"
-  },
-  {
-   "key": "dinutuximab",
-   "brand": "콰지바주4.5mg-mL",
-   "ingredient": "dinutuximab",
-   "listing_date": "2026-02-01",
-   "report_ids": [
-    1379
    ],
    "has_rsa": 1,
    "has_postmarket": 0,
@@ -308,6 +282,19 @@
    "window_to": "2025-01-30"
   },
   {
+   "key": "dinutuximab",
+   "brand": "콰지바주4.5mg-mL",
+   "ingredient": "dinutuximab",
+   "listing_date": "2024-12-01",
+   "report_ids": [
+    1379
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2024-10-02",
+   "window_to": "2025-01-30"
+  },
+  {
    "key": "remdesivir",
    "brand": "베클루리주정맥주사용동결건조분말",
    "ingredient": "remdesivir",
@@ -398,6 +385,19 @@
    "has_postmarket": 0,
    "window_from": "2023-09-02",
    "window_to": "2023-12-31"
+  },
+  {
+   "key": "에브리스디건조시럽0.75mg-mL",
+   "brand": "에브리스디건조시럽0.75mg-mL",
+   "ingredient": "",
+   "listing_date": "2023-10-01",
+   "report_ids": [
+    1102
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2023-08-02",
+   "window_to": "2023-11-30"
   },
   {
    "key": "오뉴렉정",
@@ -595,6 +595,19 @@
    "window_to": "2020-07-31"
   },
   {
+   "key": "스트렌식주40mg-mL",
+   "brand": "스트렌식주40mg-mL",
+   "ingredient": "",
+   "listing_date": "2020-06-01",
+   "report_ids": [
+    929
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2020-04-02",
+   "window_to": "2020-07-31"
+  },
+  {
    "key": "emicizumab",
    "brand": "헴리브라피하주사",
    "ingredient": "emicizumab",
@@ -724,6 +737,19 @@
    "has_postmarket": 0,
    "window_from": "2018-07-03",
    "window_to": "2018-10-31"
+  },
+  {
+   "key": "ramucirumab",
+   "brand": "사이람자주10밀리그램-밀리리터",
+   "ingredient": "ramucirumab",
+   "listing_date": "2018-05-01",
+   "report_ids": [
+    877
+   ],
+   "has_rsa": 1,
+   "has_postmarket": 0,
+   "window_from": "2018-03-02",
+   "window_to": "2018-06-30"
   },
   {
    "key": "자이티가정",

@@ -53,9 +53,15 @@ def _clean_brand_for_price(brand: str | None) -> str:
     from agents.analog.pdf_parser import _clean_brand, _normalize
     b = _normalize(brand or "")
     b = _re.sub(r"^평가결과[_\s]+", "", b)
-    b = _re.sub(r"_?\d{4}년.*$", "", b)
+    b = _re.sub(r"_?\d{4}년.*$", "", b)        # 차수 꼬리
     b = _clean_brand(b)
-    b = _re.sub(r"[,(].*$", "", b)
+    b = _re.sub(r"[,(\[].*$", "", b)            # 잔여 함량/회사/성분 괄호
+    # 강건화: 한글 브랜드 코어는 보통 첫 숫자 앞까지 (예 '콰지바주4.5mg-mL'→'콰지바주',
+    # '발베사정3,4,5밀리그램한국얀센'→'발베사정'). product_name_kr 도 같은 코어로 시작하므로
+    # prefix range 가 더 안정적으로 매칭(하이픈/슬래시 함량표기 차이 흡수).
+    core = _re.split(r"\d", b)[0].strip()
+    if len(core) >= 2:
+        b = core
     return b.strip()
 
 
