@@ -55,6 +55,51 @@ class _OncoMixin:
                 out.append(d)
             return out
 
+    def onco_drug_default(self, inn: str) -> dict | None:
+        """INN 의 항암 레지멘 DB 대표 dosing(최빈 용량값+단위). 단일약제 추가 기본값."""
+        inn = (inn or "").strip()
+        if not inn:
+            return None
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT ingredient, dose_value, unit, dose_days, per_cycle, cycle_days,
+                          cycle_label, total_cycles, route, COUNT(*) c
+                   FROM onco_regimen_drug WHERE ingredient LIKE ?
+                   GROUP BY dose_value, unit, per_cycle, cycle_days
+                   ORDER BY c DESC, (verify='NCCN확인') DESC LIMIT 1""",
+                (f"%{inn}%",),
+            ).fetchone()
+        return dict(row) if row else None
+
+    # ── 사용자 영구 저장 dosing (drug_key = lower INN) ──
+    _UDOSE_COLS = ("drug_key", "ingredient", "dose_value", "unit", "dose_days", "per_cycle",
+                   "cycle_days", "cycle_label", "total_cycles", "route", "updated_at")
+
+    def get_user_dosing(self, drug_key: str) -> dict | None:
+        if not drug_key:
+            return None
+        with self._connect() as conn:
+            row = conn.execute(
+                f"SELECT {','.join(self._UDOSE_COLS)} FROM user_drug_dosing WHERE drug_key=?",
+                (drug_key.strip().lower(),),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def save_user_dosing(self, drug_key: str, rec: dict) -> None:
+        from datetime import datetime
+        if not drug_key:
+            return
+        rec = {**rec, "drug_key": drug_key.strip().lower(),
+               "updated_at": datetime.now().isoformat(timespec="seconds")}
+        vals = [rec.get(c) for c in self._UDOSE_COLS]
+        ph = ",".join(["?"] * len(self._UDOSE_COLS))
+        upd = ",".join(f"{c}=excluded.{c}" for c in self._UDOSE_COLS if c != "drug_key")
+        with self._connect() as conn:
+            conn.execute(
+                f"INSERT INTO user_drug_dosing ({','.join(self._UDOSE_COLS)}) VALUES ({ph}) "
+                f"ON CONFLICT(drug_key) DO UPDATE SET {upd}", vals,
+            )
+
     def onco_regimens_with_drug(self, ingredient: str, limit: int = 30) -> list[dict]:
         """특정 약제(INN)를 포함하는 레지멘 = '구성가능 조합' 제시용."""
         ingredient = (ingredient or "").strip()

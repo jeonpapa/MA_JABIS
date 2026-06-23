@@ -54,9 +54,9 @@ export interface Patient {
 export const PATIENT_DEFAULT: Patient = { height: 165, weight: 62, age: 60, sex: 'M', scr: 0.9 };
 
 export interface OncoDrug {
-  ingredient: string;          // 영문 INN
+  ingredient: string;          // 영문 INN (표시·dosing)
   dose_value: number | null;
-  unit: string | null;         // mg/m2 | mg/kg | AUC | mg …
+  unit: string | null;         // mg/m2 | mg/kg | AUC | mg | 정 …
   dose_days?: string | null;
   per_cycle: number | null;    // 회수/주기
   cycle_days: number | null;
@@ -65,6 +65,11 @@ export interface OncoDrug {
   route?: string | null;
   note?: string | null;
   verify?: string | null;
+  // 통합 행 모델 — dosing 출처 + 가격 소스(행별)
+  dose_source?: string;        // saved|onco_db|mfds_label|manual|none
+  price_source?: PriceSource;  // 행별 가격 소스
+  price_ref?: string;          // WAP main_ingredient_code / 브랜드 insurance_code
+  price_inn?: string;          // 가격조회용 INN (없으면 ingredient)
   // onco/cost 계산 결과
   one_dose_mg?: number | null;
   cycle_total_mg?: number | null;
@@ -117,6 +122,17 @@ export async function oncoGet(ref: number): Promise<{ ref: number; regimen_name:
 }
 export async function oncoCost(date: string, source: PriceSource, patient: Patient, drugs: OncoDrug[]): Promise<OncoCostResponse> {
   return api.post<OncoCostResponse>('/api/regimen/onco/cost', { date, source, patient, drugs });
+}
+
+/** 단일 약제 추가 시 기본 dosing 행 (저장→onco DB→허가사항→빈). */
+export async function drugDosing(inn: string, ingredient?: string): Promise<OncoDrug & { dose_source: string }> {
+  const q = `inn=${encodeURIComponent(inn)}${ingredient ? `&ingredient=${encodeURIComponent(ingredient)}` : ''}`;
+  return api.get<OncoDrug & { dose_source: string }>(`/api/regimen/drug-dosing?${q}`);
+}
+
+/** 사용자 수정 dosing 영구 저장. */
+export async function saveDrugDosing(inn: string, row: Partial<OncoDrug>): Promise<void> {
+  await api.post('/api/regimen/drug-dosing', { inn, ...row });
 }
 
 // ── 주성분 가중평균(WAP) 외부 API ──

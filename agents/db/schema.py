@@ -497,6 +497,20 @@ CREATE TABLE IF NOT EXISTS onco_regimen_drug (
     PRIMARY KEY (regimen_ref, seq)
 );
 
+CREATE TABLE IF NOT EXISTS user_drug_dosing (
+    drug_key        TEXT PRIMARY KEY,   -- lower(영문 INN)
+    ingredient      TEXT,               -- 표시용 성분명
+    dose_value      REAL,
+    unit            TEXT,
+    dose_days       TEXT,
+    per_cycle       REAL,
+    cycle_days      INTEGER,
+    cycle_label     TEXT,
+    total_cycles    REAL,
+    route           TEXT,
+    updated_at      TEXT
+);
+
 CREATE TABLE IF NOT EXISTS dosing_resolved (
     cache_key                TEXT PRIMARY KEY,  -- 국내=normalized_name, WAP=main_ingredient_code
     usage_text               TEXT,              -- 원문 허가사항 용법용량(디버깅/재파싱)

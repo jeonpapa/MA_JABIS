@@ -4103,18 +4103,18 @@ def _dose_info(dosing: dict | None, basis: str) -> dict | None:
     }
 
 
-def _onco_unit_price(inn: str, source: str, date: str, dot_date: str) -> dict:
+def _onco_unit_price(inn: str, source: str, date: str, dot_date: str, ref: str = "") -> dict:
     """약제(영문 INN) → as-of 단위가 + 단위함량mg + mg당 단가. 규격 다수면 mg당 최저 선택.
 
-    반환 {available, source, label, code, unit_price, content_mg, price_per_mg,
-          period?, alternatives?}.
+    ref 주어지면 그 규격(WAP main_ingredient_code / 브랜드 insurance_code) 고정.
+    반환 {available, source, label, code, unit_price, content_mg, price_per_mg, period?, alternatives?}.
     """
     inn = (inn or "").strip()
     if not inn:
         return {"available": False, "reason": "약제명 없음"}
     if source == "weighted_avg":
         from agents.scrapers import ingredient_wap
-        wap = ingredient_wap.lookup(date, q=inn)
+        wap = ingredient_wap.lookup(date, code=ref) if ref else ingredient_wap.lookup(date, q=inn)
         if not wap.get("available") or not wap.get("results"):
             return {"available": False, "reason": wap.get("reason") or "가중평균 없음"}
         cand = []
@@ -4143,6 +4143,93 @@ def _onco_unit_price(inn: str, source: str, date: str, dot_date: str) -> dict:
                     "code": rep.get("insurance_code"), "unit_price": price, "content_mg": content,
                     "price_per_mg": price / content, "priceDate": row.get("apply_date")}
     return {"available": False, "reason": "해당 시점 국내약가 없음"}
+
+
+_COUNT_UNITS = {"정", "tab", "tablet", "캡슐", "cap", "capsule", "포", "환", "매", "vial", "바이알", "unit", "단위"}
+
+
+def _label_dosing_to_row(inn: str) -> dict | None:
+    """MFDS 허가사항 usage_text → dosing_resolver → 테이블 행 dosing(일 단위 cycle_days=1)."""
+    from agents.dosing_resolver import resolve_dosing
+    from agents.scrapers.kr_mfds_permit import lookup_permit
+    usage_text = ""
+    try:
+        permit = lookup_permit(inn, ingredient=inn, edi_code="")
+        if permit and permit.get("source") != "miss":
+            usage_text = permit.get("usage_text") or ""
+    except Exception:
+        pass
+    if not usage_text:
+        return None
+    use_llm = os.environ.get("REGIMEN_DOSING_LLM", "1") != "0"
+    d = resolve_dosing(usage_text, cache_key=inn.strip().lower(), name=inn, db=db, use_llm=use_llm)
+    if not d or not d.get("schedule"):
+        return None
+    if d.get("daily_dose_mg") is not None:
+        return {"dose_value": round(d["daily_dose_mg"], 2), "unit": "mg", "per_cycle": 1.0,
+                "cycle_days": 1, "cycle_label": None, "total_cycles": None, "dose_source": "mfds_label",
+                "dose_days": "daily"}
+    if d.get("daily_dose_units") is not None:
+        return {"dose_value": d["daily_dose_units"], "unit": "정", "per_cycle": 1.0,
+                "cycle_days": 1, "cycle_label": None, "total_cycles": None, "dose_source": "mfds_label",
+                "dose_days": "daily"}
+    return None
+
+
+def _resolve_drug_dosing(inn: str, ingredient_display: str = "") -> dict:
+    """단일 약제 추가 기본 dosing: 사용자저장 → 항암 레지멘DB → 허가사항 → 빈행.
+
+    반환: 테이블 dosing 필드 + dose_source('saved'|'onco_db'|'mfds_label'|'none').
+    """
+    key = (inn or "").strip().lower()
+    name = ingredient_display or inn
+    # 1) 사용자 영구 저장
+    u = db.get_user_dosing(key)
+    if u:
+        return {"ingredient": name, "dose_value": u.get("dose_value"), "unit": u.get("unit"),
+                "dose_days": u.get("dose_days"), "per_cycle": u.get("per_cycle"),
+                "cycle_days": u.get("cycle_days"), "cycle_label": u.get("cycle_label"),
+                "total_cycles": u.get("total_cycles"), "route": u.get("route"), "dose_source": "saved"}
+    # 2) 항암 레지멘 DB 대표
+    o = db.onco_drug_default(inn)
+    if o:
+        return {"ingredient": name, "dose_value": o.get("dose_value"), "unit": o.get("unit"),
+                "dose_days": o.get("dose_days"), "per_cycle": o.get("per_cycle"),
+                "cycle_days": o.get("cycle_days"), "cycle_label": o.get("cycle_label"),
+                "total_cycles": o.get("total_cycles"), "route": o.get("route"), "dose_source": "onco_db"}
+    # 3) MFDS 허가사항
+    lab = _label_dosing_to_row(inn)
+    if lab:
+        return {"ingredient": name, "route": None, **lab}
+    # 4) 빈행
+    return {"ingredient": name, "dose_value": None, "unit": "mg", "per_cycle": 1.0,
+            "cycle_days": 1, "cycle_label": None, "total_cycles": None, "route": None,
+            "dose_days": None, "dose_source": "none"}
+
+
+@app.get("/api/regimen/drug-dosing")
+@require_auth()
+def regimen_drug_dosing():
+    """단일 약제 추가 시 기본 dosing 행 반환 (저장→onco→허가→빈)."""
+    inn = (request.args.get("inn") or "").strip()
+    disp = (request.args.get("ingredient") or "").strip()
+    if not inn:
+        return jsonify({"error": "inn 필요", "code": "INVALID"}), 400
+    return jsonify(_resolve_drug_dosing(inn, disp))
+
+
+@app.post("/api/regimen/drug-dosing")
+@require_auth()
+def regimen_drug_dosing_save():
+    """사용자 수정 dosing 영구 저장 (drug_key=lower INN). 다음 추가 시 자동 표출."""
+    body = request.get_json(silent=True) or {}
+    inn = (body.get("inn") or "").strip()
+    if not inn:
+        return jsonify({"error": "inn 필요", "code": "INVALID"}), 400
+    rec = {k: body.get(k) for k in ("ingredient", "dose_value", "unit", "dose_days",
+                                    "per_cycle", "cycle_days", "cycle_label", "total_cycles", "route")}
+    db.save_user_dosing(inn, rec)
+    return jsonify({"ok": True})
 
 
 @app.get("/api/regimen/onco/search")
@@ -4186,14 +4273,21 @@ def onco_cost():
     out_drugs = []
     tot = {"cycle": 0.0, "course": 0.0, "monthly": 0.0, "yearly": 0.0, "daily": 0.0}
     any_missing = False
-    for d in computed["drugs"]:
-        pm = _onco_unit_price(d.get("ingredient"), source, date, dot_date)
+    for d, raw in zip(computed["drugs"], drugs):
+        row_source = raw.get("price_source") or source
+        inn_for_price = raw.get("price_inn") or d.get("ingredient")
+        pm = _onco_unit_price(inn_for_price, row_source, date, dot_date, ref=raw.get("price_ref") or "")
         cyc_mg = d.get("cycle_total_mg")
-        cycle_days = d.get("cycle_days") or 21
+        cycle_days = d.get("cycle_days") or 1
         total_cycles = d.get("total_cycles") or 1
+        unit = (d.get("unit") or "").strip().lower()
         cost = {"cycle": None, "course": None, "monthly": None, "yearly": None, "daily": None}
-        if pm.get("available") and cyc_mg is not None and cycle_days:
-            cyc = cyc_mg * pm["price_per_mg"]
+        cyc = None
+        if pm.get("available") and cyc_mg is not None:
+            cyc = cyc_mg * pm["price_per_mg"]                 # mg 기반
+        elif pm.get("available") and unit in _COUNT_UNITS and d.get("dose_value") is not None:
+            cyc = float(d["dose_value"]) * float(d.get("per_cycle") or 1) * pm["unit_price"]  # 정/바이알 count
+        if cyc is not None and cycle_days:
             yearly = cyc * 365 / cycle_days
             cost = {"cycle": round(cyc), "course": round(cyc * total_cycles),
                     "monthly": round(cyc * 30 / cycle_days), "yearly": round(yearly),
