@@ -27,10 +27,117 @@ function drugKey(d: RegimenDrug): string {
   return d.source === 'weighted_avg' ? 'wap:' + (d.mainIngredientCode || '') : 'dom:' + d.insuranceCode;
 }
 function drugToItem(d: RegimenDrug): PriceAsOfItem {
-  return d.source === 'weighted_avg'
-    ? { source: 'weighted_avg', mainIngredientCode: d.mainIngredientCode, ingredientName: d.ingredient }
-    : { source: 'domestic', insuranceCode: d.insuranceCode, normalizedName: d.normalizedName,
+  const base = d.source === 'weighted_avg'
+    ? { source: 'weighted_avg' as const, mainIngredientCode: d.mainIngredientCode, ingredientName: d.ingredient }
+    : { source: 'domestic' as const, insuranceCode: d.insuranceCode, normalizedName: d.normalizedName,
         productName: d.name, ingredient: d.ingredient };
+  return { ...base, doseOverride: d.doseOverride };
+}
+
+const SCHED_LABEL: Record<string, string> = { continuous: '매일', cycle: '주기', as_needed: '필요시' };
+const CONF_LABEL: Record<string, string> = { high: '높음', medium: '보통', low: '낮음' };
+function doseSummary(di?: import('@/api/regimenCost').DoseInfo): string {
+  if (!di || !di.schedule) return '용법 미확정';
+  if (di.dailyDoseMg != null && di.schedule === 'continuous') return `${di.dailyDoseMg}mg/일`;
+  if (di.schedule === 'cycle' && di.cycleDays) return `${di.cycleDays}일 주기${di.dosesPerCycle ? ` ×${di.dosesPerCycle}` : ''}`;
+  if (di.dailyDoseUnits != null) return `${di.dailyDoseUnits}단위/일`;
+  return SCHED_LABEL[di.schedule] || di.schedule;
+}
+
+function DoseEditor({ drug, onApply, onClose }: {
+  drug: RegimenDrug;
+  onApply: (ov: import('@/api/regimenCost').DoseOverride | undefined) => void;
+  onClose: () => void;
+}) {
+  const di = drug.doseInfo;
+  const ov = drug.doseOverride;
+  const [schedule, setSchedule] = useState<string>(ov?.schedule || di?.schedule || 'continuous');
+  const [mg, setMg] = useState<string>(String(ov?.dailyDoseMg ?? di?.dailyDoseMg ?? ''));
+  const [units, setUnits] = useState<string>(String(ov?.dailyDoseUnits ?? di?.dailyDoseUnits ?? ''));
+  const [cycleDays, setCycleDays] = useState<string>(String(ov?.cycleDays ?? di?.cycleDays ?? ''));
+  const [dpc, setDpc] = useState<string>(String(ov?.dosesPerCycle ?? di?.dosesPerCycle ?? ''));
+  const num = (s: string) => s.trim() === '' ? null : Number(s);
+
+  const apply = () => onApply({
+    schedule,
+    dailyDoseMg: schedule === 'continuous' ? num(mg) : null,
+    dailyDoseUnits: schedule === 'continuous' ? num(units) : null,
+    cycleDays: schedule === 'cycle' ? num(cycleDays) : null,
+    dosesPerCycle: schedule === 'cycle' ? num(dpc) : null,
+  });
+
+  return (
+    <div className="absolute z-20 mt-1 w-72 bg-white border rounded-xl shadow-lg p-3 text-xs left-0">
+      <div className="flex items-center justify-between mb-2">
+        <span className="font-semibold text-gray-700">용법용량</span>
+        <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><i className="ri-close-line"></i></button>
+      </div>
+      {di?.indication && <p className="text-gray-500 mb-1">적응증: <span className="text-gray-700">{di.indication}</span></p>}
+      <p className="text-gray-500 mb-1">
+        해석: <span className="text-gray-700">{doseSummary(di)}</span>
+        {di?.source && <span className="ml-1 text-[10px] px-1 py-0.5 rounded bg-gray-100 text-gray-500">{di.source === 'regex' ? '허가사항(규칙)' : di.source === 'llm' || di.source === 'review' ? '허가사항(LLM)' : di.source === 'manual' ? '수동' : di.source === 'enrichment(보조)' ? '보조추정' : di.source}{di.confidence ? ` · ${CONF_LABEL[di.confidence] || di.confidence}` : ''}</span>}
+      </p>
+      {di?.basis && <p className="text-gray-400 mb-2 text-[11px]">{di.basis}</p>}
+
+      {/* 대안 적응증 */}
+      {di?.alternatives && di.alternatives.length > 0 && (
+        <select className="w-full border rounded-md px-2 py-1 mb-2"
+          onChange={e => {
+            const a = di.alternatives![Number(e.target.value)];
+            if (!a) return;
+            setSchedule(a.schedule || 'continuous');
+            setMg(String(a.daily_dose_mg ?? ''));
+            setCycleDays(String(a.cycle_days ?? ''));
+            setDpc(String(a.doses_per_cycle ?? ''));
+          }} defaultValue="">
+          <option value="" disabled>다른 적응증 용법 선택…</option>
+          {di.alternatives.map((a, i) => <option key={i} value={i}>{a.indication || `대안 ${i + 1}`}</option>)}
+        </select>
+      )}
+
+      {/* 수동 보정 */}
+      <div className="space-y-1.5 border-t pt-2">
+        <label className="flex items-center justify-between gap-2">
+          <span className="text-gray-500">스케줄</span>
+          <select value={schedule} onChange={e => setSchedule(e.target.value)} className="border rounded-md px-2 py-0.5">
+            <option value="continuous">매일</option>
+            <option value="cycle">주기</option>
+          </select>
+        </label>
+        {schedule === 'continuous' ? (
+          <>
+            <label className="flex items-center justify-between gap-2">
+              <span className="text-gray-500">1일 투여 mg</span>
+              <input value={mg} onChange={e => setMg(e.target.value)} inputMode="decimal"
+                className="border rounded-md px-2 py-0.5 w-24 text-right" placeholder="예: 200" />
+            </label>
+            <label className="flex items-center justify-between gap-2">
+              <span className="text-gray-500">또는 1일 단위수</span>
+              <input value={units} onChange={e => setUnits(e.target.value)} inputMode="decimal"
+                className="border rounded-md px-2 py-0.5 w-24 text-right" placeholder="예: 1" />
+            </label>
+          </>
+        ) : (
+          <>
+            <label className="flex items-center justify-between gap-2">
+              <span className="text-gray-500">주기(일)</span>
+              <input value={cycleDays} onChange={e => setCycleDays(e.target.value)} inputMode="numeric"
+                className="border rounded-md px-2 py-0.5 w-24 text-right" placeholder="예: 21" />
+            </label>
+            <label className="flex items-center justify-between gap-2">
+              <span className="text-gray-500">주기당 단위수</span>
+              <input value={dpc} onChange={e => setDpc(e.target.value)} inputMode="decimal"
+                className="border rounded-md px-2 py-0.5 w-24 text-right" placeholder="예: 2" />
+            </label>
+          </>
+        )}
+      </div>
+      <div className="flex gap-2 mt-2.5">
+        <button onClick={apply} className="flex-1 bg-teal-600 text-white rounded-md py-1 font-semibold hover:bg-teal-700">적용</button>
+        {drug.doseOverride && <button onClick={() => onApply(undefined)} className="border rounded-md px-2 py-1 text-gray-500 hover:bg-gray-50">보정 해제</button>}
+      </div>
+    </div>
+  );
 }
 
 export default function RegimenCostPage() {
@@ -97,6 +204,7 @@ export default function RegimenCostPage() {
           next[f.ri].drugs[f.di] = {
             ...d, currentPrice: r.price, dailyCost: r.dailyCost, monthlyCost: r.monthlyCost,
             yearlyCost: r.yearlyCost, priceDate: r.priceDate, available: r.available,
+            doseInfo: r.doseInfo ?? d.doseInfo,
           };
         });
         return next;
@@ -127,7 +235,7 @@ export default function RegimenCostPage() {
       currentPrice: r?.price ?? p.currentPrice, dailyCost: r?.dailyCost ?? null,
       monthlyCost: r?.monthlyCost ?? null, yearlyCost: r?.yearlyCost ?? null,
       source: 'domestic', normalizedName: p.normalizedName, priceDate: r?.priceDate,
-      available: r?.available ?? true,
+      available: r?.available ?? true, doseInfo: r?.doseInfo,
     });
   };
 
@@ -143,12 +251,29 @@ export default function RegimenCostPage() {
       currentPrice: r?.price ?? w.weighted_avg_price, dailyCost: r?.dailyCost ?? null,
       monthlyCost: r?.monthlyCost ?? null, yearlyCost: r?.yearlyCost ?? null,
       source: 'weighted_avg', mainIngredientCode: w.main_ingredient_code, priceDate: r?.priceDate,
-      available: r?.available ?? true,
+      available: r?.available ?? true, doseInfo: r?.doseInfo,
     });
   };
 
   const removeDrug = (ri: number, key: string) =>
     setRegimens(prev => prev.map((r, i) => i === ri ? { ...r, drugs: r.drugs.filter(d => drugKey(d) !== key) } : r));
+
+  // 용법 수동 보정 — override 로 단건 재가격
+  const [doseEdit, setDoseEdit] = useState<string | null>(null);  // "ri:key"
+  const applyDoseOverride = async (ri: number, key: string, override: import('@/api/regimenCost').DoseOverride | undefined) => {
+    const drug = regimens[ri]?.drugs.find(d => drugKey(d) === key);
+    if (!drug) return;
+    const [r] = await priceAsOf(asOfDate, [{ ...drugToItem({ ...drug, doseOverride: override }) }]);
+    setRegimens(prev => prev.map((rg, i) => i !== ri ? rg : {
+      ...rg, drugs: rg.drugs.map(d => drugKey(d) !== key ? d : {
+        ...d, doseOverride: override,
+        currentPrice: r?.price ?? d.currentPrice, dailyCost: r?.dailyCost ?? null,
+        monthlyCost: r?.monthlyCost ?? null, yearlyCost: r?.yearlyCost ?? null,
+        doseInfo: r?.doseInfo ?? d.doseInfo,
+      }),
+    }));
+    setDoseEdit(null);
+  };
   const renameRegimen = (ri: number, name: string) =>
     setRegimens(prev => prev.map((r, i) => i === ri ? { ...r, name } : r));
   const addRegimen = () =>
@@ -298,14 +423,30 @@ export default function RegimenCostPage() {
                     {r.drugs.map(d => {
                       const k = drugKey(d);
                       const isWap = d.source === 'weighted_avg';
+                      const di = d.doseInfo;
+                      const conf = d.doseOverride ? 'manual' : (di?.confidence || (cost(d) == null ? 'low' : ''));
+                      const dot = d.doseOverride ? 'bg-teal-500' : conf === 'high' ? 'bg-green-500'
+                        : conf === 'medium' ? 'bg-amber-500' : (cost(d) == null || conf === 'low') ? 'bg-red-500' : 'bg-gray-300';
+                      const open = doseEdit === `${ri}:${k}`;
                       return (
-                        <div key={k}
-                          title={`${d.ingredient}\n${isWap ? '주성분 가중평균' : '국내약가 표시가'} · ${d.priceDate || ''}${d.available === false ? ' · 해당 시점 가격 없음' : ''}`}
-                          className={`group inline-flex items-center gap-2 rounded-lg border pl-2.5 pr-1.5 py-1.5 text-xs ${d.available === false ? 'border-amber-300 bg-amber-50' : isWap ? 'border-indigo-200 bg-indigo-50' : 'border-gray-200 bg-gray-50'}`}>
-                          <span className="font-medium max-w-[180px] truncate">{d.name}</span>
-                          {isWap && <span className="text-[9px] px-1 py-0.5 rounded bg-indigo-500/15 text-indigo-600 font-semibold">가중</span>}
-                          <span className="text-gray-500">{fmt(cost(d))}</span>
-                          <button onClick={() => removeDrug(ri, k)} className="text-gray-300 hover:text-red-500"><i className="ri-close-line"></i></button>
+                        <div key={k} className="relative">
+                          <div
+                            className={`group inline-flex items-center gap-2 rounded-lg border pl-2.5 pr-1.5 py-1.5 text-xs ${d.available === false ? 'border-amber-300 bg-amber-50' : isWap ? 'border-indigo-200 bg-indigo-50' : 'border-gray-200 bg-gray-50'}`}>
+                            <button onClick={() => setDoseEdit(open ? null : `${ri}:${k}`)}
+                              title="용법 보기·수정" className="inline-flex items-center gap-2">
+                              <span className={`w-1.5 h-1.5 rounded-full ${dot}`}></span>
+                              <span className="font-medium max-w-[170px] truncate">{d.name}</span>
+                              {isWap && <span className="text-[9px] px-1 py-0.5 rounded bg-indigo-500/15 text-indigo-600 font-semibold">가중</span>}
+                              {d.doseOverride && <span className="text-[9px] px-1 py-0.5 rounded bg-teal-500/15 text-teal-600 font-semibold">보정</span>}
+                              <span className="text-gray-500">{fmt(cost(d))}</span>
+                            </button>
+                            <button onClick={() => removeDrug(ri, k)} className="text-gray-300 hover:text-red-500"><i className="ri-close-line"></i></button>
+                          </div>
+                          {open && (
+                            <DoseEditor drug={d}
+                              onApply={(ov) => applyDoseOverride(ri, k, ov)}
+                              onClose={() => setDoseEdit(null)} />
+                          )}
                         </div>
                       );
                     })}

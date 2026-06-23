@@ -466,6 +466,25 @@ CREATE TABLE IF NOT EXISTS foreign_drug_dosing (
     default_pack_count  INTEGER,              -- 제조사 표준 포장수량 (tablet/vial 수). pack pricing 국가에서 fallback
     updated_at          TEXT
 );
+
+CREATE TABLE IF NOT EXISTS dosing_resolved (
+    cache_key                TEXT PRIMARY KEY,  -- 국내=normalized_name, WAP=main_ingredient_code
+    usage_text               TEXT,              -- 원문 허가사항 용법용량(디버깅/재파싱)
+    schedule                 TEXT,              -- continuous|cycle|as_needed
+    daily_dose_units         REAL,              -- 1일 투여 단위(정/바이알)
+    daily_dose_mg            REAL,              -- 1일 투여 mg(강도독립 환산)
+    cycle_days               INTEGER,
+    doses_per_cycle          REAL,
+    per_kg_mg                REAL,              -- 체중기반 mg/kg
+    per_m2_mg                REAL,              -- BSA기반 mg/m²
+    representative_indication TEXT,             -- 적용 대표 적응증
+    alternatives_json        TEXT,              -- 대안 적응증/용법 [{indication, schedule, ...}]
+    confidence               TEXT,              -- high|medium|low
+    source                   TEXT,              -- regex|llm|review
+    model                    TEXT,
+    resolved_at              TEXT,
+    ttl_days                 INTEGER DEFAULT 30
+);
 """
 
 

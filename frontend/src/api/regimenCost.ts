@@ -5,6 +5,30 @@ import { api } from './client';
 
 export type PriceSource = 'domestic' | 'weighted_avg';
 
+export interface DoseInfo {
+  schedule?: string | null;            // continuous|cycle|as_needed
+  dailyDoseMg?: number | null;
+  dailyDoseUnits?: number | null;
+  cycleDays?: number | null;
+  dosesPerCycle?: number | null;
+  perKgMg?: number | null;
+  perM2Mg?: number | null;
+  indication?: string | null;
+  alternatives?: { indication?: string; schedule?: string; daily_dose_mg?: number | null;
+                   cycle_days?: number | null; doses_per_cycle?: number | null }[];
+  confidence?: string | null;          // high|medium|low
+  source?: string | null;              // regex|llm|review|manual|enrichment(보조)|none
+  basis?: string | null;               // 계산식 설명
+}
+
+export interface DoseOverride {
+  schedule?: string;
+  dailyDoseMg?: number | null;
+  dailyDoseUnits?: number | null;
+  cycleDays?: number | null;
+  dosesPerCycle?: number | null;
+}
+
 export interface RegimenDrug {
   insuranceCode: string;          // domestic: 보험코드. WAP: '' (mainIngredientCode 사용)
   name: string;
@@ -19,6 +43,8 @@ export interface RegimenDrug {
   mainIngredientCode?: string;    // weighted_avg 재가격용 주성분코드
   priceDate?: string;             // 실제 적용일(domestic=apply_date, WAP="YYYY 반기")
   available?: boolean;            // false → 해당 시점 가격 없음
+  doseInfo?: DoseInfo;            // 허가사항 기반 해석 용법(스냅샷)
+  doseOverride?: DoseOverride;    // 사용자 수동 보정(있으면 우선)
 }
 
 export interface Regimen {
@@ -64,6 +90,8 @@ export interface PriceAsOfItem {
   codes?: string[];
   mainIngredientCode?: string;
   ingredientName?: string;
+  name?: string;
+  doseOverride?: DoseOverride;
 }
 export interface PriceAsOfResult {
   source: PriceSource;
@@ -80,6 +108,7 @@ export interface PriceAsOfResult {
   mainIngredientCode?: string;
   isRsa?: boolean | null;
   fallbackPrevious?: boolean;
+  doseInfo?: DoseInfo;
 }
 
 export async function priceAsOf(date: string, items: PriceAsOfItem[]): Promise<PriceAsOfResult[]> {

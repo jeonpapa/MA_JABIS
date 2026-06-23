@@ -16,6 +16,7 @@
     from agents.db import DrugPriceDB
 """
 from .base import _DbBase
+from .dosing import _DosingMixin
 from .enrichment import _EnrichmentMixin
 from .foreign import _ForeignMixin
 from .indications import _IndicationsMixin
@@ -32,6 +33,7 @@ class DrugPriceDB(
     _ForeignMixin,
     _IndicationsMixin,
     _RegimenMixin,
+    _DosingMixin,
     _DbBase,
 ):
     """단일 SQLite 파일에 모든 도메인 테이블을 모아둔 통합 DB 핸들."""

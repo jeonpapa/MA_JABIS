@@ -4027,6 +4027,82 @@ def _wap_pick_representative(ingredient_name: str | None) -> dict | None:
     return matched[0]
 
 
+_CONC_PAREN_STRIP_RE = re.compile(r"\([^)]*?/\s*m?[lL][^)]*?\)")
+_AMOUNT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(밀리그램|㎎|mg|그램|g)", re.IGNORECASE)
+
+
+def _total_content_mg(*texts) -> float | None:
+    """투여 단위당 주성분 총 mg(경구=정 mg, 주사=총 vial mg). 농도(/mL) 괄호 제외, 최대값."""
+    for t in texts:
+        if not t:
+            continue
+        s = _CONC_PAREN_STRIP_RE.sub("", str(t))
+        best = None
+        for m in _AMOUNT_RE.finditer(s):
+            val = float(m.group(1))
+            mg = val * 1000 if m.group(2).lower() in ("그램", "g") else val
+            if best is None or mg > best:
+                best = mg
+        if best:
+            return best
+    return None
+
+
+def _normalize_dose_override(ov: dict | None) -> dict | None:
+    """프론트 camelCase doseOverride → snake dosing dict (수동 보정)."""
+    if not ov:
+        return None
+    m = {
+        "schedule": ov.get("schedule"),
+        "daily_dose_mg": ov.get("dailyDoseMg"),
+        "daily_dose_units": ov.get("dailyDoseUnits"),
+        "cycle_days": ov.get("cycleDays"),
+        "doses_per_cycle": ov.get("dosesPerCycle"),
+    }
+    return m if any(v is not None for v in m.values()) else None
+
+
+def _dosing_to_cost(dosing: dict | None, unit_price, unit_strength_mg=None) -> dict:
+    """구조화 dosing × 단위가 → {daily, monthly, annual, basis}. daily_dose_mg(1일 평균 mg) 우선."""
+    d = dosing or {}
+    if not unit_price or unit_price <= 0:
+        return {"daily": None, "monthly": None, "annual": None, "basis": ""}
+    daily, basis = None, ""
+    ddm, units, sched = d.get("daily_dose_mg"), d.get("daily_dose_units"), d.get("schedule")
+    if ddm is not None and unit_strength_mg:
+        daily = unit_price * (ddm / unit_strength_mg)
+        basis = f"{ddm:g}mg/일 ÷ {unit_strength_mg:g}mg/단위 × 단위가"
+    elif units is not None and sched == "continuous":
+        daily = unit_price * units
+        basis = f"{units:g}단위/일 × 단위가"
+    elif sched == "cycle" and d.get("cycle_days") and d.get("doses_per_cycle"):
+        daily = unit_price * d["doses_per_cycle"] / d["cycle_days"]
+        basis = f"{d['doses_per_cycle']:g}단위 / {d['cycle_days']}일주기"
+    if daily is None:
+        return {"daily": None, "monthly": None, "annual": None, "basis": "용법 미확정"}
+    return {"daily": round(daily), "monthly": round(daily * 30), "annual": round(daily * 365), "basis": basis}
+
+
+def _dose_info(dosing: dict | None, basis: str) -> dict | None:
+    """프론트 doseInfo(camelCase 스냅샷)."""
+    if not dosing:
+        return None
+    return {
+        "schedule": dosing.get("schedule"),
+        "dailyDoseMg": dosing.get("daily_dose_mg"),
+        "dailyDoseUnits": dosing.get("daily_dose_units"),
+        "cycleDays": dosing.get("cycle_days"),
+        "dosesPerCycle": dosing.get("doses_per_cycle"),
+        "perKgMg": dosing.get("per_kg_mg"),
+        "perM2Mg": dosing.get("per_m2_mg"),
+        "indication": dosing.get("representative_indication"),
+        "alternatives": dosing.get("alternatives") or [],
+        "confidence": dosing.get("confidence"),
+        "source": dosing.get("source"),
+        "basis": basis,
+    }
+
+
 @app.get("/api/regimen/wap")
 @require_auth()
 def regimen_wap():
@@ -4067,23 +4143,55 @@ def regimen_price_as_of():
     dot_date = date.replace("-", ".")  # drug_prices.apply_date 포맷
     items = items[:40]
 
-    def _cost(norm, price, *, code="", codes=None, product_name="", ingredient=""):
-        """_enrichment_agent.get(current_price=price) → (treatment_cost, is_rsa)."""
-        if not norm or price is None:
-            return {"daily": None, "monthly": None, "annual": None}, None
+    from agents.dosing_resolver import resolve_dosing
+    from agents.scrapers.kr_mfds_permit import lookup_permit
+    use_llm = os.environ.get("REGIMEN_DOSING_LLM", "1") != "0"
+
+    def _resolve_cost(*, cache_key, name, ingredient, edi, price, strength_text,
+                      override=None, norm_for_enrich="", codes=None):
+        """허가사항 용법용량 → dosing → 치료비. 반환 (cost, dosing, is_rsa)."""
+        if price is None:
+            return {"daily": None, "monthly": None, "annual": None, "basis": ""}, None, None
+        # 1) MFDS 허가사항 usage_text (권위 소스)
+        usage_text = ""
         try:
-            r = _enrichment_agent.get(
-                norm, representative_code=code or "", insurance_codes=codes or [],
-                product_name=product_name or "", ingredient=ingredient or "",
-                current_price=float(price),
-            )
-            return r.get("treatment_cost") or {}, r.get("is_rsa")
+            permit = lookup_permit(name or "", ingredient=ingredient or "", edi_code=edi or "")
+            if permit and permit.get("source") != "miss":
+                usage_text = permit.get("usage_text") or ""
         except Exception as e:
-            logger.warning("[price-as-of] enrich %s 실패: %s", norm, e)
-            return {"daily": None, "monthly": None, "annual": None}, None
+            logger.debug("[price-as-of] permit %s 실패: %s", name, e)
+        # 2) dosing 해석 (캐시-DB-first)
+        dosing = None
+        try:
+            dosing = resolve_dosing(usage_text, cache_key=cache_key or (norm_for_enrich or name),
+                                    name=name or "", db=db, use_llm=use_llm)
+        except Exception as e:
+            logger.warning("[price-as-of] resolve_dosing %s 실패: %s", cache_key, e)
+        ov = _normalize_dose_override(override)
+        unit_strength_mg = _total_content_mg(strength_text, ingredient)
+        cost = _dosing_to_cost(ov or dosing, float(price), unit_strength_mg)
+        is_rsa = None
+        # 3) fallback: 허가사항 dosing 으로 산출 실패 + override 없음 → enrichment(Perplexity)
+        if cost.get("daily") is None and not ov and norm_for_enrich:
+            try:
+                r = _enrichment_agent.get(
+                    norm_for_enrich, representative_code=edi or "", insurance_codes=codes or [],
+                    product_name=name or "", ingredient=ingredient or "", current_price=float(price),
+                )
+                tc = r.get("treatment_cost") or {}
+                if tc.get("daily") is not None:
+                    cost = {"daily": tc.get("daily"), "monthly": tc.get("monthly"),
+                            "annual": tc.get("annual"), "basis": "enrichment(보조)"}
+                is_rsa = r.get("is_rsa")
+            except Exception as e:
+                logger.debug("[price-as-of] enrich fallback %s 실패: %s", norm_for_enrich, e)
+        if dosing and ov:
+            dosing = {**dosing, "source": "manual"}
+        return cost, (ov and {**(dosing or {}), **ov, "source": "manual"}) or dosing, is_rsa
 
     def _one(item: dict) -> dict:
         source = item.get("source") or "domestic"
+        override = item.get("doseOverride")
         if source == "weighted_avg":
             code = (item.get("mainIngredientCode") or "").strip()
             wap = ingredient_wap.lookup(date, code=code)
@@ -4095,14 +4203,15 @@ def regimen_price_as_of():
             price = row.get("weighted_avg_price")
             ingredient_name = row.get("ingredient_name") or item.get("ingredientName") or ""
             rep = _wap_pick_representative(ingredient_name)
-            cost, is_rsa = ({}, None)
             name = ingredient_name
+            cost, dosing, is_rsa = {"daily": None, "monthly": None, "annual": None, "basis": ""}, None, None
             if rep:
                 norm = _normalize_brand(rep.get("product_name_kr") or "")
-                cost, is_rsa = _cost(
-                    norm, price, code=rep.get("insurance_code") or "",
-                    product_name=rep.get("product_name_kr") or "",
-                    ingredient=rep.get("ingredient") or "",
+                cost, dosing, is_rsa = _resolve_cost(
+                    cache_key=code, name=rep.get("product_name_kr") or "",
+                    ingredient=rep.get("ingredient") or "", edi=rep.get("insurance_code") or "",
+                    price=price, strength_text=rep.get("dosage_strength") or rep.get("ingredient") or ingredient_name,
+                    override=override, norm_for_enrich=norm,
                 )
                 name = rep.get("product_name_kr") or ingredient_name
             return {
@@ -4113,6 +4222,7 @@ def regimen_price_as_of():
                 "name": name, "ingredient": ingredient_name,
                 "mainIngredientCode": code, "isRsa": is_rsa,
                 "fallbackPrevious": wap.get("fallback_previous"),
+                "doseInfo": _dose_info(dosing, cost.get("basis", "")),
             }
         # domestic
         ins = (item.get("insuranceCode") or "").strip()
@@ -4123,10 +4233,11 @@ def regimen_price_as_of():
                     "reason": "해당 시점 약가 없음", "price": None,
                     "dailyCost": None, "monthlyCost": None, "yearlyCost": None}
         price = row.get("max_price")
-        cost, is_rsa = _cost(
-            norm, price, code=ins, codes=item.get("codes"),
-            product_name=item.get("productName") or row.get("product_name_kr") or "",
-            ingredient=item.get("ingredient") or row.get("ingredient") or "",
+        cost, dosing, is_rsa = _resolve_cost(
+            cache_key=norm or ins, name=item.get("productName") or row.get("product_name_kr") or "",
+            ingredient=item.get("ingredient") or row.get("ingredient") or "", edi=ins,
+            price=price, strength_text=row.get("dosage_strength") or row.get("ingredient") or "",
+            override=override, norm_for_enrich=norm, codes=item.get("codes"),
         )
         return {
             "source": source, "available": True,
@@ -4136,6 +4247,7 @@ def regimen_price_as_of():
             "name": item.get("name") or row.get("product_name_kr"),
             "ingredient": row.get("ingredient"),
             "insuranceCode": ins, "isRsa": is_rsa,
+            "doseInfo": _dose_info(dosing, cost.get("basis", "")),
         }
 
     with ThreadPoolExecutor(max_workers=6) as ex:
