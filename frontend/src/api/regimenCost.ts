@@ -47,16 +47,76 @@ export interface RegimenDrug {
   doseOverride?: DoseOverride;    // 사용자 수동 보정(있으면 우선)
 }
 
+// ── 항암 레지멘(정본 DB) ──
+export interface Patient {
+  height: number; weight: number; age: number; sex: 'M' | 'F'; scr: number;
+}
+export const PATIENT_DEFAULT: Patient = { height: 165, weight: 62, age: 60, sex: 'M', scr: 0.9 };
+
+export interface OncoDrug {
+  ingredient: string;          // 영문 INN
+  dose_value: number | null;
+  unit: string | null;         // mg/m2 | mg/kg | AUC | mg …
+  dose_days?: string | null;
+  per_cycle: number | null;    // 회수/주기
+  cycle_days: number | null;
+  cycle_label?: string | null; // q3w
+  total_cycles: number | null;
+  route?: string | null;
+  note?: string | null;
+  verify?: string | null;
+  // onco/cost 계산 결과
+  one_dose_mg?: number | null;
+  cycle_total_mg?: number | null;
+  dose_basis?: string;
+  price?: { available: boolean; reason?: string; label?: string; unit_price?: number;
+            content_mg?: number; price_per_mg?: number; period?: string; source?: string };
+  cost?: { cycle: number | null; course: number | null; monthly: number | null;
+           yearly: number | null; daily: number | null };
+}
+
 export interface Regimen {
   name: string;
-  drugs: RegimenDrug[];   // 2~5개
+  kind?: 'manual' | 'onco';     // 기본 manual (레거시)
+  drugs: RegimenDrug[];         // manual 약제(2~5)
+  oncoRef?: number;             // onco 레지멘 ref(참고)
+  oncoDrugs?: OncoDrug[];       // onco 약제 테이블
+  patient?: Patient;            // onco 환자 파라미터
+  metrics?: { bsa: number; gfr: number; crcl: number };  // 산출 스냅샷
+  oncoTotals?: { cycle: number; course: number; monthly: number; yearly: number;
+                 daily: number; hasMissing: boolean };
 }
 
 export interface RegimenPayload {
   base: Regimen;
   comparators: Regimen[]; // 최대 5개
   asOfDate?: string;      // 비교 기준일 'YYYY-MM-DD'
+  source?: PriceSource;   // 비교 공통 가격 소스
+  patient?: Patient;      // 비교 공통 환자 파라미터(onco)
   snapshotDate?: string;  // (구) 저장 시점 — asOfDate 없을 때 fallback
+}
+
+// onco DB 검색/조회/비용
+export interface OncoRegimenHit {
+  ref: number; regimen_id: string; cancer: string; regimen_name: string;
+  therapy?: string; line?: string; drug_count: number; drug_names: string[];
+}
+export interface OncoCostResponse {
+  metrics: { bsa: number; gfr: number; crcl: number; weight: number };
+  source: PriceSource; asOfDate: string;
+  drugs: OncoDrug[];
+  totals: { cycle: number; course: number; monthly: number; yearly: number; daily: number; hasMissing: boolean };
+}
+
+export async function oncoSearch(q: string): Promise<OncoRegimenHit[]> {
+  const res = await api.get<{ results: OncoRegimenHit[] }>(`/api/regimen/onco/search?q=${encodeURIComponent(q)}`);
+  return res.results || [];
+}
+export async function oncoGet(ref: number): Promise<{ ref: number; regimen_name: string; cancer: string; drugs: OncoDrug[] }> {
+  return api.get(`/api/regimen/onco/${ref}`);
+}
+export async function oncoCost(date: string, source: PriceSource, patient: Patient, drugs: OncoDrug[]): Promise<OncoCostResponse> {
+  return api.post<OncoCostResponse>('/api/regimen/onco/cost', { date, source, patient, drugs });
 }
 
 // ── 주성분 가중평균(WAP) 외부 API ──

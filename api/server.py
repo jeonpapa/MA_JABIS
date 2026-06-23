@@ -4103,6 +4103,112 @@ def _dose_info(dosing: dict | None, basis: str) -> dict | None:
     }
 
 
+def _onco_unit_price(inn: str, source: str, date: str, dot_date: str) -> dict:
+    """약제(영문 INN) → as-of 단위가 + 단위함량mg + mg당 단가. 규격 다수면 mg당 최저 선택.
+
+    반환 {available, source, label, code, unit_price, content_mg, price_per_mg,
+          period?, alternatives?}.
+    """
+    inn = (inn or "").strip()
+    if not inn:
+        return {"available": False, "reason": "약제명 없음"}
+    if source == "weighted_avg":
+        from agents.scrapers import ingredient_wap
+        wap = ingredient_wap.lookup(date, q=inn)
+        if not wap.get("available") or not wap.get("results"):
+            return {"available": False, "reason": wap.get("reason") or "가중평균 없음"}
+        cand = []
+        for r in wap["results"]:
+            price = r.get("weighted_avg_price")
+            content = _total_content_mg(r.get("ingredient_name"))
+            if price and content:
+                cand.append({"code": r.get("main_ingredient_code"), "label": r.get("ingredient_name"),
+                             "unit_price": price, "content_mg": content, "price_per_mg": price / content})
+        if not cand:
+            return {"available": False, "reason": "규격 함량 해석 실패"}
+        cand.sort(key=lambda x: x["price_per_mg"])   # mg당 최저(대형 vial) 우선
+        best = cand[0]
+        return {"available": True, "source": source, "period": wap.get("period"),
+                "alternatives": cand[:8], **best}
+    # 브랜드 (국내약가)
+    reps = db.find_by_ingredient_strength(inn, limit=40)
+    for rep in reps:
+        row = db.get_price_at_date(rep.get("insurance_code") or "", dot_date)
+        if not row:
+            continue
+        price = row.get("max_price")
+        content = _total_content_mg(row.get("dosage_strength"), row.get("ingredient"))
+        if price and content:
+            return {"available": True, "source": source, "label": row.get("product_name_kr"),
+                    "code": rep.get("insurance_code"), "unit_price": price, "content_mg": content,
+                    "price_per_mg": price / content, "priceDate": row.get("apply_date")}
+    return {"available": False, "reason": "해당 시점 국내약가 없음"}
+
+
+@app.get("/api/regimen/onco/search")
+@require_auth()
+def onco_search():
+    """항암 레지멘 검색 (레지멘명·암종·약제 부분일치). q 필수."""
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify({"results": []})
+    return jsonify({"results": db.search_onco_regimens(q)})
+
+
+@app.get("/api/regimen/onco/<int:ref>")
+@require_auth()
+def onco_get(ref: int):
+    """레지멘 1건 + 약제 dosing rows."""
+    reg = db.get_onco_regimen(ref)
+    if not reg:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(reg)
+
+
+@app.post("/api/regimen/onco/cost")
+@require_auth()
+def onco_cost():
+    """항암 레지멘 환자별 용량(mg) + as-of 약가 → 사이클·코스·월·연 치료비.
+
+    Body: {date, source:'weighted_avg'|'domestic', patient:{height,weight,age,sex,scr},
+           drugs:[{ingredient, dose_value, unit, per_cycle, cycle_days, total_cycles, route, note, verify}]}
+    """
+    from agents.onco_dosing import compute_regimen_doses
+    body = request.get_json(silent=True) or {}
+    date = (body.get("date") or "").strip()
+    source = body.get("source") or "weighted_avg"
+    patient = body.get("patient") or {}
+    drugs = body.get("drugs") or []
+    if not date or not isinstance(drugs, list):
+        return jsonify({"error": "date, drugs 필요", "code": "INVALID"}), 400
+    dot_date = date.replace("-", ".")
+    computed = compute_regimen_doses(drugs, patient)
+    out_drugs = []
+    tot = {"cycle": 0.0, "course": 0.0, "monthly": 0.0, "yearly": 0.0, "daily": 0.0}
+    any_missing = False
+    for d in computed["drugs"]:
+        pm = _onco_unit_price(d.get("ingredient"), source, date, dot_date)
+        cyc_mg = d.get("cycle_total_mg")
+        cycle_days = d.get("cycle_days") or 21
+        total_cycles = d.get("total_cycles") or 1
+        cost = {"cycle": None, "course": None, "monthly": None, "yearly": None, "daily": None}
+        if pm.get("available") and cyc_mg is not None and cycle_days:
+            cyc = cyc_mg * pm["price_per_mg"]
+            yearly = cyc * 365 / cycle_days
+            cost = {"cycle": round(cyc), "course": round(cyc * total_cycles),
+                    "monthly": round(cyc * 30 / cycle_days), "yearly": round(yearly),
+                    "daily": round(yearly / 365)}
+            for k in tot:
+                tot[k] += cost[k]
+        else:
+            any_missing = True
+        out_drugs.append({**d, "price": pm, "cost": cost})
+    totals = {k: round(v) for k, v in tot.items()}
+    totals["hasMissing"] = any_missing
+    return jsonify({"metrics": computed["metrics"], "source": source, "asOfDate": date,
+                    "drugs": out_drugs, "totals": totals})
+
+
 @app.get("/api/regimen/wap")
 @require_auth()
 def regimen_wap():
@@ -4213,7 +4319,7 @@ def regimen_price_as_of():
                     price=price, strength_text=rep.get("dosage_strength") or rep.get("ingredient") or ingredient_name,
                     override=override, norm_for_enrich=norm,
                 )
-                name = rep.get("product_name_kr") or ingredient_name
+                # WAP 소스 정합: 표시 이름은 WAP 규격(ingredient_name). 브랜드 대표제품은 용법/함량 보조로만.
             return {
                 "source": source, "available": True,
                 "price": price, "priceDate": wap.get("period"),

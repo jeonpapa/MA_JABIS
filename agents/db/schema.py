@@ -467,6 +467,36 @@ CREATE TABLE IF NOT EXISTS foreign_drug_dosing (
     updated_at          TEXT
 );
 
+CREATE TABLE IF NOT EXISTS onco_regimen (
+    ref             INTEGER PRIMARY KEY,-- 합성 고유키 (원본 regimen_id 는 잘림 중복 존재)
+    regimen_id      TEXT,               -- {암번호}-{약칭} 예 '1-EP' (라벨, 비고유)
+    cancer_no       INTEGER,            -- 암종번호
+    cancer          TEXT,               -- 암종명
+    regimen_name    TEXT,               -- 레지멘명
+    therapy         TEXT,               -- 투여요법 N/A/P/S/공고
+    line            TEXT,               -- 투여단계 1차/2차…
+    drug_group      TEXT                -- 약제군 1/2 (레지멘 대표)
+);
+
+CREATE TABLE IF NOT EXISTS onco_regimen_drug (
+    regimen_ref     INTEGER NOT NULL,   -- onco_regimen.ref FK
+    seq             INTEGER NOT NULL,   -- 레지멘 내 약제 순번
+    ingredient      TEXT,               -- 약제성분(영문 INN)
+    drug_group      TEXT,               -- 1/2
+    dose_value      REAL,               -- 용량값
+    unit            TEXT,               -- mg/m2 | mg/m2/day | mg/kg | AUC | mg | …
+    dose_days       TEXT,               -- 투여일 D1 / D1-3 / D1,8,15
+    per_cycle       REAL,               -- 회수/주기 (주기 내 투여횟수)
+    cycle_days      INTEGER,            -- 주기길이(일)
+    cycle_label     TEXT,               -- 주기표기 q3w
+    total_cycles    REAL,               -- 총사이클
+    route           TEXT,               -- IV/PO/SC/IM/IT
+    note            TEXT,               -- 비고/상한
+    src             TEXT,               -- 출처
+    verify          TEXT,               -- 검증 (NCCN확인/검증필요)
+    PRIMARY KEY (regimen_ref, seq)
+);
+
 CREATE TABLE IF NOT EXISTS dosing_resolved (
     cache_key                TEXT PRIMARY KEY,  -- 국내=normalized_name, WAP=main_ingredient_code
     usage_text               TEXT,              -- 원문 허가사항 용법용량(디버깅/재파싱)
