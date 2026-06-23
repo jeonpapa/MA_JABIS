@@ -5,7 +5,7 @@ import {
 import { searchDomesticPriceChanges, DomesticProduct } from '@/api/domestic';
 import {
   listRegimens, createRegimen, updateRegimen, deleteRegimen,
-  wapSearch, oncoSearch, oncoGet, oncoCost, drugDosing, saveDrugDosing,
+  wapSearch, oncoSearch, oncoGet, customRegimenGet, saveCustomRegimen, oncoCost, drugDosing, saveDrugDosing,
   WapResult, OncoDrug, OncoRegimenHit, Patient, PATIENT_DEFAULT,
   Regimen, RegimenComparison, RegimenPayload, PriceSource,
 } from '@/api/regimenCost';
@@ -120,11 +120,11 @@ export default function RegimenCostPage() {
     return withUid;
   };
 
-  // 레지멘 로드 = 행 추가(대체 아님)
+  // 레지멘 로드 = 행 추가(대체 아님). 커스텀/정본 모두 지원
   const addRegimen = async (hit: OncoRegimenHit, ri: number) => {
     setBusyCalc(true);
     try {
-      const full = await oncoGet(hit.ref);
+      const full = hit.source_kind === 'custom' ? await customRegimenGet(hit.ref) : await oncoGet(hit.ref);
       const rows: OncoDrug[] = full.drugs.map(d => ({
         ...d, dose_source: 'onco_db', price_source: ref.current.source, price_ref: '', price_inn: d.ingredient,
       }));
@@ -177,6 +177,13 @@ export default function RegimenCostPage() {
   };
 
   const renameRegimen = (ri: number, name: string) => setRegimens(p => p.map((r, i) => i === ri ? { ...r, name } : r));
+  // 현재 레지멘(약제 조합+이름)을 영구 라이브러리에 저장 → 다음 '레지멘' 검색에 노출(공유)
+  const saveAsRegimen = async (ri: number) => {
+    const r = ref.current.regimens[ri];
+    if (!r?.oncoDrugs?.length) { setMsg('저장할 약제가 없습니다'); return; }
+    try { await saveCustomRegimen(r.name, r.oncoDrugs); setMsg(`'${r.name}' 레지멘 저장됨 — 다음 레지멘 검색에서 불러올 수 있어요`); }
+    catch { setMsg('레지멘 저장 실패 (로그인 필요)'); }
+  };
   const addBlank = () => regimens.length < MAX_REGIMENS && setRegimens(p => [...p, emptyRegimen(`비교 레지멘 ${p.length}`)]);
   const removeRegimen = (ri: number) => ri > 0 && setRegimens(p => p.filter((_, i) => i !== ri));
 
@@ -298,6 +305,10 @@ export default function RegimenCostPage() {
                   {ri === 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-100 text-teal-700 font-semibold">기준</span>}
                   <input value={r.name} onChange={e => renameRegimen(ri, e.target.value)} className="font-semibold text-sm flex-1 min-w-0 bg-transparent outline-none border-b border-transparent focus:border-gray-300" />
                   {r.metrics && <span className="text-[11px] text-gray-400">BSA {r.metrics.bsa} · GFR {r.metrics.gfr}</span>}
+                  {rows.length > 0 && (
+                    <button onClick={() => saveAsRegimen(ri)} title="이 레지멘을 라이브러리에 저장(다음 검색에 노출)"
+                      className="inline-flex items-center gap-1 text-[11px] text-gray-400 hover:text-teal-600 border rounded-md px-1.5 py-0.5"><i className="ri-bookmark-line"></i>레지멘 저장</button>
+                  )}
                   {ri > 0 && <button onClick={() => removeRegimen(ri)} className="text-gray-300 hover:text-red-500"><i className="ri-delete-bin-line"></i></button>}
                 </div>
 

@@ -106,6 +106,7 @@ export interface RegimenPayload {
 export interface OncoRegimenHit {
   ref: number; regimen_id: string; cancer: string; regimen_name: string;
   therapy?: string; line?: string; drug_count: number; drug_names: string[];
+  source_kind?: 'onco' | 'custom';   // custom = 사용자 저장 레지멘
 }
 export interface OncoCostResponse {
   metrics: { bsa: number; gfr: number; crcl: number; weight: number };
@@ -120,6 +121,19 @@ export async function oncoSearch(q: string): Promise<OncoRegimenHit[]> {
 }
 export async function oncoGet(ref: number): Promise<{ ref: number; regimen_name: string; cancer: string; drugs: OncoDrug[] }> {
   return api.get(`/api/regimen/onco/${ref}`);
+}
+export async function customRegimenGet(ref: number): Promise<{ ref: number; regimen_name?: string; name?: string; cancer?: string; drugs: OncoDrug[] }> {
+  return api.get(`/api/regimen/custom/${ref}`);
+}
+/** 커스텀 레지멘 영구 저장(공유). 다음 레지멘 검색 시 노출. */
+export async function saveCustomRegimen(name: string, rows: OncoDrug[], cancer?: string): Promise<number> {
+  const clean = rows.map(d => ({
+    ingredient: d.ingredient, dose_value: d.dose_value, unit: d.unit, dose_days: d.dose_days,
+    per_cycle: d.per_cycle, cycle_days: d.cycle_days, cycle_label: d.cycle_label,
+    total_cycles: d.total_cycles, route: d.route, note: d.note, verify: d.verify,
+  }));
+  const res = await api.post<{ ref: number }>('/api/regimen/custom', { name, cancer, rows: clean });
+  return res.ref;
 }
 export async function oncoCost(date: string, source: PriceSource, patient: Patient, drugs: OncoDrug[]): Promise<OncoCostResponse> {
   return api.post<OncoCostResponse>('/api/regimen/onco/cost', { date, source, patient, drugs });

@@ -4237,11 +4237,13 @@ def regimen_drug_dosing_save():
 @app.get("/api/regimen/onco/search")
 @require_auth()
 def onco_search():
-    """항암 레지멘 검색 (레지멘명·암종·약제 부분일치). q 필수."""
+    """레지멘 검색 — 커스텀(내 레지멘) 우선 + 항암 정본 DB. 레지멘명·암종·약제 부분일치."""
     q = (request.args.get("q") or "").strip()
     if not q:
         return jsonify({"results": []})
-    return jsonify({"results": db.search_onco_regimens(q)})
+    custom = db.search_custom_regimens(q)
+    curated = [{**h, "source_kind": "onco"} for h in db.search_onco_regimens(q)]
+    return jsonify({"results": custom + curated})
 
 
 @app.get("/api/regimen/onco/<int:ref>")
@@ -4249,6 +4251,30 @@ def onco_search():
 def onco_get(ref: int):
     """레지멘 1건 + 약제 dosing rows."""
     reg = db.get_onco_regimen(ref)
+    if not reg:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(reg)
+
+
+@app.post("/api/regimen/custom")
+@require_auth()
+def custom_regimen_save():
+    """사용자 커스텀 레지멘 영구 저장(공유). Body: {name, cancer?, rows:[...]}."""
+    owner = request.user["sub"]  # type: ignore[attr-defined]
+    body = request.get_json(silent=True) or {}
+    name = (body.get("name") or "").strip()
+    rows = body.get("rows") or []
+    if not name or not isinstance(rows, list) or not rows:
+        return jsonify({"error": "name, rows 필요", "code": "INVALID"}), 400
+    ref = db.save_custom_regimen(name, rows, owner_email=owner, cancer=(body.get("cancer") or ""))
+    return jsonify({"ok": True, "ref": ref})
+
+
+@app.get("/api/regimen/custom/<int:ref>")
+@require_auth()
+def custom_regimen_get(ref: int):
+    """커스텀 레지멘 1건 + 약제 rows."""
+    reg = db.get_custom_regimen(ref)
     if not reg:
         return jsonify({"error": "not found"}), 404
     return jsonify(reg)

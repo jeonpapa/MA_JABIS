@@ -497,6 +497,16 @@ CREATE TABLE IF NOT EXISTS onco_regimen_drug (
     PRIMARY KEY (regimen_ref, seq)
 );
 
+CREATE TABLE IF NOT EXISTS custom_regimen (
+    ref         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,          -- 사용자 지정 레지멘명
+    cancer      TEXT,                   -- 암종/분류(선택)
+    owner_email TEXT,                   -- 작성자(검색은 전체 공유)
+    rows_json   TEXT NOT NULL,          -- 약제 행 배열 직렬화(용법 스냅샷)
+    created_at  TEXT,
+    updated_at  TEXT
+);
+
 CREATE TABLE IF NOT EXISTS user_drug_dosing (
     drug_key        TEXT PRIMARY KEY,   -- lower(영문 INN)
     ingredient      TEXT,               -- 표시용 성분명

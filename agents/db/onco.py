@@ -5,6 +5,9 @@ oncology_regimen_db.xlsx 적재본. 레지멘 검색·약제 로드·'구성가�
 """
 from __future__ import annotations
 
+import json
+from datetime import datetime
+
 _DRUG_COLS = ("seq", "ingredient", "drug_group", "dose_value", "unit", "dose_days",
               "per_cycle", "cycle_days", "cycle_label", "total_cycles", "route",
               "note", "src", "verify")
@@ -99,6 +102,76 @@ class _OncoMixin:
                 f"INSERT INTO user_drug_dosing ({','.join(self._UDOSE_COLS)}) VALUES ({ph}) "
                 f"ON CONFLICT(drug_key) DO UPDATE SET {upd}", vals,
             )
+
+    # ── 사용자 커스텀 레지멘 라이브러리 (영구·검색 공유) ──
+    _CR_DRUG_KEYS = ("ingredient", "dose_value", "unit", "dose_days", "per_cycle",
+                     "cycle_days", "cycle_label", "total_cycles", "route", "note", "verify")
+
+    def save_custom_regimen(self, name: str, rows: list[dict], owner_email: str = "",
+                            cancer: str = "") -> int:
+        """커스텀 레지멘 저장. (name, owner) 동일 시 갱신, 아니면 신규. ref 반환."""
+        name = (name or "").strip()
+        if not name or not rows:
+            return 0
+        clean = [{k: r.get(k) for k in self._CR_DRUG_KEYS} for r in rows]
+        rows_json = json.dumps(clean, ensure_ascii=False)
+        now = datetime.now().isoformat(timespec="seconds")
+        with self._connect() as conn:
+            ex = conn.execute(
+                "SELECT ref FROM custom_regimen WHERE name=? AND IFNULL(owner_email,'')=?",
+                (name, owner_email or ""),
+            ).fetchone()
+            if ex:
+                conn.execute(
+                    "UPDATE custom_regimen SET rows_json=?, cancer=?, updated_at=? WHERE ref=?",
+                    (rows_json, cancer, now, ex[0]),
+                )
+                return ex[0]
+            cur = conn.execute(
+                "INSERT INTO custom_regimen (name, cancer, owner_email, rows_json, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?)",
+                (name, cancer, owner_email or "", rows_json, now, now),
+            )
+            return cur.lastrowid
+
+    def _cr_rows(self, rows_json: str) -> list[dict]:
+        try:
+            return json.loads(rows_json or "[]")
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    def get_custom_regimen(self, ref: int) -> dict | None:
+        with self._connect() as conn:
+            r = conn.execute(
+                "SELECT ref, name, cancer, owner_email, rows_json FROM custom_regimen WHERE ref=?", (ref,),
+            ).fetchone()
+        if not r:
+            return None
+        d = dict(r)
+        d["drugs"] = self._cr_rows(d.pop("rows_json"))
+        return d
+
+    def search_custom_regimens(self, q: str, limit: int = 30) -> list[dict]:
+        """커스텀 레지멘 검색(이름·암종·약제 부분일치). 전체 공유."""
+        q = (q or "").strip()
+        if not q:
+            return []
+        kw = f"%{q}%"
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT ref, name, cancer, owner_email, rows_json FROM custom_regimen "
+                "WHERE name LIKE ? OR cancer LIKE ? OR rows_json LIKE ? ORDER BY updated_at DESC LIMIT ?",
+                (kw, kw, kw, limit),
+            ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            drugs = self._cr_rows(d.pop("rows_json"))
+            out.append({"ref": d["ref"], "regimen_id": f"c{d['ref']}", "cancer": d.get("cancer") or "내 레지멘",
+                        "regimen_name": d["name"], "line": "", "therapy": "",
+                        "drug_count": len(drugs), "drug_names": [x.get("ingredient") for x in drugs],
+                        "source_kind": "custom"})
+        return out
 
     def onco_regimens_with_drug(self, ingredient: str, limit: int = 30) -> list[dict]:
         """특정 약제(INN)를 포함하는 레지멘 = '구성가능 조합' 제시용."""
