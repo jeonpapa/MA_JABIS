@@ -105,7 +105,27 @@ class _OncoMixin:
 
     # ── 사용자 커스텀 레지멘 라이브러리 (영구·검색 공유) ──
     _CR_DRUG_KEYS = ("ingredient", "dose_value", "unit", "dose_days", "per_cycle",
-                     "cycle_days", "cycle_label", "total_cycles", "route", "note", "verify")
+                     "cycle_days", "cycle_label", "total_cycles", "route", "note", "verify",
+                     "price_inn", "price_source", "price_ref")
+
+    def english_inn_from_kr(self, name_kr: str) -> str | None:
+        """한글 제품명 → 영문 INN(가격조회용). drug_latest.product_name_kr 매칭 → 영문 ingredient 첫 단어."""
+        import re as _re
+        name_kr = (name_kr or "").strip()
+        if not name_kr:
+            return None
+        # 괄호/제형 suffix 제거한 핵심 브랜드명으로 매칭
+        core = _re.sub(r"[(_].*$", "", name_kr).strip() or name_kr
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT ingredient FROM drug_latest WHERE product_name_kr LIKE ? "
+                "AND ingredient IS NOT NULL ORDER BY (max_price IS NULL), max_price DESC LIMIT 1",
+                (f"%{core}%",),
+            ).fetchone()
+        if not row or not row[0]:
+            return None
+        m = _re.match(r"[A-Za-z][A-Za-z-]+", row[0].strip())
+        return m.group(0) if m else None
 
     def save_custom_regimen(self, name: str, rows: list[dict], owner_email: str = "",
                             cancer: str = "") -> int:

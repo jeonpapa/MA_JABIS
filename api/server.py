@@ -4112,6 +4112,11 @@ def _onco_unit_price(inn: str, source: str, date: str, dot_date: str, ref: str =
     inn = (inn or "").strip()
     if not inn:
         return {"available": False, "reason": "약제명 없음"}
+    # 한글 제품명(영문자 없음)이면 영문 INN 으로 변환 — 저장 레지멘의 한글 약제 가격조회 복구
+    if not re.search(r"[A-Za-z]", inn):
+        en = db.english_inn_from_kr(inn)
+        if en:
+            inn = en
     if source == "weighted_avg":
         from agents.scrapers import ingredient_wap
         wap = ingredient_wap.lookup(date, code=ref) if ref else ingredient_wap.lookup(date, q=inn)

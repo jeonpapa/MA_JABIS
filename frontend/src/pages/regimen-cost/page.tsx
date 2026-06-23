@@ -127,9 +127,15 @@ export default function RegimenCostPage() {
   const addRegimen = async (hit: OncoRegimenHit, ri: number) => {
     setBusyCalc(true);
     try {
-      const full = hit.source_kind === 'custom' ? await customRegimenGet(hit.ref) : await oncoGet(hit.ref);
+      const isCustom = hit.source_kind === 'custom';
+      const full = isCustom ? await customRegimenGet(hit.ref) : await oncoGet(hit.ref);
       const rows: OncoDrug[] = full.drugs.map(d => ({
-        ...d, dose_source: 'onco_db', price_source: ref.current.source, price_ref: '', price_inn: d.ingredient,
+        ...d,
+        dose_source: isCustom ? (d.dose_source || 'saved') : 'onco_db',
+        // 커스텀은 저장된 가격조회 정보 보존(한글 브랜드 등), 정본은 INN=성분 기본
+        price_source: d.price_source || ref.current.source,
+        price_ref: d.price_ref || '',
+        price_inn: d.price_inn || d.ingredient,
       }));
       const empty = !(ref.current.regimens[ri]?.oncoDrugs?.length);
       if (empty) setRegimens(p => p.map((r, i) => i === ri ? { ...r, name: hit.regimen_name } : r));

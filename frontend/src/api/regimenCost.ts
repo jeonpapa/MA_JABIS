@@ -132,6 +132,7 @@ export async function saveCustomRegimen(name: string, rows: OncoDrug[], cancer?:
     ingredient: d.ingredient, dose_value: d.dose_value, unit: d.unit, dose_days: d.dose_days,
     per_cycle: d.per_cycle, cycle_days: d.cycle_days, cycle_label: d.cycle_label,
     total_cycles: d.total_cycles, route: d.route, note: d.note, verify: d.verify,
+    price_inn: d.price_inn, price_source: d.price_source, price_ref: d.price_ref,  // 가격조회 정합 보존
   }));
   const res = await api.post<{ ref: number }>('/api/regimen/custom', { name, cancer, rows: clean });
   return res.ref;
