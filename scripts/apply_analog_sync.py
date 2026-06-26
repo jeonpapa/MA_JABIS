@@ -48,6 +48,18 @@ def main() -> dict:
     try:
         conn.execute("BEGIN")
         for t in TABLES:
+            # main 에 테이블이 없으면 sync 에서 스키마 복제해 생성
+            exists_in_main = conn.execute("SELECT name FROM sqlite_schema WHERE type='table' AND name=?", (t,)).fetchone()
+            if not exists_in_main:
+                row = conn.execute("SELECT sql FROM sync.sqlite_schema WHERE type='table' AND name=?", (t,)).fetchone()
+                if row and row[0]:
+                    print(f"[apply] main 에 {t} 테이블이 없어 sync 에서 스키마 복사하여 생성합니다.")
+                    conn.execute(row[0])
+                    # 인덱스도 복제
+                    indexes = conn.execute("SELECT sql FROM sync.sqlite_schema WHERE type='index' AND tbl_name=? AND sql IS NOT NULL", (t,)).fetchall()
+                    for idx_row in indexes:
+                        conn.execute(idx_row[0])
+
             sync_cols = set(_cols(conn, t, "sync"))
             if not sync_cols:
                 print(f"[apply] sync 에 {t} 없음 — skip")

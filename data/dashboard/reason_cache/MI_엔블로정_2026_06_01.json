@@ -1,0 +1,130 @@
+{
+  "mechanism": "flexible_contract",
+  "mechanism_label": "약가 유연계약제",
+  "reason": "엔블로정의 2026년 6월 약가 인상은 약가 유연계약제의 시행과 관련이 있는 것으로 보입니다. 이 제도는 보건복지부 고시에 따라 상한금액표의 공식 표시가와 실제 청구되는 별도합의 상한금액을 이원화하여, 표시가를 인상하면서도 실제 부담 가격은 별도 계약으로 통제하는 구조입니다. 따라서 엔블로정의 약가가 5배 이상 인상된 것은 약가 유연계약제 적용에 따른 표시가 인상으로 추정됩니다.",
+  "evidence_summary": "데일리팜은 엔블로정이 약가 유연계약제를 통해 표시가를 5배 이상 인상했다고 보도하였습니다.",
+  "confidence": "medium",
+  "window": {
+    "from": "2025.12",
+    "to": "2026.12",
+    "months": 6
+  },
+  "references": [
+    {
+      "title": "P-CAB 첫 약가유연제 펙수클루...경쟁제품도 신청 만지작",
+      "url": "https://www.dailypharm.com/user/news/339167?REFERER=NP",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "published_at": "2026-06-05",
+      "fetch_verified": true,
+      "published_at_claimed": "2026-05-23",
+      "date_corrected": true
+    },
+    {
+      "title": "약가유연계약제 따라 후발약 내려면 '실제 약가 파악이 경쟁력'",
+      "url": "https://www.hitnews.co.kr/news/articleView.html?idxno=76674",
+      "media": "히트뉴스",
+      "weight": 2.7,
+      "published_at": "2026-06-08",
+      "fetch_verified": true,
+      "published_at_claimed": "2026-05-22",
+      "date_corrected": true
+    },
+    {
+      "title": "약가유연계약 제도화…신약 약가협상 방식 바뀐다",
+      "url": "http://www.yakup.com/news/index.html?mode=view&cat=12&nid=327246",
+      "media": "약업신문",
+      "weight": 2.8,
+      "published_at": "2026-05-15",
+      "fetch_verified": true,
+      "published_at_claimed": "2026.03.18",
+      "date_corrected": true
+    },
+    {
+      "title": "“신약, 코리아 패싱 피하자”… 공식약값·실거래가 투트랙",
+      "url": "https://v.daum.net/v/20260318182925151",
+      "media": "중앙일보(온라인 게재)",
+      "weight": 2.3,
+      "published_at": "2026.03.18",
+      "fetch_verified": true
+    },
+    {
+      "title": "20260318182925151?f=p",
+      "url": "https://v.daum.net/v/20260318182925151?f=p",
+      "media": "기타",
+      "weight": 0.5,
+      "published_at": "2026.03.18",
+      "notes": "date_inferred_from_url",
+      "fetch_verified": true
+    },
+    {
+      "title": "220944299770",
+      "url": "https://blog.naver.com/2586900/220944299770",
+      "media": "기타",
+      "weight": 0.5,
+      "published_at": "2209.44.29",
+      "notes": "date_inferred_from_url",
+      "date_unknown": true
+    },
+    {
+      "title": "flDownload.do?flSeq=155529291&bylClsCd=200201",
+      "url": "https://www.law.go.kr/LSW/flDownload.do?flSeq=155529291&bylClsCd=200201",
+      "media": "기타",
+      "weight": 0.5,
+      "published_at": "1555.29.29",
+      "notes": "date_inferred_from_url",
+      "date_unknown": true
+    },
+    {
+      "title": "47",
+      "url": "https://1992jhlee.tistory.com/47",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true
+    },
+    {
+      "title": "admRulLsInfoP.do?admRulSeq=2100000022022",
+      "url": "https://www.law.go.kr/admRulLsInfoP.do?admRulSeq=2100000022022",
+      "media": "기타",
+      "weight": 0.5,
+      "published_at": "2100.00.00",
+      "notes": "date_inferred_from_url",
+      "date_unknown": true
+    }
+  ],
+  "notes": "변동 시점 ±6개월(2025.12~2026.12) 내에서 엔블로정 개별 품목에 대해 ‘약가 유연계약’ 또는 ‘표시가 인상’이 명시된 기사·고시는 확인하지 못했으나, 동일 시기 제도 시행과 +474.60%라는 이례적 인상 폭을 고려해 KR-RULE-028에 따른 표시가 인상(약가 유연계약제)으로 분류했다. 엔블로의 특허만료 및 제네릭 진입 관련 별도 보도는 윈도우 내에서 확인되지 않아 KR-RULE-009에 따른 특허만료 인하 기전은 배제했다. · [enforce] URL 검증: 2건 published_at 교체, 0건 drop (의심 0건) · published_at 미확인 5건 — date_unknown 마킹 후 보존 · 윈도우 외 references 2건 제거 · [enforce] URL 검증: 1건 published_at 교체, 0건 drop (의심 0건) · published_at 미확인 4건 — date_unknown 마킹 후 보존 · 윈도우 외 references 1건 제거 · [Naver 보강] 윈도우 내 기사 21건 채택 · [enforce] URL 검증: 2건 published_at 교체, 0건 drop (의심 0건) · published_at 미확인 4건 — date_unknown 마킹 후 보존",
+  "_source": "perplexity-sonar-pro",
+  "analysis_meta": {
+    "source": "perplexity-sonar-pro",
+    "total_articles": 8,
+    "tier_a_count": 1,
+    "tier_b_count": 0,
+    "tier_c_count": 0,
+    "detected_mechanisms": [
+      "약가 유연계약제 (표시가 인상)"
+    ],
+    "top_media": [
+      {
+        "media": "약업신문",
+        "weight": 2.8
+      },
+      {
+        "media": "중앙일보(온라인 게재)",
+        "weight": 2.3
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      }
+    ]
+  },
+  "cached": false
+}

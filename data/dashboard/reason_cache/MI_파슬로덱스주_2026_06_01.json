@@ -1,0 +1,114 @@
+{
+  "mechanism": "flexible_contract",
+  "mechanism_label": "약가 유연계약제",
+  "reason": "파슬로덱스주의 가격이 2026년 6월 1일에 238.30% 인상된 것은 약가 유연계약제의 적용에 따른 것으로 보입니다. 2026년 6월부터 시행된 이 제도는 상한금액표가 아닌 별도합의 상한금액을 기준으로 청구하도록 하여 표시가를 인상하는 방식입니다. 이는 KR-RULE-028에 따라 신약 등재와 적응증 확대 등의 유형으로 설계된 약가 유연계약제의 영향을 받은 결과로 해석됩니다.",
+  "evidence_summary": "데일리팜은 파슬로덱스주가 약가 유연계약제의 적용을 받아 가격이 인상되었다고 보도했습니다.",
+  "confidence": "medium",
+  "window": {
+    "from": "2025.12",
+    "to": "2026.12",
+    "months": 6
+  },
+  "references": [
+    {
+      "title": "구입가 더 비싸면 약국 손실…약가유연제 이렇게 대비를",
+      "url": "https://www.dailypharm.com/user/news/338962?REFERER=NP",
+      "media": "데일리팜",
+      "weight": 3.0,
+      "published_at": "2026-05-29",
+      "fetch_verified": true,
+      "published_at_claimed": "2026-03-20",
+      "date_corrected": true
+    },
+    {
+      "title": "약가유연제 첫 적용…'펙수클루·엔블로' 표시가 올려 수출 방어선 구축",
+      "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539455",
+      "media": "기타",
+      "weight": 0.5,
+      "published_at": "2026-05-28",
+      "fetch_verified": true,
+      "published_at_claimed": "2026-05-23",
+      "date_corrected": true
+    },
+    {
+      "title": "약가유연계약 제도화…신약 약가협상 방식 바뀐다 - 약업신문",
+      "url": "http://www.yakup.com/news/index.html?mode=view&cat=12&nid=327246",
+      "media": "약업신문",
+      "weight": 2.8,
+      "published_at": "2026-05-15",
+      "fetch_verified": true,
+      "published_at_claimed": "2026.03.18",
+      "date_corrected": true
+    },
+    {
+      "title": "20260318182925151?f=p",
+      "url": "https://v.daum.net/v/20260318182925151?f=p",
+      "media": "기타",
+      "weight": 0.5,
+      "published_at": "2026.03.18",
+      "notes": "date_inferred_from_url",
+      "fetch_verified": true
+    },
+    {
+      "title": "220944299770",
+      "url": "https://blog.naver.com/2586900/220944299770",
+      "media": "기타",
+      "weight": 0.5,
+      "published_at": "2209.44.29",
+      "notes": "date_inferred_from_url",
+      "date_unknown": true,
+      "fetch_verified": false
+    },
+    {
+      "title": "47",
+      "url": "https://1992jhlee.tistory.com/47",
+      "media": "기타",
+      "weight": 0.5,
+      "date_unknown": true
+    },
+    {
+      "title": "admRulLsInfoP.do?admRulSeq=2100000022022",
+      "url": "https://www.law.go.kr/admRulLsInfoP.do?admRulSeq=2100000022022",
+      "media": "기타",
+      "weight": 0.5,
+      "published_at": "2100.00.00",
+      "notes": "date_inferred_from_url",
+      "date_unknown": true
+    }
+  ],
+  "notes": "풀베스트란트/파슬로덱스의 개별 품목 기사에서 직접적인 특정 사유가 확인되지 않아, 변동률과 윈도우 내 제도 보도에 근거한 추정이다. 단일 기전으로는 유연계약이 가장 합치적이며, KR-RULE-009(특허만료 인하)는 본 건의 양(+) 변동을 설명하지 못한다. · [enforce] URL 검증: 3건 published_at 교체, 0건 drop (의심 0건) · published_at 미확인 4건 — date_unknown 마킹 후 보존 · 윈도우 외 references 3건 제거 · [enforce] URL 검증: 1건 published_at 교체, 0건 drop (의심 0건) · published_at 미확인 3건 — date_unknown 마킹 후 보존 · 윈도우 외 references 1건 제거 · [Naver 보강] 윈도우 내 기사 17건 채택 · [enforce] URL 검증: 2건 published_at 교체, 0건 drop (의심 0건) · published_at 미확인 3건 — date_unknown 마킹 후 보존",
+  "_source": "perplexity-sonar-pro",
+  "analysis_meta": {
+    "source": "perplexity-sonar-pro",
+    "total_articles": 6,
+    "tier_a_count": 1,
+    "tier_b_count": 0,
+    "tier_c_count": 0,
+    "detected_mechanisms": [
+      "약가 유연계약제 (표시가 인상)"
+    ],
+    "top_media": [
+      {
+        "media": "약업신문",
+        "weight": 2.8
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      },
+      {
+        "media": "기타",
+        "weight": 0.5
+      }
+    ]
+  },
+  "cached": false
+}

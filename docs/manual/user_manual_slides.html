@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>MA AI Dossier — 사용자 매뉴얼 (설명회용)</title>
+<style>
+  @page { size: A4 landscape; margin: 0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-family: "Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif; color:#13242c; }
+  :root{
+    --teal:#00857c; --teal-d:#00564f; --ink:#13242c; --muted:#5c7079;
+    --amber:#c2780c; --amber-bg:#fdf4e3; --blue:#1f6fb2; --blue-bg:#eaf3fb;
+    --purple:#6a4ea3; --purple-bg:#f1edf9; --teal-bg:#e6f3f1; --line:#e2eaec;
+  }
+  .slide{ width:297mm; height:209.6mm; padding:15mm 17mm; page-break-after:always; position:relative; overflow:hidden; }
+  .slide:last-child{ page-break-after:auto; }
+
+  /* cover */
+  .cover{ background:linear-gradient(135deg,#00857c 0%,#00564f 55%,#02403c 100%); color:#fff; display:flex; flex-direction:column; justify-content:center; }
+  .cover .kick{ font-size:16px; letter-spacing:.34em; opacity:.82; font-weight:600; }
+  .cover h1{ font-size:58px; font-weight:800; margin:16px 0 8px; letter-spacing:-1.5px; }
+  .cover h2{ font-size:24px; font-weight:400; opacity:.92; }
+  .cover .who{ margin-top:44px; font-size:16px; opacity:.9; line-height:1.95; border-top:1px solid rgba(255,255,255,.25); padding-top:20px; max-width:680px; }
+  .cover .tag{ position:absolute; top:15mm; right:17mm; font-size:14px; opacity:.75; text-align:right; }
+  .cover .pills{ margin-top:26px; display:flex; gap:10px; flex-wrap:wrap; }
+  .cover .pill{ background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.3); border-radius:22px; padding:7px 17px; font-size:14px; }
+
+  /* feature slide header */
+  .head{ display:flex; align-items:center; gap:16px; margin-bottom:16px; }
+  .idx{ width:54px; height:54px; border-radius:14px; background:var(--teal); color:#fff; font-size:26px; font-weight:800; display:flex; align-items:center; justify-content:center; flex:none; }
+  .head h2{ font-size:30px; font-weight:800; letter-spacing:-.5px; }
+  .head .en{ font-size:15px; color:var(--muted); font-weight:600; margin-top:2px; }
+  .newbadge{ margin-left:auto; background:#ffefe0; color:#c2560c; border:1px solid #f3cda3; font-size:13px; font-weight:800; padding:7px 15px; border-radius:20px; flex:none; }
+
+  .lead{ font-size:17px; color:var(--teal-d); font-weight:600; background:var(--teal-bg); border-radius:11px; padding:13px 18px; margin-bottom:16px; line-height:1.5; }
+
+  .quad{ display:grid; grid-template-columns:1fr 1fr; grid-template-rows:auto auto; gap:14px 16px; }
+  .box{ border-radius:12px; padding:15px 18px; border:1px solid var(--line); }
+  .box .bh{ font-size:15px; font-weight:800; margin-bottom:9px; display:flex; align-items:center; gap:8px; }
+  .box .bh .n{ width:24px; height:24px; border-radius:7px; color:#fff; font-size:14px; display:flex; align-items:center; justify-content:center; font-weight:800; }
+  .box ul{ list-style:none; }
+  .box li{ position:relative; padding-left:16px; margin-bottom:7px; font-size:14.5px; line-height:1.5; color:#26383f; }
+  .box li::before{ content:""; position:absolute; left:3px; top:8px; width:5px; height:5px; border-radius:50%; background:currentColor; opacity:.5; }
+  .box li b{ font-weight:700; color:var(--ink); }
+  .box p{ font-size:14.5px; line-height:1.55; color:#26383f; }
+
+  .b1{ background:var(--teal-bg);   border-color:#cfe6e2; } .b1 .bh{ color:var(--teal-d);} .b1 .bh .n{ background:var(--teal);}
+  .b2{ background:var(--amber-bg);  border-color:#f1ddb9; } .b2 .bh{ color:var(--amber);}  .b2 .bh .n{ background:var(--amber);}
+  .b3{ background:var(--blue-bg);   border-color:#cfe2f2; } .b3 .bh{ color:var(--blue);}   .b3 .bh .n{ background:var(--blue);}
+  .b4{ background:var(--purple-bg); border-color:#ddd2ee; } .b4 .bh{ color:var(--purple);} .b4 .bh .n{ background:var(--purple);}
+  .chip{ display:inline-block; font-size:13px; background:#fff; border:1px solid var(--line); color:#334; border-radius:6px; padding:3px 10px; margin:0 5px 5px 0; font-weight:600; }
+  .cycle{ font-size:15px; font-weight:800; color:var(--purple); }
+
+  .foot{ position:absolute; bottom:7mm; font-size:11px; color:#9fb0b6; }
+  .foot.l{ left:17mm; } .foot.r{ right:17mm; }
+
+  /* closing table */
+  .ptitle{ font-size:30px; font-weight:800; color:var(--teal-d); margin-bottom:6px; }
+  .psub{ font-size:15px; color:var(--muted); margin-bottom:18px; }
+  table{ width:100%; border-collapse:collapse; font-size:14.5px; }
+  th{ background:var(--teal); color:#fff; text-align:left; padding:11px 14px; font-weight:700; }
+  td{ padding:10px 14px; border-bottom:1px solid var(--line); color:#26383f; }
+  tr:nth-child(even) td{ background:#f6faf9; }
+  td b{ color:var(--ink); }
+  .note{ margin-top:18px; font-size:14px; color:var(--amber); background:var(--amber-bg); border:1px solid #f1ddb9; border-radius:10px; padding:13px 16px; line-height:1.55; }
+</style>
+</head>
+<body>
+
+<!-- COVER -->
+<section class="slide cover">
+  <div class="tag">MSD Korea · Market Access<br>사용자 설명회 자료</div>
+  <div class="kick">MA AI DOSSIER</div>
+  <h1>사용자 매뉴얼</h1>
+  <h2>약가 · 허가 · 급여 · 시장 모니터링 자동화 플랫폼</h2>
+  <div class="pills">
+    <span class="pill">국내·해외 약가</span><span class="pill">급여 등재 현황</span>
+    <span class="pill">국내 시장 점유율</span><span class="pill">경쟁사 동향</span>
+    <span class="pill">등재 아날로그 검색</span>
+  </div>
+  <div class="who">
+    매일 흩어진 HIRA·식약처·NHIS·해외 8개국·뉴스 데이터를 한 화면에서.<br>
+    각 기능을 <b>① 어떤 내용 ② 어떻게 활용 ③ 데이터 출처 ④ 갱신 주기</b> 네 가지로 안내합니다.<br>
+    <span style="opacity:.8">버전 2026.06 · 본 자료는 사용자(담당자) 관점</span>
+  </div>
+</section>
+
+<!-- 1. 홈 대시보드 -->
+<section class="slide">
+  <div class="head"><div class="idx">1</div><div><h2>홈 대시보드</h2><div class="en">Dashboard Overview · 접속 첫 화면</div></div></div>
+  <div class="lead">바쁜 아침, 어제까지의 약가 변동과 정책 이슈를 한 화면에서 5분 안에 파악합니다.</div>
+  <div class="quad">
+    <div class="box b1"><div class="bh"><span class="n">1</span>어떤 내용</div><ul>
+      <li>전달 대비 <b>약가 변동 Top 10</b> (제품·변동률·사유·적용일)</li>
+      <li>정책·뉴스 <b>키워드 클라우드</b> (언급량 시각화)</li>
+      <li>MSD 자산 등재·파이프라인·경쟁 <b>요약 카드</b></li>
+    </ul></div>
+    <div class="box b2"><div class="bh"><span class="n">2</span>이렇게 활용하세요</div><ul>
+      <li>매일 아침 변화·이슈를 빠르게 스캔</li>
+      <li>변동 큰 품목은 클릭 → <b>국내약가</b>에서 사유까지 확인</li>
+      <li>키워드 클릭 → 근거 기사로 바로 이동</li>
+    </ul></div>
+    <div class="box b3"><div class="bh"><span class="n">3</span>데이터 출처</div>
+      <span class="chip">HIRA 약제급여목록 고시</span><span class="chip">네이버 뉴스</span><span class="chip">MSD 파이프라인</span>
+    </div>
+    <div class="box b4"><div class="bh"><span class="n">4</span>갱신 주기</div>
+      <p><span class="cycle">약가변동 월 1회</span> · <span class="cycle">뉴스·키워드 주 1회</span><br>자동 수집·집계 — 별도 조회 없이 최신 표출</p>
+    </div>
+  </div>
+  <div class="foot l">MA AI Dossier · 사용자 매뉴얼</div><div class="foot r">02</div>
+</section>
+
+<!-- 2. 국내약가 -->
+<section class="slide">
+  <div class="head"><div class="idx">2</div><div><h2>국내약가</h2><div class="en">Domestic Pricing</div></div><div class="newbadge">NEW · 약가 인상 사유 추적</div></div>
+  <div class="lead">건강보험 약가의 현재가·변동 이력·변동 사유·동일성분 비교약제를 한 번에 분석합니다.</div>
+  <div class="quad">
+    <div class="box b1"><div class="bh"><span class="n">1</span>어떤 내용</div><ul>
+      <li>제품·성분·보험코드 <b>약가 검색</b> + 엑셀 다운로드</li>
+      <li>가격 <b>변동 이력 + 변동 사유</b> (기전·신뢰도·근거문헌)</li>
+      <li>동일성분 <b>비교약제</b> 약가·일일투약비 비교</li>
+    </ul></div>
+    <div class="box b2"><div class="bh"><span class="n">2</span>이렇게 활용하세요</div><ul>
+      <li>등재 후 가격 변화·RSA 여부·허가일 확인</li>
+      <li>변동 사유 근거를 <b>보고서에 인용</b></li>
+      <li><b>약가 인상</b>(약가 유연계약제로 표시가 인상)도 자동 추적</li>
+    </ul></div>
+    <div class="box b3"><div class="bh"><span class="n">3</span>데이터 출처</div>
+      <span class="chip">HIRA 고시</span><span class="chip">식약처 허가 API</span><span class="chip">PubMed·MA 전문지</span>
+      <p style="margin-top:7px;font-size:13px;color:#5c7079">허가일은 공식/추정 구분 표시 · RSA 품목 표시가 ≠ 실거래가</p>
+    </div>
+    <div class="box b4"><div class="bh"><span class="n">4</span>갱신 주기</div>
+      <p><span class="cycle">HIRA 약가 월 1회</span> 자동 적재(누락 월 자동 복구)<br>변동 사유는 분석 후 <b>영구 저장</b> — 재조회 즉시 표시</p>
+    </div>
+  </div>
+  <div class="foot l">MA AI Dossier · 사용자 매뉴얼</div><div class="foot r">03</div>
+</section>
+
+<!-- 3. 해외약가 -->
+<section class="slide">
+  <div class="head"><div class="idx">3</div><div><h2>해외약가</h2><div class="en">International Pricing · A8 8개국</div></div><div class="newbadge">NEW · 국가간 용량 보정</div></div>
+  <div class="lead">A8 8개국 약가를 한국 기준 조정가(KRW)로 환산해 약가협상·재정영향분석 근거를 만듭니다.</div>
+  <div class="quad">
+    <div class="box b1"><div class="bh"><span class="n">1</span>어떤 내용</div><ul>
+      <li>미국·영국·독일·프랑스·캐나다·일본·이탈리아·스위스 약가</li>
+      <li>현지가 → <b>한국 조정가(KRW)</b> + 일일투약비, 산출 로직 공개</li>
+      <li><b>국가간 용량 차이 자동 보정</b> (예: 일본 20mg → 240mg 등가)</li>
+    </ul></div>
+    <div class="box b2"><div class="bh"><span class="n">2</span>이렇게 활용하세요</div><ul>
+      <li>약가협상 <b>A8 참조가격</b> 확보</li>
+      <li>산출 로직 펼쳐 <b>재정영향분석서</b>에 그대로 인용</li>
+      <li>국가별 급여 여부·일일투약비 공정 비교</li>
+    </ul></div>
+    <div class="box b3"><div class="bh"><span class="n">3</span>데이터 출처</div>
+      <span class="chip">각국 공개 약가 DB</span><span class="chip">US WAC</span><span class="chip">KEB 36개월 평균환율</span>
+      <p style="margin-top:7px;font-size:13px;color:#5c7079">빈 국가는 '미등재/미공개' 사실 — 임의 추정값 아님</p>
+    </div>
+    <div class="box b4"><div class="bh"><span class="n">4</span>갱신 주기</div>
+      <p><span class="cycle">가격 주 1회</span> 백필(월요일) · <span class="cycle">환율 월 1회</span>(매월 2일, 최종 고시회차)<br>신규 검색 시 즉시 수집·계산</p>
+    </div>
+  </div>
+  <div class="foot l">MA AI Dossier · 사용자 매뉴얼</div><div class="foot r">04</div>
+</section>
+
+<!-- 4. 국내 시장 -->
+<section class="slide">
+  <div class="head"><div class="idx">4</div><div><h2>국내 시장</h2><div class="en">Korean Market · ATC4 점유율</div></div></div>
+  <div class="lead">치료군(ATC4) 단위로 시장 점유율과 분기별 매출·처방량 추이를 분석합니다.</div>
+  <div class="quad">
+    <div class="box b1"><div class="bh"><span class="n">1</span>어떤 내용</div><ul>
+      <li>제품이 속한 <b>ATC4 시장 점유율</b> + 순위</li>
+      <li>3가지 뷰: <b>Market Share / Unit / Revenue</b> 추이</li>
+      <li>경쟁 브랜드 점유율·매출·처방량 비교</li>
+    </ul></div>
+    <div class="box b2"><div class="bh"><span class="n">2</span>이렇게 활용하세요</div><ul>
+      <li>자사 제품의 <b>시장 위치</b> 파악</li>
+      <li>분기 실적 리뷰 — 경쟁 추이 비교</li>
+      <li>신제품 런칭 후 <b>시장 침투</b> 추적</li>
+    </ul></div>
+    <div class="box b3"><div class="bh"><span class="n">3</span>데이터 출처</div>
+      <span class="chip">IQVIA NSA-E Master</span>
+      <p style="margin-top:7px;font-size:13px;color:#5c7079">분기 비교는 같은 ATC4 내에서만 유효</p>
+    </div>
+    <div class="box b4"><div class="bh"><span class="n">4</span>갱신 주기</div>
+      <p><span class="cycle">분기 1회</span> 갱신<br>새 분기 IQVIA 데이터 입수 시 반영</p>
+    </div>
+  </div>
+  <div class="foot l">MA AI Dossier · 사용자 매뉴얼</div><div class="foot r">05</div>
+</section>
+
+<!-- 5. 경쟁사 동향 -->
+<section class="slide">
+  <div class="head"><div class="idx">5</div><div><h2>경쟁사 동향</h2><div class="en">Competitor Trends</div></div></div>
+  <div class="lead">주요 MNC 13종의 신규·가격·임상·급여 동향과 관련 전문지 뉴스를 모아 봅니다.</div>
+  <div class="quad">
+    <div class="box b1"><div class="bh"><span class="n">1</span>어떤 내용</div><ul>
+      <li>경쟁사별 <b>동향 카드</b> (신규·가격·임상·급여·전략)</li>
+      <li>동향과 연결된 <b>Tier1 전문지 뉴스</b></li>
+      <li>브랜드·기간별 <b>뉴스 아카이브</b></li>
+    </ul></div>
+    <div class="box b2"><div class="bh"><span class="n">2</span>이렇게 활용하세요</div><ul>
+      <li>경쟁사 신규 출시·급여 등재 소식 놓치지 않기</li>
+      <li>특정 브랜드 기사 기간별 모아보기</li>
+      <li><b>주간 경쟁 동향 보고</b> 근거 확보</li>
+    </ul></div>
+    <div class="box b3"><div class="bh"><span class="n">3</span>데이터 출처</div>
+      <span class="chip">Tier1 경제·의료 전문지</span><span class="chip">네이버 뉴스</span>
+      <p style="margin-top:7px;font-size:13px;color:#5c7079">기사 6개월 수집 · 1년 보존</p>
+    </div>
+    <div class="box b4"><div class="bh"><span class="n">4</span>갱신 주기</div>
+      <p><span class="cycle">주 1회</span> 자동 크롤<br>최신 동향·기사 매주 업데이트</p>
+    </div>
+  </div>
+  <div class="foot l">MA AI Dossier · 사용자 매뉴얼</div><div class="foot r">06</div>
+</section>
+
+<!-- 6. 급여 현황 -->
+<section class="slide">
+  <div class="head"><div class="idx">6</div><div><h2>급여 현황</h2><div class="en">Reimbursement Status</div></div></div>
+  <div class="lead">약제 급여 등재 파이프라인과 심의 회차별 공식 공고·언론 해석을 추적합니다.</div>
+  <div class="quad">
+    <div class="box b1"><div class="bh"><span class="n">1</span>어떤 내용</div><ul>
+      <li>연간 <b>약평위 회차 일정</b> + 심의 약제</li>
+      <li>등재 <b>파이프라인 보드</b> (제출→암질심→약평위)</li>
+      <li>회차별 <b>공식 공고 + 언론 해석</b>, 적응증 타임라인</li>
+    </ul></div>
+    <div class="box b2"><div class="bh"><span class="n">2</span>이렇게 활용하세요</div><ul>
+      <li>이번 달 약평위 <b>심의 대상</b> 확인</li>
+      <li>자사 약 <b>등재 진행 단계</b> 추적</li>
+      <li>결정의 '사실'과 '시장 해석' 분리 파악</li>
+    </ul></div>
+    <div class="box b3"><div class="bh"><span class="n">3</span>데이터 출처</div>
+      <span class="chip">HIRA 공식 공고</span><span class="chip">식약처 허가</span><span class="chip">NHIS 약가협상</span><span class="chip">의료전문지</span>
+    </div>
+    <div class="box b4"><div class="bh"><span class="n">4</span>갱신 주기</div>
+      <p><span class="cycle">위원회 데이터 매일</span> 동기화 · <span class="cycle">NHIS 주 1회</span><br>심의 결과 발표 즉시 반영</p>
+    </div>
+  </div>
+  <div class="foot l">MA AI Dossier · 사용자 매뉴얼</div><div class="foot r">07</div>
+</section>
+
+<!-- 7. 등재 아날로그 검색 -->
+<section class="slide">
+  <div class="head"><div class="idx">7</div><div><h2>등재 아날로그 검색</h2><div class="en">Listing Analog Search</div></div></div>
+  <div class="lead">과거 약평위 평가 기록을 검색해 신약 등재 전략의 기준약제와 비교 근거를 찾습니다.</div>
+  <div class="quad">
+    <div class="box b1"><div class="bh"><span class="n">1</span>어떤 내용</div><ul>
+      <li>질환·치료라인·결과 <b>Facet 필터</b> 검색</li>
+      <li>상세: <b>효능지표(HR/p값)·타임라인·재심의·총 소요일</b></li>
+      <li>허가→암질심→약평위 흐름 시각화</li>
+    </ul></div>
+    <div class="box b2"><div class="bh"><span class="n">2</span>이렇게 활용하세요</div><ul>
+      <li>신약 등재전략 <b>기준약제(아날로그)</b> 탐색</li>
+      <li>유사 적응증 <b>통과 사례·등재 트랙</b> 참고</li>
+      <li>RSA·경평면제 근거로 <b>협상 시나리오</b> 수립</li>
+    </ul></div>
+    <div class="box b3"><div class="bh"><span class="n">3</span>데이터 출처</div>
+      <span class="chip">약평위 평가결과 PDF (680건)</span><span class="chip">암질심 일자</span><span class="chip">임상 논문</span>
+    </div>
+    <div class="box b4"><div class="bh"><span class="n">4</span>갱신 주기</div>
+      <p><span class="cycle">평가결과 누적 시</span> 갱신<br>신규 약평위 평가결과 반영</p>
+    </div>
+  </div>
+  <div class="foot l">MA AI Dossier · 사용자 매뉴얼</div><div class="foot r">08</div>
+</section>
+
+<!-- CLOSING: 갱신 주기 한눈에 -->
+<section class="slide">
+  <div class="ptitle">데이터 출처 · 갱신 주기 한눈에</div>
+  <div class="psub">모든 데이터는 자동 수집 → DB → 화면의 단방향 구조로, 항상 최신 적재분을 보여줍니다.</div>
+  <table>
+    <tr><th style="width:20%">기능</th><th style="width:42%">데이터 출처</th><th style="width:38%">갱신 주기</th></tr>
+    <tr><td><b>홈 대시보드</b></td><td>HIRA 고시 · 네이버 뉴스 · MSD 파이프라인</td><td>약가변동 월 1회 · 뉴스 주 1회</td></tr>
+    <tr><td><b>국내약가</b></td><td>HIRA 고시 · 식약처 허가 API · PubMed·전문지</td><td>약가 월 1회 자동 적재 · 사유 영구 저장</td></tr>
+    <tr><td><b>해외약가</b></td><td>각국 공개 약가 DB · KEB 36개월 환율</td><td>가격 주 1회 · 환율 월 1회(매월 2일)</td></tr>
+    <tr><td><b>국내 시장</b></td><td>IQVIA NSA-E Master</td><td>분기 1회</td></tr>
+    <tr><td><b>경쟁사 동향</b></td><td>Tier1 경제·의료 전문지</td><td>주 1회 (6개월 수집·1년 보존)</td></tr>
+    <tr><td><b>급여 현황</b></td><td>HIRA 공고 · 식약처 · NHIS · 전문지</td><td>위원회 매일 · NHIS 주 1회</td></tr>
+    <tr><td><b>등재 아날로그 검색</b></td><td>약평위 평가결과 PDF · 암질심 · 임상 논문</td><td>평가결과 누적 시</td></tr>
+  </table>
+  <div class="note"><b>데이터 신뢰도 —</b> 허가일은 식약처 공식 vs 추정을 구분 표시하고, RSA 품목 표시가는 실거래가가 아니며, 가격 없음은 '미등재/미공개' 사실로 임의 값을 채우지 않습니다. 판단이 애매한 항목은 다수결 리뷰로 결정하고, 매일 자동 점검으로 이상값·회귀를 탐지합니다.</div>
+  <div class="foot l">MA AI Dossier · 사용자 매뉴얼 · MSD Korea Market Access</div><div class="foot r">09</div>
+</section>
+
+</body>
+</html>

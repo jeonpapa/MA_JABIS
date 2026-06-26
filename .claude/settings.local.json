@@ -17,7 +17,17 @@
       "WebFetch(domain:www.nhis.or.kr)",
       "Bash(kill -0 58002)",
       "Skill(schedule)",
-      "Skill(schedule:*)"
+      "Skill(schedule:*)",
+      "WebFetch(domain:www.kpanews.co.kr)",
+      "WebFetch(domain:www.newsthevoice.com)",
+      "WebFetch(domain:m.dailypharm.com)",
+      "WebFetch(domain:www.hitnews.co.kr)",
+      "WebFetch(domain:www.medifonews.com)",
+      "WebFetch(domain:www.bosa.co.kr)",
+      "WebFetch(domain:www.whosaeng.com)",
+      "WebFetch(domain:www.dailypharm.com)",
+      "Bash(flyctl ssh console:*)",
+      "Bash(flyctl status:*)"
     ]
   }
 }
