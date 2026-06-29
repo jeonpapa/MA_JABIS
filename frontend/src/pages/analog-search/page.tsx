@@ -389,6 +389,7 @@ function DetailModal({ r, onClose }: { r: AnalogReport; onClose: () => void }) {
             const conds = parseJsonArr(r.rsa_media_conditions);
             const sources = parseJsonArr(r.rsa_media_sources);
             const mon = r.rsa_media_monitoring ? safeParse(r.rsa_media_monitoring) : null;
+            const monMetrics = Array.isArray(mon?.metrics) ? mon.metrics : [];
             if (!conds.length && !sources.length) return null;
             return (
               <div className="rounded-lg border border-violet-200 bg-violet-50/40 p-3">
@@ -401,10 +402,10 @@ function DetailModal({ r, onClose }: { r: AnalogReport; onClose: () => void }) {
                     {conds.map((c, i) => <li key={i}>{String(c)}</li>)}
                   </ul>
                 )}
-                {mon && (mon.duration_months || (mon.metrics && mon.metrics.length) || mon.review) && (
+                {mon && (mon.duration_months || monMetrics.length || mon.review) && (
                   <p className="text-[11px] text-gray-500 mt-1.5">
                     사후 모니터링: {mon.duration_months ? `${mon.duration_months}개월 ` : ''}
-                    {Array.isArray(mon.metrics) && mon.metrics.length ? `· 지표 ${mon.metrics.join(', ')} ` : ''}
+                    {monMetrics.length ? `· 지표 ${monMetrics.join(', ')} ` : ''}
                     {mon.review ? `· ${mon.review}` : ''}
                   </p>
                 )}

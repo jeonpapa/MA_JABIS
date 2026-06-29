@@ -5387,6 +5387,7 @@ def admin_fda_sync():
 # ──────────────────────────────────────────────────────────────────────────────
 
 from agents import reimb_reports as _reimb_reports
+from agents import policy_intelligence as _policy_intelligence
 
 try:
     _reimb_reports.ensure_schema()
@@ -5507,6 +5508,41 @@ def analog_search_feedback_list():
             limit=limit, only_unresolved=only_unresolved)})
     except Exception as e:
         logger.error("analog search-feedback 조회 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/policy-intelligence/overview")
+@require_auth()
+def policy_intelligence_overview():
+    try:
+        data = _policy_intelligence.load_policy_intelligence()
+        return jsonify({
+            "overview": data["overview"],
+            "topics": data["topics"],
+            "impact_candidates": data["impact_candidates"],
+        })
+    except Exception as e:
+        logger.error("policy intelligence overview 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/policy-intelligence/events")
+@require_auth()
+def policy_intelligence_events():
+    try:
+        return jsonify({"items": _policy_intelligence.load_policy_intelligence()["events"]})
+    except Exception as e:
+        logger.error("policy intelligence events 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/policy-intelligence/documents")
+@require_auth()
+def policy_intelligence_documents():
+    try:
+        return jsonify({"items": _policy_intelligence.load_policy_intelligence()["documents"]})
+    except Exception as e:
+        logger.error("policy intelligence documents 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 

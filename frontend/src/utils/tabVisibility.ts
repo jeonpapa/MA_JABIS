@@ -13,6 +13,7 @@ const DEFAULT_VISIBILITY: TabVisibility = {
   '/competitor-trends': true,
   '/daily-mailing': true,
   '/reimbursement-status': true,
+  '/policy-intelligence': true,
   '/analog-search': true,
 };
 

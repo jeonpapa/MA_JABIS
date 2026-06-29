@@ -22,6 +22,7 @@ const allNavItems = [
   { path: '/competitor-trends', label: 'Competitor Trends', icon: 'ri-radar-line' },
   { path: '/daily-mailing', label: 'Daily Mailing', icon: 'ri-mail-settings-line' },
   { path: '/reimbursement-status', label: 'Reimbursement Status', icon: 'ri-article-line' },
+  { path: '/policy-intelligence', label: 'Policy Intelligence', icon: 'ri-government-line' },
   { path: '/analog-search', label: 'Listing Analog Search', icon: 'ri-search-eye-line' },
 ];
 

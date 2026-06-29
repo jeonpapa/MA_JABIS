@@ -7,6 +7,7 @@ import MarketSharePage from '@/pages/market-share/page';
 import CompetitorTrendsPage from '@/pages/competitor-trends/page';
 import DailyMailingPage from '@/pages/daily-mailing/page';
 import ReimbursementStatusPage from '@/pages/reimbursement-status/page';
+import PolicyIntelligencePage from '@/pages/policy-intelligence/page';
 import AnalogSearchPage from '@/pages/analog-search/page';
 import LoginPage from '@/pages/login/page';
 import NotFound from '@/pages/NotFound';
@@ -29,6 +30,7 @@ const routes: RouteObject[] = [
   { path: '/competitor-trends', element: <CompetitorTrendsPage /> },
   { path: '/daily-mailing', element: <DailyMailingPage /> },
   { path: '/reimbursement-status', element: <ReimbursementStatusPage /> },
+  { path: '/policy-intelligence', element: <PolicyIntelligencePage /> },
   { path: '/analog-search', element: <AnalogSearchPage /> },
   { path: '/admin/market-share', element: <AdminMarketSharePage /> },
   { path: '/admin/msd-pipeline', element: <AdminMsdPipelinePage /> },
