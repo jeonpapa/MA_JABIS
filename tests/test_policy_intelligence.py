@@ -104,3 +104,42 @@ def test_missing_manifest_is_explicit_configuration_error(tmp_path: Path):
         assert "Policy intelligence manifest not found" in str(exc)
     else:
         raise AssertionError("missing manifest should not silently return empty dashboard data")
+
+
+def test_load_policy_intelligence_defaults_to_latest_gmail_manifest(tmp_path: Path):
+    root = tmp_path / "policy_intelligence"
+    old_manifest = {
+        "created_at": "2026-06-29T10:18:37+00:00",
+        "events": [
+            {
+                "event_id": "old",
+                "received_utc": "2026-06-29T00:00:00+00:00",
+                "subject": "old",
+                "topic": "기타",
+                "documents": [],
+            }
+        ],
+    }
+    latest_manifest = {
+        "created_at": "2026-06-30T10:18:37+00:00",
+        "events": [
+            {
+                "event_id": "latest",
+                "received_utc": "2026-06-30T00:00:00+00:00",
+                "subject": "Fw: [KRPIA-HIRA] 약가 유연계약제 안내",
+                "topic": "약가 유연계약제",
+                "documents": [],
+            }
+        ],
+    }
+    _write_json(root / "manifests" / "pilot_krpia_20260629.json", old_manifest)
+    _write_json(root / "manifests" / "gmail_krpia_20260630_090000.json", latest_manifest)
+    _write_json(
+        root / "manifests" / "latest_ingest_status.json",
+        {"manifest_name": "gmail_krpia_20260630_090000.json"},
+    )
+
+    dashboard = load_policy_intelligence(root=root)
+
+    assert dashboard["overview"]["source_batch_id"] == "gmail_krpia_20260630_090000"
+    assert dashboard["events"][0]["id"] == "latest"

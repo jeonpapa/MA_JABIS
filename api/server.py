@@ -7,6 +7,7 @@
 """
 
 import asyncio
+import json
 import logging
 import re
 import sqlite3
@@ -5388,6 +5389,7 @@ def admin_fda_sync():
 
 from agents import reimb_reports as _reimb_reports
 from agents import policy_intelligence as _policy_intelligence
+from agents import policy_intelligence_ingest as _policy_intelligence_ingest
 
 try:
     _reimb_reports.ensure_schema()
@@ -5543,6 +5545,48 @@ def policy_intelligence_documents():
         return jsonify({"items": _policy_intelligence.load_policy_intelligence()["documents"]})
     except Exception as e:
         logger.error("policy intelligence documents 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/policy-intelligence/ingest-status")
+@require_auth()
+def policy_intelligence_ingest_status():
+    try:
+        root = _policy_intelligence._default_root()
+        status_path = root / "manifests" / "latest_ingest_status.json"
+        if not status_path.exists():
+            return jsonify({"status": None})
+        status = json.loads(status_path.read_text(encoding="utf-8"))
+        safe_status = {k: v for k, v in status.items() if k != "manifest_path"}
+        return jsonify(safe_status)
+    except Exception as e:
+        logger.error("policy intelligence ingest status 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/admin/policy-intelligence/ingest")
+@require_auth(role="admin")
+def policy_intelligence_run_ingest():
+    """Admin-only Gmail ingest for forwarded KRPIA/policy communications."""
+    try:
+        body = request.get_json(silent=True) or {}
+        query = (body.get("query") or _policy_intelligence_ingest.DEFAULT_QUERY).strip()
+        max_results = min(int(body.get("max_results") or body.get("max") or 20), 100)
+        result = _policy_intelligence_ingest.run_ingest(query=query, max_results=max_results)
+        dashboard_path = _policy_intelligence.write_dashboard_json(
+            manifest_path=result["status"]["manifest_path"]
+        )
+        public = _policy_intelligence.load_policy_intelligence(
+            manifest_path=result["status"]["manifest_path"]
+        )
+        return jsonify({
+            "ok": True,
+            "status": result["status"],
+            "dashboard_json": str(dashboard_path),
+            "overview": public["overview"],
+        })
+    except Exception as e:
+        logger.error("policy intelligence ingest 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 

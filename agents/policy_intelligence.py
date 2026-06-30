@@ -28,6 +28,29 @@ DEFAULT_ROOT = _default_root()
 DEFAULT_MANIFEST_NAME = "pilot_krpia_20260629.json"
 DEFAULT_REPORT_NAME = "krpia_policy_intelligence_pilot_timeline_implications_20260629.md"
 
+
+def _resolve_manifest_file(root: Path, manifest_path: str | Path | None = None) -> Path:
+    if manifest_path:
+        return Path(manifest_path)
+    env_manifest = os.environ.get("POLICY_INTELLIGENCE_MANIFEST")
+    if env_manifest:
+        return Path(env_manifest) if env_manifest.startswith("/") else root / "manifests" / env_manifest
+    latest_status = root / "manifests" / "latest_ingest_status.json"
+    if latest_status.exists():
+        try:
+            status = json.loads(latest_status.read_text(encoding="utf-8"))
+            name = status.get("manifest_name")
+            if name:
+                candidate = root / "manifests" / name
+                if candidate.exists():
+                    return candidate
+        except Exception:
+            pass
+    gmail_manifests = sorted((root / "manifests").glob("gmail_krpia_*.json"))
+    if gmail_manifests:
+        return gmail_manifests[-1]
+    return root / "manifests" / DEFAULT_MANIFEST_NAME
+
 TOPIC_RULES: dict[str, dict[str, Any]] = {
     "기등재 약제 재평가·약가조정": {
         "severity": "Very High",
@@ -151,7 +174,7 @@ def load_policy_intelligence(
 ) -> dict[str, Any]:
     """Return sanitized dashboard data for the Policy Intelligence Hub."""
     root = Path(root) if root is not None else _default_root()
-    manifest_file = Path(manifest_path) if manifest_path else root / "manifests" / DEFAULT_MANIFEST_NAME
+    manifest_file = _resolve_manifest_file(root, manifest_path)
     manifest = _load_json(manifest_file)
     source_batch_id = manifest_file.stem
     raw_events = manifest.get("events") or []
