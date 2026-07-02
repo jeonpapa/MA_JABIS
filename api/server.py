@@ -3836,7 +3836,11 @@ from agents.notify.mailer import (  # noqa: E402
     smtp_configured as _mail_smtp_configured,
 )
 from agents.notify.digest import render_daily_digest as _mail_render_digest  # noqa: E402
-from agents.daily_mailing.storage import load_admin_kanban as _daily_mailing_admin_kanban  # noqa: E402
+try:  # agents.daily_mailing 은 origin/main 최신 커밋(ffa5b5c1)에서 참조되나 모듈 미포함 → 방어적 처리
+    from agents.daily_mailing.storage import load_admin_kanban as _daily_mailing_admin_kanban  # noqa: E402
+except Exception as _e:  # pragma: no cover - 모듈 부재 시 해당 admin 칸반 엔드포인트만 비활성
+    _daily_mailing_admin_kanban = None
+    logger.warning("agents.daily_mailing.storage 미존재 — daily-mailing 칸반 엔드포인트 비활성 (%s)", _e)
 
 
 def _mail_sub_row_to_dict(r) -> dict:
@@ -4694,6 +4698,8 @@ def mail_sub_preview(item_id: int):
 @require_auth(role="admin")
 def daily_mailing_admin_kanban():
     """Admin 전용 운영 칸반. 기사별 approve가 아니라 누적 이력/품질 상태를 보여준다."""
+    if _daily_mailing_admin_kanban is None:
+        return jsonify({"error": "daily_mailing 모듈 미탑재(origin/main 커밋 누락)", "runs": []}), 503
     try:
         limit_runs = min(int(request.args.get("limitRuns", 20)), 100)
         return jsonify(_daily_mailing_admin_kanban(limit_runs=limit_runs))
@@ -5589,6 +5595,75 @@ def policy_intelligence_report_download(artifact_id):
         return jsonify({"error": str(e)}), 404
     except Exception as e:
         logger.error("policy intelligence report download 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/policy-intelligence/events/<event_id>")
+@require_auth()
+def policy_intelligence_event_detail(event_id):
+    """단일 이벤트 상세 — 메일 본문 + 첨부 문서(추출텍스트/원본 가용성)."""
+    try:
+        return jsonify(_policy_intelligence.load_event_detail(event_id))
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        logger.error("policy intelligence event detail 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/policy-intelligence/documents/<doc_id>/text")
+@require_auth()
+def policy_intelligence_document_text(doc_id):
+    """첨부 문서의 추출 텍스트(원본 파일 대신 안전한 텍스트 열람)."""
+    try:
+        filename, text = _policy_intelligence.resolve_document_text(doc_id)
+        return jsonify({"id": doc_id, "filename": filename, "text": text})
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        logger.error("policy intelligence document text 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/policy-intelligence/documents/<doc_id>/download")
+@require_auth()
+def policy_intelligence_document_download(doc_id):
+    """첨부 문서 원본 파일 다운로드."""
+    try:
+        filename, path = _policy_intelligence.resolve_document_file(doc_id)
+        response = send_file(path, as_attachment=True, download_name=filename)
+        response.headers["Cache-Control"] = "no-store, private, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        logger.error("policy intelligence document download 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/policy-intelligence/committee")
+@require_auth()
+def policy_intelligence_committee():
+    """KRPIA 위원회 워크스페이스 — Monthly Meeting(월별 주제) + 4개 TF lane."""
+    try:
+        return jsonify(_policy_intelligence.load_committee_workspace())
+    except Exception as e:
+        logger.error("policy intelligence committee 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/policy-intelligence/search")
+@require_auth()
+def policy_intelligence_search():
+    """정책/위원회 콘텐츠 키워드 검색(제목·주제·첨부 파일명·추출텍스트)."""
+    try:
+        q = request.args.get("q", "")
+        limit = min(int(request.args.get("limit", 40)), 100)
+        return jsonify(_policy_intelligence.search_policy(q, limit=limit))
+    except Exception as e:
+        logger.error("policy intelligence search 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 

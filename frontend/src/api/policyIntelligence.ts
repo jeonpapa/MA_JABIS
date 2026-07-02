@@ -10,6 +10,7 @@ export interface PolicyOverview {
   latest_event_date: string | null;
   severity_counts: Record<string, number>;
   excluded_general_media_event_count?: number;
+  committee_event_count?: number;
   report_available: boolean;
 }
 
@@ -114,8 +115,141 @@ export interface PolicyOverviewResponse {
   change_records?: PolicyChangeRecord[];
 }
 
+export interface PolicyEventDocument {
+  id: string;
+  filename: string | null;
+  char_count: number;
+  status: string | null;
+  text_available: boolean;
+  file_available: boolean;
+  text_url: string | null;
+  download_url: string | null;
+}
+
+export interface PolicyEventDetail {
+  id: string;
+  subject: string | null;
+  date: string | null;
+  from: string | null;
+  topic: string;
+  agencies: string[];
+  severity: string;
+  status: string;
+  deadline: string | null;
+  email_body: string;
+  email_body_chars: number;
+  documents: PolicyEventDocument[];
+}
+
 export async function fetchPolicyOverview(): Promise<PolicyOverviewResponse> {
   return api.get<PolicyOverviewResponse>('/api/policy-intelligence/overview');
+}
+
+export async function fetchPolicyEventDetail(eventId: string): Promise<PolicyEventDetail> {
+  return api.get<PolicyEventDetail>(`/api/policy-intelligence/events/${encodeURIComponent(eventId)}`);
+}
+
+// ── KRPIA 위원회 워크스페이스 (Monthly Meeting + TF) ─────────────────────────
+export interface CommitteeDoc {
+  id: string;
+  filename: string | null;
+  char_count: number;
+  text_available: boolean;
+  file_available: boolean;
+  text_url: string | null;
+  download_url: string | null;
+}
+
+export interface CommitteeDiscussedTopic {
+  topic: string;
+  severity: string;
+  rationale: string;
+  next_action: string;
+}
+
+export interface MonthlyMeeting {
+  event_id: string;
+  subject: string | null;
+  received_utc: string | null;
+  month: string;
+  meeting_no: string | null;
+  agencies: string[];
+  documents: CommitteeDoc[];
+  discussed_topics: CommitteeDiscussedTopic[];
+}
+
+export interface CommitteeMaterial {
+  event_id: string;
+  subject: string | null;
+  received_utc: string | null;
+  agencies: string[];
+  documents: CommitteeDoc[];
+}
+
+export interface CommitteeTf {
+  id: string;
+  name: string;
+  description: string;
+  materials: CommitteeMaterial[];
+  material_count: number;
+  latest_date: string | null;
+  document_count: number;
+}
+
+export interface CommitteeWorkspace {
+  summary: { monthly_count: number; tf_count: number; tf_with_materials: number };
+  monthly_meetings: MonthlyMeeting[];
+  tfs: CommitteeTf[];
+}
+
+export interface PolicySearchResult {
+  type: 'event' | 'document';
+  event_id: string;
+  doc_id?: string;
+  filename?: string;
+  subject: string | null;
+  topic: string;
+  lane: 'monthly' | 'tf' | 'policy' | string;
+  tf_name: string | null;
+  date: string | null;
+  snippet: string;
+}
+
+export async function fetchCommitteeWorkspace(): Promise<CommitteeWorkspace> {
+  return api.get<CommitteeWorkspace>('/api/policy-intelligence/committee');
+}
+
+export async function searchPolicy(q: string): Promise<{ query: string; count: number; results: PolicySearchResult[] }> {
+  return api.get(`/api/policy-intelligence/search?q=${encodeURIComponent(q)}`);
+}
+
+export async function fetchPolicyDocumentText(docId: string): Promise<{ id: string; filename: string; text: string }> {
+  return api.get(`/api/policy-intelligence/documents/${encodeURIComponent(docId)}/text`);
+}
+
+export async function downloadPolicyDocument(doc: PolicyEventDocument): Promise<void> {
+  if (!doc.download_url) throw new Error('다운로드 URL이 없습니다.');
+  const token = getToken();
+  const res = await fetch(doc.download_url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  if (!res.ok) {
+    let message = `다운로드 실패: HTTP ${res.status}`;
+    try {
+      const data = await res.json();
+      if (data?.error) message = `다운로드 실패: ${data.error}`;
+    } catch { /* keep */ }
+    throw new Error(message);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = doc.filename || 'document';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 export async function fetchPolicyEvents(): Promise<{ items: PolicyEvent[] }> {

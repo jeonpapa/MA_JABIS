@@ -1,7 +1,18 @@
 {
   "permissions": {
     "allow": [
-      "Bash(*)"
+      "Bash(*)",
+      "Bash(timeout 180 .venv/bin/python -m pytest tests/test_policy_intelligence.py tests/test_policy_intelligence_ingest.py -q)",
+      "Bash(git check-ignore *)",
+      "Bash(lsof -ti:5055)",
+      "Bash(PYTHONPATH=. HOST=127.0.0.1 PORT=5055 POLICY_INTELLIGENCE_ROOT=data/policy_intelligence .venv/bin/python api/server.py)",
+      "Bash(echo \"서버 PID: $!\")",
+      "Bash(.venv/bin/python -m py_compile api/server.py agents/policy_intelligence.py)",
+      "Bash(xargs kill -9)",
+      "Bash(.venv/bin/python -m py_compile agents/policy_intelligence.py)",
+      "Bash(.venv/bin/python -)",
+      "Bash(.venv/bin/python -m py_compile api/server.py)",
+      "Bash(read p *)"
     ]
   }
 }

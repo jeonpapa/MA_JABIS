@@ -29,6 +29,10 @@ data/hta_cache/
 # 사용자 업로드 PDF (영구 보존이지만 git 부적합 — 별도 백업 필요)
 data/uploads/
 
+# Policy Intelligence 런타임 데이터 (Gmail ingest 원문·PDF — 비공개, 볼륨/런타임 전용)
+# 시드 템플릿(data/policy_intelligence_seed/)만 git 추적, 수집 산출물은 제외
+data/policy_intelligence/
+
 # 멀티에이전트 컨텍스트 (Claude Code memory/plans symlinks — 개인정보 포함, git 추적 차단)
 .agent-context/
 

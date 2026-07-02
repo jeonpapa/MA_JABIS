@@ -265,7 +265,10 @@ def load_policy_intelligence(
     source_batch_id = manifest_file.stem
     all_raw_events = manifest.get("events") or []
     excluded_event_count = sum(1 for event in all_raw_events if not _is_policy_intelligence_event(event))
-    raw_events = [event for event in all_raw_events if _is_policy_intelligence_event(event)]
+    # 정책 lane 중에서도 위원회(Monthly/TF) 운영 이벤트는 별도 탭(committee)에서 관리 → 토픽 뷰 제외
+    policy_lane = [event for event in all_raw_events if _is_policy_intelligence_event(event)]
+    committee_event_count = sum(1 for event in policy_lane if is_committee_event(event))
+    raw_events = [event for event in policy_lane if not is_committee_event(event)]
     raw_events = sorted(raw_events, key=lambda e: _safe_dt(e.get("received_utc")), reverse=True)
 
     events = [_public_event(event) for event in raw_events]
@@ -385,6 +388,7 @@ def load_policy_intelligence(
         "latest_event_date": events[0]["date"] if events else None,
         "severity_counts": dict(severity_counts),
         "excluded_general_media_event_count": excluded_event_count,
+        "committee_event_count": committee_event_count,
         "report_available": report_path.exists(),
     }
     report_artifacts = _report_artifacts(root)
@@ -399,6 +403,356 @@ def load_policy_intelligence(
         "change_records": change_records,
         "report_artifacts": report_artifacts,
     }
+
+
+def _remap_private_path(stored: str | None, root: Path) -> Path | None:
+    """매니페스트에 저장된 절대경로(/opt/data|/app/data/policy_intelligence/...)를
+    현재 root 하위로 재매핑 + traversal 가드. root 밖이거나 없으면 None."""
+    if not stored:
+        return None
+    norm = str(stored).replace("\\", "/")
+    marker = "policy_intelligence/"
+    idx = norm.find(marker)
+    rel = norm[idx + len(marker):] if idx != -1 else norm.lstrip("/")
+    root_res = Path(root).resolve()
+    candidate = (root_res / rel).resolve()
+    try:
+        candidate.relative_to(root_res)
+    except ValueError:
+        return None
+    return candidate if candidate.exists() else None
+
+
+def _attachment_path(folder: Path | None, doc: dict[str, Any], root: Path) -> Path | None:
+    """raw_folder/attachments.json 에서 문서(sha256 우선, filename fallback)의 원본 파일 경로 remap.
+    원본은 attachments/original/<name>_<hash>.<ext> 형태라 saved_path 로만 정확히 찾을 수 있음."""
+    if folder is None:
+        return None
+    aj = folder / "attachments.json"
+    if not aj.exists():
+        return None
+    try:
+        entries = json.loads(aj.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    sha, fn = doc.get("sha256"), doc.get("filename")
+    match = next((e for e in entries if sha and e.get("sha256") == sha), None)
+    if match is None:
+        match = next((e for e in entries if fn and e.get("filename") == fn), None)
+    if match is None:
+        return None
+    return _remap_private_path(match.get("saved_path"), root)
+
+
+def _raw_event_by_id(event_id: str, root: Path, manifest_path: str | Path | None = None) -> dict[str, Any] | None:
+    manifest = _load_json(_resolve_manifest_file(root, manifest_path))
+    for event in manifest.get("events") or []:
+        if event.get("event_id") == event_id and _is_policy_intelligence_event(event):
+            return event
+    return None
+
+
+def load_event_detail(event_id: str, root: str | Path | None = None,
+                      manifest_path: str | Path | None = None) -> dict[str, Any]:
+    """단일 이벤트의 메일 본문 + 첨부 문서(추출텍스트/원본 다운로드 가용성)."""
+    root = Path(root) if root is not None else _default_root()
+    raw = _raw_event_by_id(event_id, root, manifest_path)
+    if raw is None:
+        raise FileNotFoundError(f"policy event not found: {event_id}")
+    folder = _remap_private_path(raw.get("raw_folder"), root)
+    email_body = ""
+    if folder is not None:
+        body_txt = folder / "body.txt"
+        if body_txt.exists():
+            email_body = body_txt.read_text(encoding="utf-8", errors="replace")
+    documents: list[dict[str, Any]] = []
+    for index, doc in enumerate(raw.get("documents") or [], start=1):
+        did = _doc_id(event_id, doc.get("filename", "document"), index)
+        text_available = _remap_private_path(doc.get("text_path"), root) is not None
+        file_available = _attachment_path(folder, doc, root) is not None
+        documents.append({
+            "id": did,
+            "filename": doc.get("filename"),
+            "char_count": doc.get("chars", 0),
+            "status": doc.get("status"),
+            "text_available": text_available,
+            "file_available": file_available,
+            "text_url": f"/api/policy-intelligence/documents/{did}/text" if text_available else None,
+            "download_url": f"/api/policy-intelligence/documents/{did}/download" if file_available else None,
+        })
+    rule = _rule(raw.get("topic") or "기타")
+    return {
+        "id": event_id,
+        "subject": raw.get("subject"),
+        "date": raw.get("received_utc"),
+        "from": raw.get("from"),
+        "topic": raw.get("topic") or "기타",
+        "agencies": raw.get("agencies") or [],
+        "severity": rule["severity"],
+        "status": rule["status"],
+        "deadline": raw.get("deadline_hint_from_subject"),
+        "email_body": email_body,
+        "email_body_chars": raw.get("email_body_chars", 0),
+        "documents": documents,
+    }
+
+
+def _find_document(doc_id: str, root: Path, manifest_path: str | Path | None = None):
+    """(raw_event, doc, remapped_folder) 반환 — doc_id 로 역탐색."""
+    manifest = _load_json(_resolve_manifest_file(root, manifest_path))
+    for event in manifest.get("events") or []:
+        if not _is_policy_intelligence_event(event):
+            continue
+        eid = event.get("event_id", "event")
+        for index, doc in enumerate(event.get("documents") or [], start=1):
+            if _doc_id(eid, doc.get("filename", "document"), index) == doc_id:
+                return event, doc, _remap_private_path(event.get("raw_folder"), root)
+    return None, None, None
+
+
+def resolve_document_text(doc_id: str, root: str | Path | None = None) -> tuple[str, str]:
+    """(filename, 추출텍스트). 없으면 FileNotFoundError."""
+    root = Path(root) if root is not None else _default_root()
+    _event, doc, _folder = _find_document(doc_id, root)
+    if not doc:
+        raise FileNotFoundError(f"document not found: {doc_id}")
+    text_path = _remap_private_path(doc.get("text_path"), root)
+    if text_path is None:
+        raise FileNotFoundError(f"document text not available: {doc_id}")
+    return doc.get("filename") or "document.txt", text_path.read_text(encoding="utf-8", errors="replace")
+
+
+def resolve_document_file(doc_id: str, root: str | Path | None = None) -> tuple[str, Path]:
+    """(filename, 원본첨부 경로). 없으면 FileNotFoundError. traversal 가드."""
+    root = Path(root) if root is not None else _default_root()
+    _event, doc, folder = _find_document(doc_id, root)
+    if not doc or folder is None:
+        raise FileNotFoundError(f"document not found: {doc_id}")
+    fp = _attachment_path(folder, doc, root)  # remap + traversal 가드 내장
+    if fp is None or not fp.exists():
+        raise FileNotFoundError(f"document file not available: {doc_id}")
+    return doc.get("filename") or fp.name, fp
+
+
+# ── KRPIA 위원회(Monthly Meeting + TF) 분류 ───────────────────────────────────
+import re as _re
+
+TF_DEFS: list[dict[str, Any]] = [
+    {"id": "icer", "name": "ICER TF", "markers": ("icer tf", "icer tft"),
+     "description": "경제성평가(ICER/QALY) 방법론 및 임계값 대응 TF"},
+    {"id": "dpe", "name": "DPE TF", "markers": ("dpe tf", "dpe tft"),
+     "description": "약물경제성평가(Drug/Pharmacoeconomics) TF"},
+    {"id": "process", "name": "Process Improvement TF", "markers": ("process improvement tf", "process improvement", "pi tf"),
+     "description": "등재·평가 프로세스 개선 TF"},
+    {"id": "value", "name": "Value Pricing TF", "markers": ("value pricing tf", "value pricing", "value-based"),
+     "description": "가치기반 약가(Value-based Pricing) TF"},
+]
+_MONTHLY_MARKERS = ("ma committee monthly meeting", "monthly committee meeting", "ma monthly committee")
+
+# 월별 회의에서 다뤄진 주제 매칭용 키워드(첨부/제목 텍스트 스캔, LLM 불필요)
+TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "기등재 약제 재평가·약가조정": ("기등재", "재평가", "특허만료", "약가조정", "약가 조정", "오리지널"),
+    "약가 유연계약제": ("유연계약", "유연 계약", "flexible"),
+    "RWE·약제성과평가": ("rwe", "성과평가", "real world", "리얼월드"),
+    "희귀질환 치료제 신속등재 / 100일 신속등재": ("희귀질환", "신속등재", "100일"),
+    "사용량-약가 연동 협상": ("사용량-약가", "사용량 약가", "pva", "연동 협상", "연동협상"),
+    "급여기준 고시 개정 의견조회": ("급여기준", "고시 개정", "세부사항", "적용기준"),
+    "KRPIA 정책제안": ("정책제안", "policy proposal", "정책 제안"),
+}
+
+
+def _committee_classify(subject: str | None, doc_filenames: list[str]) -> dict[str, Any]:
+    """이벤트를 위원회 lane 으로 분류: monthly | tf(<id>) | None."""
+    hay = " ".join([subject or ""] + doc_filenames).casefold()
+    for tf in TF_DEFS:
+        if any(mk in hay for mk in tf["markers"]):
+            return {"lane": "tf", "tf_id": tf["id"], "tf_name": tf["name"]}
+    if any(mk in hay for mk in _MONTHLY_MARKERS):
+        return {"lane": "monthly", "tf_id": None, "tf_name": None}
+    return {"lane": None, "tf_id": None, "tf_name": None}
+
+
+def _event_committee_class(event: dict[str, Any]) -> dict[str, Any]:
+    fns = [d.get("filename") or "" for d in (event.get("documents") or [])]
+    return _committee_classify(event.get("subject"), fns)
+
+
+def is_committee_event(event: dict[str, Any]) -> bool:
+    return _event_committee_class(event)["lane"] is not None
+
+
+def _meeting_month_and_no(event: dict[str, Any]) -> tuple[str, str | None]:
+    """첨부/제목에서 회의 날짜(YYYY-MM)·회차를 추출. 실패 시 received_utc 월."""
+    blob = (event.get("subject") or "") + " " + " ".join(d.get("filename") or "" for d in (event.get("documents") or []))
+    ym, no = None, None
+    m8 = _re.search(r"(20\d{2})(\d{2})(\d{2})", blob)  # 20260421
+    if m8:
+        ym = f"{m8.group(1)}-{m8.group(2)}"
+    mno = _re.search(r"(\d+)\s*(?:st|nd|rd|th)\s+MA", blob, _re.I)
+    if mno:
+        no = mno.group(1)
+    if ym is None:
+        rec = event.get("received_utc") or ""
+        ym = rec[:7] if len(rec) >= 7 else "unknown"
+    return ym, no
+
+
+def _read_text_file(path: Path | None) -> str:
+    if path is None:
+        return ""
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return ""
+
+
+def _topics_in_text(text: str) -> list[str]:
+    low = text.casefold()
+    hits = []
+    for topic, kws in TOPIC_KEYWORDS.items():
+        if any(kw.casefold() in low for kw in kws):
+            hits.append(topic)
+    return hits
+
+
+def load_committee_workspace(root: str | Path | None = None,
+                             manifest_path: str | Path | None = None) -> dict[str, Any]:
+    """KRPIA Monthly Meeting(월별 다뤄진 주제 implication) + 4개 TF lane."""
+    root = Path(root) if root is not None else _default_root()
+    manifest = _load_json(_resolve_manifest_file(root, manifest_path))
+    raw_events = [e for e in (manifest.get("events") or []) if _is_policy_intelligence_event(e)]
+
+    def _docs_public(event) -> list[dict[str, Any]]:
+        eid = event.get("event_id", "event")
+        folder = _remap_private_path(event.get("raw_folder"), root)
+        out = []
+        for index, doc in enumerate(event.get("documents") or [], start=1):
+            did = _doc_id(eid, doc.get("filename", "document"), index)
+            out.append({
+                "id": did, "filename": doc.get("filename"), "char_count": doc.get("chars", 0),
+                "text_available": _remap_private_path(doc.get("text_path"), root) is not None,
+                "file_available": _attachment_path(folder, doc, root) is not None,
+                "text_url": f"/api/policy-intelligence/documents/{did}/text",
+                "download_url": f"/api/policy-intelligence/documents/{did}/download",
+            })
+        return out
+
+    monthly: list[dict[str, Any]] = []
+    tf_buckets: dict[str, list[dict[str, Any]]] = {tf["id"]: [] for tf in TF_DEFS}
+
+    for event in raw_events:
+        klass = _event_committee_class(event)
+        if klass["lane"] is None:
+            continue
+        eid = event.get("event_id")
+        base = {
+            "event_id": eid,
+            "subject": event.get("subject"),
+            "received_utc": event.get("received_utc"),
+            "agencies": event.get("agencies") or [],
+            "documents": _docs_public(event),
+        }
+        if klass["lane"] == "tf":
+            tf_buckets[klass["tf_id"]].append(base)
+        else:
+            ym, no = _meeting_month_and_no(event)
+            # 첨부(회의자료) 텍스트에서 그 달 다뤄진 주제 스캔
+            combined_text = event.get("subject") or ""
+            for doc in event.get("documents") or []:
+                tp = _remap_private_path(doc.get("text_path"), root)
+                combined_text += "\n" + _read_text_file(tp)
+            discussed = []
+            for topic in _topics_in_text(combined_text):
+                rule = _rule(topic)
+                discussed.append({
+                    "topic": topic, "severity": rule["severity"],
+                    "rationale": rule["rationale"], "next_action": rule["next_action"],
+                })
+            monthly.append({**base, "month": ym, "meeting_no": no, "discussed_topics": discussed})
+
+    monthly.sort(key=lambda m: (m.get("month") or "", m.get("received_utc") or ""), reverse=True)
+    for bucket in tf_buckets.values():
+        bucket.sort(key=lambda x: x.get("received_utc") or "", reverse=True)
+
+    tfs = []
+    for tf in TF_DEFS:
+        items = tf_buckets[tf["id"]]
+        tfs.append({
+            "id": tf["id"], "name": tf["name"], "description": tf["description"],
+            "materials": items, "material_count": len(items),
+            "latest_date": items[0]["received_utc"] if items else None,
+            "document_count": sum(len(i["documents"]) for i in items),
+        })
+
+    return {
+        "summary": {
+            "monthly_count": len(monthly),
+            "tf_count": len(TF_DEFS),
+            "tf_with_materials": sum(1 for t in tfs if t["material_count"] > 0),
+        },
+        "monthly_meetings": monthly,
+        "tfs": tfs,
+    }
+
+
+def search_policy(query: str, root: str | Path | None = None,
+                  manifest_path: str | Path | None = None, limit: int = 40) -> dict[str, Any]:
+    """제목·주제·첨부 파일명·첨부 추출텍스트 전반 키워드 검색."""
+    q = (query or "").strip()
+    if not q:
+        return {"query": q, "count": 0, "results": []}
+    root = Path(root) if root is not None else _default_root()
+    manifest = _load_json(_resolve_manifest_file(root, manifest_path))
+    low = q.casefold()
+    results: list[dict[str, Any]] = []
+    for event in manifest.get("events") or []:
+        if not _is_policy_intelligence_event(event):
+            continue
+        eid = event.get("event_id", "event")
+        subject = event.get("subject") or ""
+        topic = event.get("topic") or "기타"
+        klass = _event_committee_class(event)
+        lane = klass["lane"] or "policy"
+        # 이벤트 레벨 매치(제목/주제/기관)
+        event_hay = " ".join([subject, topic, " ".join(event.get("agencies") or [])]).casefold()
+        if low in event_hay:
+            results.append({
+                "type": "event", "event_id": eid, "subject": subject, "topic": topic,
+                "lane": lane, "tf_name": klass["tf_name"], "date": event.get("received_utc"),
+                "snippet": _snippet(subject, q),
+            })
+        # 문서 레벨 매치(파일명 + 추출텍스트)
+        folder = _remap_private_path(event.get("raw_folder"), root)
+        for index, doc in enumerate(event.get("documents") or [], start=1):
+            fn = doc.get("filename") or ""
+            did = _doc_id(eid, fn, index)
+            text = _read_text_file(_remap_private_path(doc.get("text_path"), root))
+            hay = (fn + "\n" + text).casefold()
+            if low in hay:
+                results.append({
+                    "type": "document", "event_id": eid, "doc_id": did, "filename": fn,
+                    "subject": subject, "topic": topic, "lane": lane, "tf_name": klass["tf_name"],
+                    "date": event.get("received_utc"),
+                    "snippet": _snippet(text or fn, q),
+                })
+            if len(results) >= limit:
+                break
+        if len(results) >= limit:
+            break
+    return {"query": q, "count": len(results), "results": results[:limit]}
+
+
+def _snippet(text: str, query: str, width: int = 90) -> str:
+    if not text:
+        return ""
+    idx = text.casefold().find(query.casefold())
+    if idx == -1:
+        return text[:width].strip()
+    start = max(0, idx - width // 2)
+    end = min(len(text), idx + len(query) + width // 2)
+    prefix = "…" if start > 0 else ""
+    suffix = "…" if end < len(text) else ""
+    return prefix + text[start:end].replace("\n", " ").strip() + suffix
 
 
 def write_dashboard_json(root: str | Path | None = None, manifest_path: str | Path | None = None) -> Path:
