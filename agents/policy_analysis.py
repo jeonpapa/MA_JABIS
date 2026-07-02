@@ -101,6 +101,8 @@ def _event_texts(event: dict[str, Any], root: str | Path) -> str:
 
 def validate_analysis(analysis: dict[str, Any], event: dict[str, Any], root: str | Path) -> list[str]:
     """헤르메스 초안 검증 → 경고 리스트(빈 리스트면 통과). CLI/리뷰 게이트가 사용."""
+    if not isinstance(analysis, dict):
+        return ["analysis is not a valid object"]
     warnings: list[str] = []
     for field in REQUIRED_FIELDS:
         if not analysis.get(field):
@@ -113,11 +115,19 @@ def validate_analysis(analysis: dict[str, Any], event: dict[str, Any], root: str
 
     quotes = analysis.get("evidence_quotes") or []
     texts = _event_texts(event, root)
+    real_quote_count = 0
     for entry in quotes:
+        if not isinstance(entry, dict):
+            warnings.append("invalid evidence_quote entry (expected object)")
+            continue
         quote = (entry.get("quote") or "").strip()
-        if quote and quote.casefold() not in texts:
+        if not quote:
+            warnings.append("empty evidence_quote entry")
+            continue
+        real_quote_count += 1
+        if quote.casefold() not in texts:
             warnings.append(f"evidence quote not found in source: {quote[:40]}")
-    if not quotes and not (analysis.get("data_gaps")):
+    if real_quote_count == 0 and not analysis.get("data_gaps"):
         warnings.append("no evidence_quotes and no data_gaps (grounding required)")
 
     haystack = json.dumps(analysis, ensure_ascii=False)

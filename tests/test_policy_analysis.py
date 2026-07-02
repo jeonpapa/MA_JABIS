@@ -76,3 +76,20 @@ def test_validate_grounding_and_terms(tmp_path: Path):
     # '조건부 통과' → 경고
     cond = dict(ok_q, summary="조건부 통과 예상")
     assert any("조건부 통과" in w for w in pa.validate_analysis(cond, event, root))
+
+
+def test_validate_rejects_degenerate_evidence(tmp_path: Path):
+    root = tmp_path / "policy_intelligence"
+    event = _make_event(root)
+    fp = pa.content_fingerprint(event, root)
+    base = {"event_id": "evt1", "content_fingerprint": fp, "summary": "s",
+            "severity": "high", "msd_implication": {"rationale": "r", "next_action": "n"}}
+    # 공백뿐인 인용 → grounding 경고 (실질 근거 0)
+    blank = dict(base, evidence_quotes=[{"quote": "   ", "source": "body"}])
+    assert any("grounding" in w for w in pa.validate_analysis(blank, event, root))
+    # 비-dict 엔트리 → 크래시 대신 경고
+    nondict = dict(base, evidence_quotes=["not a dict"])
+    warns = pa.validate_analysis(nondict, event, root)
+    assert any("evidence_quote" in w for w in warns)  # 예외 없이 경고
+    # None → 크래시 대신 경고
+    assert pa.validate_analysis(None, event, root)  # 비어있지 않은 경고 리스트
