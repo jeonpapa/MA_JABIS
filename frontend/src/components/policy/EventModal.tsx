@@ -77,6 +77,11 @@ export default function PolicyEventModal({ eventId, onClose }: { eventId: string
               {detail?.severity && (
                 <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${severityTone[detail.severity] || 'bg-gray-50 text-gray-700 border-gray-200'}`}>{detail.severity}</span>
               )}
+              {detail?.curation_source && (
+                <span className={`text-xs px-2 py-0.5 rounded ${detail.curation_source === 'hermes' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                  {detail.curation_source === 'hermes' ? 'AI 큐레이션' : '규칙 기본값'}
+                </span>
+              )}
             </div>
           </div>
           <button onClick={onClose} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"><i className="ri-close-line text-xl" /></button>
@@ -87,6 +92,20 @@ export default function PolicyEventModal({ eventId, onClose }: { eventId: string
           {error && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
           {detail && (
             <>
+              {detail.msd_implication?.rationale && (
+                <div className="mt-3 text-sm">
+                  <div className="font-medium">MSD 시사점</div>
+                  <p>{detail.msd_implication.rationale}</p>
+                  <p className="text-slate-500">→ {detail.msd_implication.next_action}</p>
+                </div>
+              )}
+              {(detail.evidence_quotes?.length ?? 0) > 0 && (
+                <ul className="mt-2 text-xs text-slate-600 space-y-1">
+                  {detail.evidence_quotes!.map((q, i) => (
+                    <li key={i}>“{q.quote}” <span className="text-slate-400">— {q.source}{q.loc ? ` ${q.loc}` : ''}</span></li>
+                  ))}
+                </ul>
+              )}
               <section>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">메일 본문</p>
                 {detail.email_body

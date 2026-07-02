@@ -55,7 +55,12 @@ function TopicCard({ ledger, updates, onOpen }: { ledger: PolicyTopicLedger; upd
       className="group flex h-full flex-col rounded-2xl border border-gray-200 bg-white p-5 text-left shadow-sm transition hover:border-teal-300 hover:shadow-md"
     >
       <div className="flex items-start justify-between gap-3">
-        <h3 className="text-base font-bold leading-6 text-gray-950">{ledger.topic_name}</h3>
+        <h3 className="flex items-center gap-1.5 text-base font-bold leading-6 text-gray-950">
+          {ledger.topic_name}
+          {ledger.curation_source === 'hermes' && (
+            <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" title="AI 큐레이션" />
+          )}
+        </h3>
         <SeverityBadge value={ledger.severity} />
       </div>
       <p className="mt-2 line-clamp-2 text-sm leading-6 text-gray-600">{ledger.current_summary || '최신 요약 대기'}</p>
@@ -103,6 +108,11 @@ function TopicDetail({
           <div className="flex items-center gap-2">
             <h2 className="text-2xl font-black tracking-tight text-gray-950">{ledger.topic_name}</h2>
             <SeverityBadge value={ledger.severity} />
+            {ledger.curation_source === 'hermes' && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" /> AI 큐레이션
+              </span>
+            )}
           </div>
           <p className="mt-1 text-sm text-gray-500">
             {formatDate(ledger.first_seen_at)} ~ {formatDate(ledger.latest_seen_at)} · {events.length}건 누적 · {ledger.current_status}
@@ -164,7 +174,12 @@ function TopicDetail({
                   className="w-full rounded-xl border border-gray-200 bg-white p-4 text-left transition hover:border-teal-300 hover:shadow-sm"
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs font-medium text-gray-500">{formatDate(ev.date)}</span>
+                    <span className="flex items-center gap-1.5 text-xs font-medium text-gray-500">
+                      {formatDate(ev.date)}
+                      {ev.curation_source === 'hermes' && (
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" title="AI 큐레이션" />
+                      )}
+                    </span>
                     <span className={`rounded-full border px-2 py-0.5 text-[11px] font-bold ${ct.tone}`}>{ct.label}</span>
                   </div>
                   <p className="mt-1.5 text-sm font-semibold leading-6 text-gray-900">{ev.subject}</p>
@@ -289,6 +304,7 @@ export default function PolicyIntelligencePage() {
             <span className="rounded-full bg-gray-100 px-3 py-1">주제 {overview.topic_count}</span>
             <span className="rounded-full bg-gray-100 px-3 py-1">누적 이벤트 {overview.event_count}</span>
             <span className="rounded-full bg-gray-100 px-3 py-1">위원회 분리 {overview.committee_event_count ?? 0}</span>
+            <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700">큐레이션 {overview.curated_event_count ?? 0} / 미처리 {overview.pending_analysis_count ?? 0}</span>
             <span className="rounded-full bg-gray-100 px-3 py-1">최신 {formatDate(overview.latest_event_date)}</span>
           </div>
         )}
