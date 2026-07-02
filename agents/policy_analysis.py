@@ -189,8 +189,15 @@ if __name__ == "__main__":
     if args.command == "list-pending":
         print(json.dumps(list_pending(root), ensure_ascii=False, indent=2))
     else:
+        if not args.file:
+            print(json.dumps({"ok": False, "error": "--file is required for validate"}, ensure_ascii=False))
+            raise SystemExit(1)
+        try:
+            analysis = json.loads(Path(args.file).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            print(json.dumps({"ok": False, "error": f"cannot read --file: {exc}"}, ensure_ascii=False))
+            raise SystemExit(1)
         events = {e.get("event_id"): e for e in _iter_policy_events(root)}
-        analysis = json.loads(Path(args.file).read_text(encoding="utf-8"))
         event = events.get(analysis.get("event_id") or args.event_id)
         if event is None:
             print(json.dumps({"ok": False, "error": "event not found"}, ensure_ascii=False))
