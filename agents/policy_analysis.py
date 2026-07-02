@@ -137,3 +137,63 @@ def validate_analysis(analysis: dict[str, Any], event: dict[str, Any], root: str
     if "조건부 통과" in haystack:
         warnings.append("avoid phrase '조건부 통과'; use official HIRA term")
     return warnings
+
+
+def resolve_curation(event: dict[str, Any], root: str | Path) -> dict[str, Any]:
+    """유효 사이드카가 있으면 hermes 값, 아니면 rule_fallback 마커."""
+    analysis = load_analysis(event.get("event_id", ""), root)
+    if analysis and analysis_valid(analysis, event, root):
+        return {
+            "curation_source": "hermes",
+            "summary": analysis.get("summary"),
+            "severity": analysis.get("severity"),
+            "status": analysis.get("status"),
+            "msd_implication": analysis.get("msd_implication") or {},
+            "evidence_quotes": analysis.get("evidence_quotes") or [],
+            "confidence": analysis.get("confidence"),
+        }
+    return {"curation_source": "rule_fallback"}
+
+
+def _iter_policy_events(root: Path) -> list[dict[str, Any]]:
+    """manifests/latest 를 읽어 policy 이벤트 반환(news lane 제외는 리더 규칙 재사용)."""
+    from agents.policy_intelligence import _resolve_manifest_file, _is_policy_intelligence_event  # 지연 import
+    manifest = json.loads(_resolve_manifest_file(root).read_text(encoding="utf-8"))
+    return [e for e in (manifest.get("events") or []) if _is_policy_intelligence_event(e)]
+
+
+def list_pending(root: str | Path) -> list[dict[str, Any]]:
+    """분석 없음/stale 이벤트 목록 + 기대 fingerprint."""
+    root = Path(root)
+    out = []
+    for event in _iter_policy_events(root):
+        eid = event.get("event_id", "")
+        analysis = load_analysis(eid, root)
+        if not (analysis and analysis_valid(analysis, event, root)):
+            out.append({"event_id": eid, "subject": event.get("subject"),
+                        "topic": event.get("topic"),
+                        "expected_fingerprint": content_fingerprint(event, root)})
+    return out
+
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="헤르메스 KRPIA 큐레이션 도구")
+    parser.add_argument("command", choices=["list-pending", "validate"])
+    parser.add_argument("--event-id")
+    parser.add_argument("--file", help="validate 대상 analysis json")
+    parser.add_argument("--root", default=None)
+    args = parser.parse_args()
+    root = Path(args.root) if args.root else default_root()
+
+    if args.command == "list-pending":
+        print(json.dumps(list_pending(root), ensure_ascii=False, indent=2))
+    else:
+        events = {e.get("event_id"): e for e in _iter_policy_events(root)}
+        analysis = json.loads(Path(args.file).read_text(encoding="utf-8"))
+        event = events.get(analysis.get("event_id") or args.event_id)
+        if event is None:
+            print(json.dumps({"ok": False, "error": "event not found"}, ensure_ascii=False))
+        else:
+            warnings = validate_analysis(analysis, event, root)
+            print(json.dumps({"ok": not warnings, "warnings": warnings}, ensure_ascii=False, indent=2))

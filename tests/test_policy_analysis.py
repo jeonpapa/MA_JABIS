@@ -93,3 +93,21 @@ def test_validate_rejects_degenerate_evidence(tmp_path: Path):
     assert any("evidence_quote" in w for w in warns)  # 예외 없이 경고
     # None → 크래시 대신 경고
     assert pa.validate_analysis(None, event, root)  # 비어있지 않은 경고 리스트
+
+
+def test_resolve_curation_source(tmp_path: Path):
+    root = tmp_path / "policy_intelligence"
+    event = _make_event(root)
+    # 분석 없음 → rule_fallback
+    assert pa.resolve_curation(event, root)["curation_source"] == "rule_fallback"
+    # 유효 분석 → hermes + 값 전달
+    fp = pa.content_fingerprint(event, root)
+    a = {"event_id": "evt1", "content_fingerprint": fp, "summary": "요약X",
+         "severity": "high", "status": "진행중",
+         "msd_implication": {"rationale": "r", "next_action": "n"}}
+    p = pa.analysis_path("evt1", root)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(a, ensure_ascii=False), encoding="utf-8")
+    got = pa.resolve_curation(event, root)
+    assert got["curation_source"] == "hermes"
+    assert got["summary"] == "요약X" and got["severity"] == "high"
