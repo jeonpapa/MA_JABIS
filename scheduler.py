@@ -18,6 +18,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from agents.domestic_price_agent import DomesticPriceAgent
 from agents.dashboard_agent import DashboardAgent
+from agents.ingest.policy_analysis_sync import sync_analysis as _sync_policy_analysis
 
 # ── 로깅 설정 ──────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).parent
@@ -693,6 +694,10 @@ def main():
     if args.amjilsim_daily_crawl_now:
         logger.info("Reimbursement 데이터 sync 즉시 실행 (위원회 데이터 git→DB)")
         reimb_data_sync_job()
+        try:
+            _sync_policy_analysis()
+        except Exception as _e:
+            logger.warning("policy analysis 부팅 sync 실패: %s", _e)
         return
 
     if args.hira_fetch_now:
@@ -862,6 +867,22 @@ def main():
         trigger=CronTrigger(hour=2, minute=0, timezone="Asia/Seoul"),
         id="reimb_data_sync",
         name="Reimbursement 위원회 데이터 매일 02:00 git sync",
+        replace_existing=True,
+    )
+
+    # 매일 02:10 — Policy Intelligence 큐레이션 사이드카 git sync (헤르메스 커밋 자동 반영)
+    def _policy_analysis_sync_job():
+        try:
+            res = _sync_policy_analysis()
+            logger.info("policy analysis sync: %s", res)
+        except Exception as e:
+            logger.warning("policy analysis sync 실패: %s", e)
+
+    scheduler.add_job(
+        _policy_analysis_sync_job,
+        trigger=CronTrigger(hour=2, minute=10, timezone="Asia/Seoul"),
+        id="policy_intel_analysis_sync",
+        name="Policy Intelligence 큐레이션 사이드카 매일 02:10 git sync",
         replace_existing=True,
     )
 
