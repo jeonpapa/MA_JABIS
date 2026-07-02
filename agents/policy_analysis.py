@@ -162,16 +162,24 @@ def _iter_policy_events(root: Path) -> list[dict[str, Any]]:
     return [e for e in (manifest.get("events") or []) if _is_policy_intelligence_event(e)]
 
 
-def list_pending(root: str | Path) -> list[dict[str, Any]]:
-    """분석 없음/stale 이벤트 목록 + 기대 fingerprint."""
+def list_pending(root: str | Path, since: str | None = None) -> list[dict[str, Any]]:
+    """분석 없음/stale 이벤트 목록 + 기대 fingerprint.
+
+    since (YYYY-MM-DD) 지정 시 received_utc 가 그 날짜 이후(포함)인 이벤트만 반환 →
+    기존 과거분을 헤르메스 큐레이션 대상에서 원천 제외(하드 가드). ISO 날짜라 문자열 비교로 충분.
+    """
     root = Path(root)
+    since_key = (since or "")[:10]
     out = []
     for event in _iter_policy_events(root):
+        if since_key and (event.get("received_utc") or "")[:10] < since_key:
+            continue
         eid = event.get("event_id", "")
         analysis = load_analysis(eid, root)
         if not (analysis and analysis_valid(analysis, event, root)):
             out.append({"event_id": eid, "subject": event.get("subject"),
                         "topic": event.get("topic"),
+                        "received_utc": event.get("received_utc"),
                         "expected_fingerprint": content_fingerprint(event, root)})
     return out
 
@@ -183,11 +191,12 @@ if __name__ == "__main__":
     parser.add_argument("--event-id")
     parser.add_argument("--file", help="validate 대상 analysis json")
     parser.add_argument("--root", default=None)
+    parser.add_argument("--since", help="YYYY-MM-DD 이후(포함) 이벤트만 (과거분 큐레이션 방지)")
     args = parser.parse_args()
     root = Path(args.root) if args.root else default_root()
 
     if args.command == "list-pending":
-        print(json.dumps(list_pending(root), ensure_ascii=False, indent=2))
+        print(json.dumps(list_pending(root, since=args.since), ensure_ascii=False, indent=2))
     else:
         if not args.file:
             print(json.dumps({"ok": False, "error": "--file is required for validate"}, ensure_ascii=False))

@@ -111,3 +111,31 @@ def test_resolve_curation_source(tmp_path: Path):
     got = pa.resolve_curation(event, root)
     assert got["curation_source"] == "hermes"
     assert got["summary"] == "요약X" and got["severity"] == "high"
+
+
+def test_list_pending_since_filters_old_events(tmp_path: Path):
+    root = tmp_path / "policy_intelligence"
+    mdir = root / "manifests"
+    mdir.mkdir(parents=True, exist_ok=True)
+
+    def _ev(eid, date):
+        folder = root / "raw" / "gmail" / eid
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "body.txt").write_text("KRPIA 정책 본문 " + eid, encoding="utf-8")
+        (folder / "message_sha256.txt").write_text(
+            __import__("hashlib").sha256(eid.encode()).hexdigest() + "\n", encoding="utf-8")
+        return {"event_id": eid, "received_utc": date,
+                "subject": "Fw: [KRPIA] 약가 유연계약제 " + eid, "topic": "약가 유연계약제",
+                "raw_folder": str(folder), "documents": []}
+
+    manifest = {"events": [_ev("old1", "2026-05-10T00:00:00+00:00"),
+                           _ev("new1", "2026-07-01T00:00:00+00:00")]}
+    (mdir / "gmail_krpia_20260701_000000.json").write_text(
+        json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+
+    # since 없음 → 둘 다 pending
+    all_ids = {e["event_id"] for e in pa.list_pending(root)}
+    assert all_ids == {"old1", "new1"}
+    # since=2026-06-01 → new1 만 (과거분 old1 제외)
+    since_ids = {e["event_id"] for e in pa.list_pending(root, since="2026-06-01")}
+    assert since_ids == {"new1"}
