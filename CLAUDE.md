@@ -46,6 +46,7 @@ MSD Korea MA 팀의 국내·해외 약가·허가·HTA 모니터링 자동화 �
 | MFDS 공공데이터 API 통합 (특허/허가) | `agents/rules/mfds_api_integration_rules.md` |
 | 성분 enrichment | `agents/rules/drug_enrichment_rules.md` |
 | Market Intelligence | `agents/rules/market_intelligence_rules.md` |
+| Policy Intelligence 큐레이션 (헤르메스 기준) | `agents/rules/policy_intelligence_curation_rules.md` |
 | Competitor Trends (주 1회 자동 크롤 + LLM 필터) | `agents/rules/competitor_trends_rules.md` |
 | Review (LLM 다수결) | `agents/rules/review_agent_rules.md` |
 
