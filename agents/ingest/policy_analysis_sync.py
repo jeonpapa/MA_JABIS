@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,12 @@ from typing import Any
 from agents.policy_analysis import default_root, ANALYSIS_SUBDIR
 
 GITHUB_RAW_BASE = "https://raw.githubusercontent.com/jeonpapa/AccessRoutineAnalystic/main/policy_intelligence/analysis"
+
+_SAFE_NAME = re.compile(r"^[A-Za-z0-9._-]+\.json$")
+
+
+def _is_safe_name(name: str) -> bool:
+    return bool(_SAFE_NAME.match(name)) and "/" not in name and "\\" not in name and ".." not in name
 
 
 def _sha(data: bytes) -> str:
@@ -50,14 +57,21 @@ def sync_analysis(source_dir: str | Path | None = None, root: str | Path | None 
         try:
             files = _iter_source_files_url(base)
         except Exception as exc:
-            return {"copied": 0, "skipped": 0, "error": f"source fetch failed: {exc}"}
+            return {"copied": 0, "skipped": 0, "rejected": 0, "error": f"source fetch failed: {exc}", "dest": str(dest)}
 
-    copied, skipped = 0, 0
+    dest_res = dest.resolve()
+    copied, skipped, rejected = 0, 0, 0
     for name, data in files.items():
+        if not _is_safe_name(name):
+            rejected += 1
+            continue
         target = dest / name
+        if target.resolve().parent != dest_res:  # 방어적 traversal 가드
+            rejected += 1
+            continue
         if target.exists() and _sha(target.read_bytes()) == _sha(data):
             skipped += 1
             continue
         target.write_bytes(data)
         copied += 1
-    return {"copied": copied, "skipped": skipped, "dest": str(dest)}
+    return {"copied": copied, "skipped": skipped, "rejected": rejected, "dest": str(dest)}
