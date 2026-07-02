@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from agents.policy_intelligence import load_policy_intelligence
+from agents.policy_intelligence import load_policy_intelligence, resolve_report_artifact_path, IMPACT_TEMPLATE_NAME
 
 
 def _write_json(path: Path, data: object) -> None:
@@ -58,7 +58,11 @@ def test_load_policy_intelligence_builds_dashboard_sections(tmp_path: Path):
     assert dashboard["events"][0]["severity"] == "High"
     assert dashboard["topics"][0]["topic"] == "약가 유연계약제"
     assert dashboard["topics"][0]["event_count"] == 1
+    assert dashboard["topic_ledgers"][0]["topic_name"] == "약가 유연계약제"
+    assert dashboard["topic_ledgers"][0]["events"] == ["evt-1"]
     assert dashboard["documents"][0]["source_kind"] == "attachment"
+    assert "report_artifacts" in dashboard
+    assert all("/" not in artifact["id"] for artifact in dashboard["report_artifacts"])
     assert dashboard["impact_candidates"][0]["priority"] == 2
     assert "실제가" in dashboard["impact_candidates"][0]["rationale"]
 
@@ -143,3 +147,94 @@ def test_load_policy_intelligence_defaults_to_latest_gmail_manifest(tmp_path: Pa
 
     assert dashboard["overview"]["source_batch_id"] == "gmail_krpia_20260630_090000"
     assert dashboard["events"][0]["id"] == "latest"
+
+
+def test_general_media_mailing_events_are_excluded_from_policy_lane(tmp_path: Path):
+    root = tmp_path / "policy_intelligence"
+    manifest = {
+        "created_at": "2026-06-30T10:18:37+00:00",
+        "events": [
+            {
+                "event_id": "policy",
+                "received_utc": "2026-06-30T00:00:00+00:00",
+                "subject": "Fw: [KRPIA-HIRA] 약가 유연계약제 안내",
+                "topic": "약가 유연계약제",
+                "documents": [],
+            },
+            {
+                "event_id": "prain",
+                "received_utc": "2026-06-30T00:10:00+00:00",
+                "subject": "Fw: (Prain_KEYTRUDA) 20260604 기사 공유",
+                "topic": "기타",
+                "documents": [],
+            },
+            {
+                "event_id": "daily-mailing",
+                "received_utc": "2026-06-30T00:20:00+00:00",
+                "subject": "MA AI DOSSIER · DAILY MAILING DRAFT 주요 뉴스 &amp; Market Insight",
+                "topic": "기타",
+                "documents": [],
+            },
+        ],
+    }
+    _write_json(root / "manifests" / "pilot.json", manifest)
+
+    dashboard = load_policy_intelligence(root=root, manifest_path=root / "manifests" / "pilot.json")
+
+    assert dashboard["overview"]["event_count"] == 1
+    assert dashboard["overview"]["excluded_general_media_event_count"] == 2
+    assert [event["id"] for event in dashboard["events"]] == ["policy"]
+
+
+def test_topic_ledgers_include_change_records_for_cumulative_history(tmp_path: Path):
+    root = tmp_path / "policy_intelligence"
+    manifest = {
+        "created_at": "2026-07-02T00:00:00+00:00",
+        "events": [
+            {
+                "event_id": "first",
+                "received_utc": "2026-04-28T00:00:00+00:00",
+                "subject": "Fw: [KRPIA] UPDATE: 약가제도 개편 특허만료 오리지널 규정해석-의견 요청(~4/28 오전 10시)",
+                "topic": "기등재 약제 재평가·약가조정",
+                "agencies": ["KRPIA"],
+                "documents": [],
+            },
+            {
+                "event_id": "latest",
+                "received_utc": "2026-06-18T00:00:00+00:00",
+                "subject": "Fw: [KRPIA] MOHW 6/18 민관협의체- 기등재 재평가 관련 협회의견서 공유",
+                "topic": "기등재 약제 재평가·약가조정",
+                "agencies": ["KRPIA", "복지부"],
+                "documents": [],
+            },
+        ],
+    }
+    _write_json(root / "manifests" / "pilot.json", manifest)
+
+    dashboard = load_policy_intelligence(root=root, manifest_path=root / "manifests" / "pilot.json")
+
+    ledger = dashboard["topic_ledgers"][0]
+    assert ledger["events"] == ["first", "latest"]
+    assert ledger["latest_change"]["event_id"] == "latest"
+    assert ledger["latest_change"]["change_type"] == "updated"
+    assert "민관협의체" in ledger["latest_change"]["after"]
+    assert dashboard["change_records"][0]["change_type"] == "new_topic"
+    assert dashboard["change_records"][1]["change_type"] == "updated"
+    assert all("raw_folder" not in json.dumps(record, ensure_ascii=False) for record in dashboard["change_records"])
+
+
+def test_report_artifacts_include_downloadable_template_without_private_paths(tmp_path: Path):
+    root = tmp_path / "policy_intelligence"
+    _write_json(root / "manifests" / "pilot.json", {"created_at": "2026-07-02T00:00:00+00:00", "events": []})
+    template = root / "reports" / IMPACT_TEMPLATE_NAME
+    template.parent.mkdir(parents=True, exist_ok=True)
+    template.write_bytes(b"xlsx bytes")
+
+    dashboard = load_policy_intelligence(root=root, manifest_path=root / "manifests" / "pilot.json")
+    template_artifact = next(a for a in dashboard["report_artifacts"] if a["filename"] == IMPACT_TEMPLATE_NAME)
+
+    assert template_artifact["available"] is True
+    assert template_artifact["format"] == "xlsx"
+    assert template_artifact["download_url"].startswith("/api/policy-intelligence/reports/")
+    assert str(root) not in json.dumps(template_artifact, ensure_ascii=False)
+    assert resolve_report_artifact_path(template_artifact["id"], root=root) == template

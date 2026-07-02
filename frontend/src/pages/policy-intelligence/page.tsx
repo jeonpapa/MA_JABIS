@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  downloadPolicyReportArtifact,
   fetchPolicyDocuments,
   fetchPolicyEvents,
   fetchPolicyOverview,
@@ -7,7 +8,9 @@ import {
   PolicyEvent,
   PolicyImpactCandidate,
   PolicyOverview,
+  PolicyReportArtifact,
   PolicyTopic,
+  PolicyTopicLedger,
 } from '@/api/policyIntelligence';
 
 const severityTone: Record<string, string> = {
@@ -72,13 +75,94 @@ function ImpactCard({ item }: { item: PolicyImpactCandidate }) {
   );
 }
 
+function TopicLedgerCard({ ledger, selected, onSelect }: { ledger: PolicyTopicLedger; selected: boolean; onSelect: () => void }) {
+  return (
+    <button
+      onClick={onSelect}
+      className={`w-full rounded-2xl border p-4 text-left transition ${selected ? 'border-teal-300 bg-teal-50' : 'border-gray-200 bg-white hover:border-gray-300'}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-bold text-gray-950">{ledger.topic_name}</p>
+          <p className="mt-1 text-sm text-gray-600">{ledger.current_summary || '최신 요약 대기'}</p>
+        </div>
+        <SeverityBadge value={ledger.severity} />
+      </div>
+      <div className="mt-3 grid gap-2 text-xs text-gray-500 sm:grid-cols-3">
+        <span>From {formatDate(ledger.first_seen_at)}</span>
+        <span>Latest {formatDate(ledger.latest_seen_at)}</span>
+        <span>{ledger.events.length} events</span>
+      </div>
+      {ledger.latest_change && (
+        <div className="mt-3 rounded-xl border border-dashed border-gray-200 bg-white/80 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">What changed</p>
+          <p className="mt-1 text-xs font-bold text-gray-700">{ledger.latest_change.change_type === 'new_topic' ? 'New topic' : 'Updated'} · {formatDate(ledger.latest_change.date)}</p>
+          <p className="mt-1 text-sm text-gray-700">{ledger.latest_change.after}</p>
+        </div>
+      )}
+      <div className="mt-3 rounded-xl bg-gray-50 p-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">MSD implication</p>
+        <p className="mt-1 text-sm text-gray-800">{ledger.msd_implication_latest.rationale}</p>
+        <p className="mt-2 text-xs font-semibold text-teal-700">Next: {ledger.msd_implication_latest.next_action}</p>
+      </div>
+      {ledger.impact_assessment_ready && (
+        <p className="mt-3 inline-flex rounded-full bg-red-50 px-2.5 py-1 text-xs font-bold text-red-700">Impact assessment ready</p>
+      )}
+    </button>
+  );
+}
+
+function ReportArtifactCard({
+  artifact,
+  downloading,
+  onDownload,
+}: {
+  artifact: PolicyReportArtifact;
+  downloading: boolean;
+  onDownload: (artifact: PolicyReportArtifact) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{artifact.kind.replaceAll('_', ' ')}</p>
+          <h3 className="mt-1 font-bold text-gray-950">{artifact.title}</h3>
+          <p className="mt-1 text-xs text-gray-500">{artifact.topic}</p>
+        </div>
+        <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${artifact.available ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+          {artifact.available ? artifact.format.toUpperCase() : 'Pending'}
+        </span>
+      </div>
+      <p className="mt-3 truncate text-xs text-gray-500" title={artifact.filename}>{artifact.filename}</p>
+      <div className="mt-3 flex items-center justify-between gap-3 text-xs text-gray-500">
+        <span>{artifact.file_size ? `${Math.round(artifact.file_size / 1024).toLocaleString()} KB` : 'No file'}</span>
+        {artifact.available && artifact.download_url ? (
+          <button
+            type="button"
+            onClick={() => onDownload(artifact)}
+            disabled={downloading}
+            className="font-semibold text-teal-700 hover:text-teal-900 disabled:cursor-not-allowed disabled:text-gray-400"
+          >
+            {downloading ? 'Downloading...' : 'Download'}
+          </button>
+        ) : (
+          <span>Draft pending</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function PolicyIntelligencePage() {
   const [overview, setOverview] = useState<PolicyOverview | null>(null);
   const [topics, setTopics] = useState<PolicyTopic[]>([]);
+  const [topicLedgers, setTopicLedgers] = useState<PolicyTopicLedger[]>([]);
+  const [reportArtifacts, setReportArtifacts] = useState<PolicyReportArtifact[]>([]);
   const [impacts, setImpacts] = useState<PolicyImpactCandidate[]>([]);
   const [events, setEvents] = useState<PolicyEvent[]>([]);
   const [documents, setDocuments] = useState<PolicyDocument[]>([]);
   const [selectedTopic, setSelectedTopic] = useState('All');
+  const [downloadingArtifactId, setDownloadingArtifactId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -96,6 +180,8 @@ export default function PolicyIntelligencePage() {
         if (!mounted) return;
         setOverview(overviewRes.overview);
         setTopics(overviewRes.topics);
+        setTopicLedgers(overviewRes.topic_ledgers || []);
+        setReportArtifacts(overviewRes.report_artifacts || []);
         setImpacts(overviewRes.impact_candidates);
         setEvents(eventsRes.items);
         setDocuments(docsRes.items);
@@ -118,6 +204,18 @@ export default function PolicyIntelligencePage() {
     () => selectedTopic === 'All' ? documents : documents.filter(d => d.topic === selectedTopic),
     [documents, selectedTopic],
   );
+
+  const handleDownloadArtifact = async (artifact: PolicyReportArtifact) => {
+    setDownloadingArtifactId(artifact.id);
+    setError('');
+    try {
+      await downloadPolicyReportArtifact(artifact);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '파일 다운로드에 실패했습니다.');
+    } finally {
+      setDownloadingArtifactId(null);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-950">
@@ -151,7 +249,47 @@ export default function PolicyIntelligencePage() {
               <KpiCard label="Topics" value={overview.topic_count} hint="주제별 latest-state summary" icon="ri-node-tree" />
               <KpiCard label="Documents" value={overview.document_count} hint="첨부·추출 텍스트 기준" icon="ri-file-text-line" />
               <KpiCard label="High impact" value={overview.high_impact_count} hint="High / Very High" icon="ri-alarm-warning-line" />
-              <KpiCard label="Report" value={overview.report_available ? 'Ready' : 'Draft'} hint="Impact report candidate" icon="ri-file-chart-line" />
+              <KpiCard label="Separated" value={overview.excluded_general_media_event_count ?? 0} hint="Prain/메일링 lane 제외" icon="ri-git-branch-line" />
+            </section>
+
+            <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-bold">Topic Ledgers</h2>
+                  <p className="text-sm text-gray-500">주제별 최초 발생부터 최신 상태까지 누적되는 정책 히스토리와 MSD implication</p>
+                </div>
+                <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600">{topicLedgers.length} ledgers</span>
+              </div>
+              <div className="grid gap-3 xl:grid-cols-2">
+                {topicLedgers.map(ledger => (
+                  <TopicLedgerCard
+                    key={ledger.topic_id}
+                    ledger={ledger}
+                    selected={selectedTopic === ledger.topic_name}
+                    onSelect={() => setSelectedTopic(ledger.topic_name)}
+                  />
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-bold">Impact Assessment Artifacts</h2>
+                  <p className="text-sm text-gray-500">leadership draft와 제품별 impact simulation template</p>
+                </div>
+                <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600">{reportArtifacts.filter(a => a.available).length} ready</span>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {reportArtifacts.map(artifact => (
+                  <ReportArtifactCard
+                    key={artifact.id}
+                    artifact={artifact}
+                    downloading={downloadingArtifactId === artifact.id}
+                    onDownload={handleDownloadArtifact}
+                  />
+                ))}
+              </div>
             </section>
 
             <section className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">

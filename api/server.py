@@ -3828,7 +3828,7 @@ def brand_traffic_delete(item_id: int):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Daily Mailing — 구독 설정 (사용자별 CRUD + 테스트 발송)
+# Daily Mailing — 구독 신청 설정 (사용자별 CRUD + 초안 미리보기)
 # ──────────────────────────────────────────────────────────────────────────────
 
 from agents.notify.mailer import (  # noqa: E402
@@ -3836,6 +3836,7 @@ from agents.notify.mailer import (  # noqa: E402
     smtp_configured as _mail_smtp_configured,
 )
 from agents.notify.digest import render_daily_digest as _mail_render_digest  # noqa: E402
+from agents.daily_mailing.storage import load_admin_kanban as _daily_mailing_admin_kanban  # noqa: E402
 
 
 def _mail_sub_row_to_dict(r) -> dict:
@@ -4689,6 +4690,18 @@ def mail_sub_preview(item_id: int):
         return jsonify({"error": str(e)}), 500
 
 
+@app.get("/api/admin/daily-mailing/kanban")
+@require_auth(role="admin")
+def daily_mailing_admin_kanban():
+    """Admin 전용 운영 칸반. 기사별 approve가 아니라 누적 이력/품질 상태를 보여준다."""
+    try:
+        limit_runs = min(int(request.args.get("limitRuns", 20)), 100)
+        return jsonify(_daily_mailing_admin_kanban(limit_runs=limit_runs))
+    except Exception as e:
+        logger.error("daily_mailing_admin_kanban 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @app.post("/api/mail-subscriptions/<int:item_id>/test-send")
 @require_auth()
 def mail_sub_test_send(item_id: int):
@@ -4709,15 +4722,16 @@ def mail_sub_test_send(item_id: int):
                 keywords=item["keywords"],
                 media=item["media"],
             )
-            result = _mail_send(item["emails"], subject, body_html, body_text=body_text)
-            if result.get("ok") and result.get("mode") == "smtp":
-                from datetime import datetime, timezone
-                now = datetime.now(timezone.utc).isoformat()
-                conn.execute(
-                    "UPDATE mail_subscription SET last_sent_at=? WHERE id=?",
-                    (now, item_id),
-                )
-                conn.commit()
+            result = {
+                "ok": True,
+                "mode": "preview",
+                "sent": False,
+                "recipients": item["emails"],
+                "subject": subject,
+                "html": body_html,
+                "text": body_text,
+                "message": "초안 미리보기만 생성했습니다. 승인된 Gmail draft/send 단계 전에는 실제 발송하지 않습니다.",
+            }
         return jsonify(result)
     except Exception as e:
         logger.error("mail_sub_test_send 실패: %s", e, exc_info=True)
@@ -5521,7 +5535,10 @@ def policy_intelligence_overview():
         return jsonify({
             "overview": data["overview"],
             "topics": data["topics"],
+            "topic_ledgers": data.get("topic_ledgers", []),
             "impact_candidates": data["impact_candidates"],
+            "change_records": data.get("change_records", []),
+            "report_artifacts": data.get("report_artifacts", []),
         })
     except Exception as e:
         logger.error("policy intelligence overview 실패: %s", e, exc_info=True)
@@ -5545,6 +5562,33 @@ def policy_intelligence_documents():
         return jsonify({"items": _policy_intelligence.load_policy_intelligence()["documents"]})
     except Exception as e:
         logger.error("policy intelligence documents 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/policy-intelligence/reports")
+@require_auth()
+def policy_intelligence_reports():
+    try:
+        return jsonify({"items": _policy_intelligence.load_policy_intelligence().get("report_artifacts", [])})
+    except Exception as e:
+        logger.error("policy intelligence reports 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/policy-intelligence/reports/<artifact_id>/download")
+@require_auth()
+def policy_intelligence_report_download(artifact_id):
+    try:
+        path = _policy_intelligence.resolve_report_artifact_path(artifact_id)
+        response = send_file(path, as_attachment=True, download_name=path.name)
+        response.headers["Cache-Control"] = "no-store, private, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        logger.error("policy intelligence report download 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 

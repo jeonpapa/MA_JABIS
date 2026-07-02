@@ -27,6 +27,31 @@ def _default_root() -> Path:
 DEFAULT_ROOT = _default_root()
 DEFAULT_MANIFEST_NAME = "pilot_krpia_20260629.json"
 DEFAULT_REPORT_NAME = "krpia_policy_intelligence_pilot_timeline_implications_20260629.md"
+IMPACT_DRAFT_NAME = "impact_assessment_draft_기등재_약제_재평가_20260630.md"
+IMPACT_TEMPLATE_NAME = "impact_assessment_template_기등재_약제_재평가_20260702.xlsx"
+REPORT_ARTIFACT_SPECS = [
+    {
+        "filename": DEFAULT_REPORT_NAME,
+        "topic": "전체 KRPIA Policy Intelligence",
+        "kind": "pilot_timeline_report",
+        "title": "KRPIA Policy Intelligence 파일럿 1차 정리",
+        "format": "markdown",
+    },
+    {
+        "filename": IMPACT_DRAFT_NAME,
+        "topic": "기등재 약제 재평가·약가조정",
+        "kind": "impact_assessment_draft",
+        "title": "Impact Assessment Draft — 기등재 약제 재평가",
+        "format": "markdown",
+    },
+    {
+        "filename": IMPACT_TEMPLATE_NAME,
+        "topic": "기등재 약제 재평가·약가조정",
+        "kind": "impact_assessment_template",
+        "title": "MSD Product Impact Simulation Template",
+        "format": "xlsx",
+    },
+]
 
 
 def _resolve_manifest_file(root: Path, manifest_path: str | Path | None = None) -> Path:
@@ -144,9 +169,70 @@ def _doc_id(event_id: str, filename: str, index: int) -> str:
     return f"{event_id}-{index}-{slug or 'document'}"
 
 
+def _topic_id(topic: str) -> str:
+    slug = "".join(ch.lower() if ch.isalnum() else "-" for ch in topic).strip("-")
+    return slug or "topic"
+
+
+def _artifact_id(filename: str) -> str:
+    stem = Path(filename).stem
+    slug = "".join(ch.lower() if ch.isalnum() else "-" for ch in stem).strip("-")
+    return slug[:90] or "artifact"
+
+
+def _report_artifacts(root: Path) -> list[dict[str, Any]]:
+    artifacts: list[dict[str, Any]] = []
+    for spec in REPORT_ARTIFACT_SPECS:
+        path = root / "reports" / spec["filename"]
+        stat = path.stat() if path.exists() else None
+        artifacts.append(
+            {
+                "id": _artifact_id(spec["filename"]),
+                "topic": spec["topic"],
+                "kind": spec["kind"],
+                "title": spec["title"],
+                "filename": spec["filename"],
+                "format": spec["format"],
+                "available": path.exists(),
+                "file_size": stat.st_size if stat else 0,
+                "updated_at": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat() if stat else None,
+                "download_url": f"/api/policy-intelligence/reports/{_artifact_id(spec['filename'])}/download" if stat else None,
+            }
+        )
+    return artifacts
+
+
+def resolve_report_artifact_path(artifact_id: str, root: str | Path | None = None) -> Path:
+    """Resolve a sanitized report/template artifact ID to a private report path."""
+    root_path = Path(root) if root is not None else _default_root()
+    for spec in REPORT_ARTIFACT_SPECS:
+        if _artifact_id(spec["filename"]) == artifact_id:
+            path = root_path / "reports" / spec["filename"]
+            if not path.exists():
+                raise FileNotFoundError(f"Policy intelligence report artifact not found: {artifact_id}")
+            return path
+    raise FileNotFoundError(f"Unknown policy intelligence report artifact: {artifact_id}")
+
+
 def _event_summary(subject: str) -> str:
     cleaned = subject.replace("Fw:", "").replace("FW:", "").strip()
     return cleaned[:180]
+
+
+GENERAL_MEDIA_LANE_SUBJECT_MARKERS = (
+    "prain_keytruda",
+    "daily mailing draft",
+    "주요 뉴스 &amp; market insight",
+    "주요 뉴스 & market insight",
+)
+
+
+def _is_policy_intelligence_event(event: dict[str, Any]) -> bool:
+    """Keep the KRPIA/government consultation lane separate from news mailings."""
+    subject = (event.get("subject") or "").casefold()
+    if any(marker in subject for marker in GENERAL_MEDIA_LANE_SUBJECT_MARKERS):
+        return False
+    return True
 
 
 def _public_event(event: dict[str, Any]) -> dict[str, Any]:
@@ -177,7 +263,9 @@ def load_policy_intelligence(
     manifest_file = _resolve_manifest_file(root, manifest_path)
     manifest = _load_json(manifest_file)
     source_batch_id = manifest_file.stem
-    raw_events = manifest.get("events") or []
+    all_raw_events = manifest.get("events") or []
+    excluded_event_count = sum(1 for event in all_raw_events if not _is_policy_intelligence_event(event))
+    raw_events = [event for event in all_raw_events if _is_policy_intelligence_event(event)]
     raw_events = sorted(raw_events, key=lambda e: _safe_dt(e.get("received_utc")), reverse=True)
 
     events = [_public_event(event) for event in raw_events]
@@ -204,9 +292,34 @@ def load_policy_intelligence(
         by_topic[event["topic"]].append(event)
 
     topics = []
+    topic_ledgers = []
+    change_records: list[dict[str, Any]] = []
     for topic, topic_events in by_topic.items():
         rule = _rule(topic)
-        latest = max(topic_events, key=lambda e: _safe_dt(e.get("date")))
+        chronological_events = sorted(topic_events, key=lambda e: _safe_dt(e.get("date")))
+        latest = chronological_events[-1]
+        first = chronological_events[0]
+        topic_change_records: list[dict[str, Any]] = []
+        previous_summary: str | None = None
+        for index, event in enumerate(chronological_events):
+            after = event.get("summary") or event.get("subject") or ""
+            change_record = {
+                "change_id": f"{_topic_id(topic)}:{event.get('id')}",
+                "topic_id": _topic_id(topic),
+                "topic_name": topic,
+                "event_id": event.get("id"),
+                "date": event.get("date"),
+                "change_type": "new_topic" if index == 0 else "updated",
+                "before": previous_summary,
+                "after": after,
+                "evidence_quotes": [after] if after else [],
+                "why_it_matters": rule["rationale"],
+                "confidence": "medium",
+            }
+            topic_change_records.append(change_record)
+            change_records.append(change_record)
+            previous_summary = after
+        latest_change = topic_change_records[-1] if topic_change_records else None
         topics.append(
             {
                 "topic": topic,
@@ -218,7 +331,29 @@ def load_policy_intelligence(
                 "next_action": rule["next_action"],
             }
         )
+        topic_ledgers.append(
+            {
+                "topic_id": _topic_id(topic),
+                "topic_name": topic,
+                "first_seen_at": first.get("date"),
+                "latest_seen_at": latest.get("date"),
+                "current_status": rule["status"],
+                "current_summary": latest.get("summary"),
+                "latest_change": latest_change,
+                "severity": rule["severity"],
+                "msd_implication_latest": {
+                    "rationale": rule["rationale"],
+                    "next_action": rule["next_action"],
+                },
+                "events": [event.get("id") for event in chronological_events],
+                "impact_assessment_ready": rule["priority"] == 1,
+                "data_gaps": [
+                    "MSD 내부 품목·가격·매출·계약/인하 이력 필요"
+                ] if rule["priority"] <= 2 else [],
+            }
+        )
     topics.sort(key=lambda t: (_rule(t["topic"])["priority"], t["topic"]))
+    topic_ledgers.sort(key=lambda t: (_rule(t["topic_name"])["priority"], t["topic_name"]))
 
     impact_candidates = []
     for topic in by_topic:
@@ -249,15 +384,20 @@ def load_policy_intelligence(
         "high_impact_count": sum(severity_counts[s] for s in ("High", "Very High")),
         "latest_event_date": events[0]["date"] if events else None,
         "severity_counts": dict(severity_counts),
+        "excluded_general_media_event_count": excluded_event_count,
         "report_available": report_path.exists(),
     }
+    report_artifacts = _report_artifacts(root)
 
     return {
         "overview": overview,
         "events": events,
         "topics": topics,
+        "topic_ledgers": topic_ledgers,
         "documents": documents,
         "impact_candidates": impact_candidates,
+        "change_records": change_records,
+        "report_artifacts": report_artifacts,
     }
 
 

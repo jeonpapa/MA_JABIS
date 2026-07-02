@@ -13,7 +13,14 @@ set -m
 mkdir -p logs data/db data/cache data/dashboard data/raw data/reimb \
          data/foreign/exchange_rate data/foreign/us data/foreign/jp \
          data/foreign/it data/foreign/fr data/foreign/ch data/foreign/uk \
-         data/foreign/de data/foreign/ca data/research
+         data/foreign/de data/foreign/ca data/research \
+         data/policy_intelligence/reports data/policy_intelligence/manifests
+
+# Policy Intelligence report/template seed — blank templates are bundled in git;
+# private ingested mail/document artifacts remain only on the mounted volume.
+if [ -d data/policy_intelligence_seed ]; then
+    cp -nR data/policy_intelligence_seed/. data/policy_intelligence/ 2>/dev/null || true
+fi
 
 # 부팅 1회 — 헤르메스 git 위원회 데이터를 즉시 반영 (배포 직후 최신화, 멱등).
 # 실패해도 부팅을 막지 않음 (스케줄러가 매일 02:00 재시도).
