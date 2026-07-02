@@ -520,6 +520,50 @@ def check_mfds_baseline_8(name: str, root: Path) -> CheckResult:
     )
 
 
+def check_policy_curation_grounding(name: str, root: Path) -> CheckResult:
+    """`project_hermes_krpia_curation` — 헤르메스 큐레이션 사이드카 grounding + pending 커버리지.
+
+    신호: analysis 사이드카가 있으면 evidence_quotes 가 소스에 실재(validate_analysis 무경고),
+    없으면 pending 으로 집계. policy_intelligence manifests 없으면 SKIP.
+    (policy 데이터는 repo root 밖 POLICY_INTELLIGENCE_ROOT 이므로 default_root() 사용.)
+    """
+    from agents.policy_analysis import (
+        default_root, validate_analysis, load_analysis, list_pending, _iter_policy_events,
+    )
+    pi_root = default_root()
+    if not (pi_root / "manifests").exists():
+        return CheckResult(name, "skip", "policy_intelligence manifests 없음 (런타임 신호 없음)")
+    try:
+        events = {e.get("event_id"): e for e in _iter_policy_events(pi_root)}
+    except Exception as exc:
+        return CheckResult(name, "skip", f"manifest 로드 불가: {exc}")
+    problems = []
+    for eid, event in events.items():
+        analysis = load_analysis(eid, pi_root)
+        if not analysis:
+            continue
+        warns = validate_analysis(analysis, event, pi_root)
+        if warns:
+            problems.append({"event_id": eid, "warnings": warns})
+    pending = list_pending(pi_root)
+    metrics = {
+        "curated": len(events) - len(pending),
+        "pending_analysis_count": len(pending),
+        "grounding_problems": len(problems),
+    }
+    if problems:
+        return CheckResult(
+            name, "fail",
+            f"{len(problems)}건 큐레이션 grounding 위반 (evidence 소스 불일치/용어가드)",
+            {**metrics, "items": problems},
+        )
+    return CheckResult(
+        name, "pass",
+        f"큐레이션 {metrics['curated']}건 grounding OK, pending {len(pending)}건",
+        metrics,
+    )
+
+
 # ────────────────────────────────────────────────────────────────────────────
 # 레지스트리
 # ────────────────────────────────────────────────────────────────────────────
@@ -541,6 +585,8 @@ CHECKS: dict[str, Callable[[str, Path], CheckResult]] = {
     # Cross-national reimbursement (pure-napping-goose plan, 2026-04-27 추가)
     "project_xnational_reimbursement": check_xnational_reimbursement,
     "project_foreign_price_coverage": check_foreign_price_coverage,
+    # 헤르메스 KRPIA 큐레이션 grounding + pending 커버리지 (2026-07 추가)
+    "project_hermes_krpia_curation": check_policy_curation_grounding,
 }
 
 # 런타임 검증 불가 (개발 관행 / process state) — 명시적 SKIP
