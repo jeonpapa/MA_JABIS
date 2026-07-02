@@ -14,15 +14,11 @@ from pathlib import Path
 from typing import Any
 
 
-def _default_root() -> Path:
-    configured = os.environ.get("POLICY_INTELLIGENCE_ROOT")
-    if configured:
-        return Path(configured)
-    fly_volume_root = Path("/app/data/policy_intelligence")
-    if Path("/app/data").exists():
-        return fly_volume_root
-    return Path("/opt/data/policy_intelligence")
-
+from agents.policy_analysis import (
+    default_root as _default_root,
+    remap_private_path as _remap_private_path,
+    resolve_curation as _resolve_curation,
+)
 
 DEFAULT_ROOT = _default_root()
 DEFAULT_MANIFEST_NAME = "pilot_krpia_20260629.json"
@@ -235,19 +231,24 @@ def _is_policy_intelligence_event(event: dict[str, Any]) -> bool:
     return True
 
 
-def _public_event(event: dict[str, Any]) -> dict[str, Any]:
+def _public_event(event: dict[str, Any], root: Path) -> dict[str, Any]:
     topic = event.get("topic") or "기타"
     rule = _rule(topic)
+    cur = _resolve_curation(event, root)
+    is_hermes = cur["curation_source"] == "hermes"
     return {
         "id": event.get("event_id"),
         "date": event.get("received_utc"),
         "subject": event.get("subject"),
-        "summary": _event_summary(event.get("subject") or ""),
+        "summary": cur["summary"] if is_hermes and cur.get("summary") else _event_summary(event.get("subject") or ""),
         "topic": topic,
         "agencies": event.get("agencies") or [],
         "deadline": event.get("deadline_hint_from_subject"),
-        "status": rule["status"],
-        "severity": rule["severity"],
+        "status": cur["status"] if is_hermes and cur.get("status") else rule["status"],
+        "severity": cur["severity"] if is_hermes and cur.get("severity") else rule["severity"],
+        "curation_source": cur["curation_source"],
+        "msd_implication": cur.get("msd_implication") or {"rationale": rule["rationale"], "next_action": rule["next_action"]},
+        "evidence_quotes": cur.get("evidence_quotes") or [],
         "email_body_chars": event.get("email_body_chars", 0),
         "attachment_count": event.get("attachment_count_total", len(event.get("documents") or [])),
         "document_count": len(event.get("documents") or []),
@@ -271,7 +272,7 @@ def load_policy_intelligence(
     raw_events = [event for event in policy_lane if not is_committee_event(event)]
     raw_events = sorted(raw_events, key=lambda e: _safe_dt(e.get("received_utc")), reverse=True)
 
-    events = [_public_event(event) for event in raw_events]
+    events = [_public_event(event, root) for event in raw_events]
 
     documents: list[dict[str, Any]] = []
     for event in raw_events:
@@ -306,6 +307,8 @@ def load_policy_intelligence(
         previous_summary: str | None = None
         for index, event in enumerate(chronological_events):
             after = event.get("summary") or event.get("subject") or ""
+            hermes_quotes = [q.get("quote") for q in (event.get("evidence_quotes") or []) if q.get("quote")]
+            hermes_rationale = (event.get("msd_implication") or {}).get("rationale")
             change_record = {
                 "change_id": f"{_topic_id(topic)}:{event.get('id')}",
                 "topic_id": _topic_id(topic),
@@ -315,8 +318,8 @@ def load_policy_intelligence(
                 "change_type": "new_topic" if index == 0 else "updated",
                 "before": previous_summary,
                 "after": after,
-                "evidence_quotes": [after] if after else [],
-                "why_it_matters": rule["rationale"],
+                "evidence_quotes": hermes_quotes or ([after] if after else []),
+                "why_it_matters": hermes_rationale or rule["rationale"],
                 "confidence": "medium",
             }
             topic_change_records.append(change_record)
@@ -340,11 +343,12 @@ def load_policy_intelligence(
                 "topic_name": topic,
                 "first_seen_at": first.get("date"),
                 "latest_seen_at": latest.get("date"),
-                "current_status": rule["status"],
+                "current_status": latest.get("status") or rule["status"],
                 "current_summary": latest.get("summary"),
                 "latest_change": latest_change,
-                "severity": rule["severity"],
-                "msd_implication_latest": {
+                "severity": latest.get("severity") or rule["severity"],
+                "curation_source": latest.get("curation_source", "rule_fallback"),
+                "msd_implication_latest": latest.get("msd_implication") or {
                     "rationale": rule["rationale"],
                     "next_action": rule["next_action"],
                 },
@@ -377,6 +381,7 @@ def load_policy_intelligence(
     impact_candidates.sort(key=lambda c: c["priority"])
 
     severity_counts = Counter(event["severity"] for event in events)
+    curated_event_count = sum(1 for event in events if event.get("curation_source") == "hermes")
     report_path = root / "reports" / DEFAULT_REPORT_NAME
     overview = {
         "created_at": manifest.get("created_at"),
@@ -389,6 +394,8 @@ def load_policy_intelligence(
         "severity_counts": dict(severity_counts),
         "excluded_general_media_event_count": excluded_event_count,
         "committee_event_count": committee_event_count,
+        "curated_event_count": curated_event_count,
+        "pending_analysis_count": len(events) - curated_event_count,
         "report_available": report_path.exists(),
     }
     report_artifacts = _report_artifacts(root)
@@ -403,24 +410,6 @@ def load_policy_intelligence(
         "change_records": change_records,
         "report_artifacts": report_artifacts,
     }
-
-
-def _remap_private_path(stored: str | None, root: Path) -> Path | None:
-    """매니페스트에 저장된 절대경로(/opt/data|/app/data/policy_intelligence/...)를
-    현재 root 하위로 재매핑 + traversal 가드. root 밖이거나 없으면 None."""
-    if not stored:
-        return None
-    norm = str(stored).replace("\\", "/")
-    marker = "policy_intelligence/"
-    idx = norm.find(marker)
-    rel = norm[idx + len(marker):] if idx != -1 else norm.lstrip("/")
-    root_res = Path(root).resolve()
-    candidate = (root_res / rel).resolve()
-    try:
-        candidate.relative_to(root_res)
-    except ValueError:
-        return None
-    return candidate if candidate.exists() else None
 
 
 def _attachment_path(folder: Path | None, doc: dict[str, Any], root: Path) -> Path | None:

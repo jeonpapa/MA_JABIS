@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -7,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agents.policy_intelligence import load_policy_intelligence, resolve_report_artifact_path, IMPACT_TEMPLATE_NAME
+from agents import policy_analysis as pa
 
 
 def _write_json(path: Path, data: object) -> None:
@@ -238,3 +240,41 @@ def test_report_artifacts_include_downloadable_template_without_private_paths(tm
     assert template_artifact["download_url"].startswith("/api/policy-intelligence/reports/")
     assert str(root) not in json.dumps(template_artifact, ensure_ascii=False)
     assert resolve_report_artifact_path(template_artifact["id"], root=root) == template
+
+
+def test_curation_overrides_rule_with_fallback(tmp_path: Path):
+    root = tmp_path / "policy_intelligence"
+    folder = root / "raw" / "gmail" / "evt1"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "body.txt").write_text("유연계약제 접수 본문", encoding="utf-8")
+    (folder / "message_sha256.txt").write_text(hashlib.sha256(b"eml").hexdigest() + "\n", encoding="utf-8")
+    manifest = {"created_at": "2026-07-01T00:00:00+00:00", "event_count": 1, "events": [{
+        "event_id": "evt1", "received_utc": "2026-07-01T00:00:00+00:00",
+        "subject": "Fw: [KRPIA] 약가 유연계약제 안내", "topic": "약가 유연계약제",
+        "agencies": ["KRPIA"], "email_body_chars": 10, "attachment_count_total": 0,
+        "raw_folder": str(folder), "documents": []}]}
+    mdir = root / "manifests"; mdir.mkdir(parents=True, exist_ok=True)
+    (mdir / "gmail_krpia_20260701_000000.json").write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+
+    event = manifest["events"][0]
+    data = load_policy_intelligence(root=root)
+    ev = data["events"][0]
+    assert ev["curation_source"] == "rule_fallback"
+    assert ev["severity"] == "High"
+    assert data["overview"]["pending_analysis_count"] == 1
+    assert data["overview"]["curated_event_count"] == 0
+
+    a = {"event_id": "evt1", "content_fingerprint": pa.content_fingerprint(event, root),
+         "summary": "유연계약제 접수 시작(사용자 확인 요망)", "severity": "medium", "status": "진행중",
+         "msd_implication": {"rationale": "실제가 노출 리스크", "next_action": "SOP 점검"}}
+    p = pa.analysis_path("evt1", root); p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(a, ensure_ascii=False), encoding="utf-8")
+    data2 = load_policy_intelligence(root=root)
+    ev2 = data2["events"][0]
+    assert ev2["curation_source"] == "hermes"
+    assert ev2["severity"] == "medium"
+    assert ev2["summary"].startswith("유연계약제 접수 시작")
+    assert data2["overview"]["curated_event_count"] == 1
+    assert data2["overview"]["pending_analysis_count"] == 0
+    ledger = data2["topic_ledgers"][0]
+    assert ledger["msd_implication_latest"]["rationale"] == "실제가 노출 리스크"
