@@ -20,12 +20,17 @@ const laneChip: Record<string, { label: string; tone: string }> = {
   policy: { label: '정책', tone: 'bg-teal-50 text-teal-700' },
 };
 
-const severityTone: Record<string, string> = {
-  'Very High': 'bg-red-50 text-red-700 border-red-200',
-  High: 'bg-orange-50 text-orange-700 border-orange-200',
-  'Medium-High': 'bg-amber-50 text-amber-700 border-amber-200',
-  Medium: 'bg-blue-50 text-blue-700 border-blue-200',
-};
+// 룰 엔진(대문자) + Hermes 큐레이션(소문자, "low" 포함) 모두 색상 매핑 — 대소문자 무관
+function severityTone(sev?: string): string {
+  const map: Record<string, string> = {
+    'very high': 'bg-red-50 text-red-700 border-red-200',
+    high: 'bg-orange-50 text-orange-700 border-orange-200',
+    'medium-high': 'bg-amber-50 text-amber-700 border-amber-200',
+    medium: 'bg-blue-50 text-blue-700 border-blue-200',
+    low: 'bg-slate-100 text-slate-600 border-slate-200',
+  };
+  return map[(sev || '').toLowerCase()] || 'bg-gray-50 text-gray-700 border-gray-200';
+}
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return '-';
@@ -36,7 +41,7 @@ function formatDate(value: string | null | undefined): string {
 
 function SeverityBadge({ value }: { value: string }) {
   return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${severityTone[value] || 'bg-gray-50 text-gray-700 border-gray-200'}`}>
+    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${severityTone(value)}`}>
       {value}
     </span>
   );
