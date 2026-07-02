@@ -11,6 +11,8 @@ export interface PolicyOverview {
   severity_counts: Record<string, number>;
   excluded_general_media_event_count?: number;
   committee_event_count?: number;
+  curated_event_count?: number;
+  pending_analysis_count?: number;
   report_available: boolean;
 }
 
@@ -54,6 +56,7 @@ export interface PolicyTopicLedger {
   events: string[];
   impact_assessment_ready: boolean;
   data_gaps: string[];
+  curation_source?: 'hermes' | 'rule_fallback';
 }
 
 export interface PolicyImpactCandidate {
@@ -92,6 +95,9 @@ export interface PolicyEvent {
   email_body_chars: number;
   attachment_count: number;
   document_count: number;
+  curation_source?: 'hermes' | 'rule_fallback';
+  msd_implication?: { rationale: string; next_action: string };
+  evidence_quotes?: { quote: string; source?: string; loc?: string }[];
 }
 
 export interface PolicyDocument {
@@ -139,6 +145,10 @@ export interface PolicyEventDetail {
   email_body: string;
   email_body_chars: number;
   documents: PolicyEventDocument[];
+  curation_source?: 'hermes' | 'rule_fallback';
+  summary?: string | null;
+  msd_implication?: { rationale: string; next_action: string };
+  evidence_quotes?: { quote: string; source?: string; loc?: string }[];
 }
 
 export async function fetchPolicyOverview(): Promise<PolicyOverviewResponse> {
