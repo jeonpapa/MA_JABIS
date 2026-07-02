@@ -389,7 +389,7 @@ def load_policy_intelligence(
         "event_count": len(events),
         "topic_count": len(topics),
         "document_count": len(documents),
-        "high_impact_count": sum(severity_counts[s] for s in ("High", "Very High")),
+        "high_impact_count": sum(c for s, c in severity_counts.items() if str(s).casefold() in ("high", "very high")),
         "latest_event_date": events[0]["date"] if events else None,
         "severity_counts": dict(severity_counts),
         "excluded_general_media_event_count": excluded_event_count,
@@ -470,6 +470,8 @@ def load_event_detail(event_id: str, root: str | Path | None = None,
             "download_url": f"/api/policy-intelligence/documents/{did}/download" if file_available else None,
         })
     rule = _rule(raw.get("topic") or "기타")
+    cur = _resolve_curation(raw, root)
+    is_hermes = cur["curation_source"] == "hermes"
     return {
         "id": event_id,
         "subject": raw.get("subject"),
@@ -477,8 +479,12 @@ def load_event_detail(event_id: str, root: str | Path | None = None,
         "from": raw.get("from"),
         "topic": raw.get("topic") or "기타",
         "agencies": raw.get("agencies") or [],
-        "severity": rule["severity"],
-        "status": rule["status"],
+        "severity": cur["severity"] if is_hermes and cur.get("severity") else rule["severity"],
+        "status": cur["status"] if is_hermes and cur.get("status") else rule["status"],
+        "curation_source": cur["curation_source"],
+        "summary": cur.get("summary") if is_hermes else None,
+        "msd_implication": cur.get("msd_implication") or {"rationale": rule["rationale"], "next_action": rule["next_action"]},
+        "evidence_quotes": cur.get("evidence_quotes") or [],
         "deadline": raw.get("deadline_hint_from_subject"),
         "email_body": email_body,
         "email_body_chars": raw.get("email_body_chars", 0),
@@ -640,6 +646,7 @@ def load_committee_workspace(root: str | Path | None = None,
             "received_utc": event.get("received_utc"),
             "agencies": event.get("agencies") or [],
             "documents": _docs_public(event),
+            "curation": _resolve_curation(event, root),
         }
         if klass["lane"] == "tf":
             tf_buckets[klass["tf_id"]].append(base)

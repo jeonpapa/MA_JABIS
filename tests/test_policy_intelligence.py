@@ -7,7 +7,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from agents.policy_intelligence import load_policy_intelligence, resolve_report_artifact_path, IMPACT_TEMPLATE_NAME
+from agents.policy_intelligence import (
+    load_policy_intelligence,
+    load_event_detail,
+    resolve_report_artifact_path,
+    IMPACT_TEMPLATE_NAME,
+)
 from agents import policy_analysis as pa
 
 
@@ -278,3 +283,48 @@ def test_curation_overrides_rule_with_fallback(tmp_path: Path):
     assert data2["overview"]["pending_analysis_count"] == 0
     ledger = data2["topic_ledgers"][0]
     assert ledger["msd_implication_latest"]["rationale"] == "실제가 노출 리스크"
+
+
+def test_event_detail_includes_curation(tmp_path: Path):
+    root = tmp_path / "policy_intelligence"
+    folder = root / "raw" / "gmail" / "evt1"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "body.txt").write_text("유연계약제 접수 본문", encoding="utf-8")
+    (folder / "message_sha256.txt").write_text(hashlib.sha256(b"eml").hexdigest() + "\n", encoding="utf-8")
+    manifest = {"created_at": "t", "events": [{
+        "event_id": "evt1", "received_utc": "2026-07-01T00:00:00+00:00",
+        "subject": "Fw: [KRPIA] 약가 유연계약제 안내", "topic": "약가 유연계약제",
+        "agencies": ["KRPIA"], "raw_folder": str(folder), "documents": []}]}
+    mdir = root / "manifests"; mdir.mkdir(parents=True, exist_ok=True)
+    (mdir / "gmail_krpia_20260701_000000.json").write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+    a = {"event_id": "evt1", "content_fingerprint": pa.content_fingerprint(manifest["events"][0], root),
+         "summary": "S", "severity": "low", "status": "모니터링",
+         "msd_implication": {"rationale": "R", "next_action": "N"},
+         "evidence_quotes": [{"quote": "유연계약제 접수 본문", "source": "body"}]}
+    p = pa.analysis_path("evt1", root); p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(a, ensure_ascii=False), encoding="utf-8")
+    detail = load_event_detail("evt1", root=root)
+    assert detail["curation_source"] == "hermes"
+    assert detail["msd_implication"]["rationale"] == "R"
+    assert detail["evidence_quotes"][0]["quote"] == "유연계약제 접수 본문"
+
+
+def test_high_impact_counts_hermes_lowercase_high(tmp_path: Path):
+    root = tmp_path / "policy_intelligence"
+    folder = root / "raw" / "gmail" / "evt1"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "body.txt").write_text("본문", encoding="utf-8")
+    (folder / "message_sha256.txt").write_text(hashlib.sha256(b"eml").hexdigest() + "\n", encoding="utf-8")
+    manifest = {"created_at": "t", "events": [{
+        "event_id": "evt1", "received_utc": "2026-07-01T00:00:00+00:00",
+        "subject": "Fw: [KRPIA] 약가 유연계약제 안내", "topic": "약가 유연계약제",
+        "agencies": ["KRPIA"], "raw_folder": str(folder), "documents": []}]}
+    mdir = root / "manifests"; mdir.mkdir(parents=True, exist_ok=True)
+    (mdir / "gmail_krpia_20260701_000000.json").write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+    a = {"event_id": "evt1", "content_fingerprint": pa.content_fingerprint(manifest["events"][0], root),
+         "summary": "S", "severity": "high",
+         "msd_implication": {"rationale": "R", "next_action": "N"}}
+    p = pa.analysis_path("evt1", root); p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(a, ensure_ascii=False), encoding="utf-8")
+    data = load_policy_intelligence(root=root)
+    assert data["overview"]["high_impact_count"] == 1  # lowercase 'high' counted
