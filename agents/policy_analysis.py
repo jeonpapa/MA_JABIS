@@ -82,3 +82,48 @@ def analysis_valid(analysis: dict[str, Any] | None, event: dict[str, Any], root:
     if any(not analysis.get(f) for f in REQUIRED_FIELDS):
         return False
     return analysis.get("content_fingerprint") == content_fingerprint(event, root)
+
+
+def _event_texts(event: dict[str, Any], root: str | Path) -> str:
+    root = Path(root)
+    parts: list[str] = []
+    folder = remap_private_path(event.get("raw_folder"), root)
+    if folder is not None:
+        body = folder / "body.txt"
+        if body.exists():
+            parts.append(body.read_text(encoding="utf-8", errors="replace"))
+    for doc in event.get("documents") or []:
+        tp = remap_private_path(doc.get("text_path"), root)
+        if tp is not None:
+            parts.append(tp.read_text(encoding="utf-8", errors="replace"))
+    return "\n".join(parts).casefold()
+
+
+def validate_analysis(analysis: dict[str, Any], event: dict[str, Any], root: str | Path) -> list[str]:
+    """헤르메스 초안 검증 → 경고 리스트(빈 리스트면 통과). CLI/리뷰 게이트가 사용."""
+    warnings: list[str] = []
+    for field in REQUIRED_FIELDS:
+        if not analysis.get(field):
+            warnings.append(f"missing required field: {field}")
+    fp = content_fingerprint(event, root)
+    if analysis.get("content_fingerprint") != fp:
+        warnings.append(f"content_fingerprint mismatch (expected {fp})")
+    if analysis.get("severity") not in VALID_SEVERITY:
+        warnings.append(f"invalid severity: {analysis.get('severity')}")
+
+    quotes = analysis.get("evidence_quotes") or []
+    texts = _event_texts(event, root)
+    for entry in quotes:
+        quote = (entry.get("quote") or "").strip()
+        if quote and quote.casefold() not in texts:
+            warnings.append(f"evidence quote not found in source: {quote[:40]}")
+    if not quotes and not (analysis.get("data_gaps")):
+        warnings.append("no evidence_quotes and no data_gaps (grounding required)")
+
+    haystack = json.dumps(analysis, ensure_ascii=False)
+    for token in BANNED_TOKENS:
+        if token in haystack:
+            warnings.append(f"banned token found: {token}")
+    if "조건부 통과" in haystack:
+        warnings.append("avoid phrase '조건부 통과'; use official HIRA term")
+    return warnings

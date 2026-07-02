@@ -51,3 +51,28 @@ def test_load_and_valid_gate(tmp_path: Path):
     assert pa.analysis_valid(stale, event, root) is False
     assert pa.load_analysis("nope", root) is None
     assert pa.analysis_valid(None, event, root) is False
+
+
+def test_validate_grounding_and_terms(tmp_path: Path):
+    root = tmp_path / "policy_intelligence"
+    event = _make_event(root)
+    fp = pa.content_fingerprint(event, root)
+    base = {
+        "event_id": "evt1", "content_fingerprint": fp,
+        "summary": "유연계약제 접수 안내", "severity": "high",
+        "msd_implication": {"rationale": "r", "next_action": "n"},
+    }
+    # 근거 없음 + data_gaps 없음 → 경고
+    assert any("grounding" in w for w in pa.validate_analysis(base, event, root))
+    # 소스에 없는 인용 → 경고
+    bad_q = dict(base, evidence_quotes=[{"quote": "존재하지 않는 문장", "source": "body"}])
+    assert any("not found in source" in w for w in pa.validate_analysis(bad_q, event, root))
+    # 소스에 실재하는 인용 → 통과(경고 0)
+    ok_q = dict(base, evidence_quotes=[{"quote": "유연계약 후보 품목", "source": "a.pdf"}])
+    assert pa.validate_analysis(ok_q, event, root) == []
+    # 금지 토큰 → 경고
+    banned = dict(ok_q, summary="Precision 개선 안내")
+    assert any("banned token" in w for w in pa.validate_analysis(banned, event, root))
+    # '조건부 통과' → 경고
+    cond = dict(ok_q, summary="조건부 통과 예상")
+    assert any("조건부 통과" in w for w in pa.validate_analysis(cond, event, root))
