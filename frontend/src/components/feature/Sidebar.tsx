@@ -35,6 +35,7 @@ const adminNavItems = [
   { path: '/admin/keyword-cloud', label: '키워드 클라우드', icon: 'ri-cloud-line' },
   { path: '/admin/reimbursement', label: '급여 관리', icon: 'ri-health-book-line' },
   { path: '/admin/reimbursement-pipeline', label: '심의 파이프라인 관리', icon: 'ri-route-line' },
+  { path: '/admin/daily-mailing-kanban', label: 'Daily Mailing 칸반', icon: 'ri-kanban-view' },
 ];
 
 type SettingsTab = 'account' | 'users' | 'tabs';

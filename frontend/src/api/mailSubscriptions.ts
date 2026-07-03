@@ -33,9 +33,18 @@ export interface MailSubListResponse {
 
 export interface TestSendResult {
   ok: boolean;
-  mode: 'smtp' | 'dry-run' | 'none';
+  mode: 'smtp' | 'dry-run' | 'none' | 'preview';
+  sent?: boolean;
   recipients: string[];
+  subject?: string;
+  html?: string;
+  text?: string;
   message?: string;
+}
+
+export interface SubscriptionScopeResponse {
+  scope: Record<string, unknown>;
+  snapshot_path: string;
 }
 
 export async function listMailSubscriptions(): Promise<MailSubListResponse> {
@@ -61,4 +70,8 @@ export async function deleteMailSubscription(id: number): Promise<void> {
 
 export async function testSendMailSubscription(id: number): Promise<TestSendResult> {
   return api.post<TestSendResult>(`/api/mail-subscriptions/${id}/test-send`, {});
+}
+
+export async function fetchSubscriptionScope(id: number): Promise<SubscriptionScopeResponse> {
+  return api.get<SubscriptionScopeResponse>(`/api/mail-subscriptions/${id}/scope`);
 }

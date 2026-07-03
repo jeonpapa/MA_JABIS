@@ -19,6 +19,7 @@ import AdminCompetitorTrendsPage from '@/pages/admin/competitor-trends/page';
 import AdminKeywordCloudPage from '@/pages/admin/keyword-cloud/page';
 import AdminReimbursementPage from '@/pages/admin/reimbursement/page';
 import AdminReimbursementPipelinePage from '@/pages/admin/reimbursement-pipeline/page';
+import AdminDailyMailingKanbanPage from '@/pages/admin/daily-mailing-kanban/page';
 
 const routes: RouteObject[] = [
   { path: '/login', element: <LoginPage /> },
@@ -39,6 +40,7 @@ const routes: RouteObject[] = [
   { path: '/admin/keyword-cloud', element: <AdminKeywordCloudPage /> },
   { path: '/admin/reimbursement', element: <AdminReimbursementPage /> },
   { path: '/admin/reimbursement-pipeline', element: <AdminReimbursementPipelinePage /> },
+  { path: '/admin/daily-mailing-kanban', element: <AdminDailyMailingKanbanPage /> },
   { path: '*', element: <NotFound /> },
 ];
 

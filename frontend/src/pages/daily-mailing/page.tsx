@@ -1,9 +1,21 @@
 import { useEffect, useState } from 'react';
 import {
   listMailSubscriptions, createMailSubscription, updateMailSubscription,
-  deleteMailSubscription, testSendMailSubscription,
+  deleteMailSubscription, testSendMailSubscription, fetchSubscriptionScope,
   type MailSubscription,
 } from '@/api/mailSubscriptions';
+
+interface PreviewModalState {
+  subscriptionName: string;
+  subject: string;
+  html: string;
+}
+
+interface ScopeModalState {
+  subscriptionName: string;
+  scope: Record<string, unknown>;
+  snapshotPath: string;
+}
 
 const PRESET_KEYWORDS = [
   '약가 인하', '급여 등재', '보험 적용', '심평원', '건강보험공단', '보건복지부',
@@ -75,6 +87,10 @@ export default function DailyMailingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [testingId, setTestingId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<'new' | 'saved'>('new');
+  const [previewModal, setPreviewModal] = useState<PreviewModalState | null>(null);
+  const [scopeModal, setScopeModal] = useState<ScopeModalState | null>(null);
+  const [scopeLoadingId, setScopeLoadingId] = useState<number | null>(null);
+  const [scopeCopied, setScopeCopied] = useState(false);
 
   const reload = async () => {
     setListError(null);
@@ -130,22 +146,41 @@ export default function DailyMailingPage() {
     }
   };
 
-  const handleTestSend = async (id: number) => {
+  const handleTestSend = async (id: number, name: string) => {
     setTestingId(id);
     try {
       const r = await testSendMailSubscription(id);
-      if (r.ok && r.mode === 'smtp') {
+      if (r.ok && r.mode === 'preview') {
+        setPreviewModal({
+          subscriptionName: name,
+          subject: r.subject ?? '(제목 없음)',
+          html: r.html ?? '<p>미리보기 HTML이 없습니다.</p>',
+        });
+      } else if (r.ok && r.mode === 'smtp') {
         alert(`발송 완료 → ${r.recipients.join(', ')}`);
       } else if (r.ok && r.mode === 'dry-run') {
         alert(`[Dry-run] SMTP 미설정. ${r.message ?? ''}`);
       } else {
-        alert(`발송 실패: ${r.message ?? ''}`);
+        alert(`미리보기 생성 실패: ${r.message ?? ''}`);
       }
       await reload();
     } catch (e) {
-      alert(e instanceof Error ? e.message : '발송 실패');
+      alert(e instanceof Error ? e.message : '미리보기 생성 실패');
     } finally {
       setTestingId(null);
+    }
+  };
+
+  const handleExportScope = async (id: number, name: string) => {
+    setScopeLoadingId(id);
+    try {
+      const r = await fetchSubscriptionScope(id);
+      setScopeCopied(false);
+      setScopeModal({ subscriptionName: name, scope: r.scope, snapshotPath: r.snapshot_path });
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '스콥 내보내기 실패');
+    } finally {
+      setScopeLoadingId(null);
     }
   };
 
@@ -165,7 +200,7 @@ export default function DailyMailingPage() {
         active: true,
       });
       setSubmitStatus('success');
-      setSubmitMessage('메일링 설정이 저장되었습니다. 설정된 스케줄에 따라 발송됩니다.');
+      setSubmitMessage('모니터링 스콥이 저장되었습니다. 헤르메스 에이전트가 매일 이 스콥으로 검토·작성·발송합니다.');
       setSettingName('');
       await reload();
       setActiveTab('saved');
@@ -248,7 +283,7 @@ export default function DailyMailingPage() {
         {submitStatus === 'success' && (
           <div className="mb-5 flex items-center gap-3 bg-teal-50 border border-teal-200 rounded-xl px-5 py-3">
             <span className="w-5 h-5 flex items-center justify-center text-teal-600"><i className="ri-checkbox-circle-line text-lg"></i></span>
-            <p className="text-teal-700 text-sm font-medium">{submitMessage ?? '메일링 설정이 저장되었습니다. 설정된 스케줄에 따라 발송됩니다.'}</p>
+            <p className="text-teal-700 text-sm font-medium">{submitMessage ?? '모니터링 스콥이 저장되었습니다. 헤르메스 에이전트가 매일 이 스콥으로 검토·작성·발송합니다.'}</p>
           </div>
         )}
         {submitStatus === 'error' && (
@@ -381,7 +416,7 @@ export default function DailyMailingPage() {
               </div>
               <div className={`mt-4 flex items-center gap-2 rounded-xl px-4 py-3 border ${previewBg}`}>
                 <span className={`w-4 h-4 flex items-center justify-center ${accentColor}`}><i className="ri-information-line text-sm"></i></span>
-                <p className={`${textSub} text-xs`}>{schedule === 'Daily' ? `매일 ${scheduleTime}에 메일이 발송됩니다` : `매주 ${weekDay} ${scheduleTime}에 메일이 발송됩니다`}</p>
+                <p className={`${textSub} text-xs`}>{schedule === 'Daily' ? `매일 ${scheduleTime}에 헤르메스가 이 스콥으로 메일을 작성·발송합니다` : `매주 ${weekDay} ${scheduleTime}에 헤르메스가 이 스콥으로 메일을 작성·발송합니다`}</p>
               </div>
             </div>
 
@@ -472,9 +507,13 @@ export default function DailyMailingPage() {
                       {setting.schedule}
                       {setting.schedule === 'Weekly' && setting.weekDay ? ` ${setting.weekDay.slice(0, 3)}` : ''} {setting.time}
                     </span>
-                    <button onClick={() => handleTestSend(setting.id)} disabled={testingId === setting.id}
+                    <button onClick={() => handleExportScope(setting.id, setting.name)} disabled={scopeLoadingId === setting.id}
+                      className={`text-xs px-3 py-1 rounded-full cursor-pointer whitespace-nowrap transition-all border disabled:opacity-50 ${isDark ? 'border-[#7C3AED]/30 text-[#7C3AED] hover:bg-[#7C3AED]/10' : 'border-purple-300 text-purple-600 hover:bg-purple-50'}`}>
+                      {scopeLoadingId === setting.id ? '내보내는 중…' : '스콥 내보내기'}
+                    </button>
+                    <button onClick={() => handleTestSend(setting.id, setting.name)} disabled={testingId === setting.id}
                       className={`text-xs px-3 py-1 rounded-full cursor-pointer whitespace-nowrap transition-all border disabled:opacity-50 ${isDark ? 'border-[#00E5CC]/30 text-[#00E5CC] hover:bg-[#00E5CC]/10' : 'border-teal-300 text-teal-600 hover:bg-teal-50'}`}>
-                      {testingId === setting.id ? '발송 중…' : '테스트 발송'}
+                      {testingId === setting.id ? '생성 중…' : '미리보기'}
                     </button>
                     <button onClick={() => toggleSetting(setting.id, !setting.active)}
                       className={`text-xs px-3 py-1 rounded-full cursor-pointer whitespace-nowrap transition-all border ${setting.active ? 'border-red-300 text-red-500 hover:bg-red-50' : 'border-teal-300 text-teal-600 hover:bg-teal-50'}`}>
@@ -509,6 +548,94 @@ export default function DailyMailingPage() {
           </div>
         )}
       </div>
+
+      {previewModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setPreviewModal(null)}>
+          <div className={`absolute inset-0 ${isDark ? 'bg-black/70' : 'bg-black/40'} backdrop-blur-sm`} />
+          <div
+            onClick={e => e.stopPropagation()}
+            className={`relative w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-2xl border shadow-2xl ${cardBg} ${cardBorder}`}
+          >
+            <button
+              onClick={() => setPreviewModal(null)}
+              className={`absolute top-4 right-4 w-9 h-9 flex items-center justify-center rounded-full cursor-pointer transition-colors z-10 ${isDark ? 'bg-[#0D1117] text-[#8B9BB4] hover:text-white hover:bg-[#1E2530]' : 'bg-gray-100 text-gray-400 hover:text-gray-700 hover:bg-gray-200'}`}
+            >
+              <i className="ri-close-line text-lg"></i>
+            </button>
+            <div className="p-6">
+              <div className="flex items-center gap-2 mb-1">
+                <span className={`w-5 h-5 flex items-center justify-center ${accentColor}`}><i className="ri-mail-open-line text-sm"></i></span>
+                <h3 className={`font-bold text-sm ${textMain}`}>메일 미리보기 — {previewModal.subscriptionName}</h3>
+              </div>
+              <p className={`${textSub} text-xs mb-4`}>
+                이 화면은 미리보기입니다. 실제 발송은 헤르메스 에이전트가 이 스콥을 검토한 뒤 수행합니다. 대쉬보드는 메일을 직접 발송하지 않습니다.
+              </p>
+              <div className={`rounded-xl border px-4 py-3 mb-4 ${previewBg}`}>
+                <p className={`${textMuted} text-[10px] mb-1`}>제목</p>
+                <p className={`${textMain} text-sm font-semibold`}>{previewModal.subject}</p>
+              </div>
+              <div className={`rounded-xl border overflow-hidden ${cardBorder}`}>
+                <iframe
+                  title="메일 미리보기"
+                  srcDoc={previewModal.html}
+                  sandbox=""
+                  className="w-full bg-white"
+                  style={{ height: '480px' }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {scopeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setScopeModal(null)}>
+          <div className={`absolute inset-0 ${isDark ? 'bg-black/70' : 'bg-black/40'} backdrop-blur-sm`} />
+          <div
+            onClick={e => e.stopPropagation()}
+            className={`relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl border shadow-2xl ${cardBg} ${cardBorder}`}
+          >
+            <button
+              onClick={() => setScopeModal(null)}
+              className={`absolute top-4 right-4 w-9 h-9 flex items-center justify-center rounded-full cursor-pointer transition-colors z-10 ${isDark ? 'bg-[#0D1117] text-[#8B9BB4] hover:text-white hover:bg-[#1E2530]' : 'bg-gray-100 text-gray-400 hover:text-gray-700 hover:bg-gray-200'}`}
+            >
+              <i className="ri-close-line text-lg"></i>
+            </button>
+            <div className="p-6">
+              <div className="flex items-center gap-2 mb-1">
+                <span className={`w-5 h-5 flex items-center justify-center ${accentColor}`}><i className="ri-file-code-line text-sm"></i></span>
+                <h3 className={`font-bold text-sm ${textMain}`}>스콥 내보내기 — {scopeModal.subscriptionName}</h3>
+              </div>
+              <div className={`rounded-xl border px-4 py-3 mb-4 flex items-start gap-2 ${previewBg}`}>
+                <span className={`w-4 h-4 flex items-center justify-center flex-shrink-0 mt-0.5 ${accentColor}`}><i className="ri-information-line text-sm"></i></span>
+                <p className={`${textSub} text-xs`}>
+                  이 스콥을 헤르메스가 읽어 매일 발송합니다. 스냅샷: <span className={`${textMain} font-mono`}>{scopeModal.snapshotPath}</span>
+                </p>
+              </div>
+              <div className="flex justify-end mb-2">
+                <button
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(JSON.stringify(scopeModal.scope, null, 2));
+                      setScopeCopied(true);
+                      setTimeout(() => setScopeCopied(false), 2000);
+                    } catch {
+                      // clipboard 권한 없을 수 있음 — 무시
+                    }
+                  }}
+                  className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg cursor-pointer whitespace-nowrap transition-colors border ${accentBg} ${accentBorder} ${accentColor} hover:opacity-80`}
+                >
+                  <span className="w-3.5 h-3.5 flex items-center justify-center"><i className={scopeCopied ? 'ri-check-line text-xs' : 'ri-file-copy-line text-xs'}></i></span>
+                  {scopeCopied ? '복사됨' : 'JSON 복사'}
+                </button>
+              </div>
+              <pre className={`rounded-xl border p-4 text-xs overflow-x-auto ${previewBg} ${textMain}`}>
+                {JSON.stringify(scopeModal.scope, null, 2)}
+              </pre>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
