@@ -134,6 +134,9 @@ export default function InternationalPricingPage() {
       history.reload();
     } catch (e) {
       setLiveError(e instanceof Error ? e.message : String(e));
+      // 실패/타임아웃이어도 백엔드가 부분 저장했을 수 있으니 캐시 재조회
+      pricing.reload();
+      history.reload();
     } finally {
       setLiveSearching(false);
     }

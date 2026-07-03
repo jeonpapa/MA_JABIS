@@ -758,11 +758,44 @@ export async function fetchApprovalTab(productSlug: string): Promise<ApprovalTab
 /**
  * 라이브 스크레이프 (수 분 소요·과금성) — 반드시 명시적 사용자 액션 뒤에서만 호출.
  * 페이지 로드/탭 전환에서 호출 금지.
+ *
+ * 백엔드가 백그라운드 잡을 시작(202, {job_id})하면 상태를 폴링해 완료까지 대기한다.
+ * 긴 동기 요청이 아니라 짧은 폴링 GET 이라 "Failed to fetch"(프록시/워커 타임아웃)를 회피.
+ * onProgress(선택)로 경과 초 등을 UI 에 전달할 수 있다.
  */
-export async function searchForeignLive(query: string, countries?: string[]): Promise<void> {
-  await api.post('/api/foreign/search', {
+export async function searchForeignLive(
+  query: string,
+  countries?: string[],
+  onProgress?: (elapsedSec: number) => void,
+): Promise<void> {
+  const started = await api.post<{ job_id?: string; status?: string }>('/api/foreign/search', {
     query,
     countries: countries ?? undefined,
     use_cache: false,
   });
+  const jobId = started?.job_id;
+  if (!jobId) return; // 구버전 백엔드(동기 완료) 호환
+
+  const startMs = Date.now();
+  const deadlineMs = startMs + 8 * 60 * 1000; // 최대 8분
+  const intervalMs = 3500;
+  let netFails = 0;
+  while (Date.now() < deadlineMs) {
+    await new Promise((r) => setTimeout(r, intervalMs));
+    onProgress?.(Math.round((Date.now() - startMs) / 1000));
+    let s: { status?: string; error?: string | null };
+    try {
+      s = await api.get(`/api/foreign/search/status/${encodeURIComponent(jobId)}`);
+      netFails = 0;
+    } catch (e) {
+      // 폴링 중 순간 네트워크/재시작 → 몇 번 재시도 후 포기
+      if (++netFails >= 5) throw e;
+      continue;
+    }
+    if (s?.status === 'done') return;
+    if (s?.status === 'error') throw new Error(s.error || '스크레이핑에 실패했습니다.');
+    if (s?.status === 'unknown') throw new Error(s.error || '작업을 찾을 수 없습니다(서버 재시작?).');
+    // 'running' → 계속 폴링
+  }
+  throw new Error('스크레이핑이 오래 걸립니다 — 백그라운드에서 계속 진행 중일 수 있으니 잠시 후 검색으로 확인해 주세요.');
 }

@@ -1581,6 +1581,24 @@ def serve_spa(spa_path: str):
 # 해외 약가 검색
 # ──────────────────────────────────────────────────────────────────────────────
 
+# ── 해외 약가 라이브 스크레이핑 백그라운드 잡 레지스트리 ──────────────────────
+# 라이브 스크레이핑(수 분)을 요청 스레드에서 동기 실행하면 프록시/워커 타임아웃으로
+# 브라우저에 "Failed to fetch" 가 뜬다. → job 으로 분리해 즉시 202 반환, 프론트가 폴링.
+# (단일 Werkzeug 프로세스 전제. gunicorn 다중워커로 가면 공유 저장소 필요.)
+import uuid as _uuid
+import time as _time
+import threading as _threading
+
+_foreign_jobs: dict = {}
+_foreign_jobs_lock = _threading.Lock()
+
+
+def _prune_foreign_jobs():
+    cutoff = _time.time() - 3600
+    for jid in [j for j, v in _foreign_jobs.items() if v.get("_ts", 0) < cutoff]:
+        _foreign_jobs.pop(jid, None)
+
+
 @app.post("/api/foreign/search")
 def foreign_search():
     """
@@ -1588,8 +1606,9 @@ def foreign_search():
     POST /api/foreign/search
     Body: {"query": "Keytruda", "countries": ["JP"], "use_cache": false}
 
-    - use_cache=true: DB에 저장된 이전 결과 반환 (스크레이핑 없음)
-    - use_cache=false: 실시간 스크레이핑 후 DB 저장 (기본)
+    - use_cache=true: DB에 저장된 이전 결과 반환 (스크레이핑 없음, 동기)
+    - use_cache=false: 백그라운드 스크레이핑 잡 시작 → {job_id, status:"running"} (202).
+      진행 상태는 GET /api/foreign/search/status/<job_id> 로 폴링. 완료 후 DB 캐시 갱신.
     """
     body = request.get_json(silent=True) or {}
     query = body.get("query", "").strip()
@@ -1620,28 +1639,62 @@ def foreign_search():
             "requested": countries,
         }), 422
 
-    # 실시간 스크레이핑 (async → sync 변환)
-    loop = asyncio.new_event_loop()
-    try:
-        results = loop.run_until_complete(
-            foreign_agent.search_all(query, countries=supported)
-        )
-    except Exception as e:
-        logger.error("해외 약가 검색 오류: %s", e, exc_info=True)
-        return jsonify({"error": str(e)}), 500
-    finally:
-        loop.close()
+    # ── 백그라운드 잡으로 라이브 스크레이핑 시작 (동기 대기 금지) ──
+    norm = query.strip().lower()
+    with _foreign_jobs_lock:
+        _prune_foreign_jobs()
+        # 같은 query 가 이미 진행 중이면 중복 스크레이핑 대신 그 job 재사용
+        for jid, v in _foreign_jobs.items():
+            if v.get("status") == "running" and v.get("norm") == norm:
+                return jsonify({"job_id": jid, "status": "running", "mode": "live",
+                                "query": query, "reused": True}), 202
+        job_id = _uuid.uuid4().hex
+        _foreign_jobs[job_id] = {
+            "status": "running", "query": query, "norm": norm,
+            "countries": supported, "error": None, "coverage_notes": {},
+            "_ts": _time.time(),
+        }
 
-    # coverage_notes: 국가별 빈 결과의 원인 (정책/로그인/스크래핑 실패 구분)
-    coverage_notes = _compute_coverage_notes(query, supported, results)
+    def _run(job_id: str, query: str, supported: list):
+        loop = asyncio.new_event_loop()
+        try:
+            results = loop.run_until_complete(
+                foreign_agent.search_all(query, countries=supported)
+            )
+            notes = _compute_coverage_notes(query, supported, results)
+            with _foreign_jobs_lock:
+                job = _foreign_jobs.get(job_id)
+                if job is not None:
+                    job.update(status="done", coverage_notes=notes, _ts=_time.time())
+            logger.info("해외 약가 라이브 검색 완료: %s", query)
+        except Exception as e:
+            logger.error("해외 약가 검색 오류: %s", e, exc_info=True)
+            with _foreign_jobs_lock:
+                job = _foreign_jobs.get(job_id)
+                if job is not None:
+                    job.update(status="error", error=str(e), _ts=_time.time())
+        finally:
+            loop.close()
 
-    return jsonify({
-        "query": query,
-        "mode": "live",
-        "results": results,
-        "unsupported_countries": unsupported,
-        "coverage_notes": coverage_notes,
-    })
+    _threading.Thread(target=_run, args=(job_id, query, supported), daemon=True).start()
+    return jsonify({"job_id": job_id, "status": "running", "mode": "live", "query": query}), 202
+
+
+@app.get("/api/foreign/search/status/<job_id>")
+def foreign_search_status(job_id):
+    """라이브 스크레이핑 잡 상태 폴링. status ∈ running|done|error|unknown."""
+    with _foreign_jobs_lock:
+        job = _foreign_jobs.get(job_id)
+        if job is None:
+            return jsonify({"job_id": job_id, "status": "unknown",
+                            "error": "작업을 찾을 수 없습니다(서버 재시작 또는 만료)."}), 404
+        return jsonify({
+            "job_id": job_id,
+            "status": job["status"],
+            "query": job["query"],
+            "error": job.get("error"),
+            "coverage_notes": job.get("coverage_notes") or {},
+        })
 
 
 def _compute_coverage_notes(query: str, countries: list, results) -> dict:
