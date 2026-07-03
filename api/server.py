@@ -4797,6 +4797,33 @@ def mail_sub_test_send(item_id: int):
         return jsonify({"error": str(e)}), 500
 
 
+@app.get("/api/mail-subscriptions/<int:item_id>/scope")
+@require_auth()
+def mail_sub_scope(item_id: int):
+    """subscription → dashboard_scope JSON 반환 + 헤르메스 채널 스냅샷 저장.
+
+    헤르메스(외부 GPT-5.5)가 이 스콥을 읽어 검토·작성·매일 발송한다. 대쉬보드는 발송하지 않음.
+    """
+    owner = request.user["sub"]  # type: ignore[attr-defined]
+    try:
+        with db._connect() as conn:
+            row = conn.execute(
+                f"SELECT {_MAIL_SUB_COLS} FROM mail_subscription WHERE id=? AND owner_email=?",
+                (item_id, owner),
+            ).fetchone()
+        if row is None:
+            return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+        from agents.daily_mailing.subscription_bridge import subscription_to_scope, write_scope_snapshot
+        item = _mail_sub_row_to_dict(row)
+        item["owner_email"] = owner
+        scope = subscription_to_scope(item)
+        snapshot_path = write_scope_snapshot(scope)
+        return jsonify({"scope": scope, "snapshot_path": str(snapshot_path)})
+    except Exception as e:
+        logger.error("mail_sub_scope 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Competitor Trends — 경쟁사 동향 카드 (CRUD)
 # ──────────────────────────────────────────────────────────────────────────────

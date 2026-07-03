@@ -52,3 +52,6 @@ venv/
 # Claude Code 세션 메타
 .claude/
 .gstack/
+
+# Daily Mailing scope 스냅샷(헤르메스 채널로 동기화, 사생활)
+data/daily_mailing/
