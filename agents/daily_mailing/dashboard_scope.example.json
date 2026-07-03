@@ -1,0 +1,63 @@
+{
+  "subscription_id": "joseph-ma-daily",
+  "owner_email": "yo.seop.jeon@msd.com",
+  "recipients": [
+    "yo.seop.jeon@msd.com"
+  ],
+  "companies": [
+    "MSD",
+    "한국MSD"
+  ],
+  "brands": [
+    "Keytruda",
+    "Gardasil",
+    "Lynparza",
+    "Welireg"
+  ],
+  "aliases": {
+    "Keytruda": [
+      "키트루다",
+      "pembrolizumab",
+      "펨브롤리주맙"
+    ],
+    "Gardasil": [
+      "가다실"
+    ],
+    "Lynparza": [
+      "린파자",
+      "olaparib"
+    ],
+    "Welireg": [
+      "웰리렉",
+      "belzutifan"
+    ]
+  },
+  "disease_areas": [
+    "oncology",
+    "vaccine"
+  ],
+  "policy_topics": [
+    "약평위",
+    "암질심",
+    "건정심",
+    "위험분담",
+    "약가협상",
+    "사용량-약가"
+  ],
+  "media": [
+    "dailypharm",
+    "yakup",
+    "hitnews",
+    "medipana",
+    "biospectator"
+  ],
+  "personas": [
+    "ma_lead",
+    "brand_strategy",
+    "policy_watch"
+  ],
+  "lookback_hours": 24,
+  "delivery_mode": "gmail_draft",
+  "include_top_ma_signals": true,
+  "include_user_keyword_watchlist": true
+}

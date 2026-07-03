@@ -1,0 +1,217 @@
+sources:
+  # Tier 0 / official verification sources
+  - name: Ministry of Health and Welfare
+    domains: [mohw.go.kr, www.mohw.go.kr]
+    source_tier: official
+    country: KR
+    language: ko
+    weight: 5.0
+    use_for: [verification, primary_facts, policy_facts]
+
+  - name: HIRA
+    domains: [hira.or.kr, www.hira.or.kr]
+    source_tier: official_payer
+    country: KR
+    language: ko
+    weight: 5.0
+    use_for: [verification, primary_facts, reimbursement_facts]
+
+  - name: MFDS
+    domains: [mfds.go.kr, www.mfds.go.kr]
+    source_tier: regulator
+    country: KR
+    language: ko
+    weight: 5.0
+    use_for: [verification, primary_facts, regulatory_facts]
+
+  # 조셉-provided Tier A/B Korean MA/media source registry
+  - name: 데일리팜
+    domains: [dailypharm.com, www.dailypharm.com]
+    source_tier: media_tier_A
+    tier: A
+    country: KR
+    language: ko
+    weight: 3.0
+    volume: 5
+    novelty: 4
+    ma_depth: 5
+    desc: 약가·급여·유통 일간 전문지. 사용량 연동·실거래가 인하 보도 최다.
+    use_for: [candidate_links, top_signal_candidate, ma_policy_context]
+
+  - name: 약업신문
+    domains: [yakup.com, www.yakup.com]
+    source_tier: media_tier_A
+    tier: A
+    country: KR
+    language: ko
+    weight: 2.9
+    volume: 5
+    novelty: 4
+    ma_depth: 5
+    desc: 국내 최장수 제약·약가 전문 신문. 급여 고시·약가 협상 심층 보도.
+    use_for: [candidate_links, top_signal_candidate, ma_policy_context]
+
+  - name: 메디파나뉴스
+    domains: [medipana.com, www.medipana.com]
+    source_tier: media_tier_A
+    tier: A
+    country: KR
+    language: ko
+    weight: 2.8
+    volume: 5
+    novelty: 4
+    ma_depth: 5
+    desc: 의약·보건 정책 전문. 적응증 확대 후 약가 재협상 보도 강점.
+    use_for: [candidate_links, top_signal_candidate, ma_policy_context]
+
+  - name: 히트뉴스
+    domains: [hitnews.co.kr, www.hitnews.co.kr]
+    source_tier: media_tier_A
+    tier: A
+    country: KR
+    language: ko
+    weight: 2.7
+    volume: 4
+    novelty: 5
+    ma_depth: 4
+    desc: 의약 전문 인터넷 매체. 보험등재·약가 단독 속보 비중 높음.
+    use_for: [candidate_links, top_signal_candidate, ma_policy_context]
+
+  - name: 청년의사
+    domains: [docdocdoc.co.kr, www.docdocdoc.co.kr]
+    source_tier: media_tier_B
+    tier: B
+    country: KR
+    language: ko
+    weight: 2.4
+    volume: 4
+    novelty: 4
+    ma_depth: 3
+    desc: 의사 대상 전문지. 임상 적응증 확대·급여 결정 보도 활발.
+    use_for: [candidate_links, clinical_context, reimbursement_context]
+
+  - name: 메디칼타임즈
+    domains: [medicaltimes.com, www.medicaltimes.com]
+    source_tier: media_tier_B
+    tier: B
+    country: KR
+    language: ko
+    weight: 2.3
+    volume: 4
+    novelty: 3
+    ma_depth: 3
+    desc: 의사 대상 온라인 의료지. 보험급여 정책 기사 다수.
+    use_for: [candidate_links, clinical_context, reimbursement_context]
+
+  - name: 뉴스더보이스
+    domains: [newsthevoice.com, www.newsthevoice.com]
+    source_tier: media_tier_B
+    tier: B
+    country: KR
+    language: ko
+    weight: 2.3
+    volume: 4
+    novelty: 4
+    ma_depth: 4
+    desc: 의약 전문 온라인. 위험분담·급여 확대 보도 심층.
+    use_for: [candidate_links, ma_policy_context, rsa_context]
+
+  - name: 팜뉴스
+    domains: [pharmnews.com, www.pharmnews.com]
+    source_tier: media_tier_B
+    tier: B
+    country: KR
+    language: ko
+    weight: 2.2
+    volume: 4
+    novelty: 3
+    ma_depth: 4
+    desc: 제약 마케팅·급여 정책 전문. 사용량 연동 인하 보도.
+    use_for: [candidate_links, ma_policy_context, pricing_context]
+
+  - name: 메디게이트뉴스
+    domains: [medigatenews.com, www.medigatenews.com]
+    source_tier: media_tier_B
+    tier: B
+    country: KR
+    language: ko
+    weight: 2.1
+    volume: 4
+    novelty: 3
+    ma_depth: 3
+    desc: 의사·병원 대상 전문 매체. 급여 적용 임상 관련 보도.
+    use_for: [candidate_links, clinical_context, hospital_context]
+
+  - name: 약사공론
+    domains: [kpanews.co.kr, www.kpanews.co.kr]
+    source_tier: media_tier_B
+    tier: B
+    country: KR
+    language: ko
+    weight: 2.1
+    volume: 4
+    novelty: 3
+    ma_depth: 4
+    desc: 약사회 계열 의약 전문지. 약제 급여·약평위·정책 인사 신호 보도.
+    use_for: [candidate_links, ma_policy_context, pharmacy_policy_context]
+
+  # Strategic signal / newsletter calibration source
+  - name: BioSpectator
+    domains: [biospectator.com, www.biospectator.com]
+    source_tier: strategic_signal_media
+    tier: B_strategic
+    country: KR
+    language: ko
+    weight: 2.0
+    newsletter_aliases: [BioSpectator, 바이오스펙테이터, 바스픽]
+    paywall_policy: respect_access_controls
+    use_for: [candidate_links, calibration_reference, biotech_bd_signal, modality_theme_tracking]
+
+  # Search/API channel, not an authority source by itself
+  - name: Naver News API
+    domains: [openapi.naver.com, n.news.naver.com, news.naver.com]
+    source_tier: search_channel
+    country: KR
+    language: ko
+    weight: 1.0
+    use_for: [discovery, dedupe, recency_scan]
+    validation_note: Naver API is a discovery channel; final source tier should be assigned from the linked publisher domain, not from Naver itself.
+
+scoring_defaults:
+  tier_weight_multiplier:
+    official: 2.0
+    official_payer: 2.0
+    regulator: 2.0
+    media_tier_A: 1.35
+    media_tier_B: 1.15
+    strategic_signal_media: 1.05
+    search_channel: 0.80
+  minimum_top_signal_conditions:
+    - source_tier in [official, official_payer, regulator]
+    - media_tier_A_or_B_with_cross_source_confirmation
+    - msd_direct_relevance_and_ma_depth_at_least_4
+    - high_recurrence_theme_with_clinical_access_competitor_axes
+
+editorial_defaults:
+  item_order:
+    - news_insight
+    - why_it_matters
+    - korea_ma_implication
+    - msd_or_competitor_impact
+    - next_watch
+    - sources_and_caveats
+  principle: 뉴스 자체의 핵심 인사이트를 먼저 정리한 뒤 Korea MA implication을 붙인다.
+
+validation_defaults:
+  require_publisher_page_for_briefing_facts: true
+  respect_paywalls_and_login: true
+  max_redirects: 5
+  request_timeout_seconds: 12
+  daily_briefing_preferred_recency_hours: 72
+  naver_api_is_discovery_only: true
+
+privacy_defaults:
+  redact_personal_email_addresses: true
+  preserve_raw_email_private: true
+  raw_retention_days_pilot: 90
+  no_live_gmail_mutation_without_confirmation: true
