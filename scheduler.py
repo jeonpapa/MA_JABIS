@@ -19,6 +19,7 @@ from apscheduler.triggers.cron import CronTrigger
 from agents.domestic_price_agent import DomesticPriceAgent
 from agents.dashboard_agent import DashboardAgent
 from agents.ingest.policy_analysis_sync import sync_analysis as _sync_policy_analysis
+from agents.ingest.daily_mailing_sync import sync_daily_mailing_runs as _sync_daily_mailing_runs
 
 # ── 로깅 설정 ──────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).parent
@@ -719,6 +720,10 @@ def main():
             _sync_policy_analysis()
         except Exception as _e:
             logger.warning("policy analysis 부팅 sync 실패: %s", _e)
+        try:
+            _sync_daily_mailing_runs()
+        except Exception as _e:
+            logger.warning("daily mailing runs 부팅 sync 실패: %s", _e)
         return
 
     if args.hira_fetch_now:
@@ -913,6 +918,22 @@ def main():
         trigger=CronTrigger(hour=2, minute=10, timezone="Asia/Seoul"),
         id="policy_intel_analysis_sync",
         name="Policy Intelligence 큐레이션 사이드카 매일 02:10 git sync",
+        replace_existing=True,
+    )
+
+    # 매일 07:30 — Daily Mailing run 번들 git sync (헤르메스 발송 후 산출물 → 칸반)
+    def _daily_mailing_runs_sync_job():
+        try:
+            res = _sync_daily_mailing_runs()
+            logger.info("daily mailing runs sync: %s", res)
+        except Exception as e:
+            logger.warning("daily mailing runs sync 실패: %s", e)
+
+    scheduler.add_job(
+        _daily_mailing_runs_sync_job,
+        trigger=CronTrigger(hour=7, minute=30, timezone="Asia/Seoul"),
+        id="daily_mailing_runs_sync",
+        name="Daily Mailing run 번들 매일 07:30 git sync (칸반 반영)",
         replace_existing=True,
     )
 
