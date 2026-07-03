@@ -419,24 +419,6 @@ def _reimb_reports_sync():
         logger.warning("보고서 sync 오류: %s", rres["errors"])
 
 
-def policy_intel_ingest_job():
-    """매일 KRPIA 정책메일 Gmail ingest → 누적 manifest 갱신 (사이드카 sync 직전).
-
-    누적 병합이라 30일 윈도우로 과거 이벤트가 빠지지 않음. Gmail 토큰(TOKEN_PATHS) 없으면 skip.
-    prod 가 스스로 manifest+원문을 확보해야 헤르메스 사이드카 fingerprint 가 일치(큐레이션 표시).
-    """
-    from agents.policy_intelligence_ingest import run_ingest, TOKEN_PATHS
-    if not any(p.exists() for p in TOKEN_PATHS):
-        logger.warning("policy intel ingest 건너뜀 — Gmail 토큰 없음 (%s)", [str(p) for p in TOKEN_PATHS])
-        return
-    try:
-        res = run_ingest(cumulative=True)
-        st = res.get("status", {})
-        logger.info("policy intel ingest: raw=%s manifest=%s", st.get("raw_count"), st.get("manifest_name"))
-    except Exception as e:
-        logger.warning("policy intel ingest 실패: %s", e)
-
-
 def reimb_data_sync_job():
     """매일 02:00 Seoul + 부팅 1회 — 헤르메스(또는 사람)가 git 에 커밋한
     위원회 **데이터**(committee_results.json) + **보고서**(reports_manifest.json) 를
@@ -734,10 +716,6 @@ def main():
         logger.info("Reimbursement 데이터 sync 즉시 실행 (위원회 데이터 git→DB)")
         reimb_data_sync_job()
         try:
-            policy_intel_ingest_job()   # 부팅 시 manifest 먼저 최신화(누적) → 사이드카 sync
-        except Exception as _e:
-            logger.warning("policy intel 부팅 ingest 실패: %s", _e)
-        try:
             _sync_policy_analysis()
         except Exception as _e:
             logger.warning("policy analysis 부팅 sync 실패: %s", _e)
@@ -919,15 +897,6 @@ def main():
         trigger=CronTrigger(hour=2, minute=0, timezone="Asia/Seoul"),
         id="reimb_data_sync",
         name="Reimbursement 위원회 데이터 매일 02:00 git sync",
-        replace_existing=True,
-    )
-
-    # 매일 02:00 — Policy Intelligence Gmail ingest (누적 manifest, 사이드카 sync 직전)
-    scheduler.add_job(
-        policy_intel_ingest_job,
-        trigger=CronTrigger(hour=2, minute=0, timezone="Asia/Seoul"),
-        id="policy_intel_ingest",
-        name="Policy Intelligence Gmail ingest 매일 02:00 (누적 manifest)",
         replace_existing=True,
     )
 

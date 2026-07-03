@@ -13,7 +13,11 @@ Joseph이 전달하는 KRPIA/정부 정책 메일을 읽고, **대쉬보드용 �
 
 ## 2. 절차 (매 배치)
 ```
-1) 결정론 ingest 실행 → manifest 생성 (라우팅은 규칙, 변경 금지)
+1) 결정론 ingest 실행 → 누적 manifest 생성 (run_ingest(cumulative=True) 기본, 과거 유실 방지).
+   ★ prod 반영(A): prod엔 정기 ingest 잡 없음 → 누적 manifest + 신규 raw 폴더(body/message_sha256/
+     attachments)를 파일럿과 동일 방식으로 prod 볼륨 /app/data/policy_intelligence/에 업로드해야
+     이벤트가 대쉬보드에 뜨고 fingerprint 일치. 원문 없으면 사이드카 있어도 규칙 폴백.
+   (라우팅은 규칙, 변경 금지)
 2) 대상 확인 (과거분 하드 가드):
      python -m agents.policy_analysis list-pending --since 2026-07-01
    → 컷오프 이후 이벤트만: event_id, received_utc, topic, expected_fingerprint

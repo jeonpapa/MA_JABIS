@@ -4,7 +4,14 @@
 기준 전문: `agents/rules/policy_intelligence_curation_rules.md`.
 
 ## 절차
-1. 결정론 ingest 실행 → manifest 생성(라우팅은 규칙, 변경 금지).
+1. 결정론 ingest 실행 → **누적** manifest 생성: `python -m agents.policy_intelligence_ingest`
+   (`run_ingest(cumulative=True)` 기본 — 30일/20건 윈도우로 과거 이벤트가 빠져도 기존 manifest 와
+   event_id union 해 유실 방지). 라우팅은 규칙, 변경 금지.
+   - **prod 반영(A 방식·중요)**: prod 에는 정기 ingest 잡이 없다. 헤르메스가 **누적 manifest +
+     신규 raw 폴더(body.txt·message_sha256.txt·attachments)**를 파일럿과 동일한 방식으로 prod
+     볼륨 `/app/data/policy_intelligence/`(manifests/ + raw/gmail/)에 업로드해야, 그 이벤트가
+     prod 대쉬보드에 뜨고 fingerprint 도 일치한다. 원문이 prod 에 없으면 사이드카가 있어도
+     조용히 규칙 폴백된다.
 2. 분석 대상 확인 (**과거분 보호 하드 가드**): `python -m agents.policy_analysis list-pending --since 2026-07-01`
    → 컷오프 이후(포함) 이벤트만 반환. 각 event_id + received_utc + expected_fingerprint.
    - **원칙**: 기존에 로컬에서 구축한 항목(2026-06-29 파일럿 인제스트분)은 규칙값 그대로 유지하고
