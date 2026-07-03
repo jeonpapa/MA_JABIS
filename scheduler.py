@@ -317,17 +317,38 @@ def competitor_news_weekly_job():
         logger.exception("Gov Policy News 주간 크롤 실패: %s", e)
 
 
-def competitor_trend_promote_job():
-    """매일 07:00 Seoul — 아카이브(competitor_news) 최근 1일 뉴스 → 동향 카드 승격.
+def competitor_news_daily_job():
+    """매일 06:30 Seoul — 경쟁사 Tier1 + 정부정책 뉴스 소규모(최근 3일) fetch.
 
-    주간 신규 크롤(competitor_news_weekly_job)과 별개로, 이미 수집·보존된 아카이브를
-    소스로 LLM 필터(badge/importance) 후 competitor_trend 에 source_type='promoted'
-    UPSERT. manual 카드 보존. 동향 카드가 매일 아카이브 기준으로 갱신되도록 한다.
+    주간 딥 크롤(competitor_news_weekly_job, 6개월+만료정리)과 별개로 매일 아침 신선분만
+    수집 → 07:00 promote 가 동향 카드/홈 대쉬보드에 반영. dedup(link)으로 중복 저장 없음.
+    """
+    logger.info("━━━ Competitor/Gov News 매일 fetch 시작 ━━━")
+    try:
+        from agents import competitor_news_agent as cn
+        r = cn.crawl(lookback_days=3, t1_only=True)
+        logger.info("Competitor News 매일 fetch: 신규 %d건", r.get("total_stored", 0))
+    except Exception as e:
+        logger.exception("Competitor News 매일 fetch 실패: %s", e)
+    try:
+        from agents import gov_policy_news as gpn
+        g = gpn.crawl(lookback_days=3)
+        logger.info("Gov Policy News 매일 fetch: 신규 %d건", g.get("total_stored", 0))
+    except Exception as e:
+        logger.exception("Gov Policy News 매일 fetch 실패: %s", e)
+
+
+def competitor_trend_promote_job():
+    """매일 07:00 Seoul — 아카이브(competitor_news) 최근 2일 뉴스 → 동향 카드 승격.
+
+    06:30 매일 fetch(competitor_news_daily_job)로 들어온 신선분을 소스로 LLM 필터
+    (badge/importance) 후 competitor_trend 에 source_type='promoted' UPSERT. manual 카드
+    보존. 윈도우 2일은 Naver 인덱싱/수집 지연을 흡수(UPSERT 라 재승격 멱등).
     """
     logger.info("━━━ Competitor Trend 승격 (아카이브→카드) 시작 ━━━")
     try:
         from agents import competitor_trends_agent as ct
-        res = ct.promote_from_archive(days=1)
+        res = ct.promote_from_archive(days=2)
         t = res.get("totals", {})
         logger.info("Trend 승격 완료: archive=%s accepted=%s upserted=%s",
                     t.get("archive"), t.get("accepted"), t.get("upserted"))
@@ -840,6 +861,15 @@ def main():
         ),
         id="competitor_news_weekly",
         name="경쟁사 뉴스 주간 크롤 (Tier 1, 13 브랜드)",
+        replace_existing=True,
+    )
+
+    # Competitor/Gov News — 매일 06:30 Seoul 소규모 fetch (신선분, promote 직전)
+    scheduler.add_job(
+        competitor_news_daily_job,
+        trigger=CronTrigger(hour=6, minute=30, timezone="Asia/Seoul"),
+        id="competitor_news_daily",
+        name="Competitor/Gov News 매일 06:30 fetch (신선분)",
         replace_existing=True,
     )
 
