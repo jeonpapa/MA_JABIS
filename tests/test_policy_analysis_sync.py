@@ -41,3 +41,13 @@ def test_sync_skips_unsafe_and_reports(tmp_path: Path):
     assert r["copied"] == 1
     # 안전 가드가 sync_analysis 루프에 존재해야 함 (직접 호출로 검증)
     assert (dst_root / "analysis" / "evt1.json").exists()
+
+
+def test_build_request_attaches_auth_header_when_token():
+    from agents.ingest import policy_analysis_sync as sync
+    req = sync._build_request("https://api.github.com/x", token="SECRET_T")
+    assert req.get_header("Authorization") == "Bearer SECRET_T"
+    assert req.get_header("Accept") == "application/vnd.github.raw"
+    # 토큰 없으면 인증 헤더 없음 (공개 raw)
+    req2 = sync._build_request("https://raw.githubusercontent.com/x")
+    assert req2.get_header("Authorization") is None

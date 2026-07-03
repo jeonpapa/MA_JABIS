@@ -365,6 +365,33 @@ def build_dashboard_manifest(
     }
 
 
+def _cumulative_events(root: Path, new_events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """기존 모든 manifest(pilot_* + gmail_krpia_*)의 이벤트를 event_id 로 union.
+
+    30일/max_results 윈도우로 새 배치가 과거 이벤트를 누락해도 유실 방지.
+    같은 event_id 는 더 나중에 읽은 copy(=최신 manifest, 마지막에 새 배치)가 이긴다.
+    raw_folder 는 볼륨에 잔존하므로 과거 이벤트의 원문/상세도 유효.
+    """
+    mdir = root / "manifests"
+    by_id: dict[str, dict[str, Any]] = {}
+    if mdir.exists():
+        files = list(mdir.glob("pilot_*.json")) + list(mdir.glob("gmail_krpia_*.json"))
+        for f in sorted(files, key=lambda p: p.stat().st_mtime):  # 오래된 → 최신
+            try:
+                prior = json.loads(f.read_text(encoding="utf-8")).get("events") or []
+            except Exception:
+                continue
+            for event in prior:
+                eid = event.get("event_id")
+                if eid:
+                    by_id[eid] = event
+    for event in new_events:  # 새 배치 최우선
+        eid = event.get("event_id")
+        if eid:
+            by_id[eid] = event
+    return sorted(by_id.values(), key=lambda e: e.get("received_utc") or "", reverse=True)
+
+
 def run_ingest(
     *,
     root: str | Path = DEFAULT_ROOT,
@@ -372,12 +399,16 @@ def run_ingest(
     max_results: int = 20,
     manifest_name: str | None = None,
     service: Any | None = None,
+    cumulative: bool = True,
 ) -> dict[str, Any]:
     root = Path(root)
     service = service or gmail_service()
     ingest = ingest_gmail_messages(service=service, query=query, max_results=max_results, out_dir=root / "raw" / "gmail")
     extraction = extract_documents(ingest["items"], root / "extracted" / "text")
     manifest = build_dashboard_manifest(ingest["items"], extraction_manifest=extraction["items"])
+    if cumulative:
+        merged_events = _cumulative_events(root, manifest.get("events") or [])
+        manifest = {"created_at": manifest.get("created_at"), "event_count": len(merged_events), "events": merged_events}
     if manifest_name is None:
         manifest_name = f"gmail_krpia_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     manifest_path = root / "manifests" / manifest_name

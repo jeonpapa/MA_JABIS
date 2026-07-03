@@ -160,3 +160,22 @@ def test_build_dashboard_manifest_merges_raw_index_and_extractions_without_leaki
 def test_safe_name_removes_path_separators():
     assert "/" not in safe_name("a/b:c?.pdf")
     assert "\\" not in safe_name("a/b:c?.pdf")
+
+
+def test_cumulative_events_unions_and_preserves(tmp_path):
+    import json as _json
+    from agents.policy_intelligence_ingest import _cumulative_events
+    root = tmp_path / "policy_intelligence"
+    mdir = root / "manifests"; mdir.mkdir(parents=True)
+    (mdir / "gmail_krpia_20260601_000000.json").write_text(_json.dumps({"events": [
+        {"event_id": "old1", "received_utc": "2026-06-01T00:00:00+00:00", "subject": "A"},
+        {"event_id": "old2", "received_utc": "2026-06-02T00:00:00+00:00", "subject": "B"}]}), encoding="utf-8")
+    new_events = [
+        {"event_id": "old2", "received_utc": "2026-06-02T00:00:00+00:00", "subject": "B2"},
+        {"event_id": "new1", "received_utc": "2026-07-01T00:00:00+00:00", "subject": "C"}]
+    merged = _cumulative_events(root, new_events)
+    ids = {e["event_id"] for e in merged}
+    assert ids == {"old1", "old2", "new1"}          # 과거 유실 없음
+    got = {e["event_id"]: e["subject"] for e in merged}
+    assert got["old2"] == "B2"                       # 새 배치가 이김
+    assert merged[0]["event_id"] == "new1"           # received_utc desc
