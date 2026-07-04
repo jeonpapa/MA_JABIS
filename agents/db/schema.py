@@ -412,6 +412,10 @@ CREATE TABLE IF NOT EXISTS mail_subscription (
     week_day       TEXT,                    -- 'Monday'..'Friday' when Weekly
     emails_json    TEXT NOT NULL,           -- JSON string[]  (수신 이메일)
     active         INTEGER NOT NULL DEFAULT 1,
+    companies_json     TEXT NOT NULL DEFAULT '[]',  -- 모니터링 스콥: 회사
+    brands_json        TEXT NOT NULL DEFAULT '[]',  -- 모니터링 스콥: 브랜드
+    policy_topics_json TEXT NOT NULL DEFAULT '[]',  -- 모니터링 스콥: 정책 토픽
+    disease_areas_json TEXT NOT NULL DEFAULT '[]',  -- 모니터링 스콥: 질환 영역
     created_at     TEXT NOT NULL,
     updated_at     TEXT NOT NULL,
     last_sent_at   TEXT

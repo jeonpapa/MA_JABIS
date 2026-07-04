@@ -3911,10 +3911,14 @@ def _mail_sub_row_to_dict(r) -> dict:
         "created_at": r[9],
         "updated_at": r[10],
         "last_sent_at": r[11],
+        "companies": _json.loads(r[12]) if len(r) > 12 and r[12] else [],
+        "brands": _json.loads(r[13]) if len(r) > 13 and r[13] else [],
+        "policy_topics": _json.loads(r[14]) if len(r) > 14 and r[14] else [],
+        "disease_areas": _json.loads(r[15]) if len(r) > 15 and r[15] else [],
     }
 
 
-_MAIL_SUB_COLS = "id, name, keywords_json, media_json, schedule, time, week_day, emails_json, active, created_at, updated_at, last_sent_at"
+_MAIL_SUB_COLS = "id, name, keywords_json, media_json, schedule, time, week_day, emails_json, active, created_at, updated_at, last_sent_at, companies_json, brands_json, policy_topics_json, disease_areas_json"
 
 
 def _coerce_mail_sub_input(body: dict) -> dict | tuple[dict, str]:
@@ -3958,6 +3962,14 @@ def _coerce_mail_sub_input(body: dict) -> dict | tuple[dict, str]:
         out["emails_json"] = _json.dumps(cleaned, ensure_ascii=False)
     if "active" in body:
         out["active"] = 1 if body.get("active") else 0
+    # 모니터링 스콥 확장 필드 (선택) — dashboard_scope 품질 향상용
+    for field, col in (("companies", "companies_json"), ("brands", "brands_json"),
+                       ("policyTopics", "policy_topics_json"), ("diseaseAreas", "disease_areas_json")):
+        if field in body:
+            vals = body.get(field) or []
+            if not isinstance(vals, list):
+                return ({}, f"{field} must be array")
+            out[col] = _json.dumps([str(x) for x in vals], ensure_ascii=False)
     return out
 
 

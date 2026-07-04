@@ -42,7 +42,22 @@ class _DbBase:
         self._migrate_search_tables()
         self._migrate_indications()
         self._migrate_regimen()
+        self._migrate_mail_subscription_scope()
         logger.info("DB 초기화 완료: %s", self.db_path)
+
+    def _migrate_mail_subscription_scope(self) -> None:
+        """Daily Mailing 스콥 확장 컬럼(브랜드/회사/정책토픽/질환영역) — 기존 DB ALTER."""
+        with self._connect() as conn:
+            try:
+                existing = {row[1] for row in conn.execute("PRAGMA table_info(mail_subscription)").fetchall()}
+            except Exception:
+                return
+            if not existing:
+                return
+            for col in ("companies_json", "brands_json", "policy_topics_json", "disease_areas_json"):
+                if col not in existing:
+                    conn.execute(f"ALTER TABLE mail_subscription ADD COLUMN {col} TEXT NOT NULL DEFAULT '[]'")
+            conn.commit()
 
     def _migrate_regimen(self) -> None:
         """투약비용비교 레지멘 저장 테이블 (payload_json 스냅샷)."""
