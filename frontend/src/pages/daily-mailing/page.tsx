@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   listMailSubscriptions, createMailSubscription, updateMailSubscription,
   deleteMailSubscription, testSendMailSubscription, fetchSubscriptionScope,
+  requestTestMail,
   type MailSubscription,
 } from '@/api/mailSubscriptions';
 
@@ -86,6 +87,10 @@ export default function DailyMailingPage() {
   const [customPolicyTopic, setCustomPolicyTopic] = useState('');
   const [selectedDiseaseAreas, setSelectedDiseaseAreas] = useState<string[]>([]);
   const [customDiseaseArea, setCustomDiseaseArea] = useState('');
+  const [customSources, setCustomSources] = useState<{ url: string; name?: string }[]>([]);
+  const [customSourceUrl, setCustomSourceUrl] = useState('');
+  const [customSourceName, setCustomSourceName] = useState('');
+  const [customSourceError, setCustomSourceError] = useState<string | null>(null);
   const [schedule, setSchedule] = useState<'Daily' | 'Weekly'>('Daily');
   const [scheduleTime, setScheduleTime] = useState('08:00');
   const [weekDay, setWeekDay] = useState('Monday');
@@ -99,6 +104,8 @@ export default function DailyMailingPage() {
   const [submitMessage, setSubmitMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [testingId, setTestingId] = useState<number | null>(null);
+  const [testRequestId, setTestRequestId] = useState<number | null>(null);
+  const [testRequestNote, setTestRequestNote] = useState<{ id: number; message: string; ok: boolean } | null>(null);
   const [activeTab, setActiveTab] = useState<'new' | 'saved'>('new');
   const [previewModal, setPreviewModal] = useState<PreviewModalState | null>(null);
   const [scopeModal, setScopeModal] = useState<ScopeModalState | null>(null);
@@ -157,6 +164,27 @@ export default function DailyMailingPage() {
   const addCustomDiseaseArea = () => {
     const trimmed = customDiseaseArea.trim();
     if (trimmed && !selectedDiseaseAreas.includes(trimmed)) { setSelectedDiseaseAreas(prev => [...prev, trimmed]); setCustomDiseaseArea(''); }
+  };
+  const addCustomSource = () => {
+    const trimmed = customSourceUrl.trim();
+    if (!trimmed) return;
+    if (!/^https?:\/\//i.test(trimmed)) {
+      setCustomSourceError('http(s):// 로 시작하는 URL을 입력하세요');
+      return;
+    }
+    if (customSources.some(s => s.url === trimmed)) {
+      setCustomSourceError('이미 추가된 URL입니다');
+      return;
+    }
+    setCustomSourceError(null);
+    const name = customSourceName.trim();
+    setCustomSources(prev => [...prev, name ? { url: trimmed, name } : { url: trimmed }]);
+    setCustomSourceUrl('');
+    setCustomSourceName('');
+  };
+  const removeCustomSource = (url: string) => { setCustomSources(prev => prev.filter(s => s.url !== url)); };
+  const sourceDomain = (url: string) => {
+    try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; }
   };
   const addEmail = () => {
     const trimmed = emailInput.trim();
@@ -221,6 +249,21 @@ export default function DailyMailingPage() {
     }
   };
 
+  const handleRequestTestMail = async (id: number) => {
+    if (!window.confirm('헤르메스에 테스트 메일을 요청할까요? 검토 후 [TEST] 메일이 발송됩니다.')) return;
+    setTestRequestId(id);
+    setTestRequestNote(null);
+    try {
+      const r = await requestTestMail(id);
+      setTestRequestNote({ id, ok: r.ok, message: r.message ?? (r.ok ? '테스트 메일 요청이 접수되었습니다.' : '요청 실패') });
+    } catch (e) {
+      setTestRequestNote({ id, ok: false, message: e instanceof Error ? e.message : '테스트 메일 요청 실패' });
+    } finally {
+      setTestRequestId(null);
+      setTimeout(() => setTestRequestNote(prev => (prev?.id === id ? null : prev)), 6000);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (selectedKeywords.length === 0 || selectedMedia.length === 0 || emailList.length === 0) return;
@@ -239,6 +282,7 @@ export default function DailyMailingPage() {
         companies: selectedCompanies,
         policyTopics: selectedPolicyTopics,
         diseaseAreas: selectedDiseaseAreas,
+        customSources,
       });
       setSubmitStatus('success');
       setSubmitMessage('모니터링 스콥이 저장되었습니다. 헤르메스 에이전트가 매일 이 스콥으로 검토·작성·발송합니다.');
@@ -471,6 +515,42 @@ export default function DailyMailingPage() {
                 <span className={`${textSub} text-xs`}>선택된 미디어:</span>
                 <span className={`text-xs font-bold ${accentColor}`}>{selectedMedia.length}개</span>
               </div>
+
+              <div className={`mt-5 pt-5 border-t ${divider}`}>
+                <h4 className={`font-bold text-xs mb-1 flex items-center gap-2 ${textMain}`}>
+                  <span className={`w-4 h-4 flex items-center justify-center ${accentColor}`}><i className="ri-global-line text-xs"></i></span>
+                  사이트 URL 직접 추가
+                </h4>
+                <p className={`${textSub} text-xs mb-3`}>추가한 사이트는 헤르메스가 키워드로 검색합니다(미등록 매체).</p>
+                {customSources.length > 0 && (
+                  <div className={`flex flex-wrap gap-2 mb-3 p-3 rounded-xl border ${divider}`}>
+                    {customSources.map(s => (
+                      <span key={s.url} className={`flex items-center gap-1.5 border text-xs px-3 py-1.5 rounded-full ${tagSelected}`}>
+                        <i className="ri-links-line text-xs"></i>
+                        {sourceDomain(s.url)}{s.name ? ` (${s.name})` : ''}
+                        <button type="button" onClick={() => removeCustomSource(s.url)} className="w-3.5 h-3.5 flex items-center justify-center hover:opacity-70 cursor-pointer transition-colors"><i className="ri-close-line text-xs"></i></button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input type="text" placeholder="https://example.com/news" value={customSourceUrl}
+                    onChange={e => { setCustomSourceUrl(e.target.value); setCustomSourceError(null); }}
+                    onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addCustomSource())}
+                    className={`flex-1 rounded-xl px-4 py-2.5 text-sm focus:outline-none transition-colors ${inputBg} ${inputFocus} ${inputText}`} />
+                  <input type="text" placeholder="이름(선택)" value={customSourceName}
+                    onChange={e => setCustomSourceName(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addCustomSource())}
+                    className={`sm:w-40 rounded-xl px-4 py-2.5 text-sm focus:outline-none transition-colors ${inputBg} ${inputFocus} ${inputText}`} />
+                  <button type="button" onClick={addCustomSource}
+                    className={`flex items-center justify-center gap-2 text-sm font-medium px-4 py-2.5 rounded-xl cursor-pointer whitespace-nowrap transition-colors border ${accentBg} ${accentBorder} ${accentColor} hover:opacity-80`}>
+                    <span className="w-4 h-4 flex items-center justify-center"><i className="ri-add-line text-sm"></i></span>추가
+                  </button>
+                </div>
+                {customSourceError && (
+                  <p className="text-red-500 text-xs mt-2 flex items-center gap-1"><i className="ri-error-warning-line text-xs"></i>{customSourceError}</p>
+                )}
+              </div>
             </div>
 
             {/* Brands */}
@@ -662,6 +742,11 @@ export default function DailyMailingPage() {
                       className={`text-xs px-3 py-1 rounded-full cursor-pointer whitespace-nowrap transition-all border disabled:opacity-50 ${isDark ? 'border-[#00E5CC]/30 text-[#00E5CC] hover:bg-[#00E5CC]/10' : 'border-teal-300 text-teal-600 hover:bg-teal-50'}`}>
                       {testingId === setting.id ? '생성 중…' : '미리보기'}
                     </button>
+                    <button onClick={() => handleRequestTestMail(setting.id)} disabled={testRequestId === setting.id}
+                      className={`flex items-center gap-1 text-xs px-3 py-1 rounded-full cursor-pointer whitespace-nowrap transition-all border disabled:opacity-50 ${isDark ? 'border-[#F59E0B]/30 text-[#F59E0B] hover:bg-[#F59E0B]/10' : 'border-amber-300 text-amber-600 hover:bg-amber-50'}`}>
+                      <i className="ri-mail-send-line text-xs"></i>
+                      {testRequestId === setting.id ? '요청 중…' : '테스트 메일 요청'}
+                    </button>
                     <button onClick={() => toggleSetting(setting.id, !setting.active)}
                       className={`text-xs px-3 py-1 rounded-full cursor-pointer whitespace-nowrap transition-all border ${setting.active ? 'border-red-300 text-red-500 hover:bg-red-50' : 'border-teal-300 text-teal-600 hover:bg-teal-50'}`}>
                       {setting.active ? '비활성화' : '활성화'}
@@ -672,6 +757,12 @@ export default function DailyMailingPage() {
                     </button>
                   </div>
                 </div>
+                {testRequestNote && testRequestNote.id === setting.id && (
+                  <div className={`mb-3 flex items-center gap-2 rounded-lg px-3 py-2 text-xs ${testRequestNote.ok ? (isDark ? 'bg-[#00E5CC]/10 text-[#00E5CC]' : 'bg-teal-50 text-teal-700') : (isDark ? 'bg-red-500/10 text-red-400' : 'bg-red-50 text-red-600')}`}>
+                    <i className={testRequestNote.ok ? 'ri-checkbox-circle-line text-xs' : 'ri-error-warning-line text-xs'}></i>
+                    {testRequestNote.message}
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className={`${textMuted} text-xs mb-2`}>모니터링 키워드</p>
@@ -710,6 +801,15 @@ export default function DailyMailingPage() {
                     {setting.disease_areas?.map(d => (
                       <span key={`disease-${d}`} className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border ${tagDefault}`}>
                         <i className="ri-heart-pulse-line text-[10px]"></i>{d}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {(setting.custom_sources?.length ?? 0) > 0 && (
+                  <div className={`mt-3 pt-3 border-t flex flex-wrap gap-1.5 ${divider}`}>
+                    {setting.custom_sources?.map(s => (
+                      <span key={`src-${s.url}`} className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border ${tagDefault}`}>
+                        <i className="ri-global-line text-[10px]"></i>{sourceDomain(s.url)}{s.name ? ` (${s.name})` : ''}
                       </span>
                     ))}
                   </div>

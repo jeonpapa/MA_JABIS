@@ -17,6 +17,7 @@ export interface MailSubscription {
   brands?: string[];
   policy_topics?: string[];
   disease_areas?: string[];
+  custom_sources?: { url: string; name?: string }[];
 }
 
 export interface MailSubscriptionInput {
@@ -32,6 +33,7 @@ export interface MailSubscriptionInput {
   brands?: string[];
   policyTopics?: string[];
   diseaseAreas?: string[];
+  customSources?: { url: string; name?: string }[];
 }
 
 export interface MailSubListResponse {
@@ -53,6 +55,13 @@ export interface TestSendResult {
 export interface SubscriptionScopeResponse {
   scope: Record<string, unknown>;
   snapshot_path: string;
+}
+
+export interface TestMailRequestResult {
+  ok: boolean;
+  message?: string;
+  requested_at?: string;
+  snapshot_path?: string;
 }
 
 export async function listMailSubscriptions(): Promise<MailSubListResponse> {
@@ -82,4 +91,8 @@ export async function testSendMailSubscription(id: number): Promise<TestSendResu
 
 export async function fetchSubscriptionScope(id: number): Promise<SubscriptionScopeResponse> {
   return api.get<SubscriptionScopeResponse>(`/api/mail-subscriptions/${id}/scope`);
+}
+
+export async function requestTestMail(id: number): Promise<TestMailRequestResult> {
+  return api.post<TestMailRequestResult>(`/api/mail-subscriptions/${id}/test-request`, {});
 }
