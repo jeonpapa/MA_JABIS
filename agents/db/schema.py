@@ -416,6 +416,7 @@ CREATE TABLE IF NOT EXISTS mail_subscription (
     brands_json        TEXT NOT NULL DEFAULT '[]',  -- 모니터링 스콥: 브랜드
     policy_topics_json TEXT NOT NULL DEFAULT '[]',  -- 모니터링 스콥: 정책 토픽
     disease_areas_json TEXT NOT NULL DEFAULT '[]',  -- 모니터링 스콥: 질환 영역
+    custom_sources_json TEXT NOT NULL DEFAULT '[]', -- 사용자 추가 사이트 [{url,name}] (헤르메스 검색)
     created_at     TEXT NOT NULL,
     updated_at     TEXT NOT NULL,
     last_sent_at   TEXT

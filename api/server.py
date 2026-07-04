@@ -3915,10 +3915,11 @@ def _mail_sub_row_to_dict(r) -> dict:
         "brands": _json.loads(r[13]) if len(r) > 13 and r[13] else [],
         "policy_topics": _json.loads(r[14]) if len(r) > 14 and r[14] else [],
         "disease_areas": _json.loads(r[15]) if len(r) > 15 and r[15] else [],
+        "custom_sources": _json.loads(r[16]) if len(r) > 16 and r[16] else [],
     }
 
 
-_MAIL_SUB_COLS = "id, name, keywords_json, media_json, schedule, time, week_day, emails_json, active, created_at, updated_at, last_sent_at, companies_json, brands_json, policy_topics_json, disease_areas_json"
+_MAIL_SUB_COLS = "id, name, keywords_json, media_json, schedule, time, week_day, emails_json, active, created_at, updated_at, last_sent_at, companies_json, brands_json, policy_topics_json, disease_areas_json, custom_sources_json"
 
 
 def _coerce_mail_sub_input(body: dict) -> dict | tuple[dict, str]:
@@ -3970,6 +3971,19 @@ def _coerce_mail_sub_input(body: dict) -> dict | tuple[dict, str]:
             if not isinstance(vals, list):
                 return ({}, f"{field} must be array")
             out[col] = _json.dumps([str(x) for x in vals], ensure_ascii=False)
+    # 사용자 추가 사이트 [{url, name?}] — 헤르메스가 키워드 검색 (미등록 소스)
+    if "customSources" in body:
+        raw = body.get("customSources") or []
+        if not isinstance(raw, list):
+            return ({}, "customSources must be array")
+        cleaned = []
+        for entry in raw:
+            url = (entry.get("url") if isinstance(entry, dict) else str(entry)).strip()
+            if not (url.startswith("http://") or url.startswith("https://")):
+                return ({}, f"custom source url must be http(s): {url[:40]}")
+            name = (entry.get("name") if isinstance(entry, dict) else "") or ""
+            cleaned.append({"url": url, "name": str(name).strip()})
+        out["custom_sources_json"] = _json.dumps(cleaned, ensure_ascii=False)
     return out
 
 
@@ -4833,6 +4847,37 @@ def mail_sub_scope(item_id: int):
         return jsonify({"scope": scope, "snapshot_path": str(snapshot_path)})
     except Exception as e:
         logger.error("mail_sub_scope 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/mail-subscriptions/<int:item_id>/test-request")
+@require_auth()
+def mail_sub_test_request(item_id: int):
+    """테스트 메일 요청 — 스콥에 test_request 플래그를 실어 헤르메스 채널에 전달.
+
+    대쉬보드는 발송하지 않는다. 헤르메스가 스콥의 test_request 를 감지해 검토 후 [TEST] 메일을 발송한다.
+    """
+    owner = request.user["sub"]  # type: ignore[attr-defined]
+    try:
+        with db._connect() as conn:
+            row = conn.execute(
+                f"SELECT {_MAIL_SUB_COLS} FROM mail_subscription WHERE id=? AND owner_email=?",
+                (item_id, owner),
+            ).fetchone()
+        if row is None:
+            return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+        from datetime import datetime, timezone
+        from agents.daily_mailing.subscription_bridge import subscription_to_scope, write_scope_snapshot
+        item = _mail_sub_row_to_dict(row)
+        item["owner_email"] = owner
+        scope = subscription_to_scope(item)
+        requested_at = datetime.now(timezone.utc).isoformat()
+        scope["test_request"] = {"requested_at": requested_at, "requested_by": owner}
+        snapshot_path = write_scope_snapshot(scope)
+        return jsonify({"ok": True, "snapshot_path": str(snapshot_path), "requested_at": requested_at,
+                        "message": "헤르메스에 테스트 요청을 전달했습니다. 검토 후 [TEST] 메일이 발송됩니다."})
+    except Exception as e:
+        logger.error("mail_sub_test_request 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 

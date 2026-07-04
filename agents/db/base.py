@@ -54,7 +54,8 @@ class _DbBase:
                 return
             if not existing:
                 return
-            for col in ("companies_json", "brands_json", "policy_topics_json", "disease_areas_json"):
+            for col in ("companies_json", "brands_json", "policy_topics_json",
+                        "disease_areas_json", "custom_sources_json"):
                 if col not in existing:
                     conn.execute(f"ALTER TABLE mail_subscription ADD COLUMN {col} TEXT NOT NULL DEFAULT '[]'")
             conn.commit()

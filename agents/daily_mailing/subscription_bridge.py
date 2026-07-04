@@ -41,6 +41,7 @@ def subscription_to_scope(sub: dict) -> dict:
         "disease_areas": list(sub.get("disease_areas") or []),
         "policy_topics": list(sub.get("policy_topics") or []),
         "media": list(sub.get("media") or []),
+        "custom_sources": list(sub.get("custom_sources") or []),
         "personas": list(sub.get("personas") or DEFAULT_PERSONAS),
         "lookback_hours": int(sub.get("lookback_hours") or 24),
         "delivery_mode": sub.get("delivery_mode") or "gmail_draft",

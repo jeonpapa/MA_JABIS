@@ -34,3 +34,19 @@ def test_write_scope_snapshot_roundtrip(tmp_path):
     assert p.exists() and p.name == "3.json"
     loaded = json.loads(p.read_text(encoding="utf-8"))
     assert loaded["subscription_id"] == "3" and loaded["keywords"] == ["a"]
+
+
+def test_custom_sources_flow_into_scope():
+    sub = {"id": 5, "name": "n", "owner_email": "j@msd.com", "keywords": ["a"], "media": ["dailypharm"],
+           "emails": ["j@msd.com"], "custom_sources": [{"url": "https://example.com", "name": "예시"}]}
+    scope = subscription_to_scope(sub)
+    assert scope["custom_sources"] == [{"url": "https://example.com", "name": "예시"}]
+
+
+def test_scope_snapshot_preserves_test_request(tmp_path):
+    sub = {"id": 9, "name": "n", "owner_email": "j@msd.com", "keywords": ["a"], "media": [], "emails": ["j@msd.com"]}
+    scope = subscription_to_scope(sub)
+    scope["test_request"] = {"requested_at": "2026-07-04T00:00:00Z", "requested_by": "j@msd.com"}
+    p = write_scope_snapshot(scope, root=tmp_path)
+    loaded = json.loads(p.read_text(encoding="utf-8"))
+    assert loaded["test_request"]["requested_by"] == "j@msd.com"
