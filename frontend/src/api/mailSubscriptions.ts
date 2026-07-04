@@ -13,6 +13,10 @@ export interface MailSubscription {
   created_at: string;
   updated_at: string;
   last_sent_at: string | null;
+  companies?: string[];
+  brands?: string[];
+  policy_topics?: string[];
+  disease_areas?: string[];
 }
 
 export interface MailSubscriptionInput {
@@ -24,6 +28,10 @@ export interface MailSubscriptionInput {
   weekDay?: string | null;
   emails: string[];
   active?: boolean;
+  companies?: string[];
+  brands?: string[];
+  policyTopics?: string[];
+  diseaseAreas?: string[];
 }
 
 export interface MailSubListResponse {

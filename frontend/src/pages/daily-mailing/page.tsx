@@ -24,6 +24,11 @@ const PRESET_KEYWORDS = [
   'HTA', '약제급여평가위원회', '약가협상', '실거래가', '사용량-약가 연동',
 ];
 
+const PRESET_BRANDS = ['Keytruda', 'Gardasil', 'Lynparza', 'Welireg', 'Bridion', 'Emend'];
+const PRESET_COMPANIES = ['MSD', '한국MSD'];
+const PRESET_POLICY_TOPICS = ['약평위', '암질심', '건정심', '위험분담', '약가협상', '사용량-약가'];
+const PRESET_DISEASE_AREAS = ['oncology', 'vaccine'];
+
 const MEDIA_CATEGORIES = [
   {
     category: '전문지',
@@ -73,6 +78,14 @@ export default function DailyMailingPage() {
   const [selectedKeywords, setSelectedKeywords] = useState<string[]>(['약가 인하', '급여 등재', '심평원']);
   const [customKeyword, setCustomKeyword] = useState('');
   const [selectedMedia, setSelectedMedia] = useState<string[]>(['medi', 'yakup', 'hankyung']);
+  const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
+  const [customBrand, setCustomBrand] = useState('');
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
+  const [customCompany, setCustomCompany] = useState('');
+  const [selectedPolicyTopics, setSelectedPolicyTopics] = useState<string[]>([]);
+  const [customPolicyTopic, setCustomPolicyTopic] = useState('');
+  const [selectedDiseaseAreas, setSelectedDiseaseAreas] = useState<string[]>([]);
+  const [customDiseaseArea, setCustomDiseaseArea] = useState('');
   const [schedule, setSchedule] = useState<'Daily' | 'Weekly'>('Daily');
   const [scheduleTime, setScheduleTime] = useState('08:00');
   const [weekDay, setWeekDay] = useState('Monday');
@@ -120,6 +133,30 @@ export default function DailyMailingPage() {
     const allSelected = ids.every(id => selectedMedia.includes(id));
     if (allSelected) { setSelectedMedia(prev => prev.filter(m => !ids.includes(m))); }
     else { setSelectedMedia(prev => [...new Set([...prev, ...ids])]); }
+  };
+  const toggleBrand = (v: string) => { setSelectedBrands(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]); };
+  const removeBrand = (v: string) => { setSelectedBrands(prev => prev.filter(x => x !== v)); };
+  const addCustomBrand = () => {
+    const trimmed = customBrand.trim();
+    if (trimmed && !selectedBrands.includes(trimmed)) { setSelectedBrands(prev => [...prev, trimmed]); setCustomBrand(''); }
+  };
+  const toggleCompany = (v: string) => { setSelectedCompanies(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]); };
+  const removeCompany = (v: string) => { setSelectedCompanies(prev => prev.filter(x => x !== v)); };
+  const addCustomCompany = () => {
+    const trimmed = customCompany.trim();
+    if (trimmed && !selectedCompanies.includes(trimmed)) { setSelectedCompanies(prev => [...prev, trimmed]); setCustomCompany(''); }
+  };
+  const togglePolicyTopic = (v: string) => { setSelectedPolicyTopics(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]); };
+  const removePolicyTopic = (v: string) => { setSelectedPolicyTopics(prev => prev.filter(x => x !== v)); };
+  const addCustomPolicyTopic = () => {
+    const trimmed = customPolicyTopic.trim();
+    if (trimmed && !selectedPolicyTopics.includes(trimmed)) { setSelectedPolicyTopics(prev => [...prev, trimmed]); setCustomPolicyTopic(''); }
+  };
+  const toggleDiseaseArea = (v: string) => { setSelectedDiseaseAreas(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]); };
+  const removeDiseaseArea = (v: string) => { setSelectedDiseaseAreas(prev => prev.filter(x => x !== v)); };
+  const addCustomDiseaseArea = () => {
+    const trimmed = customDiseaseArea.trim();
+    if (trimmed && !selectedDiseaseAreas.includes(trimmed)) { setSelectedDiseaseAreas(prev => [...prev, trimmed]); setCustomDiseaseArea(''); }
   };
   const addEmail = () => {
     const trimmed = emailInput.trim();
@@ -198,6 +235,10 @@ export default function DailyMailingPage() {
         weekDay: schedule === 'Weekly' ? weekDay : null,
         emails: emailList,
         active: true,
+        brands: selectedBrands,
+        companies: selectedCompanies,
+        policyTopics: selectedPolicyTopics,
+        diseaseAreas: selectedDiseaseAreas,
       });
       setSubmitStatus('success');
       setSubmitMessage('모니터링 스콥이 저장되었습니다. 헤르메스 에이전트가 매일 이 스콥으로 검토·작성·발송합니다.');
@@ -242,6 +283,56 @@ export default function DailyMailingPage() {
   const sumBg = isDark ? 'bg-[#161B27] border-[#1E2530]' : 'bg-white border-gray-200';
   const divider = isDark ? 'bg-[#0D1117] border-[#1E2530]' : 'bg-gray-50 border-gray-200';
   const previewBg = isDark ? 'bg-[#0D1117] border-[#1E2530]' : 'bg-gray-50 border-gray-200';
+
+  const renderScopeGroup = (opts: {
+    icon: string;
+    title: string;
+    hint: string;
+    values: string[];
+    presets: string[];
+    onToggle: (v: string) => void;
+    onRemove: (v: string) => void;
+    customValue: string;
+    onCustomChange: (v: string) => void;
+    onAddCustom: () => void;
+  }) => (
+    <div className={`${cardBg} rounded-2xl border ${cardBorder} p-6`}>
+      <h3 className={`font-bold text-sm mb-1 flex items-center gap-2 ${textMain}`}>
+        <span className={`w-5 h-5 flex items-center justify-center ${accentColor}`}><i className={`${opts.icon} text-sm`}></i></span>
+        {opts.title}
+      </h3>
+      <p className={`${textSub} text-xs mb-4`}>{opts.hint}</p>
+      {opts.values.length > 0 && (
+        <div className={`flex flex-wrap gap-2 mb-4 p-3 rounded-xl border ${divider}`}>
+          {opts.values.map(v => (
+            <span key={v} className={`flex items-center gap-1.5 border text-xs px-3 py-1.5 rounded-full ${tagSelected}`}>
+              {v}
+              <button type="button" onClick={() => opts.onRemove(v)} className="w-3.5 h-3.5 flex items-center justify-center hover:opacity-70 cursor-pointer transition-colors"><i className="ri-close-line text-xs"></i></button>
+            </span>
+          ))}
+        </div>
+      )}
+      {opts.presets.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-4">
+          {opts.presets.map(v => (
+            <button type="button" key={v} onClick={() => opts.onToggle(v)}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium cursor-pointer whitespace-nowrap transition-all ${opts.values.includes(v) ? tagSelected : tagDefault}`}>
+              {opts.values.includes(v) && <i className="ri-check-line mr-1 text-xs"></i>}{v}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="flex gap-2">
+        <input type="text" placeholder="직접 입력..." value={opts.customValue} onChange={e => opts.onCustomChange(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), opts.onAddCustom())}
+          className={`flex-1 rounded-xl px-4 py-2.5 text-sm focus:outline-none transition-colors ${inputBg} ${inputFocus} ${inputText}`} />
+        <button type="button" onClick={opts.onAddCustom}
+          className={`flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-xl cursor-pointer whitespace-nowrap transition-colors border ${accentBg} ${accentBorder} ${accentColor} hover:opacity-80`}>
+          <span className="w-4 h-4 flex items-center justify-center"><i className="ri-add-line text-sm"></i></span>추가
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <div className={`min-h-screen ${pageBg} ${isDark ? 'text-white' : 'text-gray-900'}`}>
@@ -381,6 +472,62 @@ export default function DailyMailingPage() {
                 <span className={`text-xs font-bold ${accentColor}`}>{selectedMedia.length}개</span>
               </div>
             </div>
+
+            {/* Brands */}
+            {renderScopeGroup({
+              icon: 'ri-capsule-line',
+              title: '브랜드',
+              hint: '모니터링할 브랜드를 선택하거나 직접 입력하세요 (선택)',
+              values: selectedBrands,
+              presets: PRESET_BRANDS,
+              onToggle: toggleBrand,
+              onRemove: removeBrand,
+              customValue: customBrand,
+              onCustomChange: setCustomBrand,
+              onAddCustom: addCustomBrand,
+            })}
+
+            {/* Companies */}
+            {renderScopeGroup({
+              icon: 'ri-building-2-line',
+              title: '회사',
+              hint: '모니터링할 회사를 선택하거나 직접 입력하세요 (선택)',
+              values: selectedCompanies,
+              presets: PRESET_COMPANIES,
+              onToggle: toggleCompany,
+              onRemove: removeCompany,
+              customValue: customCompany,
+              onCustomChange: setCustomCompany,
+              onAddCustom: addCustomCompany,
+            })}
+
+            {/* Policy Topics */}
+            {renderScopeGroup({
+              icon: 'ri-government-line',
+              title: '정책 토픽',
+              hint: '모니터링할 정책 토픽을 선택하거나 직접 입력하세요 (선택)',
+              values: selectedPolicyTopics,
+              presets: PRESET_POLICY_TOPICS,
+              onToggle: togglePolicyTopic,
+              onRemove: removePolicyTopic,
+              customValue: customPolicyTopic,
+              onCustomChange: setCustomPolicyTopic,
+              onAddCustom: addCustomPolicyTopic,
+            })}
+
+            {/* Disease Areas */}
+            {renderScopeGroup({
+              icon: 'ri-heart-pulse-line',
+              title: '질환 영역',
+              hint: '모니터링할 질환 영역을 선택하거나 직접 입력하세요 (선택)',
+              values: selectedDiseaseAreas,
+              presets: PRESET_DISEASE_AREAS,
+              onToggle: toggleDiseaseArea,
+              onRemove: removeDiseaseArea,
+              customValue: customDiseaseArea,
+              onCustomChange: setCustomDiseaseArea,
+              onAddCustom: addCustomDiseaseArea,
+            })}
 
             {/* Schedule */}
             <div className={`${cardBg} rounded-2xl border ${cardBorder} p-6`}>
@@ -543,6 +690,30 @@ export default function DailyMailingPage() {
                     </div>
                   </div>
                 </div>
+                {((setting.brands?.length ?? 0) > 0 || (setting.companies?.length ?? 0) > 0 || (setting.policy_topics?.length ?? 0) > 0 || (setting.disease_areas?.length ?? 0) > 0) && (
+                  <div className={`mt-3 pt-3 border-t flex flex-wrap gap-1.5 ${divider}`}>
+                    {setting.brands?.map(b => (
+                      <span key={`brand-${b}`} className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border ${tagDefault}`}>
+                        <i className="ri-capsule-line text-[10px]"></i>{b}
+                      </span>
+                    ))}
+                    {setting.companies?.map(c => (
+                      <span key={`company-${c}`} className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border ${tagDefault}`}>
+                        <i className="ri-building-2-line text-[10px]"></i>{c}
+                      </span>
+                    ))}
+                    {setting.policy_topics?.map(p => (
+                      <span key={`policy-${p}`} className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border ${tagDefault}`}>
+                        <i className="ri-government-line text-[10px]"></i>{p}
+                      </span>
+                    ))}
+                    {setting.disease_areas?.map(d => (
+                      <span key={`disease-${d}`} className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border ${tagDefault}`}>
+                        <i className="ri-heart-pulse-line text-[10px]"></i>{d}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
