@@ -53,6 +53,16 @@ CREATE TABLE IF NOT EXISTS news_keyword_factor (
     created_at TEXT, updated_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_news_factor_scope ON news_keyword_factor(scope, kind);
+CREATE TABLE IF NOT EXISTS home_brand (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    brand TEXT NOT NULL UNIQUE,
+    therapeutic_area TEXT,
+    source TEXT NOT NULL DEFAULT 'seed',
+    related_from TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT, updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_home_brand_active ON home_brand(active);
 """
 
 
@@ -247,3 +257,79 @@ def get_context_anchors(db_path: Optional[Path] = None) -> tuple:
 
     _set_cached(key, items)
     return items
+
+
+# ── Home 브랜드 (home_brand) — DEFAULT_BRANDS DB화 + Naver 연관검색어 확장 후보 ──────
+
+def seed_home_brands(db_path: Optional[Path] = None) -> int:
+    """home_brand 가 비어있으면 agents.media_intelligence.DEFAULT_BRANDS 에서 최초 1회 seed.
+    이미 행이 있으면 아무것도 하지 않는다 (idempotent)."""
+    ensure_schema(db_path)
+    now = _now()
+    seeded = 0
+    with _connect(db_path) as conn:
+        cnt = conn.execute("SELECT COUNT(*) FROM home_brand").fetchone()[0]
+        if cnt == 0:
+            from agents.media_intelligence import DEFAULT_BRANDS
+
+            for brand in DEFAULT_BRANDS:
+                conn.execute(
+                    """INSERT OR IGNORE INTO home_brand
+                       (brand, therapeutic_area, source, related_from, active, created_at, updated_at)
+                       VALUES (?,NULL,'seed',NULL,1,?,?)""",
+                    (brand, now, now),
+                )
+                seeded += 1
+        conn.commit()
+    return seeded
+
+
+def get_home_brands(db_path: Optional[Path] = None) -> list:
+    """활성 home_brand.brand 문자열 목록. 실패(DB 없음/손상/빈 결과 등) 시
+    agents.media_intelligence.DEFAULT_BRANDS 상수로 폴백."""
+    key = _cache_key("home_brands", db_path)
+    cached = _get_cached(key)
+    if cached is not None:
+        return cached  # type: ignore[return-value]
+
+    try:
+        seed_home_brands(db_path)
+        with _connect(db_path) as conn:
+            rows = conn.execute(
+                "SELECT brand FROM home_brand WHERE active = 1 ORDER BY id"
+            ).fetchall()
+        items = [r["brand"] for r in rows]
+        if not items:
+            raise ValueError("home_brand empty after seed")
+    except Exception as e:
+        logger.warning("[editable_factors] get_home_brands DB 조회 실패, 상수 폴백: %s", e)
+        from agents.media_intelligence import DEFAULT_BRANDS
+
+        items = list(DEFAULT_BRANDS)
+
+    _set_cached(key, items)
+    return items
+
+
+def add_related_candidates(db_path: Optional[Path], candidates: list) -> int:
+    """Naver 연관검색어 확장 후보 등록 — source='related', active=0 (admin 승인 전까지
+    get_home_brands() 집계에서 제외). candidates = [{"brand": ..., "related_from": ...}].
+    이미 존재하는 brand(UNIQUE) 는 INSERT OR IGNORE 로 건너뛴다. 반환값: 실제 추가된 행 수."""
+    ensure_schema(db_path)
+    now = _now()
+    added = 0
+    with _connect(db_path) as conn:
+        for c in candidates:
+            brand = (c.get("brand") or "").strip()
+            if not brand:
+                continue
+            cur = conn.execute(
+                """INSERT OR IGNORE INTO home_brand
+                   (brand, therapeutic_area, source, related_from, active, created_at, updated_at)
+                   VALUES (?,NULL,'related',?,0,?,?)""",
+                (brand, c.get("related_from"), now, now),
+            )
+            if cur.rowcount:
+                added += 1
+        conn.commit()
+    return added

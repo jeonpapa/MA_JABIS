@@ -460,6 +460,27 @@ def nhis_negotiation_sync_job():
         logger.exception("NHIS 약가협상 sync 실패: %s", e)
 
 
+def home_brand_related_refresh_job():
+    """매주 월요일 05:00 Seoul — Home 브랜드 목록(home_brand) 활성 브랜드마다 Naver
+    연관검색어(자동완성, 크레덴셜 불필요)를 조회해 신규 브랜드 후보를 제안.
+
+    agents.naver_related.expand_home_brands() 가 후보를 필터링해
+    home_brand 에 source='related', active=0 으로 추가 — Home 브랜드 트래픽 집계에는
+    반영되지 않고 admin 이 /api/admin/home-brands 에서 검토 후 활성화해야 반영된다.
+    배포 안전: 네트워크/파싱 실패가 전체 스케줄러를 막지 않도록 try/except 격리.
+    """
+    logger.info("━━━ Home 브랜드 연관검색어 확장 주간 sync 시작 ━━━")
+    try:
+        from agents import naver_related
+        res = naver_related.expand_home_brands()
+        logger.info(
+            "Home 브랜드 연관검색어 확장 완료: seeds_processed=%d candidates_added=%d",
+            res.get("seeds_processed", 0), res.get("candidates_added", 0),
+        )
+    except Exception as e:
+        logger.exception("Home 브랜드 연관검색어 확장 실패: %s", e)
+
+
 def amjilsim_d_minus_2_reporter_job():
     """매일 16:00 Seoul — 오늘이 어느 위원회 D-2이면 사전 예측 보고서 발사 (17:00 마감).
 
@@ -943,6 +964,15 @@ def main():
         trigger=CronTrigger(day_of_week="mon", hour=2, minute=30, timezone="Asia/Seoul"),
         id="nhis_negotiation_sync",
         name="NHIS 약가협상 공개자료 주간 sync (신규/확대 → 매칭 교체)",
+        replace_existing=True,
+    )
+
+    # 매주 월요일 05:00 — Home 브랜드 목록 Naver 연관검색어 확장(신규 후보 제안, admin 검토용)
+    scheduler.add_job(
+        home_brand_related_refresh_job,
+        trigger=CronTrigger(day_of_week="mon", hour=5, minute=0, timezone="Asia/Seoul"),
+        id="home_brand_related_refresh",
+        name="Home 브랜드 Naver 연관검색어 확장 (주간, 후보 제안 → admin 승인 대기)",
         replace_existing=True,
     )
 

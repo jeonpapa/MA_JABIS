@@ -39,7 +39,10 @@ def days_in_last_month() -> int:
     return (today - prev_date).days
 
 # Home 기본 모니터링 브랜드 — MSD 포트폴리오 + 경쟁사 핵심 + 시장 관심 브랜드
-# 추후 admin UI 에서 편집 가능 (/admin/brand-traffic).
+# DB화(home_brand 테이블, agents.editable_factors) 의 seed 값 + 폴백 상수.
+# 실제 조회는 get_brand_traffic() 이 agents.editable_factors.get_home_brands() 를 통해
+# home_brand(active=1) 를 우선 사용하고, DB 가 비어있거나 접근 불가하면 이 상수로 폴백.
+# admin CRUD: /api/admin/home-brands (활성화/비활성화/추가/삭제).
 DEFAULT_BRANDS = [
     "키트루다", "렌비마", "자누비아", "가다실", "프로리아",
     "옵디보", "타그리소", "임핀지", "테쎈트릭",
@@ -79,8 +82,10 @@ def get_brand_traffic(days: int | None = None, refresh: bool = False) -> dict:
             "error": "NAVER_API_CLIENT_ID/SECRET 미설정",
         }
 
-    logger.info("[MI] %s 브랜드 트래픽 수집 시작 (%d일)", len(DEFAULT_BRANDS), days)
-    brands_data = aggregate_brand_traffic(DEFAULT_BRANDS, days=days)
+    from agents.editable_factors import get_home_brands
+    brands = get_home_brands()
+    logger.info("[MI] %s 브랜드 트래픽 수집 시작 (%d일)", len(brands), days)
+    brands_data = aggregate_brand_traffic(brands, days=days)
     result = {
         "updated_at": datetime.now().isoformat(),
         "days": days,

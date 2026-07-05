@@ -3985,6 +3985,163 @@ def news_factors_delete(item_id: int):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Home 브랜드 (home_brand) admin CRUD — DEFAULT_BRANDS DB화 (Phase 3)
+# (런타임 로더는 agents/editable_factors.py get_home_brands() — DB 비어있으면
+#  agents.media_intelligence.DEFAULT_BRANDS 상수로 폴백해 Home 브랜드 트래픽 크롤 보호)
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _home_brand_row_to_dict(r) -> dict:
+    return {
+        "id": r["id"],
+        "brand": r["brand"],
+        "therapeutic_area": r["therapeutic_area"],
+        "source": r["source"],
+        "related_from": r["related_from"],
+        "active": r["active"],
+        "created_at": r["created_at"],
+        "updated_at": r["updated_at"],
+    }
+
+
+@app.get("/api/admin/home-brands")
+@require_auth(role="admin")
+def home_brands_list():
+    source = request.args.get("source")
+    active = request.args.get("active")
+    try:
+        _editable_factors.seed_home_brands()
+        sql = ("SELECT id, brand, therapeutic_area, source, related_from, active, "
+               "created_at, updated_at FROM home_brand")
+        conds: list[str] = []
+        params: list = []
+        if source:
+            conds.append("source = ?")
+            params.append(source)
+        if active is not None:
+            conds.append("active = ?")
+            params.append(1 if active in ("1", "true", "True") else 0)
+        if conds:
+            sql += " WHERE " + " AND ".join(conds)
+        sql += " ORDER BY id"
+        with db._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return jsonify({"items": [_home_brand_row_to_dict(r) for r in rows]})
+    except Exception as e:
+        logger.error("home_brands_list 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/admin/home-brands")
+@require_auth(role="admin")
+def home_brands_create():
+    body = request.get_json(silent=True) or {}
+    brand = (body.get("brand") or "").strip()
+    if not brand:
+        return jsonify({"error": "brand 필수", "code": "INVALID"}), 400
+    source = body.get("source") or "seed"
+    if source not in ("seed", "related"):
+        return jsonify({"error": "source must be seed|related", "code": "INVALID"}), 400
+    therapeutic_area = body.get("therapeutic_area") or None
+    related_from = body.get("related_from") or None
+    active = 1 if body.get("active", True) else 0
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    try:
+        with db._connect() as conn:
+            cur = conn.execute(
+                "INSERT INTO home_brand "
+                "(brand, therapeutic_area, source, related_from, active, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (brand, therapeutic_area, source, related_from, active, now, now),
+            )
+            new_id = cur.lastrowid
+            conn.commit()
+            row = conn.execute(
+                "SELECT id, brand, therapeutic_area, source, related_from, active, "
+                "created_at, updated_at FROM home_brand WHERE id=?",
+                (new_id,),
+            ).fetchone()
+        _editable_factors.invalidate_cache()
+        return jsonify({"item": _home_brand_row_to_dict(row)}), 201
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "brand 중복", "code": "DUPLICATE"}), 400
+    except Exception as e:
+        logger.error("home_brands_create 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.patch("/api/admin/home-brands/<int:item_id>")
+@require_auth(role="admin")
+def home_brands_update(item_id: int):
+    body = request.get_json(silent=True) or {}
+    updatable = {"brand", "therapeutic_area", "source", "related_from", "active"}
+    fields = {k: v for k, v in body.items() if k in updatable}
+    if not fields:
+        return jsonify({"error": "변경할 필드 없음", "code": "INVALID"}), 400
+    if "source" in fields and fields["source"] not in ("seed", "related"):
+        return jsonify({"error": "source must be seed|related", "code": "INVALID"}), 400
+    if "brand" in fields and not (fields["brand"] or "").strip():
+        return jsonify({"error": "brand 비울 수 없음", "code": "INVALID"}), 400
+    if "active" in fields:
+        fields["active"] = 1 if fields["active"] else 0
+    from datetime import datetime, timezone
+    fields["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    set_clause = ", ".join(f"{k} = ?" for k in fields.keys())
+    params = list(fields.values()) + [item_id]
+    try:
+        with db._connect() as conn:
+            res = conn.execute(
+                f"UPDATE home_brand SET {set_clause} WHERE id = ?", params
+            )
+            if res.rowcount == 0:
+                return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+            conn.commit()
+            row = conn.execute(
+                "SELECT id, brand, therapeutic_area, source, related_from, active, "
+                "created_at, updated_at FROM home_brand WHERE id=?",
+                (item_id,),
+            ).fetchone()
+        _editable_factors.invalidate_cache()
+        return jsonify({"item": _home_brand_row_to_dict(row)})
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "brand 중복", "code": "DUPLICATE"}), 400
+    except Exception as e:
+        logger.error("home_brands_update 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.delete("/api/admin/home-brands/<int:item_id>")
+@require_auth(role="admin")
+def home_brands_delete(item_id: int):
+    try:
+        with db._connect() as conn:
+            res = conn.execute("DELETE FROM home_brand WHERE id = ?", (item_id,))
+            if res.rowcount == 0:
+                return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+            conn.commit()
+        _editable_factors.invalidate_cache()
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.error("home_brands_delete 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/admin/home-brands/expand")
+@require_auth(role="admin")
+def home_brands_expand():
+    """Naver 연관검색어(자동완성, 크레덴셜 불필요) 로 신규 브랜드 후보 제안(source='related',
+    active=0) — admin 이 이후 PATCH active=1 로 승인해야 Home 브랜드 트래픽에 반영."""
+    try:
+        from agents import naver_related
+        res = naver_related.expand_home_brands()
+        _editable_factors.invalidate_cache()
+        return jsonify(res)
+    except Exception as e:
+        logger.error("home_brands_expand 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Daily Mailing — 구독 신청 설정 (사용자별 CRUD + 초안 미리보기)
 # ──────────────────────────────────────────────────────────────────────────────
 
