@@ -4901,32 +4901,50 @@ def _reimbursement_row_to_dict(r) -> dict:
         "notice_url": r[11],
         "updated_by": r[12],
         "updated_at": r[13],
+        "mfds_date": r[14] if len(r) > 14 else None,
+        "mfds_approved": bool(r[14]) if len(r) > 14 else False,
     }
 
 
 @app.get("/api/admin/reimbursement")
 @require_auth(role="admin")
 def admin_reimbursement_list():
-    """product 별 적응증 목록 + 급여 상태 (LEFT JOIN)."""
+    """product 별 적응증 목록 + 급여 상태 (LEFT JOIN).
+
+    mfds_only(기본 1): 국내 MFDS 허가가 있는 적응증만 반환(외국 적응증 제외).
+    급여 관리는 국내 허가 기준이므로 기본 on. mfds_only=0 이면 외국 포함 전체.
+    """
     product = (request.args.get("product") or "").strip().lower()
+    mfds_only = (request.args.get("mfds_only", "1").strip().lower() not in ("0", "false", "no"))
     try:
         with db._connect() as conn:
             sql = """
                 SELECT m.indication_id, m.product, m.disease, m.line_of_therapy,
                        m.stage, m.biomarker_class, m.title,
                        r.is_reimbursed, r.effective_date, r.criteria_text,
-                       r.notice_date, r.notice_url, r.updated_by, r.updated_at
+                       r.notice_date, r.notice_url, r.updated_by, r.updated_at,
+                       (SELECT a.approval_date FROM indications_by_agency a
+                        WHERE a.indication_id = m.indication_id AND a.agency = 'MFDS'
+                        LIMIT 1) AS mfds_date
                 FROM indications_master m
                 LEFT JOIN indication_reimbursement r
                     ON r.indication_id = m.indication_id
             """
+            clauses: list[str] = []
             params: list = []
             if product:
-                sql += " WHERE m.product = ?"
+                clauses.append("m.product = ?")
                 params.append(product)
+            if mfds_only:
+                clauses.append(
+                    "EXISTS (SELECT 1 FROM indications_by_agency a "
+                    "WHERE a.indication_id = m.indication_id AND a.agency = 'MFDS')"
+                )
+            if clauses:
+                sql += " WHERE " + " AND ".join(clauses)
             sql += " ORDER BY m.product, m.disease, m.line_of_therapy, m.indication_id"
             rows = conn.execute(sql, params).fetchall()
-        return jsonify({"items": [_reimbursement_row_to_dict(r) for r in rows]})
+        return jsonify({"items": [_reimbursement_row_to_dict(r) for r in rows], "mfds_only": mfds_only})
     except Exception as e:
         logger.error("reimbursement_list 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500

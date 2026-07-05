@@ -15,6 +15,8 @@ export interface ReimbursementItem {
   notice_url: string | null;
   updated_by: string | null;
   updated_at: string | null;
+  mfds_approved: boolean;
+  mfds_date: string | null;
 }
 
 export interface ReimbursementPatch {
@@ -25,9 +27,16 @@ export interface ReimbursementPatch {
   notice_url?: string | null;
 }
 
-export async function listReimbursement(product?: string): Promise<ReimbursementItem[]> {
-  const q = product ? `?product=${encodeURIComponent(product)}` : '';
-  const r = await api.get<{ items: ReimbursementItem[] }>(`/api/admin/reimbursement${q}`);
+export async function listReimbursement(
+  product?: string,
+  mfdsOnly = true,
+): Promise<ReimbursementItem[]> {
+  const params = new URLSearchParams();
+  if (product) params.set('product', product);
+  params.set('mfds_only', mfdsOnly ? '1' : '0');
+  const r = await api.get<{ items: ReimbursementItem[] }>(
+    `/api/admin/reimbursement?${params.toString()}`,
+  );
   return r.items;
 }
 

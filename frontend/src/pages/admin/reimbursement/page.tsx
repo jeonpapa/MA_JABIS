@@ -28,6 +28,7 @@ export default function AdminReimbursementPage() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [bulkSaving, setBulkSaving] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [mfdsOnly, setMfdsOnly] = useState(true);  // 국내 MFDS 허가 적응증만 (기본 on)
 
   useEffect(() => {
     (async () => {
@@ -48,7 +49,7 @@ export default function AdminReimbursementPage() {
     setLoading(true);
     setError(null);
     try {
-      const rows = await listReimbursement(product);
+      const rows = await listReimbursement(product, mfdsOnly);
       setItems(rows);
       const next: DraftMap = {};
       for (const r of rows) {
@@ -72,7 +73,7 @@ export default function AdminReimbursementPage() {
   useEffect(() => {
     if (authChecked) reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authChecked, product]);
+  }, [authChecked, product, mfdsOnly]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, ReimbursementItem[]>();
@@ -217,6 +218,15 @@ export default function AdminReimbursementPage() {
               {products.map(p => (<option key={p} value={p}>{p}</option>))}
             </select>
           </div>
+          <label className="flex items-center gap-2 cursor-pointer select-none" title="국내 MFDS 허가가 있는 적응증만 표시 (외국 적응증 제외)">
+            <input
+              type="checkbox"
+              checked={mfdsOnly}
+              onChange={e => setMfdsOnly(e.target.checked)}
+              className="accent-[#00E5CC] w-4 h-4"
+            />
+            <span className="text-[#8B9BB4] text-xs">국내 허가만 보기 (MFDS)</span>
+          </label>
           <div className="text-[#8B9BB4] text-sm">
             총 <span className="text-white font-semibold">{totals.total}</span> 적응증 /
             급여 <span className="text-[#00E5CC] font-semibold ml-1">{totals.reimbursed}</span> /
@@ -311,6 +321,11 @@ export default function AdminReimbursementPage() {
                                 {[it.line_of_therapy, it.stage, it.biomarker_class]
                                   .filter(Boolean).join(' · ')}
                               </div>
+                              {it.mfds_date && (
+                                <div className="text-[#00E5CC]/70 text-[11px] mt-0.5">
+                                  MFDS 허가 {it.mfds_date}
+                                </div>
+                              )}
                             </td>
                             <td className="py-3 pr-3 text-center">
                               <button
