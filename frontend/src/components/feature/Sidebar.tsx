@@ -34,6 +34,7 @@ const adminNavItems = [
   { path: '/admin/reimbursement', label: '급여 관리', icon: 'ri-health-book-line' },
   { path: '/admin/reimbursement-pipeline', label: '심의 파이프라인 관리', icon: 'ri-route-line' },
   { path: '/admin/daily-mailing-kanban', label: 'Daily Mailing 칸반', icon: 'ri-kanban-view' },
+  { path: '/admin/home-brands', label: '홈 브랜드 관리', icon: 'ri-capsule-line' },
 ];
 
 type SettingsTab = 'account' | 'users' | 'tabs';
