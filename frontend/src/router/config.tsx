@@ -14,9 +14,7 @@ import NotFound from '@/pages/NotFound';
 // admin — 각 페이지가 fetchMe() 로 role 셀프 가드 (v2 패턴)
 import AdminMarketSharePage from '@/pages/admin/market-share/page';
 import AdminMsdPipelinePage from '@/pages/admin/msd-pipeline/page';
-import AdminBrandTrafficPage from '@/pages/admin/brand-traffic/page';
 import AdminCompetitorTrendsPage from '@/pages/admin/competitor-trends/page';
-import AdminKeywordCloudPage from '@/pages/admin/keyword-cloud/page';
 import AdminReimbursementPage from '@/pages/admin/reimbursement/page';
 import AdminReimbursementPipelinePage from '@/pages/admin/reimbursement-pipeline/page';
 import AdminDailyMailingKanbanPage from '@/pages/admin/daily-mailing-kanban/page';
@@ -35,9 +33,7 @@ const routes: RouteObject[] = [
   { path: '/analog-search', element: <AnalogSearchPage /> },
   { path: '/admin/market-share', element: <AdminMarketSharePage /> },
   { path: '/admin/msd-pipeline', element: <AdminMsdPipelinePage /> },
-  { path: '/admin/brand-traffic', element: <AdminBrandTrafficPage /> },
   { path: '/admin/competitor-trends', element: <AdminCompetitorTrendsPage /> },
-  { path: '/admin/keyword-cloud', element: <AdminKeywordCloudPage /> },
   { path: '/admin/reimbursement', element: <AdminReimbursementPage /> },
   { path: '/admin/reimbursement-pipeline', element: <AdminReimbursementPipelinePage /> },
   { path: '/admin/daily-mailing-kanban', element: <AdminDailyMailingKanbanPage /> },

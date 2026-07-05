@@ -30,9 +30,7 @@ const allNavItems = [
 const adminNavItems = [
   { path: '/admin/market-share', label: '시장점유율 업로드', icon: 'ri-upload-cloud-2-line' },
   { path: '/admin/msd-pipeline', label: 'MSD 파이프라인', icon: 'ri-git-branch-line' },
-  { path: '/admin/brand-traffic', label: '브랜드 트래픽', icon: 'ri-line-chart-line' },
   { path: '/admin/competitor-trends', label: 'MNC 동향 관리', icon: 'ri-building-2-line' },
-  { path: '/admin/keyword-cloud', label: '키워드 클라우드', icon: 'ri-cloud-line' },
   { path: '/admin/reimbursement', label: '급여 관리', icon: 'ri-health-book-line' },
   { path: '/admin/reimbursement-pipeline', label: '심의 파이프라인 관리', icon: 'ri-route-line' },
   { path: '/admin/daily-mailing-kanban', label: 'Daily Mailing 칸반', icon: 'ri-kanban-view' },
