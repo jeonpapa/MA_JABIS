@@ -12,6 +12,7 @@ import { fetchMe } from '@/utils/authUsers';
 import SettingsModal from '@/components/common/SettingsModal';
 import CompetitorBrandsEditor from '@/components/competitor/CompetitorBrandsEditor';
 import NewsFactorsEditor from '@/components/competitor/NewsFactorsEditor';
+import AccessInsightView from './components/AccessInsightView';
 
 const BADGE_TYPES = ['전체', ...COMPETITOR_BADGES];
 
@@ -106,7 +107,7 @@ function RelatedNews({
 
 export default function CompetitorTrendsPage() {
   const [isDark, setIsDark] = useState(false);
-  const [view, setView] = useState<'trends' | 'archive'>('trends');
+  const [view, setView] = useState<'trends' | 'archive' | 'access-insight'>('trends');
   const [isAdmin, setIsAdmin] = useState(false);
   const [showBrandsModal, setShowBrandsModal] = useState(false);
   const [showFactorsModal, setShowFactorsModal] = useState(false);
@@ -292,6 +293,7 @@ export default function CompetitorTrendsPage() {
           {([
             { key: 'trends' as const, label: '동향 카드', icon: 'ri-layout-grid-line' },
             { key: 'archive' as const, label: '뉴스 아카이브', icon: 'ri-newspaper-line' },
+            { key: 'access-insight' as const, label: 'Access Insight', icon: 'ri-line-chart-line' },
           ]).map(t => (
             <button
               key={t.key}
@@ -643,6 +645,9 @@ export default function CompetitorTrendsPage() {
             )}
           </>
         )}
+
+        {/* ───────────── Access Insight (momentum + journey 오버레이) ───────────── */}
+        {view === 'access-insight' && <AccessInsightView isDark={isDark} />}
       </div>
 
       {/* ⚙ 추적 브랜드/MNC 편집 (admin) */}
