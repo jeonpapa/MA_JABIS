@@ -8,6 +8,10 @@ import {
   type NewsBrand,
   type NewsBrandsResponse,
 } from '@/api/competitorNews';
+import { fetchMe } from '@/utils/authUsers';
+import SettingsModal from '@/components/common/SettingsModal';
+import CompetitorBrandsEditor from '@/components/competitor/CompetitorBrandsEditor';
+import NewsFactorsEditor from '@/components/competitor/NewsFactorsEditor';
 
 const BADGE_TYPES = ['전체', ...COMPETITOR_BADGES];
 
@@ -103,6 +107,9 @@ function RelatedNews({
 export default function CompetitorTrendsPage() {
   const [isDark, setIsDark] = useState(false);
   const [view, setView] = useState<'trends' | 'archive'>('trends');
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showBrandsModal, setShowBrandsModal] = useState(false);
+  const [showFactorsModal, setShowFactorsModal] = useState(false);
   const [filter, setFilter] = useState('전체');
   const [companyFilter, setCompanyFilter] = useState('전체');
   const [search, setSearch] = useState('');
@@ -127,6 +134,15 @@ export default function CompetitorTrendsPage() {
       .then(list => { if (alive) { setItems(list); setError(null); } })
       .catch(e => { if (alive) setError(e instanceof Error ? e.message : '조회 실패'); })
       .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, []);
+
+  // 관리자 여부 — ⚙ 편집 아이콘 노출 가드 (1회 확인)
+  useEffect(() => {
+    let alive = true;
+    fetchMe()
+      .then(me => { if (alive) setIsAdmin(me?.role === 'admin'); })
+      .catch(() => { if (alive) setIsAdmin(false); });
     return () => { alive = false; };
   }, []);
 
@@ -246,6 +262,17 @@ export default function CompetitorTrendsPage() {
               <span className="w-4 h-4 flex items-center justify-center"><i className="ri-add-line text-sm"></i></span>
               동향 관리
             </Link>
+            {isAdmin && (
+              <button
+                onClick={() => setShowBrandsModal(true)}
+                className={`w-9 h-9 flex items-center justify-center rounded-lg cursor-pointer transition-all ${
+                  isDark ? 'bg-[#1E2530] text-[#8B9BB4] hover:text-white hover:bg-[#2A3545]' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                }`}
+                title="추적 브랜드/MNC 편집"
+              >
+                <i className="ri-settings-3-line text-lg"></i>
+              </button>
+            )}
             <button
               onClick={() => setIsDark(!isDark)}
               className={`w-9 h-9 flex items-center justify-center rounded-lg cursor-pointer transition-all ${
@@ -458,25 +485,38 @@ export default function CompetitorTrendsPage() {
         {view === 'archive' && (
           <>
             {/* 헤더 메타 */}
-            <div className={`${statBg} rounded-xl p-4 border ${cardBorder}`}>
-              {brandsErr && (
-                <p className="text-sm text-[#EF4444]"><i className="ri-error-warning-line mr-1"></i>{brandsErr}</p>
-              )}
-              {!brandsErr && brands && (
-                <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-sm">
-                  <span className={`font-bold ${textMain}`}>총 {brands.stats.total.toLocaleString()}건</span>
-                  <span className={textMuted}>·</span>
-                  <span className={textSub}>Tier 1 전문지</span>
-                  <span className={textMuted}>·</span>
-                  <span className={textSub}>{brands.stats.earliest ?? '—'} ~ {brands.stats.latest ?? '—'}</span>
-                  <span className={textMuted}>·</span>
-                  <span className={textSub}>1년 보존</span>
-                </div>
-              )}
-              {!brandsErr && !brands && (
-                <div className={`flex items-center gap-1.5 text-sm ${textMuted}`}>
-                  <i className="ri-loader-4-line animate-spin"></i>아카이브 메타 로딩 중…
-                </div>
+            <div className={`${statBg} rounded-xl p-4 border ${cardBorder} flex items-center justify-between gap-3`}>
+              <div className="min-w-0">
+                {brandsErr && (
+                  <p className="text-sm text-[#EF4444]"><i className="ri-error-warning-line mr-1"></i>{brandsErr}</p>
+                )}
+                {!brandsErr && brands && (
+                  <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-sm">
+                    <span className={`font-bold ${textMain}`}>총 {brands.stats.total.toLocaleString()}건</span>
+                    <span className={textMuted}>·</span>
+                    <span className={textSub}>Tier 1 전문지</span>
+                    <span className={textMuted}>·</span>
+                    <span className={textSub}>{brands.stats.earliest ?? '—'} ~ {brands.stats.latest ?? '—'}</span>
+                    <span className={textMuted}>·</span>
+                    <span className={textSub}>1년 보존</span>
+                  </div>
+                )}
+                {!brandsErr && !brands && (
+                  <div className={`flex items-center gap-1.5 text-sm ${textMuted}`}>
+                    <i className="ri-loader-4-line animate-spin"></i>아카이브 메타 로딩 중…
+                  </div>
+                )}
+              </div>
+              {isAdmin && (
+                <button
+                  onClick={() => setShowFactorsModal(true)}
+                  className={`w-8 h-8 flex items-center justify-center rounded-lg flex-shrink-0 cursor-pointer transition-all ${
+                    isDark ? 'bg-[#1E2530] text-[#8B9BB4] hover:text-white hover:bg-[#2A3545]' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                  }`}
+                  title="뉴스 키워드 팩터 편집"
+                >
+                  <i className="ri-settings-3-line text-base"></i>
+                </button>
               )}
             </div>
 
@@ -604,6 +644,20 @@ export default function CompetitorTrendsPage() {
           </>
         )}
       </div>
+
+      {/* ⚙ 추적 브랜드/MNC 편집 (admin) */}
+      {isAdmin && showBrandsModal && (
+        <SettingsModal title="추적 브랜드/MNC 편집" onClose={() => setShowBrandsModal(false)}>
+          <CompetitorBrandsEditor />
+        </SettingsModal>
+      )}
+
+      {/* ⚙ 뉴스 키워드 팩터 편집 (admin) */}
+      {isAdmin && showFactorsModal && (
+        <SettingsModal title="뉴스 키워드 팩터 편집" onClose={() => setShowFactorsModal(false)} widthClassName="max-w-3xl">
+          <NewsFactorsEditor />
+        </SettingsModal>
+      )}
     </div>
   );
 }
