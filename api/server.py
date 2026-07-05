@@ -6166,6 +6166,53 @@ def reimb_pipeline_admin_session_create():
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Access Insight — 미디어 signal momentum 집계 + journey/leaderboard (Phase 4 S2)
+#   가설: 위원회(암질심/약평위) 세션 직전 signal 밀도 ↑ → 등재 가능성 ↑
+#   집계 로직: agents/access_insight/aggregate.py (READ-ONLY, DB 는 S1 백필 데이터)
+# ──────────────────────────────────────────────────────────────────────────────
+
+from agents import access_insight as _access_insight
+
+
+@app.get("/api/access-insight/leaderboard")
+@require_auth()
+def access_insight_leaderboard():
+    try:
+        window_days = request.args.get("window_days", default=90, type=int)
+        limit = request.args.get("limit", default=30, type=int)
+        items = _access_insight.leaderboard(window_days=window_days, limit=limit)
+        return jsonify({"items": items})
+    except Exception as e:
+        logger.error("access_insight_leaderboard 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/access-insight/drugs")
+@require_auth()
+def access_insight_drugs():
+    try:
+        return jsonify({"items": _access_insight.list_drugs_with_signals()})
+    except Exception as e:
+        logger.error("access_insight_drugs 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/access-insight/drug/<int:drug_id>")
+@require_auth()
+def access_insight_drug_detail(drug_id: int):
+    try:
+        window_days = request.args.get("window_days", default=90, type=int)
+        momentum = _access_insight.drug_momentum(drug_id, window_days=window_days)
+        journey = _access_insight.journey(drug_id)
+        return jsonify({"momentum": momentum, "journey": journey})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        logger.error("access_insight_drug_detail 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Competitor News Archive — Tier 1 전문지 6개월 수집 + 1년 누적
 #   브랜드 레지스트리/Tier 매핑: agents/competitor_news_agent.py / config/media_tiers.json
 # ──────────────────────────────────────────────────────────────────────────────
