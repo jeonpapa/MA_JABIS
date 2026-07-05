@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
+from typing import Optional
 
+from agents.editable_factors import get_context_anchors, get_gov_agencies
 from agents.naver_news import NaverNewsClient
 from agents import competitor_news_agent as _cn
 
@@ -50,12 +52,13 @@ _CONTEXT_ANCHORS = (
 )
 
 
-def _gov_relevant(surface: str, query: str) -> bool:
+def _gov_relevant(surface: str, query: str, anchors: Optional[tuple] = None) -> bool:
     """관련성: 쿼리 토큰(2자+) 1개 이상 표면 등장 AND 보건/약가 맥락어 1개 이상."""
     toks = [t for t in query.split() if len(t) >= 2]
     if not any(t in surface for t in toks):
         return False
-    return any(a in surface for a in _CONTEXT_ANCHORS)
+    ctx = anchors if anchors is not None else _CONTEXT_ANCHORS
+    return any(a in surface for a in ctx)
 
 
 def crawl(lookback_days: int = DEFAULT_LOOKBACK_DAYS) -> dict:
@@ -65,9 +68,12 @@ def crawl(lookback_days: int = DEFAULT_LOOKBACK_DAYS) -> dict:
     if not client.is_configured:
         return {"error": "Naver API 키 미설정", "results": []}
 
+    agencies = get_gov_agencies()
+    context_anchors = get_context_anchors()
+
     results = []
     with _cn._connect() as conn:
-        for ag in GOV_AGENCIES:
+        for ag in agencies:
             agency = ag["agency"]
             stored = dup = irrel = 0
             for q in ag["queries"]:
@@ -78,7 +84,7 @@ def crawl(lookback_days: int = DEFAULT_LOOKBACK_DAYS) -> dict:
                     continue
                 for it in fetched:
                     surface = f"{it.title} {it.description}"
-                    if not _gov_relevant(surface, q):
+                    if not _gov_relevant(surface, q, context_anchors):
                         irrel += 1
                         continue
                     url = it.original_link or it.link

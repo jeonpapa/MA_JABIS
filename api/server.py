@@ -30,6 +30,7 @@ from agents.drug_enrichment_agent import DrugEnrichmentAgent
 from api.auth import build_auth_blueprint, require_auth
 from agents.ingest.market_share import ingest as ingest_market_share
 from agents import media_intelligence as _media_intel
+from agents import editable_factors as _editable_factors
 
 app = Flask(__name__)
 CORS(
@@ -3706,6 +3707,280 @@ def msd_pipeline_delete(item_id: int):
         return jsonify({"ok": True})
     except Exception as e:
         logger.error("msd_pipeline_delete 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Editable Factors — 경쟁사 브랜드 / 뉴스 키워드 팩터 admin CRUD
+# (런타임 로더는 agents/editable_factors.py — DB 비어있으면 코드 상수로 폴백해 크롤 보호)
+# ──────────────────────────────────────────────────────────────────────────────
+
+_editable_factors.ensure_schema()
+
+
+def _competitor_brand_row_to_dict(r) -> dict:
+    return {
+        "id": r["id"],
+        "query": r["query"],
+        "company": r["company"],
+        "anchor": r["anchor"],
+        "kind": r["kind"],
+        "logo": r["logo"],
+        "color": r["color"],
+        "active": r["active"],
+        "created_at": r["created_at"],
+        "updated_at": r["updated_at"],
+    }
+
+
+def _news_factor_row_to_dict(r) -> dict:
+    return {
+        "id": r["id"],
+        "scope": r["scope"],
+        "kind": r["kind"],
+        "agency": r["agency"],
+        "term": r["term"],
+        "active": r["active"],
+        "created_at": r["created_at"],
+        "updated_at": r["updated_at"],
+    }
+
+
+@app.get("/api/admin/competitor-brands")
+@require_auth(role="admin")
+def competitor_brands_list():
+    try:
+        _editable_factors.seed_editable_factors()
+        with db._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, query, company, anchor, kind, logo, color, active, "
+                "created_at, updated_at FROM competitor_brand ORDER BY id"
+            ).fetchall()
+        return jsonify({"items": [_competitor_brand_row_to_dict(r) for r in rows]})
+    except Exception as e:
+        logger.error("competitor_brands_list 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/admin/competitor-brands")
+@require_auth(role="admin")
+def competitor_brands_create():
+    body = request.get_json(silent=True) or {}
+    query = (body.get("query") or "").strip()
+    company = (body.get("company") or "").strip()
+    if not query:
+        return jsonify({"error": "query 필수", "code": "INVALID"}), 400
+    if not company:
+        return jsonify({"error": "company 필수", "code": "INVALID"}), 400
+    kind = body.get("kind") or "competitor"
+    if kind not in ("competitor", "msd_asset"):
+        return jsonify({"error": "kind must be competitor|msd_asset", "code": "INVALID"}), 400
+    anchor = body.get("anchor") or None
+    logo = body.get("logo") or None
+    color = body.get("color") or None
+    active = 1 if body.get("active", True) else 0
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    try:
+        with db._connect() as conn:
+            cur = conn.execute(
+                "INSERT INTO competitor_brand "
+                "(query, company, anchor, kind, logo, color, active, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (query, company, anchor, kind, logo, color, active, now, now),
+            )
+            new_id = cur.lastrowid
+            conn.commit()
+            row = conn.execute(
+                "SELECT id, query, company, anchor, kind, logo, color, active, "
+                "created_at, updated_at FROM competitor_brand WHERE id=?",
+                (new_id,),
+            ).fetchone()
+        _editable_factors.invalidate_cache()
+        return jsonify({"item": _competitor_brand_row_to_dict(row)}), 201
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "query 중복", "code": "DUPLICATE"}), 400
+    except Exception as e:
+        logger.error("competitor_brands_create 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.patch("/api/admin/competitor-brands/<int:item_id>")
+@require_auth(role="admin")
+def competitor_brands_update(item_id: int):
+    body = request.get_json(silent=True) or {}
+    updatable = {"query", "company", "anchor", "kind", "logo", "color", "active"}
+    fields = {k: v for k, v in body.items() if k in updatable}
+    if not fields:
+        return jsonify({"error": "변경할 필드 없음", "code": "INVALID"}), 400
+    if "kind" in fields and fields["kind"] not in ("competitor", "msd_asset"):
+        return jsonify({"error": "kind must be competitor|msd_asset", "code": "INVALID"}), 400
+    if "query" in fields and not (fields["query"] or "").strip():
+        return jsonify({"error": "query 비울 수 없음", "code": "INVALID"}), 400
+    if "active" in fields:
+        fields["active"] = 1 if fields["active"] else 0
+    from datetime import datetime, timezone
+    fields["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    set_clause = ", ".join(f"{k} = ?" for k in fields.keys())
+    params = list(fields.values()) + [item_id]
+    try:
+        with db._connect() as conn:
+            res = conn.execute(
+                f"UPDATE competitor_brand SET {set_clause} WHERE id = ?", params
+            )
+            if res.rowcount == 0:
+                return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+            conn.commit()
+            row = conn.execute(
+                "SELECT id, query, company, anchor, kind, logo, color, active, "
+                "created_at, updated_at FROM competitor_brand WHERE id=?",
+                (item_id,),
+            ).fetchone()
+        _editable_factors.invalidate_cache()
+        return jsonify({"item": _competitor_brand_row_to_dict(row)})
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "query 중복", "code": "DUPLICATE"}), 400
+    except Exception as e:
+        logger.error("competitor_brands_update 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.delete("/api/admin/competitor-brands/<int:item_id>")
+@require_auth(role="admin")
+def competitor_brands_delete(item_id: int):
+    try:
+        with db._connect() as conn:
+            res = conn.execute("DELETE FROM competitor_brand WHERE id = ?", (item_id,))
+            if res.rowcount == 0:
+                return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+            conn.commit()
+        _editable_factors.invalidate_cache()
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.error("competitor_brands_delete 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/admin/news-factors")
+@require_auth(role="admin")
+def news_factors_list():
+    scope = request.args.get("scope")
+    kind = request.args.get("kind")
+    try:
+        _editable_factors.seed_editable_factors()
+        sql = ("SELECT id, scope, kind, agency, term, active, created_at, updated_at "
+               "FROM news_keyword_factor")
+        conds: list[str] = []
+        params: list = []
+        if scope:
+            conds.append("scope = ?")
+            params.append(scope)
+        if kind:
+            conds.append("kind = ?")
+            params.append(kind)
+        if conds:
+            sql += " WHERE " + " AND ".join(conds)
+        sql += " ORDER BY id"
+        with db._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return jsonify({"items": [_news_factor_row_to_dict(r) for r in rows]})
+    except Exception as e:
+        logger.error("news_factors_list 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/admin/news-factors")
+@require_auth(role="admin")
+def news_factors_create():
+    body = request.get_json(silent=True) or {}
+    scope = body.get("scope") or ""
+    kind = body.get("kind") or ""
+    term = (body.get("term") or "").strip()
+    if scope not in ("competitor", "gov"):
+        return jsonify({"error": "scope must be competitor|gov", "code": "INVALID"}), 400
+    if kind not in ("relevance", "context_anchor", "gov_seed"):
+        return jsonify({"error": "kind must be relevance|context_anchor|gov_seed", "code": "INVALID"}), 400
+    if not term:
+        return jsonify({"error": "term 필수", "code": "INVALID"}), 400
+    agency = body.get("agency") or None
+    active = 1 if body.get("active", True) else 0
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    try:
+        with db._connect() as conn:
+            cur = conn.execute(
+                "INSERT INTO news_keyword_factor "
+                "(scope, kind, agency, term, active, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (scope, kind, agency, term, active, now, now),
+            )
+            new_id = cur.lastrowid
+            conn.commit()
+            row = conn.execute(
+                "SELECT id, scope, kind, agency, term, active, created_at, updated_at "
+                "FROM news_keyword_factor WHERE id=?",
+                (new_id,),
+            ).fetchone()
+        _editable_factors.invalidate_cache()
+        return jsonify({"item": _news_factor_row_to_dict(row)}), 201
+    except Exception as e:
+        logger.error("news_factors_create 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.patch("/api/admin/news-factors/<int:item_id>")
+@require_auth(role="admin")
+def news_factors_update(item_id: int):
+    body = request.get_json(silent=True) or {}
+    updatable = {"scope", "kind", "agency", "term", "active"}
+    fields = {k: v for k, v in body.items() if k in updatable}
+    if not fields:
+        return jsonify({"error": "변경할 필드 없음", "code": "INVALID"}), 400
+    if "scope" in fields and fields["scope"] not in ("competitor", "gov"):
+        return jsonify({"error": "scope must be competitor|gov", "code": "INVALID"}), 400
+    if "kind" in fields and fields["kind"] not in ("relevance", "context_anchor", "gov_seed"):
+        return jsonify({"error": "kind must be relevance|context_anchor|gov_seed", "code": "INVALID"}), 400
+    if "term" in fields and not (fields["term"] or "").strip():
+        return jsonify({"error": "term 비울 수 없음", "code": "INVALID"}), 400
+    if "active" in fields:
+        fields["active"] = 1 if fields["active"] else 0
+    from datetime import datetime, timezone
+    fields["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    set_clause = ", ".join(f"{k} = ?" for k in fields.keys())
+    params = list(fields.values()) + [item_id]
+    try:
+        with db._connect() as conn:
+            res = conn.execute(
+                f"UPDATE news_keyword_factor SET {set_clause} WHERE id = ?", params
+            )
+            if res.rowcount == 0:
+                return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+            conn.commit()
+            row = conn.execute(
+                "SELECT id, scope, kind, agency, term, active, created_at, updated_at "
+                "FROM news_keyword_factor WHERE id=?",
+                (item_id,),
+            ).fetchone()
+        _editable_factors.invalidate_cache()
+        return jsonify({"item": _news_factor_row_to_dict(row)})
+    except Exception as e:
+        logger.error("news_factors_update 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.delete("/api/admin/news-factors/<int:item_id>")
+@require_auth(role="admin")
+def news_factors_delete(item_id: int):
+    try:
+        with db._connect() as conn:
+            res = conn.execute("DELETE FROM news_keyword_factor WHERE id = ?", (item_id,))
+            if res.rowcount == 0:
+                return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+            conn.commit()
+        _editable_factors.invalidate_cache()
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.error("news_factors_delete 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 

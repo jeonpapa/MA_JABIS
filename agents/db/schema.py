@@ -448,6 +448,30 @@ CREATE INDEX IF NOT EXISTS idx_competitor_trend_company ON competitor_trend(comp
 -- URL 기반 lookup 용 (dedup 은 app-level SELECT-then-upsert)
 CREATE INDEX IF NOT EXISTS idx_competitor_trend_url ON competitor_trend(url);
 
+-- Editable Factors — 경쟁사 브랜드 / 뉴스 키워드 팩터 (admin CRUD, 상수 폴백 loader 는
+-- agents/editable_factors.py). 빈 테이블이면 크롤이 코드 상수로 폴백하므로 절대 깨지지 않음.
+CREATE TABLE IF NOT EXISTS competitor_brand (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    query TEXT NOT NULL UNIQUE,
+    company TEXT NOT NULL,
+    anchor TEXT,
+    kind TEXT NOT NULL DEFAULT 'competitor',
+    logo TEXT,
+    color TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT, updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS news_keyword_factor (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scope TEXT NOT NULL,          -- 'competitor' | 'gov'
+    kind TEXT NOT NULL,           -- 'relevance' | 'context_anchor' | 'gov_seed'
+    agency TEXT,                  -- gov_seed 의 기관명
+    term TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT, updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_news_factor_scope ON news_keyword_factor(scope, kind);
+
 -- Keyword Cloud — Home 워드클라우드 (Phase 3e-2)
 CREATE TABLE IF NOT EXISTS keyword_cloud (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,

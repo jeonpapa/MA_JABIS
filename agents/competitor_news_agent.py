@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
+from agents.editable_factors import get_competitor_brands
 from agents.naver_news import NaverNewsClient, NewsItem
 from agents.scrapers import tier1_news_sites as _t1sites
 
@@ -225,7 +226,8 @@ def crawl(lookback_days: int = DEFAULT_LOOKBACK_DAYS, t1_only: bool = True,
     if not client.is_configured:
         return {"error": "Naver API 키 미설정", "results": []}
 
-    targets = COMPETITOR_BRANDS if not brands else [b for b in COMPETITOR_BRANDS if b["query"] in brands]
+    all_brands = get_competitor_brands()
+    targets = all_brands if not brands else [b for b in all_brands if b["query"] in brands]
     results = []
     with _connect() as conn:
         for meta in targets:
@@ -314,12 +316,13 @@ def list_news(brand: Optional[str] = None, company: Optional[str] = None,
 def brand_registry() -> list[dict]:
     """프론트 필터용 — 추적 브랜드 + 회사 + anchor + 보유 뉴스 수."""
     ensure_schema()
+    brands = get_competitor_brands()
     with _connect() as conn:
         counts = {r["brand"]: r["n"] for r in conn.execute(
             "SELECT brand, COUNT(*) n FROM competitor_news GROUP BY brand")}
     return [{"query": b["query"], "company": b["company"], "anchor": b.get("anchor"),
              "kind": b.get("kind"), "logo": b.get("logo"), "color": b.get("color"),
-             "news_count": counts.get(b["query"], 0)} for b in COMPETITOR_BRANDS]
+             "news_count": counts.get(b["query"], 0)} for b in brands]
 
 
 def stats() -> dict:

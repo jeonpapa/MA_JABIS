@@ -38,7 +38,9 @@ BASE_DIR = Path(__file__).parent.parent
 # ─────────────────────────────────────────────────────────────────────────────
 
 # 추적 브랜드 — competitor_news_agent 와 단일 소스 공유 (13 브랜드, 2026-06 사용자 확정)
-from agents.competitor_news_agent import COMPETITOR_BRANDS  # noqa: E402
+# COMPETITOR_BRANDS 는 DB(competitor_brand) 가 비어있을 때의 폴백 + seed 소스로 계속 보존.
+from agents.competitor_news_agent import COMPETITOR_BRANDS  # noqa: E402,F401
+from agents.editable_factors import get_competitor_brands  # noqa: E402
 
 ALLOWED_BADGES = ["신규 출시", "가격 변동", "임상 진행", "급여 등재", "파이프라인", "전략 변화"]
 BADGE_COLOR = {
@@ -259,7 +261,7 @@ def promote_from_archive(days: int = 1, dry_run: bool = False,
     db = DrugPriceDB(BASE_DIR / "data" / "db" / "drug_prices.db")
     results: list[CrawlResult] = []
 
-    for meta in COMPETITOR_BRANDS:
+    for meta in get_competitor_brands():
         brand = meta["query"]
         rows = list_news(brand=brand, days=days, limit=30)
         if not rows:
@@ -336,7 +338,7 @@ def run(days: int = 7, dry_run: bool = False, model: str = DEFAULT_MODEL) -> dic
     cutoff = datetime.now() - timedelta(days=days)
     results: list[CrawlResult] = []
 
-    for meta in COMPETITOR_BRANDS:
+    for meta in get_competitor_brands():
         brand = meta["query"]
         fetched = []
         try:
