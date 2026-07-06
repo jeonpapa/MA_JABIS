@@ -73,18 +73,61 @@ _SEED_LEXICON: tuple[tuple, ...] = (
      "substring", "구 '통과' 콜리전 교정 — 급여 맥락 한정"),
     ("암질심 통과", "committee_result", RESULT_REPORT, 1.5, 12, "substring", None),
     ("부결", "committee_result", RESULT_REPORT, 1.5, 14, "word", None),
+    # RESULT_REPORT — 위원회 결과 (프로드 UNCLASSIFIED sample 클러스터: 급여 심의 결과)
+    ("급여 적정", "committee_result", RESULT_REPORT, 1.5, 13, "substring", None),
+    ("급여적정성", "committee_result", RESULT_REPORT, 1.5, 13, "substring", None),
+    ("조건부 통과", "committee_result", RESULT_REPORT, 1.5, 13, "substring", None),
+    ("조건부 급여", "committee_result", RESULT_REPORT, 1.5, 13, "substring", None),
+    ("급여기준 미설정", "committee_result", RESULT_REPORT, 1.5, 13, "substring", None),
+    ("급여기준 설정", "committee_result", RESULT_REPORT, 1.5, 13, "substring", None),
     # PATIENT_PETITION — 환자단체
     ("환자단체", "patient", PATIENT_PETITION, 1.4, 20, "substring", None),
     ("환우회", "patient", PATIENT_PETITION, 1.4, 20, "substring", None),
     ("환자 접근성", "patient", PATIENT_PETITION, 1.4, 22, "substring", None),
     ("청원", "patient", PATIENT_PETITION, 1.4, 24, "word", None),
     ("탄원", "patient", PATIENT_PETITION, 1.4, 24, "word", None),
+    # PRE_AGENDA_LEAK — 임박/예고 (급여 확대 '임박·초읽기·청신호' = 다가오는 이벤트)
+    ("임박", "agenda", PRE_AGENDA_LEAK, 1.1, 28, "word", "다가오는 급여 이벤트"),
+    ("초읽기", "agenda", PRE_AGENDA_LEAK, 1.1, 28, "substring", None),
+    ("청신호", "agenda", PRE_AGENDA_LEAK, 1.1, 28, "substring", None),
     # PRE_AGENDA_LEAK — 상정/안건 (예정 약화: 단독 '예정' 제거)
     ("심의 예정", "agenda", PRE_AGENDA_LEAK, 1.1, 30, "substring", None),
     ("상정 예정", "agenda", PRE_AGENDA_LEAK, 1.1, 30, "substring", None),
     ("안건 상정", "agenda", PRE_AGENDA_LEAK, 1.1, 32, "substring", None),
     ("상정", "agenda", PRE_AGENDA_LEAK, 1.1, 34, "word", "단독 '상정'"),
     ("안건", "agenda", PRE_AGENDA_LEAK, 1.1, 34, "word", "단독 '안건'"),
+    # RESULT_REPORT — 급여 확대/등재/논의 이벤트 (priority 58: **GOV·KOL·PATIENT 뒤**).
+    #   중요: 이해관계자(국회/복지부/학회/환자단체)가 명시되면 그 stakeholder 유형이
+    #   우선한다. 예 "국회 ... 급여 논의"=GOV, "환자단체 급여 확대 청원"=PATIENT.
+    #   확정 위원회 결과(급여 적정/조건부 통과/미설정 등)는 위 priority 13 에 별도 존재.
+    ("급여 확대", "reimbursement", RESULT_REPORT, 1.5, 58, "substring", "급여 확대 이벤트"),
+    ("급여확대", "reimbursement", RESULT_REPORT, 1.5, 58, "substring", None),
+    ("급여 등재", "reimbursement", RESULT_REPORT, 1.5, 58, "substring", None),
+    ("급여등재", "reimbursement", RESULT_REPORT, 1.5, 58, "substring", None),
+    ("급여 인정", "reimbursement", RESULT_REPORT, 1.5, 58, "substring", None),
+    ("신규 급여", "reimbursement", RESULT_REPORT, 1.5, 58, "substring", None),
+    ("급여 진입", "reimbursement", RESULT_REPORT, 1.5, 58, "substring", None),
+    ("급여심의", "reimbursement", RESULT_REPORT, 1.5, 58, "substring", None),
+    ("급여기준", "reimbursement", RESULT_REPORT, 1.5, 58, "substring", "급여기준 변경/설정 논의"),
+    ("약가협상", "reimbursement", RESULT_REPORT, 1.4, 58, "substring", "NHIS 약가협상 단계"),
+    ("약가 협상", "reimbursement", RESULT_REPORT, 1.4, 58, "substring", None),
+    ("상한액", "reimbursement", RESULT_REPORT, 1.4, 58, "substring", "약가 상한액 인하/유지"),
+    # 급여 collocation (프로드 sample: 급여 프로세스 변형 표현). 바 '급여' 단독은
+    # '근로자 급여'(salary)·스니펫 IR 언급 오탐 → collocation 한정.
+    ("급여 적용", "reimbursement", RESULT_REPORT, 1.5, 58, "substring", None),
+    ("급여 문턱", "reimbursement", RESULT_REPORT, 1.5, 58, "substring", None),
+    ("급여 관문", "reimbursement", RESULT_REPORT, 1.5, 58, "substring", None),
+    ("급여 불발", "reimbursement", RESULT_REPORT, 1.5, 58, "substring", None),
+    ("급여 논의", "reimbursement", RESULT_REPORT, 1.5, 58, "substring", None),
+    ("급여 심사", "reimbursement", RESULT_REPORT, 1.5, 58, "substring", None),
+    ("급여 심의", "reimbursement", RESULT_REPORT, 1.5, 58, "substring", None),
+    ("급여화", "reimbursement", RESULT_REPORT, 1.5, 58, "substring", None),
+    ("급여 출시", "reimbursement", RESULT_REPORT, 1.5, 58, "substring", None),
+    ("급여권", "reimbursement", RESULT_REPORT, 1.5, 58, "substring", "급여권 진입"),
+    ("급여범위", "reimbursement", RESULT_REPORT, 1.5, 58, "substring", None),
+    ("급여 공백", "reimbursement", RESULT_REPORT, 1.5, 58, "substring", None),
+    ("급여 재도전", "reimbursement", RESULT_REPORT, 1.5, 58, "substring", None),
+    ("급여 기준", "reimbursement", RESULT_REPORT, 1.5, 58, "substring", None),
     # KOL_OPINION — 학회/의료진 (교수·전문가는 인용/발언 맥락 한정)
     ("학회", "kol", KOL_OPINION, 1.2, 40, "substring", None),
     ("의학회", "kol", KOL_OPINION, 1.2, 40, "substring", None),
@@ -99,6 +142,12 @@ _SEED_LEXICON: tuple[tuple, ...] = (
     ("전문가는", "kol", KOL_OPINION, 1.2, 44,
      "substring", "구 '전문가' 콜리전 교정 — 발언 맥락 한정"),
     ("전문가들", "kol", KOL_OPINION, 1.2, 44, "substring", "발언 맥락 한정"),
+    # KOL_OPINION — 학술대회/학회 congress (ASCO/AACR/ESMO 데이터 발표 = 학술 신호)
+    ("asco", "kol", KOL_OPINION, 1.2, 46, "word", "학술대회 (영문 단어경계)"),
+    ("aacr", "kol", KOL_OPINION, 1.2, 46, "word", "학술대회"),
+    ("esmo", "kol", KOL_OPINION, 1.2, 46, "word", "학술대회"),
+    ("학술대회", "kol", KOL_OPINION, 1.2, 46, "substring", None),
+    ("학술지", "kol", KOL_OPINION, 1.2, 46, "substring", None),
     # GOV_STATEMENT — 국회/복지부/심평원 (의원 콜리전 교정)
     ("국회의원", "gov", GOV_STATEMENT, 1.5, 50,
      "substring", "구 '의원' 콜리전 교정 — 병'의원' 오탐 제거"),
@@ -114,8 +163,29 @@ _SEED_LEXICON: tuple[tuple, ...] = (
     ("심평원", "gov_agency", GOV_STATEMENT, 1.4, 56, "substring", None),
     ("건강보험공단", "gov_agency", GOV_STATEMENT, 1.4, 56, "substring", None),
     ("건정심", "gov_agency", GOV_STATEMENT, 1.5, 56, "substring", None),
+    # RESULT_REPORT — 위원회 명칭 catch-all (GOV 뒤: '국회 ... 약평위' 는 GOV 우선)
+    ("약평위", "committee_mention", RESULT_REPORT, 1.4, 57, "substring", "위원회 언급 catch-all"),
+    ("암질심", "committee_mention", RESULT_REPORT, 1.4, 57, "substring", "위원회 언급 catch-all"),
     # IR_RELEASE — 기업 IR (최하위 우선순위, 실적/매출 범위 축소)
+    ("증권가", "ir", IR_RELEASE, 0.8, 60, "substring", "증권가 코멘트/실적 모멘텀"),
+    ("유상증자", "ir", IR_RELEASE, 0.8, 60, "substring", None),
+    ("기술성평가", "ir", IR_RELEASE, 0.8, 61, "substring", "IPO 기술특례 상장"),
+    ("기술특례상장", "ir", IR_RELEASE, 0.8, 61, "substring", None),
+    ("ipo", "ir", IR_RELEASE, 0.8, 61, "word", "영문 단어경계"),
     ("컨퍼런스콜", "ir", IR_RELEASE, 0.8, 60, "substring", None),
+    # IR_RELEASE — 규제 마일스톤 (적응증 확대·해외 승인·품목허가 = 기업/제품 뉴스)
+    ("적응증 확대", "ir_regulatory", IR_RELEASE, 0.8, 62, "substring", "라벨 확대(규제) — 급여 확대와 구분"),
+    ("적응증 추가", "ir_regulatory", IR_RELEASE, 0.8, 62, "substring", None),
+    ("EU 승인", "ir_regulatory", IR_RELEASE, 0.8, 62, "substring", None),
+    ("FDA 승인", "ir_regulatory", IR_RELEASE, 0.8, 62, "substring", None),
+    ("미국 승인", "ir_regulatory", IR_RELEASE, 0.8, 62, "substring", None),
+    ("유럽 승인", "ir_regulatory", IR_RELEASE, 0.8, 62, "substring", None),
+    ("품목허가", "ir_regulatory", IR_RELEASE, 0.8, 63, "substring", None),
+    ("시판 허가", "ir_regulatory", IR_RELEASE, 0.8, 63, "substring", None),
+    ("허가 확대", "ir_regulatory", IR_RELEASE, 0.8, 63, "substring", None),
+    # IR_RELEASE — 항암/제약 산업 일반 뉴스 catch-all (최하위: 위 신호가 모두 미매치 시)
+    ("면역항암제", "ir_industry", IR_RELEASE, 0.8, 68, "substring", "종양 산업 일반 뉴스 catch-all"),
+    ("항암제", "ir_industry", IR_RELEASE, 0.8, 68, "substring", "종양 산업 일반 뉴스 catch-all"),
     ("보도자료", "ir", IR_RELEASE, 0.8, 62, "substring", None),
     ("press release", "ir", IR_RELEASE, 0.8, 62, "substring", None),
     ("실적 발표", "ir", IR_RELEASE, 0.8, 62,
@@ -164,7 +234,14 @@ def ensure_lexicon_schema(conn: sqlite3.Connection) -> None:
 
 
 def seed_lexicon(conn: sqlite3.Connection, *, overwrite: bool = False) -> int:
-    """큐레이션 seed 를 lexicon 에 적재. overwrite=False 면 INSERT OR IGNORE (기존 편집 보존)."""
+    """큐레이션 seed 를 lexicon 에 적재. 삽입된 신규 행 수 반환.
+
+    **멱등 insert-missing (빈 테이블 게이팅 아님)**: overwrite=False 면 토큰마다
+    INSERT OR IGNORE 이므로, 이미 시딩된 테이블에 재실행해도 (예: 새 릴리스에서
+    _SEED_LEXICON 에 토큰을 추가한 뒤 `migrate` 재실행) **신규 토큰만 추가되고
+    기존 행(admin 이 편집한 weight/is_active/match_mode 포함)은 보존**된다.
+    overwrite=True 는 INSERT OR REPLACE 로 seed 기본값을 강제 (admin 편집 덮어씀 — 주의).
+    """
     ensure_lexicon_schema(conn)
     verb = "INSERT OR REPLACE" if overwrite else "INSERT OR IGNORE"
     n = 0

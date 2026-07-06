@@ -106,7 +106,7 @@ def test_collision_uiwon_not_matching_clinic(db):
     st, _ = C.classify_signal_type("동네 병의원 개설 증가", "1차 의료기관 현황", "competitor", lexicon=lex)
     assert st != C.GOV_STATEMENT
     # 진짜 국회의원 발의 기사 — GOV_STATEMENT
-    st2, ph2 = C.classify_signal_type("국회의원 급여 확대 법안 발의", "", "competitor", lexicon=lex)
+    st2, ph2 = C.classify_signal_type("국회의원 국정감사 법안 발의", "", "competitor", lexicon=lex)
     assert st2 == C.GOV_STATEMENT
 
 
@@ -136,6 +136,89 @@ def test_fallback_not_blanket_ir(db):
     assert st2 == C.IR_RELEASE
 
 
+def test_new_lexicon_terms_classify_accurately(db):
+    """B7 확장 lexicon: 프로드 UNCLASSIFIED 클러스터가 올바른 유형으로 분류."""
+    conn = sqlite3.connect(db)
+    C.seed_lexicon(conn)
+    conn.close()
+    lex = C.load_lexicon(db)
+
+    def cls(title):
+        return C.classify_signal_type(title, "", "competitor", lexicon=lex, unclassified_ok=True)[0]
+
+    # 급여 collocation → RESULT_REPORT
+    assert cls("옵디보 위암 급여확대 '적정'") == C.RESULT_REPORT
+    assert cls("옵디보+여보이, 간암 1차 급여 문턱 넘어") == C.RESULT_REPORT
+    assert cls("카나브젯·소그로야, 내달 신규 급여") == C.RESULT_REPORT
+    assert cls("난소암 신약 급여 심사 착수") == C.RESULT_REPORT
+    # 이해관계자(복지부) 명시 시 그 stakeholder 유형 우선 (급여 mention 이 있어도 GOV)
+    assert cls("복지부, 난소암 신약 급여 심사") == C.GOV_STATEMENT
+    assert cls("소그로야 급여 등재, 펠루비 상한액 인하") == C.RESULT_REPORT
+    # 임박/청신호 → PRE_AGENDA_LEAK (다가오는 이벤트)
+    assert cls("옵디보 위암 급여확대 임박") == C.PRE_AGENDA_LEAK
+    assert cls("키트루다·옵디보 위암 급여 확대 '청신호'") == C.PRE_AGENDA_LEAK
+    # 학술대회 → KOL_OPINION
+    assert cls("[ASCO 2026] 지헤라 병용, 위암 혜택") == C.KOL_OPINION
+    assert cls("[AACR 2026] 유전자치료 간암 반응률 개선") == C.KOL_OPINION
+    # 규제 마일스톤 → IR_RELEASE
+    assert cls("BMS '옵디보+AVD' 병용요법 유럽 승인") == C.IR_RELEASE
+    assert cls("림카토 품목허가, 국내 CAR-T 상용화") == C.IR_RELEASE
+    assert cls("옵디보, 이필리무맙 병용 적응증 확대 승인") == C.IR_RELEASE
+    # 재무/IPO → IR_RELEASE
+    assert cls("넥스아이, 기술성평가 통과…상장예비심사") == C.IR_RELEASE
+    assert cls("알테오젠 특허 완화에 증권가 '실적 모멘텀 주목'") == C.IR_RELEASE
+    # 종양 산업 catch-all → IR_RELEASE (더 강한 신호 없을 때만)
+    assert cls("글로벌 항암제 시장 화두는 '피하주사 전환'") == C.IR_RELEASE
+
+
+def test_new_terms_no_collision_regression(db):
+    """확장 lexicon 이 기존 콜리전 교정을 되돌리지 않는지 (의원/통과/실적/급여 salary)."""
+    conn = sqlite3.connect(db)
+    C.seed_lexicon(conn)
+    conn.close()
+    lex = C.load_lexicon(db)
+
+    def cls(title, snip=""):
+        return C.classify_signal_type(title, snip, "competitor", lexicon=lex, unclassified_ok=True)[0]
+
+    # 병'의원'(clinic) 은 여전히 GOV 아님
+    assert cls("동네 병의원 개설 증가") != C.GOV_STATEMENT
+    # 무관한 '통과'(검문소) 는 RESULT 아님
+    assert cls("환자 검문소 통과") != C.RESULT_REPORT
+    # bare 급여 미도입 확인: '근로자 급여'(salary) 는 RESULT 로 오분류되지 않음
+    assert cls("건설 현장 근로자 급여 인상 논의") != C.RESULT_REPORT
+    # 진짜 국회의원 발의는 여전히 GOV
+    assert cls("국회의원 급여 확대 법안 발의") in (C.GOV_STATEMENT, C.RESULT_REPORT)
+
+
+def test_seed_lexicon_upsert_adds_new_tokens_preserves_edits(tmp_path):
+    """seed_lexicon 은 빈 테이블 게이팅이 아니라 per-token INSERT OR IGNORE —
+    이미 시딩된 테이블에 재실행 시 신규 토큰만 추가, admin 편집 보존."""
+    path = tmp_path / "lex.db"
+    conn = sqlite3.connect(path)
+    # 1st seed
+    n1 = C.seed_lexicon(conn)
+    assert n1 == len(C._SEED_LEXICON)
+    # admin 이 기존 토큰 편집 (is_active=0, weight 변경)
+    conn.execute(
+        "UPDATE amjilsim_signature_lexicon SET is_active=0, weight=9.9 WHERE token='급여 확대'"
+    )
+    # 신규 토큰이 나중에 추가된 상황 시뮬레이션: 임의 토큰 삭제 후 재시드가 되살리는지
+    conn.execute("DELETE FROM amjilsim_signature_lexicon WHERE token='암질심'")
+    conn.commit()
+    # 2nd seed (재실행) — 삭제된 토큰만 재삽입, 편집된 토큰은 보존
+    n2 = C.seed_lexicon(conn)
+    assert n2 == 1  # '암질심' 1건만 새로 삽입
+    row = conn.execute(
+        "SELECT is_active, weight FROM amjilsim_signature_lexicon WHERE token='급여 확대'"
+    ).fetchone()
+    assert row == (0, 9.9)  # admin 편집 보존 (덮어쓰지 않음)
+    assert conn.execute(
+        "SELECT COUNT(*) FROM amjilsim_signature_lexicon WHERE token='암질심'"
+    ).fetchone()[0] == 1
+    conn.close()
+
+
 def test_unclassified_fallback_opt_in(db):
     """unclassified_ok=True 면 미매칭 competitor → UNCLASSIFIED, 아니면 IR_RELEASE."""
     conn = sqlite3.connect(db)
@@ -161,7 +244,7 @@ def test_reclassify_signals_updates_not_deletes(db):
         "INSERT INTO amjilsim_media_signals (drug_id, tier, outlet, url, title, snippet, "
         "signal_type, weight) VALUES (?,?,?,?,?,?,?,?)",
         [
-            (1, "A", "o1", "u1", "국회의원 급여 확대 법안 발의", "", "IR_RELEASE", 0.8),
+            (1, "A", "o1", "u1", "국회의원 국정감사 법안 발의", "", "IR_RELEASE", 0.8),
             (1, "A", "o2", "u2", "환자단체 청원 접수", "", "IR_RELEASE", 0.8),
             (1, "A", "o3", "u3", "약평위 통과", "", "IR_RELEASE", 0.8),
         ],
@@ -223,6 +306,43 @@ def test_oncology_idempotent(db):
     r1 = B.backfill_oncology(db)
     r2 = B.backfill_oncology(db)
     assert r1["oncology"] == r2["oncology"] == 1
+
+
+def test_oncology_english_abbrev_and_inn_override(db):
+    """프로드 오분류 교정: 영문 적응증(NSCLC/DLBCL) + 골수섬유증 + INN 오버라이드."""
+    conn = sqlite3.connect(db)
+    conn.executemany(
+        "INSERT INTO amjilsim_drugs (drug_id, brand_kr, ingredient_inn, atc, efficacy_group, "
+        "indication) VALUES (?,?,?,?,?,?)",
+        [
+            # 프로드에서 general 로 오분류됐던 4종 (영문/희소 표기 → 이제 oncology)
+            (45, "리브리반트주", "amivantamab", None, None,
+             "EGFR 엑손20 삽입 변이 NSCLC — 백금기반 화학요법 중/이후 진행"),
+            (56, "타그리소 확대", "osimertinib", None, None, "EGFR+ NSCLC 급여 확대"),
+            (48, "림카토주", "anbalcabtagene autoleucel", None, None,
+             "r/r DLBCL·PMBCL CAR-T (국산 1호)"),
+            (19, "옴짜라", None, None, None, "골수섬유증"),
+            # INN 오버라이드 전용 케이스: indication 비어있음
+            (99, "테스트항암", "osimertinib", None, None, None),
+            # 진짜 일반약 (오버플립 금지) — 당뇨/천식/희귀
+            (23, "마운자로", "tirzepatide", None, "당뇨병용제", "제2형 당뇨병"),
+            (36, "듀피젠트", "dupilumab", None, None, "천식 확대"),
+            (21, "스핀라자", "nusinersen", None, None, "SMA 확대"),
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    res = B.backfill_oncology(db)
+    conn = sqlite3.connect(db)
+    flags = dict(conn.execute("SELECT drug_id, is_oncology FROM amjilsim_drugs"))
+    conn.close()
+    # 4 misses + INN-only → oncology
+    assert flags[45] == 1 and flags[56] == 1 and flags[48] == 1 and flags[19] == 1
+    assert flags[99] == 1  # inn_override (indication 없음)
+    assert res["by_rule"]["inn_override"] == 1
+    # 일반약은 그대로 general (보수적 — 오버플립 없음)
+    assert flags[23] == 0 and flags[36] == 0 and flags[21] == 0
 
 
 # ── B5: committee-aware nearest_session + expected_committee ──────────────────

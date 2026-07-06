@@ -299,13 +299,29 @@ def ensure_oncology_column(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE amjilsim_drugs ADD COLUMN is_oncology INTEGER")
 
 
-# indication 텍스트 항암 휴리스틱 (캐스케이드 ④).
+# indication 텍스트 항암 휴리스틱 (캐스케이드 ④) — 한글 키워드.
+#   '골수섬유증'(myelofibrosis) 은 골수증식성 종양(WHO 혈액암) → 항암.
 _CANCER_KEYWORDS = (
     "암", "종양", "림프종", "백혈병", "흑색종", "골수종", "육종", "모세포종",
-    "선암", "암종", "암세포", "전이", "항암", "종양학",
+    "선암", "암종", "암세포", "전이", "항암", "종양학", "골수섬유증",
 )
 # indication 에 등장하지만 항암이 아닌 오탐 방지 (예: '고암모니아', '암모니아').
 _CANCER_FALSE_POSITIVE = ("암모니아",)
+
+# 영문 약어 — 한글 '암' 이 없는 항암 적응증(예: 'EGFR+ NSCLC', 'r/r DLBCL·PMBCL')을
+# 잡기 위한 대문자 매칭 세트. 보수적으로 종양학에서만 쓰이는 약어로 한정.
+#   (65개 amjilsim_drugs 중 이 약어를 가진 일반약제 0건 — 프로드 sample 검증.)
+_CANCER_KEYWORDS_EN = ("NSCLC", "SCLC", "DLBCL", "PMBCL", "EGFR")
+
+# indication 텍스트가 비거나 sparse 해 키워드로 못 잡는 항암제 INN 오버라이드 (보수적).
+#   프로드 sample 검증: amivantamab(리브리반트)·osimertinib(타그리소) 는 indication 이
+#   'NSCLC'(영문)라 기존 한글 '암' 키워드에 안 걸렸다. anbalcabtagene(림카토, DLBCL CAR-T)도.
+KNOWN_ONCOLOGY_INN = frozenset({
+    "amivantamab",
+    "osimertinib",
+    "anbalcabtagene autoleucel",
+})
+KNOWN_ONCOLOGY_BRAND_PREFIX = ()  # 필요 시 브랜드 prefix 오버라이드 (현재 불필요)
 
 
 def _indication_is_cancer(text: Optional[str]) -> bool:
@@ -314,7 +330,14 @@ def _indication_is_cancer(text: Optional[str]) -> bool:
     t = text
     for fp in _CANCER_FALSE_POSITIVE:
         t = t.replace(fp, "")
-    return any(kw in t for kw in _CANCER_KEYWORDS)
+    if any(kw in t for kw in _CANCER_KEYWORDS):
+        return True
+    upper = t.upper()
+    return any(kw in upper for kw in _CANCER_KEYWORDS_EN)
+
+
+def _inn_is_oncology(inn: Optional[str]) -> bool:
+    return bool(inn) and inn.strip().lower() in KNOWN_ONCOLOGY_INN
 
 
 def backfill_oncology(db_path: Optional[PathLike] = None) -> dict:
@@ -323,8 +346,9 @@ def backfill_oncology(db_path: Optional[PathLike] = None) -> dict:
     ① ATC L01/L02 → 1
     ② efficacy_group='항악성종양제' → 1
     ③ analog_reports.disease_category='항암' (brand_kr join) → 1
-    ④ indication 암 키워드 휴리스틱 → 1
-    ⑤ 잔여 → 0 (수동 검토용 목록 반환)
+    ④ indication 암 키워드 휴리스틱(한글+영문 약어 NSCLC/DLBCL 등) → 1
+    ⑤ KNOWN_ONCOLOGY_INN 오버라이드 (indication sparse/영문) → 1
+    ⑥ 잔여 → 0 (수동 검토용 목록 반환)
 
     반환: {oncology, general, by_rule, manual_review:[{drug_id, brand_kr, indication}]}
     """
@@ -342,10 +366,12 @@ def backfill_oncology(db_path: Optional[PathLike] = None) -> dict:
         }
 
         rows = conn.execute(
-            "SELECT drug_id, brand_kr, atc, efficacy_group, indication FROM amjilsim_drugs"
+            "SELECT drug_id, brand_kr, ingredient_inn, atc, efficacy_group, indication "
+            "FROM amjilsim_drugs"
         ).fetchall()
 
-        by_rule = {"atc": 0, "efficacy_group": 0, "analog": 0, "indication": 0, "none": 0}
+        by_rule = {"atc": 0, "efficacy_group": 0, "analog": 0,
+                   "indication": 0, "inn_override": 0, "none": 0}
         manual_review: list[dict] = []
         onco = general = 0
 
@@ -354,6 +380,7 @@ def backfill_oncology(db_path: Optional[PathLike] = None) -> dict:
             atc = (r["atc"] or "").upper()
             eff = r["efficacy_group"] or ""
             brand = (r["brand_kr"] or "").strip()
+            inn = r["ingredient_inn"]
             indication = r["indication"]
 
             flag = 0
@@ -367,6 +394,9 @@ def backfill_oncology(db_path: Optional[PathLike] = None) -> dict:
                 flag, rule = 1, "analog"
             elif _indication_is_cancer(indication):
                 flag, rule = 1, "indication"
+            elif _inn_is_oncology(inn):
+                # ⑤ indication 이 sparse/영문 → 알려진 항암 INN 오버라이드.
+                flag, rule = 1, "inn_override"
 
             by_rule[rule] += 1
             if flag:
