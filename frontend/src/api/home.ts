@@ -271,11 +271,11 @@ export interface BrandTrafficView {
   rank: number;
   brand: string;
   company: string;
-  trafficIndex: number; // Naver 뉴스 건수 (1개월)
-  change: number; // 전반기 대비 후반기 % (sparkline 절반 비교)
+  trafficIndex: number; // Naver 뉴스 건수 — 최근 7일 총계 (sparkline 합)
+  change: number; // 최근 7일 vs 이전 7일 증감률(%)
   category: string;
   color: string;
-  sparkline: number[];
+  sparkline: number[]; // 최근 7일 일별 건수 (14일 창의 뒤 7일 slice)
   news: BrandNewsView[];
 }
 
@@ -300,12 +300,13 @@ const BRAND_META: Record<string, { company: string; category: string; color: str
   '린파자': { company: 'AstraZeneca', category: 'PARP', color: '#A3E635' },
 };
 
-/** 1개월 sparkline 전반/후반 합 비교 → 증감률(%) */
+/** 14일 일별 카운트 → 최근 7일 합 vs 이전 7일 합 증감률(%).
+ *  change = round((sum(last7) - sum(prev7)) / sum(prev7) × 100).
+ *  prev7 합이 0 이면 last7 존재 시 +100%, 둘 다 0 이면 0%. */
 function computeChange(daily: number[]): number {
   if (!daily.length) return 0;
-  const half = Math.floor(daily.length / 2);
-  const prev = daily.slice(0, half).reduce((a, b) => a + b, 0);
-  const curr = daily.slice(half).reduce((a, b) => a + b, 0);
+  const curr = daily.slice(-7).reduce((a, b) => a + b, 0);
+  const prev = daily.slice(-14, -7).reduce((a, b) => a + b, 0);
   if (!prev) return curr ? 100 : 0;
   return Math.round(((curr - prev) / prev) * 100);
 }
@@ -334,20 +335,27 @@ function adaptBrandNews(items: RawBrandNews[]): BrandNewsView[] {
 export async function fetchMediaIntelligence(): Promise<MediaIntelligenceView> {
   const raw = await api.get<RawMediaIntelligence>('/api/home/media-intelligence');
   if (raw.error) throw new Error(raw.error);
-  const brands = (raw.brands ?? []).slice(0, 10).map((b, i) => {
-    const meta = BRAND_META[b.brand] ?? { company: '—', category: '—', color: '#8B9BB4' };
-    return {
-      rank: i + 1,
-      brand: b.brand,
-      company: meta.company,
-      category: meta.category,
-      color: meta.color,
-      trafficIndex: b.total_count ?? 0,
-      change: computeChange(b.sparkline ?? []),
-      sparkline: b.sparkline ?? [],
-      news: adaptBrandNews(b.latest_news),
-    };
-  });
+  // 서버는 14일 창(daily/sparkline/total_count=14일 총계)을 준다.
+  // 홈 노출 지표는 **최근 7일 총계** 로 통일 — trafficIndex/랭킹/스파크라인 모두 last7 기준,
+  // change 는 last7 vs prev7 증감률. (total_count 는 14일 합이므로 사용하지 않음)
+  const brands = (raw.brands ?? [])
+    .map(b => {
+      const full = b.sparkline ?? [];
+      const last7 = full.slice(-7);
+      return {
+        brand: b.brand,
+        trafficIndex: last7.reduce((a, c) => a + c, 0),
+        change: computeChange(full),
+        sparkline: last7,
+        news: adaptBrandNews(b.latest_news),
+      };
+    })
+    .sort((a, b) => b.trafficIndex - a.trafficIndex)
+    .slice(0, 10)
+    .map((b, i) => {
+      const meta = BRAND_META[b.brand] ?? { company: '—', category: '—', color: '#8B9BB4' };
+      return { rank: i + 1, company: meta.company, category: meta.category, color: meta.color, ...b };
+    });
   return { updatedAt: raw.updated_at ?? null, days: raw.days ?? null, brands };
 }
 
@@ -430,6 +438,84 @@ export async function fetchGovKeywordSummary(): Promise<GovKeywordSummaryView> {
     keywords,
     newsByKeyword,
     markdown: raw.markdown ?? '',
+    error: raw.error,
+  };
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 5-b. 정부기관별 최근 7일 키워드 클라우드  (GET /api/home/gov-agency-clouds)
+//     LLM 아님 — gov_policy 아카이브 기관별 title+description 순수 빈도.
+//     홈 정부 위젯의 1차 소스 (5. government-keyword-summary 는 보존).
+// ═════════════════════════════════════════════════════════════════════════════
+
+interface RawGovAgencyKeyword {
+  text: string;
+  count: number;
+}
+
+interface RawGovAgencyCloud {
+  agency: string;
+  label: string;
+  article_count?: number;
+  keywords: RawGovAgencyKeyword[];
+  newsByKeyword?: Record<string, RawGovNews[]>;
+}
+
+interface RawGovAgencyClouds {
+  generated_at: string;
+  window_days: number;
+  agencies: RawGovAgencyCloud[];
+  error?: string;
+}
+
+export interface GovAgencyKeywordView {
+  text: string;
+  count: number; // 최근 7일 실제 등장 빈도
+  weight: number; // 시각 사이징 전용 — 기관 내 count 정규화 (50~100)
+  color: string;
+}
+
+export interface GovAgencyCloudView {
+  agency: string;
+  label: string; // S4 영문태그는 한글(국회/환자단체/의료진)로 백엔드가 변환
+  articleCount: number;
+  keywords: GovAgencyKeywordView[];
+  newsByKeyword: Record<string, GovNewsView[]>;
+}
+
+export interface GovAgencyCloudsView {
+  generatedAt: string | null;
+  windowDays: number;
+  agencies: GovAgencyCloudView[];
+  error?: string;
+}
+
+export async function fetchGovAgencyClouds(): Promise<GovAgencyCloudsView> {
+  const raw = await api.get<RawGovAgencyClouds>('/api/home/gov-agency-clouds');
+  const agencies: GovAgencyCloudView[] = (raw.agencies ?? []).map(a => {
+    const kws = a.keywords ?? [];
+    const maxCount = kws.length ? Math.max(...kws.map(k => k.count)) : 1;
+    const newsByKeyword: Record<string, GovNewsView[]> = {};
+    for (const k of kws) {
+      newsByKeyword[k.text] = mapGovNews(a.newsByKeyword?.[k.text]);
+    }
+    return {
+      agency: a.agency,
+      label: a.label || a.agency,
+      articleCount: a.article_count ?? 0,
+      keywords: kws.map((k, idx) => ({
+        text: k.text,
+        count: k.count,
+        weight: Math.round(50 + 50 * (k.count / (maxCount || 1))),
+        color: KEYWORD_PALETTE[idx % KEYWORD_PALETTE.length],
+      })),
+      newsByKeyword,
+    };
+  });
+  return {
+    generatedAt: raw.generated_at ?? null,
+    windowDays: raw.window_days ?? 7,
+    agencies,
     error: raw.error,
   };
 }

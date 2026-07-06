@@ -32,6 +32,15 @@ DEFAULT_DB_PATH = BASE_DIR / "data" / "db" / "drug_prices.db"
 # 인-프로세스 캐시 TTL (초) — admin 쓰기 후에는 invalidate_cache() 로 즉시 무효화
 _CACHE_TTL_SECONDS = 300
 
+# 경쟁사 뉴스 relevance 기본 키워드 — news_keyword_factor(scope='competitor', kind='relevance')
+# 시드 + 상수 폴백. 브랜드가 표면에 등장해도 이 중 하나가 없으면 주가·행사성 잡음으로 간주.
+# 의도적으로 폭넓게 잡아(치료/환자/임상 등) 정상 기사 손실을 최소화 — admin 이 조정.
+COMPETITOR_RELEVANCE_DEFAULT_TERMS: tuple = (
+    "급여", "등재", "약가", "허가", "승인", "적응증", "임상", "치료", "환자",
+    "투여", "요법", "병용", "출시", "보험", "처방", "연구", "데이터", "생존",
+    "학회", "FDA", "EMA", "식약처", "암질심", "약평위", "협상", "계약", "공급",
+)
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS competitor_brand (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -229,8 +238,34 @@ def seed_editable_factors(db_path: Optional[Path] = None) -> dict:
         # (agency 행이 1개라도 있으면 no-op — admin 이 개별 term 을 삭제/수정해도
         #  되살리지 않는다. agency 전체 비활성화는 active=0 PATCH 로.)
         seeded["news_keyword_factor_s4"] = _ensure_s4_gov_seeds(conn, now)
+
+        # ── 경쟁사 relevance 키워드 시드 (B3 배선 갭 수정) ────────────────────
+        # scope='competitor', kind='relevance' 행이 0개일 때만 기본 키워드 시드.
+        # 행이 1개라도 있으면 no-op (admin 삭제/수정 존중 — 비활성화는 active=0).
+        seeded["news_keyword_factor_competitor_relevance"] = \
+            _ensure_competitor_relevance_seeds(conn, now)
         conn.commit()
     return seeded
+
+
+def _ensure_competitor_relevance_seeds(conn: sqlite3.Connection, now: str) -> int:
+    """competitor/relevance 키워드가 하나도 없으면 기본값 시드. 반환: 추가 행 수."""
+    cnt = conn.execute(
+        "SELECT COUNT(*) FROM news_keyword_factor "
+        "WHERE scope = 'competitor' AND kind = 'relevance'"
+    ).fetchone()[0]
+    if cnt:
+        return 0
+    for term in COMPETITOR_RELEVANCE_DEFAULT_TERMS:
+        conn.execute(
+            """INSERT INTO news_keyword_factor
+               (scope, kind, agency, term, active, created_at, updated_at)
+               VALUES ('competitor','relevance',NULL,?,1,?,?)""",
+            (term, now, now),
+        )
+    logger.info("[editable_factors] competitor relevance 키워드 시드: %d terms",
+                len(COMPETITOR_RELEVANCE_DEFAULT_TERMS))
+    return len(COMPETITOR_RELEVANCE_DEFAULT_TERMS)
 
 
 def _ensure_s4_gov_seeds(conn: sqlite3.Connection, now: str) -> int:
@@ -350,6 +385,36 @@ def get_context_anchors(db_path: Optional[Path] = None) -> tuple:
         from agents.gov_policy_news import _CONTEXT_ANCHORS
 
         items = _CONTEXT_ANCHORS
+
+    _set_cached(key, items)
+    return items
+
+
+def get_competitor_relevance_terms(db_path: Optional[Path] = None) -> tuple:
+    """news_keyword_factor(scope='competitor', kind='relevance') term 목록.
+
+    경쟁사 뉴스 수집(_is_relevant)·동향 카드 제목 가드의 런타임 소비자용 로더.
+    실패/빈 결과 시 COMPETITOR_RELEVANCE_DEFAULT_TERMS 상수 폴백 (크롤 절대 불깨짐)."""
+    key = _cache_key("competitor_relevance_terms", db_path)
+    cached = _get_cached(key)
+    if cached is not None:
+        return cached  # type: ignore[return-value]
+
+    try:
+        seed_editable_factors(db_path)
+        with _connect(db_path) as conn:
+            rows = conn.execute(
+                "SELECT term FROM news_keyword_factor "
+                "WHERE scope = 'competitor' AND kind = 'relevance' AND active = 1 "
+                "ORDER BY id"
+            ).fetchall()
+        items: tuple = tuple(r["term"] for r in rows if (r["term"] or "").strip())
+        if not items:
+            raise ValueError("news_keyword_factor(competitor/relevance) empty after seed")
+    except Exception as e:
+        logger.warning(
+            "[editable_factors] get_competitor_relevance_terms DB 조회 실패, 상수 폴백: %s", e)
+        items = COMPETITOR_RELEVANCE_DEFAULT_TERMS
 
     _set_cached(key, items)
     return items

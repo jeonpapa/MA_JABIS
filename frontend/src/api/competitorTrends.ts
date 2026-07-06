@@ -1,5 +1,13 @@
 import { api } from './client';
 
+/** B1: 클러스터 멤버 기사 (competitor_news.trend_id 역링크) */
+export interface TrendSource {
+  name: string | null;
+  url: string | null;
+  tier: number | null;
+  pub_date: string | null;
+}
+
 export interface CompetitorTrend {
   id: number;
   company: string;
@@ -14,6 +22,15 @@ export interface CompetitorTrend {
   url: string | null;
   created_at: string;
   updated_at: string;
+  /** 'manual' | 'auto_naver' | 'promoted' */
+  source_type?: string;
+  importance?: string | null;
+  /** B2: 대표(최저=최고신뢰) 매체 tier — 1 전문지 / 2 종합 / 3 미등록 */
+  source_tier?: number | null;
+  /** B1: 같은 이벤트를 다룬 기사 목록 (tier ASC, 최신순) */
+  sources?: TrendSource[];
+  /** 매체 수 — sources 없으면 primary url 존재 시 1 */
+  source_count?: number;
 }
 
 export interface CompetitorTrendInput {

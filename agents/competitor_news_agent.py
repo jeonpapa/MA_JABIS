@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from agents.editable_factors import get_competitor_brands
+from agents.editable_factors import get_competitor_brands, get_competitor_relevance_terms
 from agents.naver_news import NaverNewsClient, NewsItem
 from agents.scrapers import tier1_news_sites as _t1sites
 
@@ -161,12 +161,22 @@ def _url_hash(url: str) -> str:
     return hashlib.sha1(_canonical_url(url).encode("utf-8")).hexdigest()
 
 
-def _is_relevant(it: NewsItem, query: str) -> bool:
+def _is_relevant(it: NewsItem, query: str, relevance_terms=None) -> bool:
     """관련성 게이트 — 브랜드명이 제목/발췌에 실제 등장해야 함.
     Naver 전수검색은 본문 스치듯 언급(예: 타사 IR 기사의 파이프라인 나열)도 잡으므로
-    제목+발췌(description) 표면에 브랜드 토큰이 없으면 무관 기사로 제외."""
+    제목+발췌(description) 표면에 브랜드 토큰이 없으면 무관 기사로 제외.
+
+    B3 배선: relevance_terms 에 admin 편집 키워드(news_keyword_factor
+    scope='competitor', kind='relevance')를 넘기면 추가 게이트로 소비 — 브랜드가
+    있어도 relevance 키워드가 표면에 하나도 없으면 주가·행사성 잡음으로 간주해
+    제외. 경쟁사 crawl() 은 로더에서 로드해 전달. 기본값 None 은 브랜드-only
+    구 동작 유지 (amjilsim tiered_news 등 타 도메인 호출자 보호)."""
     surface = f"{it.title} {it.description}"
-    return query in surface
+    if query not in surface:
+        return False
+    if relevance_terms and not any(t in surface for t in relevance_terms if t):
+        return False
+    return True
 
 
 def _fetch_brand(client: NaverNewsClient, query: str, lookback_days: int) -> list[NewsItem]:
@@ -228,6 +238,11 @@ def crawl(lookback_days: int = DEFAULT_LOOKBACK_DAYS, t1_only: bool = True,
 
     all_brands = get_competitor_brands()
     targets = all_brands if not brands else [b for b in all_brands if b["query"] in brands]
+    # B3: admin 편집 relevance 키워드 — 브랜드 등장 + 키워드 게이트 (로더 캐시+상수 폴백)
+    try:
+        relevance_terms = get_competitor_relevance_terms()
+    except Exception:
+        relevance_terms = ()
     results = []
     with _connect() as conn:
         for meta in targets:
@@ -241,7 +256,7 @@ def crawl(lookback_days: int = DEFAULT_LOOKBACK_DAYS, t1_only: bool = True,
                 logger.warning("[competitor_news] %s Naver 수집 실패: %s", q, e)
                 fetched = []
             for it in fetched:
-                if not _is_relevant(it, q):
+                if not _is_relevant(it, q, relevance_terms):
                     skipped_irrel += 1
                     continue
                 url = it.original_link or it.link
@@ -263,7 +278,7 @@ def crawl(lookback_days: int = DEFAULT_LOOKBACK_DAYS, t1_only: bool = True,
                 logger.warning("[competitor_news] %s 사이트 수집 실패: %s", q, e)
                 site_items = []
             for si in site_items:
-                if q not in (si.title + " " + si.description):
+                if not _is_relevant(si, q, relevance_terms):  # 브랜드+relevance 게이트 (duck-typed)
                     skipped_irrel += 1
                     continue
                 if _upsert_record(conn, meta, title=si.title, url=si.url, naver_link=None,
@@ -306,7 +321,8 @@ def list_news(brand: Optional[str] = None, company: Optional[str] = None,
     sql = "SELECT * FROM competitor_news"
     if where:
         sql += " WHERE " + " AND ".join(where)
-    sql += " ORDER BY pub_date DESC, id DESC LIMIT ?"
+    # B2: 고신뢰 매체 우선 — tier ASC(1=전문지 최우선, 미분류 NULL 은 3 취급) 후 최신순
+    sql += " ORDER BY COALESCE(tier, 3) ASC, pub_date DESC, id DESC LIMIT ?"
     params.append(max(1, min(limit, 500)))
     with _connect() as conn:
         rows = conn.execute(sql, params).fetchall()

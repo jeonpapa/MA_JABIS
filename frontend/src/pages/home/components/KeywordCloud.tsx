@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   fetchMediaIntelligence,
-  fetchGovKeywordSummary,
+  fetchGovAgencyClouds,
   fetchBrandNews,
   type BrandTrafficView,
   type BrandNewsView,
@@ -41,17 +41,51 @@ const getHeatClass = (trafficIndex: number, maxTraffic: number): string => {
   return 'text-gray-400';
 };
 
+/** 최근 7일 일별 건수 미니 스파크라인 */
+function Sparkline({ data, color }: { data: number[]; color: string }) {
+  if (!data.length) return null;
+  const w = 100;
+  const h = 24;
+  const max = Math.max(...data, 1);
+  const pts = data
+    .map((v, i) => {
+      const x = data.length > 1 ? (i / (data.length - 1)) * w : w / 2;
+      const y = h - 2 - (v / max) * (h - 4);
+      return `${x},${y}`;
+    })
+    .join(' ');
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="w-full h-3 block">
+      <polyline
+        points={pts}
+        fill="none"
+        stroke={color}
+        strokeWidth="2"
+        vectorEffect="non-scaling-stroke"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export default function KeywordCloud({ isDark }: Props) {
   const [selectedBrand, setSelectedBrand] = useState<BrandItem | null>(null);
   const [selectedKeyword, setSelectedKeyword] = useState<string | null>(null);
+  const [activeAgency, setActiveAgency] = useState<string | null>(null);
   const [drawerNews, setDrawerNews] = useState<BrandNewsView[]>([]);
   const [drawerLoading, setDrawerLoading] = useState(false);
 
-  // 좌측(정부 키워드 — LLM 기반, 느리거나 실패 가능)과 우측(미디어)은 독립 로딩
+  // 좌측(정부 기관별 7일 빈도 클라우드)과 우측(미디어)은 독립 로딩
   const { data: media, loading: mediaLoading, error: mediaError } = useApi(fetchMediaIntelligence, []);
-  const { data: gov, loading: govLoading, error: govError } = useApi(fetchGovKeywordSummary, []);
+  const { data: gov, loading: govLoading, error: govError } = useApi(fetchGovAgencyClouds, []);
 
-  const keywordCloudData = gov?.keywords ?? [];
+  const agencies = gov?.agencies ?? [];
+  const activeCloud = agencies.find(a => a.agency === activeAgency) ?? agencies[0] ?? null;
+  const keywordCloudData = activeCloud?.keywords ?? [];
+  const agencySubtitle = agencies.length
+    ? agencies.map(a => a.label).slice(0, 4).join(' · ') + (agencies.length > 4 ? ` 외 ${agencies.length - 4}` : '')
+    : '보건복지부 · 건보공단 · 심평원';
   const brandTrafficData = media?.brands ?? [];
 
   const maxWeight = keywordCloudData.length > 0 ? Math.max(...keywordCloudData.map(k => k.weight)) : 1;
@@ -91,8 +125,8 @@ export default function KeywordCloud({ isDark }: Props) {
   };
 
   const top1 = brandTrafficData[0];
-  const selectedNews = selectedKeyword ? (gov?.newsByKeyword[selectedKeyword] || []) : [];
-  const periodLabel = media?.days ? `지난 ${media.days}일 기준` : '지난 1개월 기준';
+  const selectedNews = selectedKeyword ? (activeCloud?.newsByKeyword[selectedKeyword] || []) : [];
+  const periodLabel = '이전 7일 기준';
 
   const cardBg = isDark ? 'bg-[#161B27]' : 'bg-white';
   const cardBorder = isDark ? 'border-[#1E2530]' : 'border-gray-200';
@@ -111,7 +145,6 @@ export default function KeywordCloud({ isDark }: Props) {
   const newsBg = isDark ? 'bg-[#1A2035]/80 border-[#1E2530]' : 'bg-gray-50 border-gray-200';
   const newsHover = isDark ? 'hover:border-[#00E5CC]/30 hover:bg-[#1E2530]/60' : 'hover:border-teal-300 hover:bg-gray-100';
   const glowCenter = isDark ? 'bg-[#00E5CC]/3' : 'bg-teal-100/30';
-  const barTrack = isDark ? 'bg-[#0D1117]' : 'bg-gray-200';
   const emptyIconBg = isDark ? 'bg-[#1E2530]' : 'bg-gray-100';
   const emptyIconText = isDark ? 'text-[#2A3545]' : 'text-gray-400';
   const upBadge = isDark ? 'bg-emerald-400/15 border-emerald-400/30' : 'bg-emerald-50 border-emerald-200';
@@ -148,7 +181,7 @@ export default function KeywordCloud({ isDark }: Props) {
               <i className="ri-government-line text-xs"></i>
             </span>
             <p className={`${textSub} text-xs font-semibold`}>정부 기관 키워드</p>
-            <span className={`${textDimmed} text-xs`}>보건복지부 · 건보공단 · 심평원</span>
+            <span className={`${textDimmed} text-xs`}>최근 7일 · {agencySubtitle}</span>
             {selectedKeyword && (
               <button
                 onClick={() => setSelectedKeyword(null)}
@@ -159,11 +192,38 @@ export default function KeywordCloud({ isDark }: Props) {
             )}
           </div>
 
+          {/* 기관 탭 — 기관별 최근 7일 누적 빈도 클라우드 전환 */}
+          {agencies.length > 0 && (
+            <div className={`flex flex-wrap gap-1 px-4 py-2 border-b ${cardBorder} relative z-10 flex-shrink-0`}>
+              {agencies.map(a => {
+                const isActive = a.agency === activeCloud?.agency;
+                return (
+                  <button
+                    key={a.agency}
+                    onClick={() => { setActiveAgency(a.agency); setSelectedKeyword(null); }}
+                    title={`${a.label} · 최근 7일 기사 ${a.articleCount}건`}
+                    className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border transition-colors cursor-pointer whitespace-nowrap ${
+                      isActive
+                        ? isDark
+                          ? 'bg-[#00E5CC]/15 border-[#00E5CC]/40 text-[#00E5CC]'
+                          : 'bg-teal-50 border-teal-300 text-teal-700'
+                        : isDark
+                          ? 'border-[#1E2530] text-[#8B9BB4] hover:text-white'
+                          : 'border-gray-200 text-gray-500 hover:text-gray-900'
+                    }`}
+                  >
+                    {a.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           <div className="relative z-10 w-full flex-1 flex items-center justify-center min-h-[180px]">
             {govLoading && (
               <p className={`${textMuted} text-xs flex items-center gap-2`}>
                 <i className={`ri-loader-4-line animate-spin ${accentTeal}`}></i>
-                AI 키워드 분석 중... (최대 수 분 소요)
+                최근 7일 키워드 집계 중...
               </p>
             )}
             {!govLoading && govError && (
@@ -175,7 +235,7 @@ export default function KeywordCloud({ isDark }: Props) {
               <p className="text-red-500 text-xs px-6 text-center leading-relaxed">{gov.error}</p>
             )}
             {!govLoading && !govError && !gov?.error && keywordCloudData.length === 0 && (
-              <p className={`${textMuted} text-xs`}>키워드 정보 없음</p>
+              <p className={`${textMuted} text-xs`}>최근 7일 키워드 없음</p>
             )}
             {!govLoading && !govError && keywordCloudData.length > 0 && (
               <div className="flex flex-wrap gap-x-3 gap-y-2 items-center justify-center px-6 py-4 max-w-full">
@@ -272,7 +332,7 @@ export default function KeywordCloud({ isDark }: Props) {
               <i className="ri-fire-line text-xs"></i>
             </span>
             <p className={`${textSub} text-xs font-semibold`}>브랜드 언급 Top 10</p>
-            <span className={`${textDimmed} text-xs`}>Naver 뉴스 건수 기준</span>
+            <span className={`${textDimmed} text-xs`}>Naver 뉴스 건수 · 최근 7일</span>
           </div>
 
           <div className={`grid grid-cols-2 divide-x ${cardBorder}`}>
@@ -321,11 +381,9 @@ export default function KeywordCloud({ isDark }: Props) {
                         )}
                       </div>
                       <div className="flex items-center gap-1">
-                        <div className={`flex-1 h-0.5 rounded-full overflow-hidden ${barTrack}`}>
-                          <div
-                            className="h-full rounded-full transition-all duration-700"
-                            style={{ width: `${Math.round((brand.trafficIndex / maxTraffic) * 100)}%`, backgroundColor: heatColor }}
-                          ></div>
+                        {/* 최근 7일 일별 건수 스파크라인 */}
+                        <div className="flex-1 min-w-0">
+                          <Sparkline data={brand.sparkline} color={heatColor} />
                         </div>
                         <span className={`text-[10px] font-bold flex-shrink-0 tabular-nums ${getHeatClass(brand.trafficIndex, maxTraffic)}`}>
                           {brand.trafficIndex.toLocaleString()}
@@ -367,7 +425,7 @@ export default function KeywordCloud({ isDark }: Props) {
                   <div className={`flex items-center gap-3 px-4 py-2.5 border-b ${cardBorder} bg-gray-50/30`}>
                     <div className="flex items-center gap-1.5">
                       <i className={`ri-bar-chart-2-line ${accentAmber} text-xs`}></i>
-                      <span className={`${textSub} text-xs`}>뉴스 건수</span>
+                      <span className={`${textSub} text-xs`}>뉴스 건수(7일)</span>
                       <span className={`text-xs font-bold tabular-nums ${getHeatClass(selectedBrand.trafficIndex, maxTraffic)}`}>
                         {selectedBrand.trafficIndex.toLocaleString()}
                       </span>
@@ -379,7 +437,7 @@ export default function KeywordCloud({ isDark }: Props) {
                         {Math.abs(selectedBrand.change)}%
                       </span>
                     </div>
-                    <span className={`${textMuted} text-xs`}>전반기 대비</span>
+                    <span className={`${textMuted} text-xs`}>이전 7일 대비</span>
                   </div>
 
                   <div className="flex-1 overflow-y-auto min-h-0">

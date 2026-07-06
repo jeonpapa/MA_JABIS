@@ -20,6 +20,10 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 logger = logging.getLogger(__name__)
 
+# Home 브랜드 트래픽 기본 창 — 14일 (최근 7일 표시 + 이전 7일 상승 비교 기준).
+# A2(2026-07-06): '지난 1개월' → 14일. 스파크라인/상승률은 프런트가 last7 vs prev7 로 계산.
+DEFAULT_TRAFFIC_DAYS = 14
+
 
 def days_in_last_month() -> int:
     """오늘 기준 '지난 1개월' 을 일 단위로 환산.
@@ -52,23 +56,24 @@ DEFAULT_BRANDS = [
 
 
 def get_brand_traffic(days: int | None = None, refresh: bool = False) -> dict:
-    """Home 미디어 인텔리전스 카드용 — 오늘 기준 '지난 1개월' 브랜드 트래픽.
+    """Home 미디어 인텔리전스 카드용 — 14일(최근 7 + 이전 7) 브랜드 트래픽.
 
-    `days` 를 명시하지 않으면 `days_in_last_month()` (28~31) 로 계산.
+    `days` 를 명시하지 않으면 `DEFAULT_TRAFFIC_DAYS`(14) 사용 —
+    프런트가 sparkline last7 표시 + last7 vs prev7 상승률을 계산한다.
 
     캐시 포맷:
     {
         "updated_at": "2026-04-18T10:15:00",
-        "days": 31,
+        "days": 14,
         "brands": [...aggregate_brand_traffic 결과...]
     }
 
-    캐시 키에는 활성 브랜드 그룹(시드 + 승인된 보조 검색어)의 해시가 포함된다 —
-    admin 이 브랜드 목록/보조 검색어를 편집하면 다음 로드에서 즉시 재수집
-    (같은 날이라도 stale 캐시 파일을 재사용하지 않음).
+    캐시 키에는 `days` 창 + 활성 브랜드 그룹(시드 + 승인된 보조 검색어)의 해시가
+    포함된다 — 창 변경/admin 편집이 같은 날에도 즉시 재수집으로 이어진다
+    (stale 캐시 파일을 재사용하지 않음).
     """
     if days is None:
-        days = days_in_last_month()
+        days = DEFAULT_TRAFFIC_DAYS
     today = datetime.now().strftime("%Y-%m-%d")
 
     # 브랜드 그룹을 캐시 판정보다 먼저 읽는다 — 목록 변경 ⇒ 캐시 키 변경 ⇒ 재수집.
@@ -78,7 +83,7 @@ def get_brand_traffic(days: int | None = None, refresh: bool = False) -> dict:
         "|".join(f"{g['brand']}:{','.join(g.get('terms') or [])}" for g in groups)
         .encode("utf-8")
     ).hexdigest()[:8]
-    cache_file = CACHE_DIR / f"brand_traffic_{today}_{brands_sig}.json"
+    cache_file = CACHE_DIR / f"brand_traffic_{today}_{days}d_{brands_sig}.json"
 
     if not refresh and cache_file.exists():
         try:

@@ -14,3 +14,15 @@ from .aggregate import (  # noqa: F401
     record_prediction,
     reconcile_predictions,
 )
+from .backfill import (  # noqa: F401
+    backfill_oncology,
+    backfill_signals,
+    expected_committee,
+)
+from .classify import (  # noqa: F401
+    classify_signal_type,
+    invalidate_lexicon_cache,
+    load_lexicon,
+    reclassify_signals,
+    seed_lexicon,
+)

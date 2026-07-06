@@ -712,6 +712,16 @@ def main():
         action="store_true",
         help="Access Insight 신선 신호 크롤 즉시 실행 (tier A/B/D → amjilsim_media_signals)",
     )
+    parser.add_argument(
+        "--reclassify-signals-now",
+        action="store_true",
+        help="현재 lexicon 으로 기존 amjilsim_media_signals 재분류 (signal_type/weight UPDATE, 삭제 없음)",
+    )
+    parser.add_argument(
+        "--backfill-oncology-now",
+        action="store_true",
+        help="amjilsim_drugs.is_oncology 캐스케이드 백필 (ATC/efficacy/analog/indication)",
+    )
     args = parser.parse_args()
 
     config = load_config()
@@ -806,6 +816,27 @@ def main():
     if args.fresh_signals_now:
         logger.info("Access Insight 신선 신호 크롤 즉시 실행")
         access_insight_fresh_signal_job()
+        return
+
+    if args.reclassify_signals_now:
+        logger.info("Access Insight 신호 재분류 즉시 실행 (lexicon 기반 UPDATE)")
+        from agents.access_insight.classify import reclassify_signals
+        res = reclassify_signals()
+        logger.info(
+            "재분류 완료: total=%s changed=%s / before=%s after=%s",
+            res.get("total"), res.get("changed"), res.get("before"), res.get("after"),
+        )
+        return
+
+    if args.backfill_oncology_now:
+        logger.info("amjilsim_drugs.is_oncology 백필 즉시 실행")
+        from agents.access_insight.backfill import backfill_oncology
+        res = backfill_oncology()
+        logger.info(
+            "is_oncology 백필: oncology=%s general=%s by_rule=%s (manual_review=%s건)",
+            res.get("oncology"), res.get("general"), res.get("by_rule"),
+            len(res.get("manual_review", [])),
+        )
         return
 
     # 스케줄러 설정: 매월 1일 09:00

@@ -437,8 +437,9 @@ CREATE TABLE IF NOT EXISTS competitor_trend (
     date         TEXT NOT NULL,           -- YYYY-MM-DD
     source       TEXT,                    -- '보건복지부 고시' / 매체명
     url          TEXT,
-    source_type  TEXT NOT NULL DEFAULT 'manual', -- 'manual' | 'auto_naver'
+    source_type  TEXT NOT NULL DEFAULT 'manual', -- 'manual' | 'auto_naver' | 'promoted'
     importance   TEXT,                    -- 'critical'|'moderate'|'low' (auto 만 사용)
+    source_tier  INTEGER,                 -- 대표(최저=최고신뢰) 매체 tier — 1 전문지 / 2 종합 / 3 미등록
     created_at   TEXT NOT NULL,
     updated_at   TEXT NOT NULL
 );

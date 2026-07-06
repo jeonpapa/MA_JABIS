@@ -2823,6 +2823,22 @@ def home_government_summary():
         return jsonify({"error": str(e)}), 500
 
 
+@app.get("/api/home/gov-agency-clouds")
+def home_gov_agency_clouds():
+    """정부기관별 최근 7일 누적 키워드 클라우드 — 순수 빈도 기반 (LLM 아님).
+    gov_policy 아카이브(competitor_news)의 기관별 title+description 토큰 빈도.
+    일자 캐시. `refresh=1` 강제 재계산. Home 정부 위젯의 1차 소스
+    (기존 /api/home/government-keyword-summary 는 보존).
+    """
+    try:
+        from agents.gov_agency_clouds import get_gov_agency_clouds
+        refresh = request.args.get("refresh", "0") == "1"
+        return jsonify(get_gov_agency_clouds(refresh=refresh))
+    except Exception as e:
+        logger.error("gov-agency-clouds 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @app.get("/api/home/top-price-changes")
 def home_top_price_changes():
     """Home — 최신 고시일 vs 직전 고시일 약가 변동 Top N.
@@ -5212,12 +5228,57 @@ def mail_sub_test_request(item_id: int):
 # Competitor Trends — 경쟁사 동향 카드 (CRUD)
 # ──────────────────────────────────────────────────────────────────────────────
 
-_COMPETITOR_COLS = "id, company, logo, color, badge, badge_color, headline, detail, date, source, url, created_at, updated_at, source_type, importance"
+_COMPETITOR_COLS = "id, company, logo, color, badge, badge_color, headline, detail, date, source, url, created_at, updated_at, source_type, importance, source_tier"
 
 _COMPETITOR_BADGES = ("신규 출시", "가격 변동", "임상 진행", "급여 등재", "파이프라인", "전략 변화")
 
 
-def _competitor_row_to_dict(r) -> dict:
+def _ensure_competitor_trend_schema() -> None:
+    """competitor_trend.source_tier 멱등 마이그레이션 (B2 — 기존 DB ALTER)."""
+    try:
+        with db._connect() as conn:
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(competitor_trend)")}
+            if cols and "source_tier" not in cols:
+                conn.execute("ALTER TABLE competitor_trend ADD COLUMN source_tier INTEGER")
+                conn.commit()
+                logger.info("Migrated: competitor_trend.source_tier added")
+    except Exception as e:
+        logger.warning("competitor_trend.source_tier 마이그레이션 실패: %s", e)
+
+
+_ensure_competitor_trend_schema()
+
+
+def _competitor_trend_sources(conn, trend_ids: list) -> dict:
+    """B1: 카드별 클러스터 멤버 기사 — competitor_news.trend_id 역링크 조회.
+    반환: {trend_id: [{name,url,tier,pub_date}, ...]} (tier ASC=고신뢰 우선, 최신순)."""
+    ids = [i for i in trend_ids if i is not None]
+    if not ids:
+        return {}
+    out: dict = {}
+    try:
+        qmarks = ",".join("?" for _ in ids)
+        rows = conn.execute(
+            "SELECT trend_id, source_name, source_domain, url, tier, pub_date "
+            f"FROM competitor_news WHERE trend_id IN ({qmarks}) "
+            "ORDER BY COALESCE(tier, 3) ASC, pub_date DESC, id ASC",
+            ids,
+        ).fetchall()
+    except Exception as e:
+        logger.warning("competitor_trend sources 조회 실패: %s", e)
+        return {}
+    for r in rows:
+        out.setdefault(r[0], []).append({
+            "name": r[1] or r[2] or "출처 미상",
+            "url": r[3],
+            "tier": r[4],
+            "pub_date": r[5],
+        })
+    return out
+
+
+def _competitor_row_to_dict(r, sources: list | None = None) -> dict:
+    sources = sources or []
     return {
         "id": r[0],
         "company": r[1],
@@ -5232,9 +5293,14 @@ def _competitor_row_to_dict(r) -> dict:
         "url": r[10],
         "created_at": r[11],
         "updated_at": r[12],
-        # auto_naver(주 1회 자동 크롤) vs manual 구분 — manual 보존 원칙의 UI 표시용
+        # auto_naver/promoted(자동) vs manual 구분 — manual 보존 원칙의 UI 표시용
         "source_type": r[13],
         "importance": r[14],
+        # B2: 대표(최저=최고신뢰) 매체 tier — 1 전문지 / 2 종합 / 3 미등록
+        "source_tier": r[15],
+        # B1: 클러스터 멤버 기사 목록 + 매체 수 (링크 없으면 primary url 1건으로 계산)
+        "sources": sources,
+        "source_count": len(sources) if sources else (1 if r[10] else 0),
     }
 
 
@@ -5274,7 +5340,8 @@ def competitor_list():
             rows = conn.execute(
                 f"SELECT {_COMPETITOR_COLS} FROM competitor_trend ORDER BY date DESC, id DESC"
             ).fetchall()
-        return jsonify({"items": [_competitor_row_to_dict(r) for r in rows]})
+            smap = _competitor_trend_sources(conn, [r[0] for r in rows])
+        return jsonify({"items": [_competitor_row_to_dict(r, smap.get(r[0])) for r in rows]})
     except Exception as e:
         logger.error("competitor_list 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
@@ -5309,7 +5376,8 @@ def competitor_create():
             row = conn.execute(
                 f"SELECT {_COMPETITOR_COLS} FROM competitor_trend WHERE id=?", (new_id,)
             ).fetchone()
-        return jsonify({"item": _competitor_row_to_dict(row)}), 201
+            smap = _competitor_trend_sources(conn, [new_id])
+        return jsonify({"item": _competitor_row_to_dict(row, smap.get(new_id))}), 201
     except Exception as e:
         logger.error("competitor_create 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
@@ -5341,7 +5409,8 @@ def competitor_update(item_id: int):
             row = conn.execute(
                 f"SELECT {_COMPETITOR_COLS} FROM competitor_trend WHERE id=?", (item_id,)
             ).fetchone()
-        return jsonify({"item": _competitor_row_to_dict(row)})
+            smap = _competitor_trend_sources(conn, [item_id])
+        return jsonify({"item": _competitor_row_to_dict(row, smap.get(item_id))})
     except Exception as e:
         logger.error("competitor_update 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
@@ -5355,6 +5424,11 @@ def competitor_delete(item_id: int):
             res = conn.execute("DELETE FROM competitor_trend WHERE id = ?", (item_id,))
             if res.rowcount == 0:
                 return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+            # B1: 삭제 카드를 참조하는 아카이브 역링크 해제 (dangling trend_id 방지)
+            try:
+                conn.execute("UPDATE competitor_news SET trend_id = NULL WHERE trend_id = ?", (item_id,))
+            except Exception:
+                pass
             conn.commit()
         return jsonify({"ok": True})
     except Exception as e:
@@ -6246,7 +6320,11 @@ def access_insight_leaderboard():
     try:
         window_days = request.args.get("window_days", default=90, type=int)
         limit = request.args.get("limit", default=30, type=int)
-        items = _access_insight.leaderboard(window_days=window_days, limit=limit)
+        # B6 — ?class=oncology|general 항암/일반 필터 (미지정 시 전체).
+        drug_class = request.args.get("class", default=None, type=str)
+        items = _access_insight.leaderboard(
+            window_days=window_days, limit=limit, drug_class=drug_class
+        )
         return jsonify({"items": items})
     except Exception as e:
         logger.error("access_insight_leaderboard 실패: %s", e, exc_info=True)
@@ -6275,6 +6353,138 @@ def access_insight_drug_detail(drug_id: int):
         return jsonify({"error": str(e)}), 404
     except Exception as e:
         logger.error("access_insight_drug_detail 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Access Insight — 신호 라벨 lexicon admin CRUD (B7)
+#   amjilsim_signature_lexicon: classify.classify_signal_type() 가 priority 순
+#   first-match 로 소비. write 시 lexicon 캐시 무효화 → 다음 분류부터 즉시 반영.
+#   (재분류는 --reclassify-signals-now 또는 별도 트리거로 기존 행 UPDATE.)
+# ──────────────────────────────────────────────────────────────────────────────
+from agents.access_insight import classify as _ai_classify
+
+_LEXICON_DB = str(_ai_classify.DEFAULT_DB_PATH)
+
+
+def _lexicon_conn():
+    import sqlite3 as _sqlite3
+    c = _sqlite3.connect(_LEXICON_DB)
+    c.row_factory = _sqlite3.Row
+    _ai_classify.ensure_lexicon_schema(c)
+    return c
+
+
+@app.get("/api/admin/signal-lexicon")
+@require_auth(role="admin")
+def signal_lexicon_list():
+    try:
+        conn = _lexicon_conn()
+        try:
+            rows = conn.execute(
+                "SELECT token, category, signal_type, weight, "
+                "COALESCE(priority,100) AS priority, COALESCE(is_active,1) AS is_active, "
+                "COALESCE(match_mode,'substring') AS match_mode, notes "
+                "FROM amjilsim_signature_lexicon "
+                "ORDER BY COALESCE(priority,100) ASC, token ASC"
+            ).fetchall()
+        finally:
+            conn.close()
+        return jsonify({"items": [dict(r) for r in rows]})
+    except Exception as e:
+        logger.error("signal_lexicon_list 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/admin/signal-lexicon")
+@require_auth(role="admin")
+def signal_lexicon_create():
+    try:
+        body = request.get_json(silent=True) or {}
+        token = (body.get("token") or "").strip()
+        signal_type = (body.get("signal_type") or "").strip()
+        if not token or not signal_type:
+            return jsonify({"error": "token 과 signal_type 은 필수"}), 400
+        conn = _lexicon_conn()
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO amjilsim_signature_lexicon "
+                "(token, category, signal_type, weight, priority, is_active, match_mode, "
+                " last_calibrated_at, notes) VALUES (?,?,?,?,?,?,?, datetime('now'), ?)",
+                (
+                    token,
+                    (body.get("category") or "custom"),
+                    signal_type,
+                    float(body.get("weight", 1.0)),
+                    int(body.get("priority", 100)),
+                    int(body.get("is_active", 1)),
+                    (body.get("match_mode") or "substring"),
+                    body.get("notes"),
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        _ai_classify.invalidate_lexicon_cache(_LEXICON_DB)
+        return jsonify({"ok": True, "token": token})
+    except Exception as e:
+        logger.error("signal_lexicon_create 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.patch("/api/admin/signal-lexicon/<path:token>")
+@require_auth(role="admin")
+def signal_lexicon_update(token: str):
+    try:
+        body = request.get_json(silent=True) or {}
+        fields = {
+            k: body[k]
+            for k in ("category", "signal_type", "weight", "priority", "is_active",
+                      "match_mode", "notes")
+            if k in body
+        }
+        if not fields:
+            return jsonify({"error": "수정할 필드 없음"}), 400
+        sets = ", ".join(f"{k}=?" for k in fields)
+        conn = _lexicon_conn()
+        try:
+            cur = conn.execute(
+                f"UPDATE amjilsim_signature_lexicon SET {sets}, "
+                "last_calibrated_at=datetime('now') WHERE token=?",
+                (*fields.values(), token),
+            )
+            conn.commit()
+            n = cur.rowcount
+        finally:
+            conn.close()
+        if not n:
+            return jsonify({"error": "token 없음"}), 404
+        _ai_classify.invalidate_lexicon_cache(_LEXICON_DB)
+        return jsonify({"ok": True, "token": token})
+    except Exception as e:
+        logger.error("signal_lexicon_update 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.delete("/api/admin/signal-lexicon/<path:token>")
+@require_auth(role="admin")
+def signal_lexicon_delete(token: str):
+    try:
+        conn = _lexicon_conn()
+        try:
+            cur = conn.execute(
+                "DELETE FROM amjilsim_signature_lexicon WHERE token=?", (token,)
+            )
+            conn.commit()
+            n = cur.rowcount
+        finally:
+            conn.close()
+        if not n:
+            return jsonify({"error": "token 없음"}), 404
+        _ai_classify.invalidate_lexicon_cache(_LEXICON_DB)
+        return jsonify({"ok": True, "token": token})
+    except Exception as e:
+        logger.error("signal_lexicon_delete 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 

@@ -39,6 +39,8 @@ SIGNAL_TYPES: tuple[str, ...] = (
     "IR_RELEASE",
     "RESULT_REPORT",
     "PRE_AGENDA_LEAK",
+    # 저신뢰 미분류 버킷 (B7) — enum 확장 migration 적용 DB 에서만 실제 등장.
+    "UNCLASSIFIED",
 )
 
 # momentum_score 정규화 기준 — window_days 를 30일(1개월) 단위 평균 강도로 스케일해
@@ -55,10 +57,36 @@ _PREDICT_MEDIUM = 1.0
 _SESSION_IMMINENT_DAYS = 45
 
 
+# B5 — 약제 유형별 예상 진입 위원회 라벨 (프론트가 DREC/ODAC/BSC 로 표기).
+COMMITTEE_AMJILSIM = "AMJILSIM"
+COMMITTEE_BENEFIT_SUB = "BENEFIT_SUBCOMMITTEE"
+
+
+def _expected_committee(is_oncology):
+    """is_oncology → 예상 진입 위원회 라벨.
+
+    - 1(항암)           → AMJILSIM (암질심/DREC)
+    - 0(비항암)          → BENEFIT_SUBCOMMITTEE (급여기준소위/BSC)
+    - None(미상, 백필 전)  → None — 프론트가 라벨을 숨길 수 있게 UNKNOWN 처리.
+      (NULL 을 BSC 로 단정하면 백필 전 Keytruda 등 항암제가 BSC 로 오표기된다.)
+    """
+    if is_oncology == 1:
+        return COMMITTEE_AMJILSIM
+    if is_oncology == 0:
+        return COMMITTEE_BENEFIT_SUB
+    return None
+
+
 def _connect(db_path: PathLike) -> sqlite3.Connection:
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def _has_oncology_column(conn: sqlite3.Connection) -> bool:
+    return any(
+        r[1] == "is_oncology" for r in conn.execute("PRAGMA table_info(amjilsim_drugs)")
+    )
 
 
 def _parse_date(value) -> Optional[date]:
@@ -93,10 +121,11 @@ def _recency_factor(pub: date, ref: date, window_days: int) -> float:
 
 
 def _get_drug(conn: sqlite3.Connection, drug_id: int) -> Optional[sqlite3.Row]:
+    onco = "is_oncology" if _has_oncology_column(conn) else "NULL AS is_oncology"
     return conn.execute(
-        """
+        f"""
         SELECT drug_id, product_slug, brand_kr, brand_en, expected_session_id,
-               amjilsim_pass_date, yakpyungwi_pass_date
+               amjilsim_pass_date, yakpyungwi_pass_date, {onco}
         FROM amjilsim_drugs WHERE drug_id = ?
         """,
         (drug_id,),
@@ -210,10 +239,13 @@ def drug_momentum(
         else:
             direction = "flat"
 
+        is_oncology = drug_row["is_oncology"]
         return {
             "drug_id": drug_id,
             "brand_kr": drug_row["brand_kr"],
             "product_slug": drug_row["product_slug"],
+            "is_oncology": is_oncology,
+            "expected_committee": _expected_committee(is_oncology),
             "reference_date": ref_date.isoformat() if ref_date else None,
             "expected_session": (
                 {
@@ -246,12 +278,16 @@ def leaderboard(
     window_days: int = 90,
     limit: int = 30,
     today: Optional[str] = None,
+    drug_class: Optional[str] = None,
 ) -> list[dict]:
     """signal 이 있는 전체 약제의 momentum 을 계산해 momentum_score 내림차순 반환.
 
     `session_imminent`: expected_session_id 의 session_date 가 `today` 로부터
     0~45일 이내(다가오는 세션)면 True. `today` 미지정 시 데이터의 최신 signal 날짜로
     결정론적 fallback (wall-clock 호출 금지 — 테스트 재현성).
+
+    `drug_class`: 'oncology'|'general' 이면 해당 유형만 필터 (is_oncology 기준).
+    None(기본) 이면 전체. 각 item 에는 is_oncology/expected_committee 가 포함된다.
     """
     path = str(db_path or DEFAULT_DB_PATH)
     conn = _connect(path)
@@ -270,9 +306,15 @@ def leaderboard(
     finally:
         conn.close()
 
+    want = (drug_class or "").strip().lower() or None
+
     items = []
     for drug_id in drug_ids:
         m = drug_momentum(drug_id, db_path=path, window_days=window_days)
+        if want == "oncology" and m.get("is_oncology") != 1:
+            continue
+        if want == "general" and m.get("is_oncology") == 1:
+            continue
         session_imminent = False
         exp = m.get("expected_session")
         if exp and exp.get("session_date") and today_date:
@@ -292,9 +334,11 @@ def list_drugs_with_signals(db_path: Optional[PathLike] = None) -> list[dict]:
     path = str(db_path or DEFAULT_DB_PATH)
     conn = _connect(path)
     try:
+        onco = "d.is_oncology" if _has_oncology_column(conn) else "NULL"
         rows = conn.execute(
-            """
-            SELECT d.drug_id AS drug_id, d.brand_kr AS brand_kr, COUNT(s.id) AS signal_count
+            f"""
+            SELECT d.drug_id AS drug_id, d.brand_kr AS brand_kr,
+                   {onco} AS is_oncology, COUNT(s.id) AS signal_count
             FROM amjilsim_drugs d
             JOIN amjilsim_media_signals s ON s.drug_id = d.drug_id
             GROUP BY d.drug_id, d.brand_kr
@@ -302,7 +346,13 @@ def list_drugs_with_signals(db_path: Optional[PathLike] = None) -> list[dict]:
             """
         ).fetchall()
         return [
-            {"drug_id": r["drug_id"], "brand_kr": r["brand_kr"], "signal_count": r["signal_count"]}
+            {
+                "drug_id": r["drug_id"],
+                "brand_kr": r["brand_kr"],
+                "is_oncology": r["is_oncology"],
+                "expected_committee": _expected_committee(r["is_oncology"]),
+                "signal_count": r["signal_count"],
+            }
             for r in rows
         ]
     finally:
@@ -390,10 +440,13 @@ def journey(drug_id: int, db_path: Optional[PathLike] = None) -> dict:
             if eff_row is not None and eff_row["eff"]:
                 milestones["reimbursement_effective_date"] = eff_row["eff"]
 
+        is_oncology = drug_row["is_oncology"]
         return {
             "drug_id": drug_id,
             "brand_kr": drug_row["brand_kr"],
             "product_slug": product_slug,
+            "is_oncology": is_oncology,
+            "expected_committee": _expected_committee(is_oncology),
             "signals": signals,
             "sessions": sessions,
             "milestones": milestones,

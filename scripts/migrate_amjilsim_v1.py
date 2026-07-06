@@ -10,6 +10,18 @@ amjilsim_tracker v1 DB 마이그레이션 — drug_prices.db에 7개 테이블 �
     python -m scripts.migrate_amjilsim_v1 --rollback        # DROP TABLE IF EXISTS (개발 전용)
     python -m scripts.migrate_amjilsim_v1 --seed            # 2026 차수 + MSD 5개 자산 seed
 
+Access Insight B7/B6/B5 post-deploy 순서
+---------------------------------------
+1개 migrate 실행이 아래 전부를 멱등 셋업한다:
+  - B7 lexicon 스키마(priority/is_active/match_mode) + 큐레이션 seed
+  - B6 amjilsim_drugs.is_oncology 컬럼
+  - amjilsim_media_signals.signal_type CHECK 에 'UNCLASSIFIED' 추가 (rebuild, 멱등)
+  - amjilsim_sessions.committee_type CHECK 에 'BENEFIT_SUBCOMMITTEE' 추가 (rebuild, 멱등)
+그 후 CLI 2개:
+    python -m scripts.migrate_amjilsim_v1        # ① 스키마+seed+CHECK rebuild
+    python scheduler.py --backfill-oncology-now  # ② is_oncology 캐스케이드 백필
+    python scheduler.py --reclassify-signals-now # ③ 기존 신호 재분류 (IR 편중 해소)
+
 설계 원칙
 ---------
 - 기존 drug_prices.db는 1.2GB. 변경은 IF NOT EXISTS 가드 + append-only 위주.
@@ -190,6 +202,100 @@ SEED_QUEUE_STATUS_WELIREG = [
 ]
 
 
+def ensure_signal_type_unclassified(conn: sqlite3.Connection) -> bool:
+    """amjilsim_media_signals.signal_type CHECK 에 'UNCLASSIFIED' enum 추가 (멱등).
+
+    ⚠️ CONTROLLER FLAG — CHECK 제약 변경은 SQLite 특성상 테이블 rebuild 가 필요하다.
+    대상 테이블 amjilsim_media_signals 는 소규모(~904행)이며 이 테이블을 참조하는
+    외래키/트리거가 없어 rebuild 는 저위험이지만, **명시적 opt-in** 이다 (자동 실행 X).
+    적용 후 reclassify 는 미분류 competitor 신호를 IR_RELEASE 대신 UNCLASSIFIED 로
+    라우팅해 IR 편중을 해소한다. 미적용 시 코드가 IR_RELEASE 로 안전 폴백한다.
+
+    반환: True(rebuild 수행) / False(이미 적용됨).
+    """
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='amjilsim_media_signals'"
+    ).fetchone()
+    if not row or not row[0]:
+        return False
+    create_sql = row[0]
+    if "UNCLASSIFIED" in create_sql:
+        return False
+    if "'RESULT_REPORT')" not in create_sql:
+        raise RuntimeError("예상치 못한 signal_type CHECK 형태 — 수동 검토 필요")
+
+    idx_sqls = [
+        r[0] for r in conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='index' "
+            "AND tbl_name='amjilsim_media_signals' AND sql IS NOT NULL"
+        )
+    ]
+    new_create = create_sql.replace(
+        "amjilsim_media_signals", "amjilsim_media_signals_new", 1
+    ).replace("'RESULT_REPORT')", "'RESULT_REPORT','UNCLASSIFIED')")
+
+    conn.execute("PRAGMA foreign_keys=OFF")
+    conn.execute("BEGIN")
+    conn.execute(new_create)
+    conn.execute(
+        "INSERT INTO amjilsim_media_signals_new SELECT * FROM amjilsim_media_signals"
+    )
+    conn.execute("DROP TABLE amjilsim_media_signals")
+    conn.execute("ALTER TABLE amjilsim_media_signals_new RENAME TO amjilsim_media_signals")
+    for isql in idx_sqls:
+        conn.execute(isql)
+    conn.execute("COMMIT")
+    conn.execute("PRAGMA foreign_keys=ON")
+    return True
+
+
+def ensure_benefit_subcommittee_check(conn: sqlite3.Connection) -> bool:
+    """amjilsim_sessions.committee_type CHECK 에 'BENEFIT_SUBCOMMITTEE' 추가 (멱등).
+
+    B5 — 비항암 약제의 예상 진입 위원회는 급여기준소위(BENEFIT_SUBCOMMITTEE)다. 현재
+    스키마는 세션에 BSC 일정을 넣지 않아도 되지만, 향후 급여기준소위 세션 행을 INSERT
+    하면 기존 CHECK(('AMJILSIM','YAKPYUNGWI'))를 위반한다. 미리 enum 을 확장해 둔다.
+
+    amjilsim_sessions 는 여러 테이블이 FK 로 참조하지만 rebuild 중 foreign_keys=OFF +
+    session_id 값 보존(INSERT SELECT *) 으로 참조 무결성이 유지된다. 멱등.
+
+    반환: True(rebuild 수행) / False(이미 허용).
+    """
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='amjilsim_sessions'"
+    ).fetchone()
+    if not row or not row[0]:
+        return False
+    create_sql = row[0]
+    if "BENEFIT_SUBCOMMITTEE" in create_sql:
+        return False
+    target = "committee_type IN ('AMJILSIM','YAKPYUNGWI')"
+    if target not in create_sql:
+        raise RuntimeError("예상치 못한 committee_type CHECK 형태 — 수동 검토 필요")
+
+    idx_sqls = [
+        r[0] for r in conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='index' "
+            "AND tbl_name='amjilsim_sessions' AND sql IS NOT NULL"
+        )
+    ]
+    new_create = create_sql.replace(
+        "amjilsim_sessions", "amjilsim_sessions_new", 1
+    ).replace(target, "committee_type IN ('AMJILSIM','YAKPYUNGWI','BENEFIT_SUBCOMMITTEE')")
+
+    conn.execute("PRAGMA foreign_keys=OFF")
+    conn.execute("BEGIN")
+    conn.execute(new_create)
+    conn.execute("INSERT INTO amjilsim_sessions_new SELECT * FROM amjilsim_sessions")
+    conn.execute("DROP TABLE amjilsim_sessions")
+    conn.execute("ALTER TABLE amjilsim_sessions_new RENAME TO amjilsim_sessions")
+    for isql in idx_sqls:
+        conn.execute(isql)
+    conn.execute("COMMIT")
+    conn.execute("PRAGMA foreign_keys=ON")
+    return True
+
+
 def run_migrate(db_path: Path, rollback: bool = False, seed: bool = False) -> None:
     if not db_path.exists():
         print(f"⚠️  DB 없음: {db_path} (먼저 기존 DB 초기화 필요)", file=sys.stderr)
@@ -212,6 +318,29 @@ def run_migrate(db_path: Path, rollback: bool = False, seed: bool = False) -> No
         cur.execute(stmt)
     conn.commit()
     print(f"✅ DDL 적용 완료 ({len(DDL)} statements)")
+
+    # ── B7/B6/B5 (2026-07-06) 멱등 스키마 보강 — 1회 migrate 로 전량 셋업 ──
+    #   B7: amjilsim_signature_lexicon 에 priority/is_active/match_mode 컬럼 + 큐레이션 seed.
+    #   B6: amjilsim_drugs.is_oncology INTEGER (백필은 --backfill-oncology-now 로 별도 수행).
+    #   B7: amjilsim_media_signals.signal_type CHECK 에 'UNCLASSIFIED' (rebuild, 멱등).
+    #   B5: amjilsim_sessions.committee_type CHECK 에 'BENEFIT_SUBCOMMITTEE' (rebuild, 멱등).
+    try:
+        from agents.access_insight.classify import ensure_lexicon_schema, seed_lexicon
+        from agents.access_insight.backfill import ensure_oncology_column
+
+        ensure_lexicon_schema(conn)
+        seeded = seed_lexicon(conn)
+        ensure_oncology_column(conn)
+        conn.commit()
+        unc = ensure_signal_type_unclassified(conn)
+        bsc = ensure_benefit_subcommittee_check(conn)
+        conn.commit()
+        print(
+            f"✅ B7 lexicon 스키마+seed (seed rows: {seeded}) / B6 is_oncology 컬럼 / "
+            f"UNCLASSIFIED CHECK rebuild={unc} / BENEFIT_SUBCOMMITTEE CHECK rebuild={bsc}"
+        )
+    except Exception as e:  # pragma: no cover - 마이그레이션 편의
+        print(f"⚠️  B7/B6/B5 보강 skip: {e}")
 
     if seed:
         print("🌱 SEED — 2026 차수 9건 + MSD 항암 2개(Keytruda·Welireg) + Welireg 큐 상태")

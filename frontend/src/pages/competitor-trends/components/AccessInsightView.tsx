@@ -13,9 +13,11 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import {
+  committeeLabel,
   fetchAccessDrugs, fetchAccessDrugJourney, fetchAccessLeaderboard,
   SIGNAL_TYPES,
-  type DrugJourney, type DrugListItem, type DrugMomentum, type JourneyMilestones, type SignalType,
+  type DrugClass, type DrugJourney, type DrugListItem, type DrugMomentum,
+  type JourneyMilestones, type SignalType,
 } from '@/api/accessInsight';
 
 // ── 색상 팔레트 ────────────────────────────────────────────────────────────────
@@ -29,6 +31,7 @@ const SIGNAL_COLORS: Record<SignalType, string> = {
   IR_RELEASE: '#F59E0B',
   RESULT_REPORT: '#10B981',
   PRE_AGENDA_LEAK: '#EF4444',
+  UNCLASSIFIED: '#9CA3AF', // 중립 그레이 — 저신뢰 미분류 버킷 (B7)
 };
 
 const SIGNAL_LABELS: Record<SignalType, string> = {
@@ -38,6 +41,7 @@ const SIGNAL_LABELS: Record<SignalType, string> = {
   IR_RELEASE: 'IR·공시',
   RESULT_REPORT: '실적·결과 보도',
   PRE_AGENDA_LEAK: '사전 안건 유출',
+  UNCLASSIFIED: '미분류',
 };
 
 interface MilestoneDef {
@@ -49,8 +53,8 @@ interface MilestoneDef {
 
 const MILESTONE_DEFS: MilestoneDef[] = [
   { key: 'mfds_permit_date', label: '식약처 허가', color: '#6366F1', icon: 'ri-file-shield-2-line' },
-  { key: 'amjilsim_pass_date', label: '암질심 통과', color: '#EA580C', icon: 'ri-hospital-line' },
-  { key: 'yakpyungwi_pass_date', label: '약평위 통과', color: '#0EA5E9', icon: 'ri-checkbox-circle-line' },
+  { key: 'amjilsim_pass_date', label: 'DREC 통과', color: '#EA580C', icon: 'ri-hospital-line' },
+  { key: 'yakpyungwi_pass_date', label: 'ODAC 통과', color: '#0EA5E9', icon: 'ri-checkbox-circle-line' },
   { key: 'first_reimbursement_date', label: '최초 급여 등재', color: '#EAB308', icon: 'ri-flag-2-line' },
   { key: 'reimbursement_effective_date', label: '급여 발효', color: '#A855F7', icon: 'ri-calendar-check-line' },
 ];
@@ -64,6 +68,7 @@ const WINDOW_OPTIONS = [
 // ── 시간축 유틸 ────────────────────────────────────────────────────────────────
 
 const DAY_MS = 86400000;
+const WEEK_MS = 7 * DAY_MS;
 
 function parseTs(dateStr: string | null | undefined): number | null {
   if (!dateStr) return null;
@@ -71,26 +76,35 @@ function parseTs(dateStr: string | null | undefined): number | null {
   return Number.isNaN(t) ? null : t;
 }
 
-function monthFloor(ts: number): number {
-  const d = new Date(ts);
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
+/** 해당 시각이 속한 주의 시작(월요일 00:00 UTC)으로 내림. */
+function weekFloor(ts: number): number {
+  const dayStart = Math.floor(ts / DAY_MS) * DAY_MS;
+  const dow = new Date(dayStart).getUTCDay(); // 0=일 … 6=토
+  return dayStart - ((dow + 6) % 7) * DAY_MS;
 }
 
-function addMonths(ts: number, n: number): number {
-  const d = new Date(ts);
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + n, 1);
+function addWeeks(ts: number, n: number): number {
+  return ts + n * WEEK_MS;
 }
 
-function formatMonthTick(ts: number): string {
+function formatWeekTick(ts: number): string {
   const d = new Date(ts);
-  return `${d.getUTCFullYear()}.${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+  return `${String(d.getUTCMonth() + 1)}.${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
+/** Tooltip 용 — 주 시작~끝(월~일) 범위 표기. */
+function formatWeekRange(ts: number): string {
+  const s = new Date(ts);
+  const e = new Date(ts + 6 * DAY_MS);
+  const f = (d: Date) => `${d.getUTCFullYear()}.${String(d.getUTCMonth() + 1).padStart(2, '0')}.${String(d.getUTCDate()).padStart(2, '0')}`;
+  return `${f(s)} ~ ${f(e)} 주`;
 }
 
 function formatDate(dateStr: string | null | undefined): string {
   return dateStr ? dateStr.slice(0, 10) : '—';
 }
 
-type ChartBucket = { monthStart: number; label: string } & Record<SignalType, number>;
+type ChartBucket = { weekStart: number; label: string } & Record<SignalType, number>;
 
 interface ChartSession {
   session_id: number;
@@ -126,27 +140,34 @@ function buildChart(journey: DrugJourney, momentum: DrugMomentum): ChartBuild {
   const expectedTs = momentum.expected_session ? parseTs(momentum.expected_session.session_date) : null;
   const latestSignalTs = signalTsList.length ? Math.max(...signalTsList) : null;
 
-  // X축 = 최근 12개월 ~ 예상 세션일 (없으면 최신 신호일/오늘 중 늦은 쪽까지)
+  // X축 = 최근 6개월(182일) 주별 ~ 예상 세션일 (없으면 최신 신호일/오늘 중 늦은 쪽까지)
   const endAnchor = Math.max(nowTs, expectedTs ?? 0, latestSignalTs ?? 0);
   const endTs = endAnchor + 10 * DAY_MS;
-  const startTs = endTs - 365 * DAY_MS;
+  const startTs = endTs - 182 * DAY_MS;
 
   const buckets: ChartBucket[] = [];
   const bucketIndex = new Map<number, number>();
-  let cursor = monthFloor(startTs);
-  const lastMonth = monthFloor(endTs);
-  while (cursor <= lastMonth) {
+  const firstWeek = weekFloor(startTs);
+  const lastWeek = weekFloor(endTs);
+  let cursor = firstWeek;
+  while (cursor <= lastWeek) {
     bucketIndex.set(cursor, buckets.length);
-    const empty = { monthStart: cursor, label: formatMonthTick(cursor) } as ChartBucket;
+    const empty = { weekStart: cursor, label: formatWeekTick(cursor) } as ChartBucket;
     for (const t of SIGNAL_TYPES) empty[t] = 0;
     buckets.push(empty);
-    cursor = addMonths(cursor, 1);
+    cursor = addWeeks(cursor, 1);
   }
+
+  // 축/버킷 정렬: 이전 구현은 domain[0]=startTs 가 첫 버킷 시작(monthFloor)보다 뒤라
+  // 첫 막대가 축 밖으로 밀렸다. domain 을 버킷 경계(첫 주 시작 - 반주 ~ 마지막 주
+  // 시작 + 반주)에 정렬해 모든 막대가 축 안에 중앙 정렬되도록 한다.
+  const domainStart = firstWeek - WEEK_MS / 2;
+  const domainEnd = lastWeek + WEEK_MS / 2;
 
   for (const s of journey.signals) {
     const ts = parseTs(s.published_at);
-    if (ts == null || ts < startTs || ts > endTs) continue;
-    const idx = bucketIndex.get(monthFloor(ts));
+    if (ts == null || ts < firstWeek || ts > endTs) continue;
+    const idx = bucketIndex.get(weekFloor(ts));
     if (idx == null) continue;
     if ((SIGNAL_TYPES as string[]).includes(s.signal_type)) {
       buckets[idx][s.signal_type as SignalType] += 1;
@@ -165,14 +186,14 @@ function buildChart(journey: DrugJourney, momentum: DrugMomentum): ChartBuild {
       return {
         session_id: s.session_id,
         ts,
-        label: `${s.committee_type}${s.ordinal ? ` ${s.ordinal}차` : ''}`,
+        label: `${committeeLabel(s.committee_type)}${s.ordinal ? ` ${s.ordinal}차` : ''}`,
         status: s.status,
       };
     })
     .filter((s): s is ChartSession => s != null);
 
-  const sessionsInRange = allSessions.filter(s => s.ts >= startTs && s.ts <= endTs);
-  const sessionsBefore = allSessions.filter(s => s.ts < startTs);
+  const sessionsInRange = allSessions.filter(s => s.ts >= domainStart && s.ts <= domainEnd);
+  const sessionsBefore = allSessions.filter(s => s.ts < domainStart);
 
   const milestonesInRange: ChartMilestone[] = [];
   const milestonesBefore: ChartMilestone[] = [];
@@ -181,13 +202,13 @@ function buildChart(journey: DrugJourney, momentum: DrugMomentum): ChartBuild {
     const ts = parseTs(raw);
     if (ts == null) continue;
     const m: ChartMilestone = { key: def.key, ts, label: def.label, color: def.color, icon: def.icon, dateStr: formatDate(raw) };
-    if (ts >= startTs && ts <= endTs) milestonesInRange.push(m);
-    else if (ts < startTs) milestonesBefore.push(m);
+    if (ts >= domainStart && ts <= domainEnd) milestonesInRange.push(m);
+    else if (ts < domainStart) milestonesBefore.push(m);
   }
 
   return {
     buckets,
-    domain: [startTs, endTs],
+    domain: [domainStart, domainEnd],
     sessionsInRange,
     sessionsBefore,
     milestonesInRange,
@@ -255,6 +276,15 @@ function LeaderboardCard({
         <div className="flex items-center gap-2 min-w-0">
           <span className={`text-[11px] font-bold w-5 text-center flex-shrink-0 ${textMuted}`}>{rank}</span>
           <span className={`text-sm font-bold truncate ${textMain}`}>{item.brand_kr}</span>
+          {item.is_oncology != null && (
+            <span
+              className={`text-[9px] font-semibold px-1 py-0.5 rounded flex-shrink-0 ${
+                item.is_oncology === 1 ? 'bg-rose-500/10 text-rose-400' : 'bg-sky-500/10 text-sky-400'
+              }`}
+            >
+              {item.is_oncology === 1 ? '항암' : '일반'}
+            </span>
+          )}
         </div>
         <TrendArrow direction={item.trend.direction} isDark={isDark} />
       </div>
@@ -267,7 +297,7 @@ function LeaderboardCard({
         {item.session_imminent && item.expected_session && (
           <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-amber-500/15 text-amber-500 whitespace-nowrap flex-shrink-0">
             <i className="ri-alarm-warning-line mr-0.5"></i>
-            {item.expected_session.session_date.slice(5)} {item.expected_session.committee_type}
+            {item.expected_session.session_date.slice(5)} {committeeLabel(item.expected_session.committee_type)}
           </span>
         )}
       </div>
@@ -287,11 +317,13 @@ function LeaderboardCard({
 
 export default function AccessInsightView({ isDark }: { isDark: boolean }) {
   const [windowDays, setWindowDays] = useState<number>(90);
+  const [classFilter, setClassFilter] = useState<'all' | DrugClass>('all'); // B6
   const [leaderboard, setLeaderboard] = useState<DrugMomentum[]>([]);
   const [lbLoading, setLbLoading] = useState(true);
   const [lbError, setLbError] = useState<string | null>(null);
 
   const [drugList, setDrugList] = useState<DrugListItem[]>([]);
+  const [search, setSearch] = useState(''); // B5 — brand_kr substring 검색
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [momentum, setMomentum] = useState<DrugMomentum | null>(null);
@@ -315,7 +347,7 @@ export default function AccessInsightView({ isDark }: { isDark: boolean }) {
   useEffect(() => {
     let alive = true;
     setLbLoading(true);
-    fetchAccessLeaderboard(windowDays, 30)
+    fetchAccessLeaderboard(windowDays, 30, classFilter === 'all' ? undefined : classFilter)
       .then(items => {
         if (!alive) return;
         setLeaderboard(items);
@@ -325,7 +357,20 @@ export default function AccessInsightView({ isDark }: { isDark: boolean }) {
       .catch(e => { if (alive) setLbError(e instanceof Error ? e.message : '조회 실패'); })
       .finally(() => { if (alive) setLbLoading(false); });
     return () => { alive = false; };
-  }, [windowDays]);
+  }, [windowDays, classFilter]);
+
+  // B6 — 항암/일반 필터가 바뀌면 선택 약제도 필터 범위 안으로 스코프.
+  // is_oncology=null(미분류) 은 전체 필터에서만 노출되므로 함께 해제한다.
+  useEffect(() => {
+    if (classFilter === 'all') return;
+    setSelectedId(prev => {
+      if (prev == null) return prev;
+      const d = drugList.find(x => x.drug_id === prev);
+      if (!d) return prev; // drugList 미로딩/실패 시 판단 불가 — 유지
+      const matches = classFilter === 'oncology' ? d.is_oncology === 1 : d.is_oncology === 0;
+      return matches ? prev : null;
+    });
+  }, [classFilter, drugList]);
 
   useEffect(() => {
     let alive = true;
@@ -356,6 +401,28 @@ export default function AccessInsightView({ isDark }: { isDark: boolean }) {
     return buildChart(journey, momentum);
   }, [momentum, journey]);
 
+  // B5 — 리더보드 카드 검색 필터 (원래 rank 유지).
+  const visibleLeaderboard = useMemo(() => {
+    const ranked = leaderboard.map((item, i) => ({ item, rank: i + 1 }));
+    const q = search.trim();
+    if (!q) return ranked;
+    return ranked.filter(({ item }) => item.brand_kr.includes(q));
+  }, [leaderboard, search]);
+
+  // B5 — 전체 약제(리더보드 상위 30건 외 포함) 검색 결과. B6 필터도 함께 적용.
+  const searchResults = useMemo(() => {
+    const q = search.trim();
+    if (!q) return [];
+    return drugList
+      .filter(d => {
+        if (!d.brand_kr.includes(q)) return false;
+        if (classFilter === 'oncology') return d.is_oncology === 1;
+        if (classFilter === 'general') return d.is_oncology === 0;
+        return true; // 전체 — is_oncology=null(미분류) 포함
+      })
+      .slice(0, 8);
+  }, [drugList, search, classFilter]);
+
   const recentSignals = useMemo(() => {
     if (!journey) return [];
     return [...journey.signals].sort((a, b) => (b.published_at || '').localeCompare(a.published_at || ''));
@@ -374,8 +441,8 @@ export default function AccessInsightView({ isDark }: { isDark: boolean }) {
         </p>
       </div>
 
-      {/* 관측 윈도우 선택 */}
-      <div className="flex items-center gap-3">
+      {/* 관측 윈도우 + 약제 유형 필터 */}
+      <div className="flex items-center gap-3 flex-wrap">
         <span className={`text-xs font-semibold ${textMuted}`}>관측 윈도우</span>
         <div className={`inline-flex p-1 rounded-lg border ${cardBorder} ${statBg}`}>
           {WINDOW_OPTIONS.map(o => (
@@ -390,6 +457,26 @@ export default function AccessInsightView({ isDark }: { isDark: boolean }) {
             </button>
           ))}
         </div>
+
+        {/* B6 — 항암제/일반약제 필터 (is_oncology 기반, 서버 ?class= 파라미터) */}
+        <span className={`text-xs font-semibold ml-2 ${textMuted}`}>약제 유형</span>
+        <div className={`inline-flex p-1 rounded-lg border ${cardBorder} ${statBg}`}>
+          {([
+            { v: 'all', label: '전체' },
+            { v: 'oncology', label: '항암제' },
+            { v: 'general', label: '일반약제' },
+          ] as { v: 'all' | DrugClass; label: string }[]).map(o => (
+            <button
+              key={o.v}
+              onClick={() => setClassFilter(o.v)}
+              className={`px-3 py-1 rounded-md text-xs font-semibold cursor-pointer whitespace-nowrap transition-all ${
+                classFilter === o.v ? filterActive : `${textSub} hover:${textMain}`
+              }`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
@@ -397,18 +484,59 @@ export default function AccessInsightView({ isDark }: { isDark: boolean }) {
         <div className="xl:col-span-4 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className={`text-sm font-bold ${textMain}`}>Momentum 리더보드</h3>
-            {drugList.length > 0 && (
-              <select
-                value={selectedId ?? ''}
-                onChange={e => setSelectedId(e.target.value ? Number(e.target.value) : null)}
-                className={`text-xs border rounded-lg px-2 py-1.5 ${isDark ? 'bg-[#161B27] border-[#1E2530] text-white' : 'bg-white border-gray-200 text-gray-700'}`}
-                title="전체 약제 중 선택 (리더보드 상위 30건 외)"
+          </div>
+
+          {/* B5 — 약제 검색 (brand_kr substring · 전체 약제 대상, 결과 선택 시 journey 오픈) */}
+          <div className="relative">
+            <i className={`ri-search-line absolute left-2.5 top-1/2 -translate-y-1/2 text-sm pointer-events-none ${textMuted}`}></i>
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="약제 검색 (브랜드명)…"
+              className={`w-full text-xs border rounded-lg pl-8 pr-8 py-2 outline-none ${
+                isDark
+                  ? 'bg-[#161B27] border-[#1E2530] text-white placeholder-[#4A5568] focus:border-[#00E5CC]'
+                  : 'bg-white border-gray-200 text-gray-700 placeholder-gray-400 focus:border-teal-500'
+              }`}
+            />
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                className={`absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer ${textMuted} hover:${textMain}`}
+                title="검색 지우기"
               >
-                <option value="">약제 선택…</option>
-                {drugList.map(d => (
-                  <option key={d.drug_id} value={d.drug_id}>{d.brand_kr} ({d.signal_count})</option>
-                ))}
-              </select>
+                <i className="ri-close-line text-sm"></i>
+              </button>
+            )}
+            {search.trim() && (
+              <div className={`absolute z-10 left-0 right-0 top-full mt-1 rounded-lg border shadow-lg overflow-hidden ${cardBg} ${cardBorder}`}>
+                {searchResults.length === 0 ? (
+                  <p className={`text-xs px-3 py-2.5 ${textMuted}`}>검색 결과가 없습니다</p>
+                ) : (
+                  searchResults.map(d => (
+                    <button
+                      key={d.drug_id}
+                      onClick={() => { setSelectedId(d.drug_id); setSearch(''); }}
+                      className={`w-full text-left text-xs px-3 py-2 cursor-pointer flex items-center justify-between gap-2 ${
+                        isDark ? 'hover:bg-[#1E2530] text-white' : 'hover:bg-gray-50 text-gray-800'
+                      }`}
+                    >
+                      <span className="truncate font-medium">
+                        {d.brand_kr}
+                        {d.is_oncology != null && (
+                          <span className={`ml-1.5 text-[9px] font-semibold px-1 py-0.5 rounded ${
+                            d.is_oncology === 1 ? 'bg-rose-500/10 text-rose-400' : 'bg-sky-500/10 text-sky-400'
+                          }`}>
+                            {d.is_oncology === 1 ? '항암' : '일반'}
+                          </span>
+                        )}
+                      </span>
+                      <span className={`flex-shrink-0 tabular-nums ${textMuted}`}>신호 {d.signal_count}</span>
+                    </button>
+                  ))
+                )}
+              </div>
             )}
           </div>
 
@@ -428,13 +556,18 @@ export default function AccessInsightView({ isDark }: { isDark: boolean }) {
               <p className="text-sm">수집된 미디어 신호가 없습니다</p>
             </div>
           )}
-          {!lbLoading && !lbError && leaderboard.length > 0 && (
+          {!lbLoading && !lbError && leaderboard.length > 0 && visibleLeaderboard.length === 0 && (
+            <div className={`text-center py-8 text-sm ${textMuted}`}>
+              <i className="ri-search-line mr-1"></i>리더보드 내 검색 결과 없음 — 위 검색 결과에서 선택하세요
+            </div>
+          )}
+          {!lbLoading && !lbError && visibleLeaderboard.length > 0 && (
             <div className="space-y-2 max-h-[720px] overflow-y-auto pr-1">
-              {leaderboard.map((item, i) => (
+              {visibleLeaderboard.map(({ item, rank }) => (
                 <LeaderboardCard
                   key={item.drug_id}
                   item={item}
-                  rank={i + 1}
+                  rank={rank}
                   active={selectedId === item.drug_id}
                   onClick={() => setSelectedId(item.drug_id)}
                   isDark={isDark}
@@ -472,6 +605,8 @@ export default function AccessInsightView({ isDark }: { isDark: boolean }) {
                     <h3 className={`text-lg font-bold ${textMain}`}>{momentum.brand_kr}</h3>
                     <p className={`text-xs mt-0.5 ${textMuted}`}>
                       기준일 {momentum.reference_date ?? '—'} · 관측 {momentum.window_days}일
+                      {/* 분류 미상(null/UNKNOWN)이면 committeeLabel 이 '' → 라벨 숨김 (잘못된 BSC 방지) */}
+                      {committeeLabel(momentum.expected_committee) && ` · 예상 진입 위원회 ${committeeLabel(momentum.expected_committee)}`}
                     </p>
                   </div>
                   <div className="flex items-center gap-5">
@@ -494,7 +629,7 @@ export default function AccessInsightView({ isDark }: { isDark: boolean }) {
                 {momentum.expected_session && (
                   <div className={`mt-3 pt-3 border-t ${cardBorder} flex items-center gap-2 text-xs ${textSub}`}>
                     <i className="ri-calendar-event-line"></i>
-                    예상/최근 세션: <span className={`font-semibold ${textMain}`}>{momentum.expected_session.session_date} {momentum.expected_session.committee_type}</span>
+                    예상/최근 세션: <span className={`font-semibold ${textMain}`}>{momentum.expected_session.session_date} {committeeLabel(momentum.expected_session.committee_type)}</span>
                     <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
                       momentum.expected_session.status === 'COMPLETED'
                         ? (isDark ? 'bg-[#1E2530] text-[#8B9BB4]' : 'bg-gray-100 text-gray-500')
@@ -510,17 +645,17 @@ export default function AccessInsightView({ isDark }: { isDark: boolean }) {
               <div className={`${cardBg} rounded-2xl border ${cardBorder} p-5`}>
                 <div className="flex items-center justify-between mb-1">
                   <h4 className={`text-xs font-bold uppercase tracking-wider ${textMuted}`}>급여 Journey 오버레이</h4>
-                  <span className={`text-[10px] ${textMuted}`}>월별 신호 건수 · 최근 12개월</span>
+                  <span className={`text-[10px] ${textMuted}`}>주별 신호 건수 · 최근 6개월</span>
                 </div>
                 <ResponsiveContainer width="100%" height={300}>
                   <ComposedChart data={chart.buckets} margin={{ top: 30, right: 16, left: -12, bottom: 4 }}>
                     <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" vertical={false} />
                     <XAxis
-                      dataKey="monthStart"
+                      dataKey="weekStart"
                       type="number"
                       domain={chart.domain}
-                      ticks={chart.buckets.map(b => b.monthStart)}
-                      tickFormatter={formatMonthTick}
+                      ticks={chart.buckets.filter((_, i) => i % 4 === 0).map(b => b.weekStart)}
+                      tickFormatter={formatWeekTick}
                       tick={{ fontSize: 10, fill: axisColor }}
                       axisLine={{ stroke: gridStroke }}
                       tickLine={false}
@@ -535,7 +670,7 @@ export default function AccessInsightView({ isDark }: { isDark: boolean }) {
                       tickLine={false}
                     />
                     <Tooltip
-                      labelFormatter={label => formatMonthTick(Number(label))}
+                      labelFormatter={label => formatWeekRange(Number(label))}
                       formatter={(value, name) => [`${value}건`, SIGNAL_LABELS[name as SignalType] ?? String(name)]}
                       contentStyle={{ background: tooltipBg, border: `1px solid ${tooltipBorder}`, borderRadius: 8, fontSize: 12 }}
                       labelStyle={{ color: textMuted, fontSize: 11, marginBottom: 4 }}

@@ -25,11 +25,18 @@ from pathlib import Path
 from typing import Iterable, Optional, Sequence, Union
 
 from agents.access_insight.backfill import (
+    expected_committee,
     insert_signal,
     load_sessions_sorted,
     nearest_session_id,
 )
-from agents.access_insight.classify import classify_signal_type, signal_weight
+from agents.access_insight.classify import (
+    classify_signal_type,
+    load_lexicon,
+    seed_lexicon,
+    signal_weight,
+    unclassified_allowed,
+)
 from agents.access_insight.link import build_alias_index, resolve_drug
 
 logger = logging.getLogger(__name__)
@@ -69,12 +76,23 @@ def extract_signals(
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     try:
-        expected_session = {
-            r["drug_id"]: r["expected_session_id"]
+        # B7 — lexicon seed 보장 후 1회 로드.
+        seed_lexicon(conn)
+        lexicon = load_lexicon(path)
+        unc_ok = unclassified_allowed(conn)
+
+        has_onco = any(
+            r[1] == "is_oncology" for r in conn.execute("PRAGMA table_info(amjilsim_drugs)")
+        )
+        onco_col = "is_oncology" if has_onco else "NULL AS is_oncology"
+        drug_meta = {
+            r["drug_id"]: (r["expected_session_id"], r["is_oncology"])
             for r in conn.execute(
-                "SELECT drug_id, expected_session_id FROM amjilsim_drugs"
+                f"SELECT drug_id, expected_session_id, {onco_col} FROM amjilsim_drugs"
             )
         }
+        expected_session = {k: v[0] for k, v in drug_meta.items()}
+        drug_oncology = {k: v[1] for k, v in drug_meta.items()}
         sessions_sorted = load_sessions_sorted(conn)
 
         stats: dict = {
@@ -112,13 +130,18 @@ def extract_signals(
             kind = getattr(art, "kind", "fresh_crawl") or "fresh_crawl"
             tier = (getattr(art, "tier", "D") or "D").upper()
 
-            signal_type, phrases = classify_signal_type(title, snippet, kind)
+            signal_type, phrases = classify_signal_type(
+                title, snippet, kind, lexicon=lexicon, unclassified_ok=unc_ok
+            )
             weight = signal_weight(tier, signal_type)
             pub_date = art.published_at.strftime("%Y-%m-%d") if art.published_at else None
 
             session_id = expected_session.get(drug_id)
             if not session_id and pub_date:
-                session_id = nearest_session_id(sessions_sorted, pub_date)
+                # B5 — 항암/비항암에 맞는 위원회 세션만 최근접 배정.
+                #   is_oncology 미상(NULL) → expected_committee=None → committee-agnostic.
+                committee = expected_committee(drug_oncology.get(drug_id))
+                session_id = nearest_session_id(sessions_sorted, pub_date, committee_type=committee)
 
             # 발췌에 약물 거명 → snippet_match, 제목에만 → headline_only
             source_verified = (

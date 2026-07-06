@@ -9,14 +9,18 @@
 
 import { api } from './client';
 
-/** amjilsim_media_signals.signal_type CHECK enum 6종 (QUEUE_INVENTORY 는 S5 전용이라 제외). */
+/**
+ * amjilsim_media_signals.signal_type CHECK enum (QUEUE_INVENTORY 는 S5 전용이라 제외).
+ * UNCLASSIFIED 는 B7 재분류로 추가된 저신뢰 미분류 버킷.
+ */
 export type SignalType =
   | 'GOV_STATEMENT'
   | 'PATIENT_PETITION'
   | 'KOL_OPINION'
   | 'IR_RELEASE'
   | 'RESULT_REPORT'
-  | 'PRE_AGENDA_LEAK';
+  | 'PRE_AGENDA_LEAK'
+  | 'UNCLASSIFIED';
 
 export const SIGNAL_TYPES: SignalType[] = [
   'GOV_STATEMENT',
@@ -25,7 +29,31 @@ export const SIGNAL_TYPES: SignalType[] = [
   'IR_RELEASE',
   'RESULT_REPORT',
   'PRE_AGENDA_LEAK',
+  'UNCLASSIFIED',
 ];
+
+/** 항암/일반 약제 필터 (B6). 백엔드 `?class=oncology|general`. */
+export type DrugClass = 'oncology' | 'general';
+
+/**
+ * 위원회 DB enum → 사용자 표기 (B4, display-only — DB enum 값은 불변).
+ * AMJILSIM=암질심(DREC), YAKPYUNGWI=약평위(ODAC), BENEFIT_SUBCOMMITTEE=급여기준소위(BSC).
+ */
+export const COMMITTEE_LABELS: Record<string, string> = {
+  AMJILSIM: 'DREC',
+  YAKPYUNGWI: 'ODAC',
+  BENEFIT_SUBCOMMITTEE: 'BSC',
+};
+
+/**
+ * 위원회 코드 → 표기. 3개 실제 enum(AMJILSIM/YAKPYUNGWI/BENEFIT_SUBCOMMITTEE)만
+ * DREC/ODAC/BSC 로 매핑. null/undefined/'UNKNOWN'(항암 분류 미상 — 백필 전이거나
+ * 분류 불가) 이면 '' 을 반환해 호출부가 라벨을 조건부로 숨기게 한다 (잘못된 BSC 방지).
+ */
+export function committeeLabel(code: string | null | undefined): string {
+  if (!code || code === 'UNKNOWN') return '';
+  return COMMITTEE_LABELS[code] ?? code;
+}
 
 export interface ExpectedSession {
   session_id: number;
@@ -55,12 +83,21 @@ export interface DrugMomentum {
   engage_diversity: number;
   trend: MomentumTrend;
   session_imminent?: boolean;
+  /** 1=항암, 0=일반, null=미분류(전체 필터에서만 노출). */
+  is_oncology: 1 | 0 | null;
+  /**
+   * 예상 진입 위원회 (AMJILSIM | BENEFIT_SUBCOMMITTEE) — COMMITTEE_LABELS 로 표기.
+   * 항암 분류 미상이면 null | 'UNKNOWN' — 이 경우 라벨을 숨긴다.
+   */
+  expected_committee: string | null;
 }
 
 export interface DrugListItem {
   drug_id: number;
   brand_kr: string;
   signal_count: number;
+  is_oncology: 1 | 0 | null;
+  expected_committee?: string;
 }
 
 export interface JourneySignal {
@@ -102,8 +139,13 @@ export interface DrugJourneyResponse {
   journey: DrugJourney;
 }
 
-export async function fetchAccessLeaderboard(windowDays = 90, limit = 30): Promise<DrugMomentum[]> {
+export async function fetchAccessLeaderboard(
+  windowDays = 90,
+  limit = 30,
+  drugClass?: DrugClass,
+): Promise<DrugMomentum[]> {
   const params = new URLSearchParams({ window_days: String(windowDays), limit: String(limit) });
+  if (drugClass) params.set('class', drugClass); // B6 — 항암/일반 서버측 필터
   const r = await api.get<{ items: DrugMomentum[] }>(`/api/access-insight/leaderboard?${params.toString()}`);
   return r.items;
 }

@@ -115,6 +115,7 @@ export default function CompetitorTrendsPage() {
   const [companyFilter, setCompanyFilter] = useState('전체');
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [sourcesOpen, setSourcesOpen] = useState<number | null>(null); // B1: N개 매체 목록 펼침
   const [items, setItems] = useState<CompetitorTrend[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -260,8 +261,8 @@ export default function CompetitorTrendsPage() {
               to="/admin/competitor-trends"
               className="flex items-center gap-2 bg-teal-600 text-white text-sm font-semibold px-4 py-2 rounded-lg cursor-pointer whitespace-nowrap hover:bg-teal-700 transition-colors"
             >
-              <span className="w-4 h-4 flex items-center justify-center"><i className="ri-add-line text-sm"></i></span>
-              동향 관리
+              <span className="w-4 h-4 flex items-center justify-center"><i className="ri-filter-3-line text-sm"></i></span>
+              수집 관리
             </Link>
             {isAdmin && (
               <button
@@ -407,6 +408,9 @@ export default function CompetitorTrendsPage() {
           <div className="grid grid-cols-3 gap-4">
             {filtered.map(item => {
               const color = item.color || '#1E2530';
+              const clusterSources = item.sources ?? [];
+              const srcCount = item.source_count ?? (item.url ? 1 : 0);
+              const hasCluster = clusterSources.length > 1;
               return (
                 <div
                   key={item.id}
@@ -438,18 +442,41 @@ export default function CompetitorTrendsPage() {
 
                     <div className="flex items-center justify-between mt-4">
                       <div className="flex items-center gap-1.5 min-w-0">
-                        <span className={`w-3.5 h-3.5 flex items-center justify-center flex-shrink-0 ${textMuted}`}><i className="ri-file-text-line text-xs"></i></span>
-                        {item.url ? (
-                          <a
-                            href={item.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className={`text-xs truncate hover:underline ${sourceText}`}
+                        {item.source_tier != null && item.source_tier <= 2 && (
+                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0 ${
+                            item.source_tier === 1 ? 'bg-[#00857C]/20 text-[#00E5CC]' : 'bg-blue-500/15 text-blue-400'
+                          }`}>
+                            T{item.source_tier}
+                          </span>
+                        )}
+                        {hasCluster ? (
+                          // B1: 같은 이벤트를 다룬 기사 클러스터 — "N개 매체" 펼침
+                          <button
+                            onClick={() => setSourcesOpen(sourcesOpen === item.id ? null : item.id)}
+                            className={`flex items-center gap-1 text-xs font-medium cursor-pointer whitespace-nowrap transition-colors ${accentColor} hover:opacity-80`}
                           >
-                            {item.source || '출처 링크'}
-                          </a>
+                            <span className="w-3.5 h-3.5 flex items-center justify-center"><i className="ri-newspaper-line text-xs"></i></span>
+                            {srcCount}개 매체
+                            <span className="w-3.5 h-3.5 flex items-center justify-center">
+                              <i className={`text-xs ${sourcesOpen === item.id ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'}`}></i>
+                            </span>
+                          </button>
                         ) : (
-                          <span className={`text-xs truncate ${sourceText}`}>{item.source || '정보 없음'}</span>
+                          <>
+                            <span className={`w-3.5 h-3.5 flex items-center justify-center flex-shrink-0 ${textMuted}`}><i className="ri-file-text-line text-xs"></i></span>
+                            {item.url ? (
+                              <a
+                                href={item.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className={`text-xs truncate hover:underline ${sourceText}`}
+                              >
+                                {item.source || '출처 링크'}
+                              </a>
+                            ) : (
+                              <span className={`text-xs truncate ${sourceText}`}>{item.source || '정보 없음'}</span>
+                            )}
+                          </>
                         )}
                       </div>
                       <button
@@ -462,6 +489,32 @@ export default function CompetitorTrendsPage() {
                         </span>
                       </button>
                     </div>
+
+                    {/* B1: 클러스터 멤버 매체 목록 (대표=최저 tier 우선 정렬) */}
+                    {hasCluster && sourcesOpen === item.id && (
+                      <ul className={`mt-3 pt-3 border-t space-y-1 ${cardBorder}`}>
+                        {clusterSources.map((s, si) => (
+                          <li key={`${item.id}-${si}`}>
+                            <a
+                              href={s.url ?? undefined}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={`flex items-center gap-2 px-1.5 py-1 rounded-md transition-colors ${isDark ? 'hover:bg-[#1E2530]/40' : 'hover:bg-gray-50'}`}
+                            >
+                              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0 ${
+                                (s.tier ?? 3) === 1 ? 'bg-[#00857C]/20 text-[#00E5CC]'
+                                  : (s.tier ?? 3) === 2 ? 'bg-blue-500/15 text-blue-400'
+                                  : 'bg-gray-500/20 text-gray-400'
+                              }`}>
+                                T{s.tier ?? 3}
+                              </span>
+                              <span className={`text-[11px] font-medium truncate flex-1 ${textMain}`}>{s.name || '출처 미상'}</span>
+                              <span className={`text-[10px] flex-shrink-0 ${textMuted}`}>{s.pub_date}</span>
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
 
                     {expanded === item.id && (
                       <RelatedNews company={item.company} isDark={isDark} />

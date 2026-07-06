@@ -195,6 +195,7 @@ def test_drug_momentum_basic(db):
         "IR_RELEASE": 2,
         "RESULT_REPORT": 0,
         "PRE_AGENDA_LEAK": 0,
+        "UNCLASSIFIED": 0,  # B7 저신뢰 미분류 버킷 (항상 0 이라도 노출)
     }
     # 4종의 서로 다른 signal_type 이 등장 (GOV/PATIENT/KOL/IR).
     assert m["engage_diversity"] == 4
