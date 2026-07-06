@@ -32,6 +32,28 @@ SOURCE_STATUSES = (
 OFFICIAL_SOURCE_TIERS = {"official", "official_payer", "regulator"}
 REGISTERED_MEDIA_PREFIXES = ("media_", "trade_", "publisher_")
 
+KANBAN_LANES = (
+    "Dashboard Scope",
+    "Source Intake",
+    "Triage/Verify",
+    "Writer Agent",
+    "Review Board",
+    "Delivery/History",
+)
+
+DEFAULT_OPERATING_POLICY = {
+    "article_approval_required": False,
+    "live_send_allowed": False,
+    "reviewer_roles_are_advisory": True,
+    "personas_are_audience_targeting_metadata": True,
+    "board_purpose": "Admin operational Kanban: scope/intake/triage/writer/delivery 상태와 품질 플래그를 보는 화면이며, 기사별 approve workflow는 두지 않습니다.",
+    "sendable_requires": [
+        "draft artifact generated from selected dashboard scope",
+        "publisher/official-source caveats visible to operator",
+        "final mailing send/draft step approved at service level, not per article",
+    ],
+}
+
 
 def _item_get(item, key: str, default=None):
     if isinstance(item, dict):
@@ -330,26 +352,8 @@ def build_review_board_payload(
             "articles": len(articles),
             "lanes": lane_counts,
         },
-        "lanes": [
-            "Dashboard Scope",
-            "Source Intake",
-            "Triage/Verify",
-            "Writer Agent",
-            "Review Board",
-            "Delivery/History",
-        ],
-        "operating_policy": {
-            "article_approval_required": False,
-            "live_send_allowed": False,
-            "reviewer_roles_are_advisory": True,
-            "personas_are_audience_targeting_metadata": True,
-            "board_purpose": "Admin operational Kanban: scope/intake/triage/writer/delivery 상태와 품질 플래그를 보는 화면이며, 기사별 approve workflow는 두지 않습니다.",
-            "sendable_requires": [
-                "draft artifact generated from selected dashboard scope",
-                "publisher/official-source caveats visible to operator",
-                "final mailing send/draft step approved at service level, not per article",
-            ],
-        },
+        "lanes": list(KANBAN_LANES),
+        "operating_policy": dict(DEFAULT_OPERATING_POLICY),
         "articles": articles,
     }
 
