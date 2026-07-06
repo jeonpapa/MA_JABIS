@@ -23,13 +23,29 @@ def _default_scope_root() -> Path:
     return Path(__file__).resolve().parents[2] / "data" / "daily_mailing" / "scopes"
 
 
+def ensure_test_request_column(conn) -> None:
+    """mail_subscription.test_request_json 멱등 ALTER (기존 스콥 확장 마이그레이션과 동일 사상).
+
+    테스트 메일 요청은 스냅샷 파일이 아니라 **행에 지속**되어야 스콥 export 가 항상 반영한다.
+    (헤르메스가 [TEST] run 을 커밋하면 inbound run-sync 가 이 컬럼을 소비/해제한다.)
+    """
+    try:
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(mail_subscription)").fetchall()}
+    except Exception:
+        return
+    if existing and "test_request_json" not in existing:
+        conn.execute("ALTER TABLE mail_subscription ADD COLUMN test_request_json TEXT")
+        conn.commit()
+
+
 def subscription_to_scope(sub: dict) -> dict:
     """mail_subscription dict(_mail_sub_row_to_dict 산출) → dashboard_scope dict.
 
     현재 subscription 스키마엔 keywords/media/emails 만 있으므로 그것을 매핑하고,
     brands/companies/aliases/policy_topics 등 확장 필드는 있으면 반영, 없으면 빈 값.
+    test_request(테스트 메일 요청 플래그) 는 행에 지속된 값이 있을 때만 포함.
     """
-    return {
+    scope = {
         "subscription_id": str(sub.get("id") or sub.get("name") or "default"),
         "name": sub.get("name"),
         "owner_email": sub.get("owner_email"),
@@ -52,6 +68,17 @@ def subscription_to_scope(sub: dict) -> dict:
         "include_top_ma_signals": True,
         "include_user_keyword_watchlist": True,
     }
+    test_request = sub.get("test_request")
+    if test_request:
+        scope["test_request"] = test_request
+    return scope
+
+
+def safe_scope_filename(subscription_id) -> str:
+    """subscription_id → 채널 파일명 `<safe_id>.json` (로컬/원격 동일 규칙)."""
+    sid = str(subscription_id or "default")
+    safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in sid)[:80] or "default"
+    return f"{safe}.json"
 
 
 def write_scope_snapshot(scope: dict, root: str | Path | None = None) -> Path:
@@ -61,8 +88,6 @@ def write_scope_snapshot(scope: dict, root: str | Path | None = None) -> Path:
     """
     root_path = Path(root) if root is not None else _default_scope_root()
     root_path.mkdir(parents=True, exist_ok=True)
-    sid = str(scope.get("subscription_id") or "default")
-    safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in sid)[:80] or "default"
-    path = root_path / f"{safe}.json"
+    path = root_path / safe_scope_filename(scope.get("subscription_id"))
     path.write_text(json.dumps(scope, ensure_ascii=False, indent=2), encoding="utf-8")
     return path

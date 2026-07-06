@@ -6,14 +6,21 @@
 
 ## 0. 역할
 1. 대쉬보드 사용자가 Daily Mailing UI 에서 모니터링 스콥(키워드·미디어·수신자 등)을 저장.
-2. 대쉬보드가 그 스콥을 **`dashboard_scope` JSON 스냅샷**으로 내보낸다 (`data/daily_mailing/scopes/<subscription_id>.json`).
-3. **헤르메스**가 그 스콥을 읽고 **검토** → daily-monitoring 파이프라인으로 초안 생성 → **최종 메일 작성 후 매일 발송**.
-4. 헤르메스가 실행 산출물(run 번들)을 채널에 커밋 → 대쉬보드가 동기화해 **관리자 칸반/이력**으로 표시.
+2. 대쉬보드가 그 스콥을 **`dashboard_scope` JSON 스냅샷**으로 **자동 발행**한다 — 비공개 repo
+   `jeonpapa/AccessRoutineAnalystic` 의 `daily_mailing/scopes/<subscription_id>.json` + `scopes_index.json`.
+   (로컬 미러: `data/daily_mailing/scopes/`.) **대쉬보드가 scopes/ 를 쓰고, 헤르메스가 runs/ 를 쓴다 —
+   같은 repo 가 양방향 버스. ssh 불필요.**
+3. **헤르메스**가 repo 에서 스콥을 pull → **검토** → daily-monitoring 파이프라인으로 초안 생성 → **최종 메일 작성 후 매일 발송**.
+4. 헤르메스가 실행 산출물(run 번들)을 `daily_mailing/runs/` 에 커밋 → 대쉬보드가 동기화해 **관리자 칸반/이력**으로 표시.
 
 ## 1. 입력 — dashboard_scope JSON
 계약: `agents/daily_mailing/dashboard_scope.py` (`load_dashboard_scope`). 예시: `agents/daily_mailing/dashboard_scope.example.json`.
-주요 필드: `subscription_id, owner_email, recipients[], keywords[], companies[], brands[], aliases{}, disease_areas[], policy_topics[], media[], custom_sources[], personas[], lookback_hours, delivery_mode`.
-- 대쉬보드가 `GET /api/mail-subscriptions/<id>/scope` 로 생성·저장한다. 헤르메스는 이 파일을 소비만 한다.
+주요 필드: `subscription_id, owner_email, recipients[], keywords[], companies[], brands[], aliases{}, disease_areas[], policy_topics[], media[], custom_sources[], personas[], lookback_hours, delivery_mode, updated_at, test_request?`.
+- 대쉬보드가 **자동 export** 한다 (`agents/ingest/daily_mailing_scope_export.py`) — 구독 생성/수정/삭제 시
+  즉시 로컬 갱신 + 15분 주기 스케줄러 잡(`daily_mailing_scope_export`)이 repo `scopes/` 에 권위 발행
+  (멱등 — 내용 동일 시 커밋 없음, 삭제/비활성 구독은 원격 prune). `GET /api/mail-subscriptions/<id>/scope`
+  는 **읽기 전용 조회**일 뿐 저장하지 않는다. 헤르메스는 repo 의 `scopes/` 를 소비만 한다.
+- `scopes_index.json`: `[{subscription_id, name, active, updated_at, has_test_request}]` — 순회 진입점.
 
 ### 특수 필드
 - **`custom_sources: [{url, name?}]`** — 사용자가 직접 추가한 사이트. 헤르메스가 각 사이트를 keywords 로
@@ -23,7 +30,9 @@
 
 ## 2. 절차 (매일 아침)
 ```
-1) 스콥 스냅샷 읽기: data/daily_mailing/scopes/<subscription_id>.json
+1) 스콥 pull: 비공개 repo daily_mailing/scopes/ 를 pull (scopes_index.json → 각 <subscription_id>.json).
+   active 스콥마다 아래 절차 수행. test_request 가 있으면 §2-테스트 추가 수행.
+   (로컬 실행 시 폴백 경로: data/daily_mailing/scopes/<subscription_id>.json)
 2) 스콥 검토 (사용자 의도·수신자·정책토픽 확인. 부적절하면 발송 보류하고 사유 기록).
 3) 파이프라인 실행 (초안 생성, 발송 아님):
      python scripts/generate_daily_mailing_draft.py \
@@ -45,12 +54,14 @@
 ```
 
 ## 2-테스트. 테스트 메일 요청 (`test_request` 플래그)
-사용자가 대쉬보드에서 "테스트 메일 요청"을 누르면 스콥에 `test_request` 가 실린다.
+사용자가 대쉬보드에서 "테스트 메일 요청"을 누르면 플래그가 **DB 행에 지속**되고 발행되는 스콥에
+`test_request: {requested_at, requested_by}` 가 실린다 (즉시 발행 시도 + 15분 잡 백스톱).
 - 감지하면 **정규 발송과 별개로 1회** 파이프라인 실행 → 검토 → 제목에 **`[TEST]` 접두**를 붙여
   recipients(또는 owner)에게 발송한다.
-- run 번들에 `"is_test": true` 를 기록해 대쉬보드 칸반에서 정규 발송과 구분되게 한다.
-- **처리 후 `test_request` 를 소비**한다(중복 [TEST] 발송 방지). 대쉬보드는 최신 요청 시각만 기록하므로,
-  가장 최근 요청 1건만 처리하면 된다.
+- run 번들에 `"is_test": true` 를 기록한다(번들 top-level 또는 payload, `subscription_id` 필수) —
+  대쉬보드 칸반에서 정규 발송과 구분되고, **대쉬보드 run-sync 가 이 마커를 보고 해당 구독의
+  `test_request` 를 자동 해제**한다(플래그 소비 → 다음 스콥 발행부터 사라짐, 중복 [TEST] 방지).
+- 대쉬보드는 최신 요청 시각만 기록하므로, 가장 최근 요청 1건만 처리하면 된다.
 
 ## 3. 품질 기준 (반드시 준수)
 - **근거·출처**: 기사 카드의 publisher_url/naver_url·source_status·verification_caveat 를 존중. 미검증 미디어 단독 주장 금지.
@@ -62,8 +73,14 @@
 
 ## 4. 채널 / 사생활
 - 스콥·run 번들·초안은 메일 본문·수신자를 포함 → **비공개 채널만**. 메인 repo(MA_JABIS) 커밋 금지.
-- `data/daily_mailing/` 는 gitignore. 헤르메스 채널(비공개 git / prod 볼륨)로만 동기화.
+- 채널 = 비공개 repo `jeonpapa/AccessRoutineAnalystic` (**양방향 버스**):
+  - `daily_mailing/scopes/` — 대쉬보드가 자동 발행 (헤르메스는 pull/읽기만).
+  - `daily_mailing/runs/` — 헤르메스가 run 번들 커밋 (대쉬보드 run-sync 가 매일 07:30 pull).
+- `data/daily_mailing/` 는 gitignore (로컬/볼륨 미러일 뿐).
 
 ## 5. 설정
 - `config/.env`: `NAVER_API_CLIENT_ID`/`SECRET`(발견), `GOOGLE_TOKEN_PATH`(gmail.send scope; 초안/발송).
+- 대쉬보드 측 스콥 발행 토큰: `DAILY_MAILING_SCOPES_TOKEN` — 위 repo **contents 쓰기(write) 권한** 필요
+  (미설정 시 `DAILY_MAILING_RUNS_TOKEN`/`GITHUB_TOKEN` 폴백 — 해당 토큰이 read-only 면 발행 실패 →
+  local-only degrade). 헤르메스 pull 토큰은 별개(read 면 충분).
 - source registry: `config/source_registry.yaml`.

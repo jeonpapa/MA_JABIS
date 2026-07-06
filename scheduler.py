@@ -15,11 +15,13 @@ from pathlib import Path
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 from agents.domestic_price_agent import DomesticPriceAgent
 from agents.dashboard_agent import DashboardAgent
 from agents.ingest.policy_analysis_sync import sync_analysis as _sync_policy_analysis
 from agents.ingest.daily_mailing_sync import sync_daily_mailing_runs as _sync_daily_mailing_runs
+from agents.ingest.daily_mailing_scope_export import export_scopes as _export_daily_mailing_scopes
 
 # ── 로깅 설정 ──────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).parent
@@ -465,6 +467,22 @@ def reimb_data_sync_job():
         logger.exception("Reimbursement 보고서 sync 실패: %s", e)
 
 
+def daily_mailing_scope_export_job():
+    """15분 주기 + 부팅 1회 — Daily Mailing 모니터링 스콥 OUTBOUND export.
+
+    active 구독의 dashboard_scope 를 로컬 스냅샷 + 비공개 repo
+    (jeonpapa/AccessRoutineAnalystic `daily_mailing/scopes/`) 에 발행한다 —
+    inbound run-sync 의 대칭 (같은 repo 가 양방향 버스). 서버 훅의 즉시 export 가
+    실패해도 이 잡이 권위 발행 백스톱. 멱등(내용 동일 시 PUT 생략) + prune
+    (삭제/비활성 구독 원격 제거). 토큰(DAILY_MAILING_SCOPES_TOKEN) 미설정 시 local-only.
+    """
+    try:
+        res = _export_daily_mailing_scopes(publish=True)
+        logger.info("daily mailing scope export: %s", res)
+    except Exception as e:
+        logger.warning("daily mailing scope export 실패: %s", e)
+
+
 def nhis_negotiation_sync_job():
     """매주 월요일 02:30 Seoul — 건강보험공단 약가협상 공개자료(신규·확대) 크롤 →
     nhis_negotiations 멱등 아카이브 + amjilsim_drugs 매칭 교체(NHIS 공식 우선).
@@ -688,6 +706,11 @@ def main():
         help="HIRA 공식 일정 즉시 fetch",
     )
     parser.add_argument(
+        "--scope-export-now",
+        action="store_true",
+        help="Daily Mailing 스콥 export 즉시 실행 (active 구독 → 로컬 + 비공개 repo scopes/)",
+    )
+    parser.add_argument(
         "--nhis-sync-now",
         action="store_true",
         help="NHIS 약가협상 공개자료 즉시 크롤+매칭 (신규/확대)",
@@ -796,11 +819,20 @@ def main():
             _sync_daily_mailing_runs()
         except Exception as _e:
             logger.warning("daily mailing runs 부팅 sync 실패: %s", _e)
+        try:
+            daily_mailing_scope_export_job()  # 부팅 1회 — 스콥 outbound 발행 (runs sync 대칭)
+        except Exception as _e:
+            logger.warning("daily mailing scope 부팅 export 실패: %s", _e)
         return
 
     if args.hira_fetch_now:
         logger.info("HIRA 공식 일정 즉시 fetch")
         hira_schedule_fetcher_job()
+        return
+
+    if args.scope_export_now:
+        logger.info("Daily Mailing 스콥 export 즉시 실행")
+        daily_mailing_scope_export_job()
         return
 
     if args.nhis_sync_now:
@@ -1070,6 +1102,16 @@ def main():
         trigger=CronTrigger(hour=7, minute=30, timezone="Asia/Seoul"),
         id="daily_mailing_runs_sync",
         name="Daily Mailing run 번들 매일 07:30 git sync (칸반 반영)",
+        replace_existing=True,
+    )
+
+    # 15분 주기 — Daily Mailing 스콥 OUTBOUND export (대쉬보드 → 비공개 repo scopes/,
+    # inbound runs_sync 대칭). 부팅 1회 실행은 start_production 의 --amjilsim-daily-crawl-now 경로.
+    scheduler.add_job(
+        daily_mailing_scope_export_job,
+        trigger=IntervalTrigger(minutes=15, timezone="Asia/Seoul"),
+        id="daily_mailing_scope_export",
+        name="Daily Mailing 스콥 15분 주기 outbound export (repo scopes/ 발행 백스톱)",
         replace_existing=True,
     )
 

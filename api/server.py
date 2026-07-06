@@ -4229,6 +4229,31 @@ except Exception as _e:  # pragma: no cover - 모듈 부재 시 해당 admin 칸
     _daily_mailing_admin_kanban = None
     logger.warning("agents.daily_mailing.storage 미존재 — daily-mailing 칸반 엔드포인트 비활성 (%s)", _e)
 
+# mail_subscription.test_request_json 멱등 마이그레이션 — 테스트 메일 요청을 행에 지속해
+# 스콥 export(로컬+비공개 repo 발행)가 항상 최신 플래그를 반영하게 한다.
+try:
+    from agents.daily_mailing.subscription_bridge import ensure_test_request_column as _ensure_mail_sub_test_request_col  # noqa: E402
+    with db._connect() as _conn:
+        _ensure_mail_sub_test_request_col(_conn)
+except Exception as _e:  # pragma: no cover - 마이그레이션 실패 시 mail-sub 엔드포인트가 SELECT 에서 드러남
+    logger.warning("mail_subscription.test_request_json 마이그레이션 실패: %s", _e)
+
+
+def _mail_scope_export(publish: bool) -> None:
+    """구독 변경/테스트요청 직후 스콥 export (best-effort — 저장 응답을 절대 막지 않음).
+
+    publish=False: 빠른 로컬 스냅샷만 (create/update/delete 훅).
+    publish=True: 비공개 repo scopes/ 채널 발행 시도 (test-request '지금 보내기' 의도).
+    권위 발행은 scheduler 의 daily_mailing_scope_export_job(15분 주기)이 담당.
+    """
+    try:
+        from agents.ingest.daily_mailing_scope_export import export_scopes
+        res = export_scopes(publish=publish)
+        if res.get("errors"):
+            logger.warning("daily mailing scope export 부분 실패: %s", res["errors"])
+    except Exception as e:
+        logger.warning("daily mailing scope export 실패(무시): %s", e)
+
 
 def _mail_sub_row_to_dict(r) -> dict:
     import json as _json
@@ -4250,10 +4275,11 @@ def _mail_sub_row_to_dict(r) -> dict:
         "policy_topics": _json.loads(r[14]) if len(r) > 14 and r[14] else [],
         "disease_areas": _json.loads(r[15]) if len(r) > 15 and r[15] else [],
         "custom_sources": _json.loads(r[16]) if len(r) > 16 and r[16] else [],
+        "test_request": _json.loads(r[17]) if len(r) > 17 and r[17] else None,
     }
 
 
-_MAIL_SUB_COLS = "id, name, keywords_json, media_json, schedule, time, week_day, emails_json, active, created_at, updated_at, last_sent_at, companies_json, brands_json, policy_topics_json, disease_areas_json, custom_sources_json"
+_MAIL_SUB_COLS = "id, name, keywords_json, media_json, schedule, time, week_day, emails_json, active, created_at, updated_at, last_sent_at, companies_json, brands_json, policy_topics_json, disease_areas_json, custom_sources_json, test_request_json"
 
 
 def _coerce_mail_sub_input(body: dict) -> dict | tuple[dict, str]:
@@ -4995,6 +5021,7 @@ def mail_sub_create():
             row = conn.execute(
                 f"SELECT {_MAIL_SUB_COLS} FROM mail_subscription WHERE id=?", (cur.lastrowid,),
             ).fetchone()
+        _mail_scope_export(publish=False)  # 로컬 스콥 스냅샷 즉시 갱신 (repo 발행은 스케줄러)
         return jsonify({"item": _mail_sub_row_to_dict(row)}), 201
     except Exception as e:
         logger.error("mail_sub_create 실패: %s", e, exc_info=True)
@@ -5029,6 +5056,7 @@ def mail_sub_update(item_id: int):
             row = conn.execute(
                 f"SELECT {_MAIL_SUB_COLS} FROM mail_subscription WHERE id=?", (item_id,),
             ).fetchone()
+        _mail_scope_export(publish=False)  # 로컬 스콥 스냅샷 즉시 갱신 (repo 발행은 스케줄러)
         return jsonify({"item": _mail_sub_row_to_dict(row)})
     except Exception as e:
         logger.error("mail_sub_update 실패: %s", e, exc_info=True)
@@ -5048,6 +5076,7 @@ def mail_sub_delete(item_id: int):
             if res.rowcount == 0:
                 return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
             conn.commit()
+        _mail_scope_export(publish=False)  # 로컬 스냅샷 갱신 (삭제분 원격 prune 은 스케줄러 발행이 수행)
         return jsonify({"ok": True})
     except Exception as e:
         logger.error("mail_sub_delete 실패: %s", e, exc_info=True)
@@ -5237,27 +5266,36 @@ def mail_sub_scope(item_id: int):
 @app.post("/api/mail-subscriptions/<int:item_id>/test-request")
 @require_auth()
 def mail_sub_test_request(item_id: int):
-    """테스트 메일 요청 — 스콥에 test_request 플래그를 실어 헤르메스 채널에 전달.
+    """테스트 메일 요청 — test_request 플래그를 행에 지속하고 헤르메스 채널에 전달.
 
-    대쉬보드는 발송하지 않는다. 헤르메스가 스콥의 test_request 를 감지해 검토 후 [TEST] 메일을 발송한다.
+    대쉬보드는 발송하지 않는다. 플래그는 mail_subscription.test_request_json 에 지속되어
+    모든 스콥 export 에 실리고, 헤르메스가 [TEST] run(is_test=true)을 커밋하면
+    inbound run-sync 가 플래그를 해제한다(1회성 소비). '지금 보내기' 의도이므로
+    저장 직후 비공개 repo 발행까지 best-effort 시도한다 (실패해도 15분 주기 잡이 발행).
     """
     owner = request.user["sub"]  # type: ignore[attr-defined]
     try:
-        with db._connect() as conn:
-            row = conn.execute(
-                f"SELECT {_MAIL_SUB_COLS} FROM mail_subscription WHERE id=? AND owner_email=?",
-                (item_id, owner),
-            ).fetchone()
-        if row is None:
-            return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+        import json as _json
         from datetime import datetime, timezone
         from agents.daily_mailing.subscription_bridge import subscription_to_scope, write_scope_snapshot
+        requested_at = datetime.now(timezone.utc).isoformat()
+        test_request = {"requested_at": requested_at, "requested_by": owner}
+        with db._connect() as conn:
+            res = conn.execute(
+                "UPDATE mail_subscription SET test_request_json=? WHERE id=? AND owner_email=?",
+                (_json.dumps(test_request, ensure_ascii=False), item_id, owner),
+            )
+            if res.rowcount == 0:
+                return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+            conn.commit()
+            row = conn.execute(
+                f"SELECT {_MAIL_SUB_COLS} FROM mail_subscription WHERE id=?", (item_id,),
+            ).fetchone()
         item = _mail_sub_row_to_dict(row)
         item["owner_email"] = owner
-        scope = subscription_to_scope(item)
-        requested_at = datetime.now(timezone.utc).isoformat()
-        scope["test_request"] = {"requested_at": requested_at, "requested_by": owner}
+        scope = subscription_to_scope(item)  # test_request 는 지속된 행 값에서 포함됨
         snapshot_path = write_scope_snapshot(scope)
+        _mail_scope_export(publish=True)  # '지금 보내기' 의도 — repo 발행 시도 (네트워크 실패 무해)
         return jsonify({"ok": True, "snapshot_path": str(snapshot_path), "requested_at": requested_at,
                         "message": "헤르메스에 테스트 요청을 전달했습니다. 검토 후 [TEST] 메일이 발송됩니다."})
     except Exception as e:
