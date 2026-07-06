@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from datetime import datetime, timedelta
@@ -61,11 +62,23 @@ def get_brand_traffic(days: int | None = None, refresh: bool = False) -> dict:
         "days": 31,
         "brands": [...aggregate_brand_traffic 결과...]
     }
+
+    캐시 키에는 활성 브랜드 그룹(시드 + 승인된 보조 검색어)의 해시가 포함된다 —
+    admin 이 브랜드 목록/보조 검색어를 편집하면 다음 로드에서 즉시 재수집
+    (같은 날이라도 stale 캐시 파일을 재사용하지 않음).
     """
     if days is None:
         days = days_in_last_month()
     today = datetime.now().strftime("%Y-%m-%d")
-    cache_file = CACHE_DIR / f"brand_traffic_{today}.json"
+
+    # 브랜드 그룹을 캐시 판정보다 먼저 읽는다 — 목록 변경 ⇒ 캐시 키 변경 ⇒ 재수집.
+    from agents.editable_factors import get_home_brand_groups
+    groups = get_home_brand_groups()
+    brands_sig = hashlib.sha1(
+        "|".join(f"{g['brand']}:{','.join(g.get('terms') or [])}" for g in groups)
+        .encode("utf-8")
+    ).hexdigest()[:8]
+    cache_file = CACHE_DIR / f"brand_traffic_{today}_{brands_sig}.json"
 
     if not refresh and cache_file.exists():
         try:
@@ -82,10 +95,8 @@ def get_brand_traffic(days: int | None = None, refresh: bool = False) -> dict:
             "error": "NAVER_API_CLIENT_ID/SECRET 미설정",
         }
 
-    from agents.editable_factors import get_home_brands
-    brands = get_home_brands()
-    logger.info("[MI] %s 브랜드 트래픽 수집 시작 (%d일)", len(brands), days)
-    brands_data = aggregate_brand_traffic(brands, days=days)
+    logger.info("[MI] %s 브랜드 그룹 트래픽 수집 시작 (%d일)", len(groups), days)
+    brands_data = aggregate_brand_traffic(groups, days=days)
     result = {
         "updated_at": datetime.now().isoformat(),
         "days": days,
@@ -116,12 +127,31 @@ def get_latest_brand_news(brand: str, limit: int = 10) -> list[dict]:
     } for n in items]
 
 
+def invalidate_brand_traffic_cache() -> int:
+    """오늘 날짜의 brand_traffic 캐시 파일 삭제 — admin 브랜드 편집 즉시 반영용.
+
+    캐시 키에 브랜드 해시가 들어가므로(get_brand_traffic) 이 삭제 없이도 다음 로드에서
+    재수집되지만, 구 포맷 파일 잔존/해시 충돌에 대비한 belt-and-suspenders."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    removed = 0
+    for p in CACHE_DIR.glob(f"brand_traffic_{today}*.json"):
+        try:
+            p.unlink()
+            removed += 1
+        except Exception:
+            continue
+    return removed
+
+
 def cleanup_old_cache(keep_days: int = 7):
-    """7일 지난 캐시 파일 정리."""
+    """7일 지난 캐시 파일 정리.
+
+    파일명은 구 포맷 `brand_traffic_YYYY-MM-DD.json` 과
+    신 포맷 `brand_traffic_YYYY-MM-DD_<hash8>.json` 둘 다 허용."""
     cutoff = datetime.now() - timedelta(days=keep_days)
     for p in CACHE_DIR.glob("brand_traffic_*.json"):
         try:
-            date_str = p.stem.replace("brand_traffic_", "")
+            date_str = p.stem.replace("brand_traffic_", "").split("_")[0]
             d = datetime.strptime(date_str, "%Y-%m-%d")
             if d < cutoff:
                 p.unlink()

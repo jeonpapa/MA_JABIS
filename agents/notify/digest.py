@@ -169,8 +169,14 @@ def render_daily_digest(
     dashboard_url: str = "http://localhost:3000",
     keywords: list[str] | None = None,
     media: list[str] | None = None,
+    scope: dict | None = None,
 ) -> tuple[str, str, str]:
     """실데이터 기반 HTML 디지스트.
+
+    Args:
+        scope: 선택 — 구독의 전체 모니터링 스콥
+            {brands, companies, policy_topics, disease_areas, custom_sources}.
+            전달 시 헤더의 "모니터링 스콥" 라인에 함께 표시된다 (하위호환: 미전달 시 keywords/media 만).
 
     Returns:
         (subject, html, text)
@@ -277,18 +283,47 @@ def render_daily_digest(
         f'</tr></table>'
     )
 
-    # ── 구독 조건 요약 ────────────────────────────────────────
+    # ── 구독 스콥 요약 ────────────────────────────────────────
     kws = keywords or []
     meds = media or []
+    sc = scope or {}
+    sc_brands = [str(x) for x in (sc.get("brands") or [])]
+    sc_companies = [str(x) for x in (sc.get("companies") or [])]
+    sc_policy = [str(x) for x in (sc.get("policy_topics") or [])]
+    sc_disease = [str(x) for x in (sc.get("disease_areas") or [])]
+    sc_sources: list[str] = []
+    for s in (sc.get("custom_sources") or []):
+        label = (s.get("name") or s.get("url") or "") if isinstance(s, dict) else str(s)
+        if label:
+            sc_sources.append(str(label))
+
+    scope_rows: list[tuple[str, str, str]] = []  # (emoji+label, joined values, value color)
+    if sc_brands:
+        scope_rows.append(("💊 브랜드", " · ".join(sc_brands[:8]), "#F59E0B"))
+    if sc_companies:
+        scope_rows.append(("🏢 회사", " · ".join(sc_companies[:8]), "#00E5CC"))
+    if sc_policy:
+        scope_rows.append(("🏛️ 정책·제도", " · ".join(sc_policy[:8]), "#00E5CC"))
+    if sc_disease:
+        scope_rows.append(("🧬 질환", " · ".join(sc_disease[:8]), "#00E5CC"))
+    if kws:
+        scope_rows.append(("🔎 키워드", " · ".join(kws[:8]), "#00E5CC"))
+    if meds:
+        scope_rows.append(("📰 미디어", ", ".join(meds[:8]), "#8B9BB4"))
+    if sc_sources:
+        scope_rows.append(("🔗 추가 사이트", " · ".join(sc_sources[:5]), "#8B9BB4"))
+
     meta_html = ""
-    if kws or meds:
-        kw_html = ("<span style=\"color:#00E5CC;\">" + " · ".join(_html.escape(k) for k in kws[:8]) + "</span>") if kws else "—"
-        m_html = _html.escape(", ".join(meds[:8])) if meds else "—"
+    if scope_rows:
+        rows_html = "<br/>".join(
+            f'{label} <span style="color:{color};">{_html.escape(val)}</span>'
+            for label, val, color in scope_rows
+        )
         meta_html = (
             f'<div style="margin:0 0 16px;padding:10px 14px;background:#0D1117;border:1px solid #1E2530;border-radius:8px;">'
-            f'<div style="color:#4A5568;font-size:10px;margin-bottom:4px;">모니터링 조건</div>'
+            f'<div style="color:#4A5568;font-size:10px;margin-bottom:4px;">모니터링 스콥</div>'
             f'<div style="color:#8B9BB4;font-size:12px;line-height:1.5;">'
-            f'🔎 {kw_html}<br/>📰 <span style="color:#8B9BB4;">{m_html}</span>'
+            f'{rows_html}'
             f'</div></div>'
         )
 
@@ -340,6 +375,11 @@ def render_daily_digest(
 
     # Plain-text fallback
     lines = [f"[MA Dossier] {name} · {today}", ""]
+    if scope_rows:
+        lines.append("■ 모니터링 스콥")
+        for label, val, _color in scope_rows:
+            lines.append(f"  - {label}: {val}")
+        lines.append("")
     lines.append("■ 최근 MFDS 허가 (30일)")
     if approvals:
         for a in approvals:

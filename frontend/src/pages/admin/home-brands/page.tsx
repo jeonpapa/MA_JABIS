@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   listHomeBrands, createHomeBrand, updateHomeBrand, deleteHomeBrand, expandHomeBrands,
+  approveHomeBrandCandidate,
   type HomeBrand,
 } from '@/api/homeBrands';
 import { fetchMe } from '@/utils/authUsers';
@@ -80,17 +81,32 @@ export default function AdminHomeBrandsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authChecked]);
 
-  // 연관 후보(검토 대기): related + 비활성
+  // 연관 후보(검토 대기): related 대기 큐 — 승인 시 시드의 보조 검색어로 편입 (독립 브랜드 아님)
   const candidates = useMemo(
-    () => items.filter(it => it.source === 'related' && !it.active),
+    () => items.filter(it => it.source === 'related'),
     [items],
   );
 
-  // 활성/시드 브랜드: 그 외 전부 (seed 전체 + 승인된 related)
+  // 시드 브랜드: related 대기 큐 제외 전부
   const mainItems = useMemo(
-    () => items.filter(it => !(it.source === 'related' && !it.active)),
+    () => items.filter(it => it.source !== 'related'),
     [items],
   );
+
+  // 대기 후보를 원본 시드(related_from) 아래에 중첩 표시하기 위한 그룹핑
+  const candidatesBySeed = useMemo(() => {
+    const map: Record<string, HomeBrand[]> = {};
+    const seedNames = new Set(mainItems.map(it => it.brand));
+    const orphans: HomeBrand[] = [];
+    for (const c of candidates) {
+      if (c.related_from && seedNames.has(c.related_from)) {
+        (map[c.related_from] ??= []).push(c);
+      } else {
+        orphans.push(c);
+      }
+    }
+    return { map, orphans };
+  }, [candidates, mainItems]);
 
   const updateDraft = (id: number, patch: Partial<Draft>) => {
     setDrafts(prev => ({
@@ -164,12 +180,28 @@ export default function AdminHomeBrandsPage() {
   const handleApprove = async (it: HomeBrand) => {
     setCandidateBusyId(it.id);
     try {
-      await updateHomeBrand(it.id, { active: true });
+      // 독립 브랜드 승격이 아니라 원본 시드의 보조 검색어(related_terms)로 편입
+      await approveHomeBrandCandidate(it.id);
       await reload();
     } catch (e) {
       alert(e instanceof Error ? e.message : '승인 실패');
     } finally {
       setCandidateBusyId(null);
+    }
+  };
+
+  const handleRemoveTerm = async (it: HomeBrand, term: string) => {
+    if (!confirm(`'${it.brand}' 의 보조 검색어 '${term}' 를 제거할까요?`)) return;
+    setSavingId(it.id);
+    try {
+      const saved = await updateHomeBrand(it.id, {
+        related_terms: it.related_terms.filter(t => t !== term),
+      });
+      setItems(prev => prev.map(x => x.id === it.id ? saved : x));
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '제거 실패');
+    } finally {
+      setSavingId(null);
     }
   };
 
@@ -262,61 +294,14 @@ export default function AdminHomeBrandsPage() {
 
         {!loading && (
           <>
-            {/* 연관 후보 (검토 대기) */}
-            <div className="bg-[#161B27] rounded-2xl border border-[#1E2530] overflow-hidden">
-              <div className="px-5 py-3 flex items-center gap-3 bg-[#0D1117]/50 border-b border-[#1E2530]">
-                <h3 className="text-white font-semibold text-sm">연관 후보 (검토 대기)</h3>
-                <span className="text-[#8B9BB4] text-xs">{candidates.length}건</span>
-              </div>
-              {candidates.length === 0 ? (
-                <p className="text-[#4A5568] text-sm px-5 py-6">검토할 후보 없음</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-[#8B9BB4] text-[11px] border-b border-[#1E2530] uppercase tracking-wider">
-                        <th className="text-left py-2 pl-5 pr-3 w-[30%]">브랜드</th>
-                        <th className="text-left py-2 pr-3">원본 시드 (related_from)</th>
-                        <th className="text-right py-2 pr-5 w-[180px]">조치</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {candidates.map(it => {
-                        const busy = candidateBusyId === it.id;
-                        return (
-                          <tr key={it.id} className="border-b border-[#1E2530]/50 last:border-b-0">
-                            <td className="py-3 pl-5 pr-3 text-white font-medium">{it.brand}</td>
-                            <td className="py-3 pr-3 text-[#8B9BB4]">{it.related_from ?? '—'}</td>
-                            <td className="py-3 pr-5 text-right whitespace-nowrap">
-                              <button
-                                onClick={() => handleApprove(it)}
-                                disabled={busy}
-                                className="text-xs font-semibold px-3 py-1 rounded bg-[#00E5CC] text-[#0A0E1A] hover:bg-[#00C9B1] disabled:opacity-50 cursor-pointer mr-2"
-                              >
-                                {busy ? '처리 중…' : '승인(활성화)'}
-                              </button>
-                              <button
-                                onClick={() => handleRejectCandidate(it)}
-                                disabled={busy}
-                                className="text-xs px-2 py-1 rounded bg-[#EF4444]/20 text-[#EF4444] hover:bg-[#EF4444]/30 disabled:opacity-50 cursor-pointer"
-                              >
-                                <i className="ri-delete-bin-line"></i>
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-
-            {/* 활성/시드 브랜드 */}
+            {/* 활성/시드 브랜드 (+ 각 시드 아래 보조 검색어 후보 중첩) */}
             <div className="bg-[#161B27] rounded-2xl border border-[#1E2530] overflow-hidden">
               <div className="px-5 py-3 flex items-center gap-3 bg-[#0D1117]/50 border-b border-[#1E2530]">
                 <h3 className="text-white font-semibold text-sm">활성/시드 브랜드</h3>
                 <span className="text-[#8B9BB4] text-xs">{mainItems.length}건</span>
+                {candidates.length > 0 && (
+                  <span className="text-[#F59E0B] text-xs">보조 검색어 후보 {candidates.length}건 검토 대기</span>
+                )}
                 <button onClick={reload} className="ml-auto text-[#8B9BB4] text-xs hover:text-white cursor-pointer flex items-center gap-1">
                   <i className="ri-refresh-line"></i>새로고침
                 </button>
@@ -339,8 +324,10 @@ export default function AdminHomeBrandsPage() {
                       if (!d) return null;
                       const busy = savingId === it.id;
                       const del = deletingId === it.id;
+                      const pending = candidatesBySeed.map[it.brand] ?? [];
                       return (
-                        <tr key={it.id} className="border-b border-[#1E2530]/50 last:border-b-0">
+                        <Fragment key={it.id}>
+                        <tr className="border-b border-[#1E2530]/50 last:border-b-0">
                           <td className="py-2 pl-5 pr-3">
                             <input
                               type="text"
@@ -348,6 +335,26 @@ export default function AdminHomeBrandsPage() {
                               onChange={e => updateDraft(it.id, { brand: e.target.value })}
                               className="w-full bg-[#0D1117] border border-[#1E2530] rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-[#00E5CC]/50"
                             />
+                            {it.related_terms.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1.5">
+                                {it.related_terms.map(term => (
+                                  <span
+                                    key={term}
+                                    className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-[#00E5CC]/10 border border-[#00E5CC]/25 text-[#00E5CC]"
+                                    title="승인된 보조 검색어 — 이 브랜드의 검색을 넓혀 함께 집계됩니다"
+                                  >
+                                    {term}
+                                    <button
+                                      onClick={() => handleRemoveTerm(it, term)}
+                                      className="hover:text-white cursor-pointer"
+                                      aria-label={`보조 검색어 ${term} 제거`}
+                                    >
+                                      <i className="ri-close-line"></i>
+                                    </button>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </td>
                           <td className="py-2 pr-3">
                             <input
@@ -401,6 +408,43 @@ export default function AdminHomeBrandsPage() {
                             </button>
                           </td>
                         </tr>
+
+                        {/* 이 시드의 보조 검색어 후보 (검토 대기) — 승인 시 독립 브랜드가 아니라
+                            시드의 보조 검색어로 편입되어 시드 집계에 합산 */}
+                        {pending.map(c => {
+                          const cBusy = candidateBusyId === c.id;
+                          return (
+                            <tr key={`cand-${c.id}`} className="border-b border-[#1E2530]/50 last:border-b-0 bg-[#0D1117]/30">
+                              <td className="py-2 pl-5 pr-3" colSpan={3}>
+                                <div className="flex items-center gap-2 pl-4">
+                                  <i className="ri-corner-down-right-line text-[#4A5568]"></i>
+                                  <span className="text-white text-xs font-medium">{c.brand}</span>
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#F59E0B]/15 text-[#F59E0B]">
+                                    보조 검색어 후보
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="py-2 pr-3"></td>
+                              <td className="py-2 pr-5 text-right whitespace-nowrap">
+                                <button
+                                  onClick={() => handleApprove(c)}
+                                  disabled={cBusy}
+                                  className="text-xs font-semibold px-3 py-1 rounded bg-[#00E5CC] text-[#0A0E1A] hover:bg-[#00C9B1] disabled:opacity-50 cursor-pointer mr-2"
+                                >
+                                  {cBusy ? '처리 중…' : '이 브랜드의 보조 검색어로 추가'}
+                                </button>
+                                <button
+                                  onClick={() => handleRejectCandidate(c)}
+                                  disabled={cBusy}
+                                  className="text-xs px-2 py-1 rounded bg-[#EF4444]/20 text-[#EF4444] hover:bg-[#EF4444]/30 disabled:opacity-50 cursor-pointer"
+                                >
+                                  <i className="ri-delete-bin-line"></i>
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        </Fragment>
                       );
                     })}
 
@@ -444,6 +488,40 @@ export default function AdminHomeBrandsPage() {
                 <p className="text-[#4A5568] text-sm px-5 pb-5">등록된 브랜드가 없습니다.</p>
               )}
             </div>
+
+            {/* 원본 시드가 없는 후보 (시드 삭제/이름 변경 등) — 승인 불가, 삭제만 가능 */}
+            {candidatesBySeed.orphans.length > 0 && (
+              <div className="bg-[#161B27] rounded-2xl border border-[#1E2530] overflow-hidden">
+                <div className="px-5 py-3 flex items-center gap-3 bg-[#0D1117]/50 border-b border-[#1E2530]">
+                  <h3 className="text-white font-semibold text-sm">시드 없는 보조 검색어 후보</h3>
+                  <span className="text-[#8B9BB4] text-xs">
+                    {candidatesBySeed.orphans.length}건 — 원본 시드 브랜드가 삭제되었거나 이름이 변경됨 (삭제만 가능)
+                  </span>
+                </div>
+                <div className="px-5 py-3 flex flex-wrap gap-2">
+                  {candidatesBySeed.orphans.map(c => {
+                    const cBusy = candidateBusyId === c.id;
+                    return (
+                      <span
+                        key={c.id}
+                        className="inline-flex items-center gap-2 text-xs px-3 py-1 rounded-full bg-[#0D1117] border border-[#1E2530] text-[#8B9BB4]"
+                      >
+                        {c.brand}
+                        <span className="text-[#4A5568]">({c.related_from ?? '시드 미상'})</span>
+                        <button
+                          onClick={() => handleRejectCandidate(c)}
+                          disabled={cBusy}
+                          className="text-[#EF4444] hover:text-red-300 disabled:opacity-50 cursor-pointer"
+                          aria-label={`후보 ${c.brand} 삭제`}
+                        >
+                          <i className="ri-delete-bin-line"></i>
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>

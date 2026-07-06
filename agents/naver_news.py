@@ -194,10 +194,17 @@ def get_client() -> NaverNewsClient:
 
 
 def aggregate_brand_traffic(
-    brands: Iterable[str],
+    brands: Iterable,
     days: int = 30,
 ) -> list[dict]:
-    """브랜드 리스트 → 각 브랜드의 1개월 트래픽 요약.
+    """브랜드(그룹) 리스트 → 각 브랜드의 1개월 트래픽 요약.
+
+    입력 항목은 두 형태 모두 허용 (하위호환):
+      - str: 단일 질의 브랜드 (기존 동작)
+      - dict {"brand": 시드, "terms": [보조 검색어, ...]}: 시드 + 보조 검색어를
+        각각 질의한 뒤 **URL 단위 dedupe 병합** — 네이버 뉴스 API 에 신뢰할 수 있는
+        OR 연산자가 없어 multi-query 후 중복 제거로 이중 집계를 방지한다.
+        결과는 시드 brand 하나의 entry 로 합산된다 (출력 포맷 불변).
 
     반환 포맷 (Home 미디어 인텔리전스 소비용):
     [{
@@ -213,12 +220,32 @@ def aggregate_brand_traffic(
     cutoff = datetime.now() - timedelta(days=days)
     date_keys = [(cutoff + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(days)]
 
-    for brand in brands:
-        counts, items = client.daily_counts(brand, days=days)
+    for entry in brands:
+        if isinstance(entry, str):
+            seed, terms = entry, []
+        else:
+            seed = entry.get("brand") or ""
+            terms = [t for t in (entry.get("terms") or []) if t and t != seed]
+        if not seed:
+            continue
+
+        # 시드 + 보조 검색어 multi-query → URL 기준 dedupe 병합
+        merged: dict[str, NewsItem] = {}
+        for query in [seed] + terms:
+            _, items_q = client.daily_counts(query, days=days)
+            for it in items_q:
+                key = it.original_link or it.link or f"{it.title}|{it.date_str}"
+                if key not in merged:
+                    merged[key] = it
+
+        items = list(merged.values())
+        counts: dict[str, int] = {}
+        for it in items:
+            counts[it.date_str] = counts.get(it.date_str, 0) + 1
         sparkline = [counts.get(d, 0) for d in date_keys]
         latest = sorted(items, key=lambda x: x.pub_date, reverse=True)[:5]
         result.append({
-            "brand": brand,
+            "brand": seed,
             "total_count": sum(counts.values()),
             "daily": counts,
             "sparkline": sparkline,

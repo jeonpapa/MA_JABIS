@@ -3990,7 +3990,15 @@ def news_factors_delete(item_id: int):
 #  agents.media_intelligence.DEFAULT_BRANDS 상수로 폴백해 Home 브랜드 트래픽 크롤 보호)
 # ──────────────────────────────────────────────────────────────────────────────
 
+_HOME_BRAND_COLS = ("id, brand, therapeutic_area, source, related_from, active, "
+                    "related_terms_json, created_at, updated_at")
+
+
 def _home_brand_row_to_dict(r) -> dict:
+    try:
+        related_terms = json.loads(r["related_terms_json"] or "[]")
+    except Exception:
+        related_terms = []
     return {
         "id": r["id"],
         "brand": r["brand"],
@@ -3998,9 +4006,20 @@ def _home_brand_row_to_dict(r) -> dict:
         "source": r["source"],
         "related_from": r["related_from"],
         "active": r["active"],
+        "related_terms": related_terms,
         "created_at": r["created_at"],
         "updated_at": r["updated_at"],
     }
+
+
+def _bust_home_brand_caches() -> None:
+    """home_brand 쓰기 직후 — 로더 인메모리 캐시 + 오늘자 brand_traffic 파일 캐시 무효화.
+    (파일 캐시 키에 브랜드 해시가 포함되지만 즉시 반영 보장을 위한 belt-and-suspenders.)"""
+    _editable_factors.invalidate_cache()
+    try:
+        _media_intel.invalidate_brand_traffic_cache()
+    except Exception as e:
+        logger.warning("brand_traffic 파일 캐시 무효화 실패: %s", e)
 
 
 @app.get("/api/admin/home-brands")
@@ -4010,8 +4029,7 @@ def home_brands_list():
     active = request.args.get("active")
     try:
         _editable_factors.seed_home_brands()
-        sql = ("SELECT id, brand, therapeutic_area, source, related_from, active, "
-               "created_at, updated_at FROM home_brand")
+        sql = f"SELECT {_HOME_BRAND_COLS} FROM home_brand"
         conds: list[str] = []
         params: list = []
         if source:
@@ -4057,11 +4075,10 @@ def home_brands_create():
             new_id = cur.lastrowid
             conn.commit()
             row = conn.execute(
-                "SELECT id, brand, therapeutic_area, source, related_from, active, "
-                "created_at, updated_at FROM home_brand WHERE id=?",
+                f"SELECT {_HOME_BRAND_COLS} FROM home_brand WHERE id=?",
                 (new_id,),
             ).fetchone()
-        _editable_factors.invalidate_cache()
+        _bust_home_brand_caches()
         return jsonify({"item": _home_brand_row_to_dict(row)}), 201
     except sqlite3.IntegrityError:
         return jsonify({"error": "brand 중복", "code": "DUPLICATE"}), 400
@@ -4076,6 +4093,14 @@ def home_brands_update(item_id: int):
     body = request.get_json(silent=True) or {}
     updatable = {"brand", "therapeutic_area", "source", "related_from", "active"}
     fields = {k: v for k, v in body.items() if k in updatable}
+    # related_terms: 승인된 보조 검색어 배열 편집 (seed 행 전용)
+    if "related_terms" in body:
+        terms = body["related_terms"]
+        if not isinstance(terms, list) or not all(isinstance(t, str) for t in terms):
+            return jsonify({"error": "related_terms 는 문자열 배열", "code": "INVALID"}), 400
+        fields["related_terms_json"] = json.dumps(
+            [t.strip() for t in terms if t.strip()], ensure_ascii=False
+        )
     if not fields:
         return jsonify({"error": "변경할 필드 없음", "code": "INVALID"}), 400
     if "source" in fields and fields["source"] not in ("seed", "related"):
@@ -4090,6 +4115,19 @@ def home_brands_update(item_id: int):
     params = list(fields.values()) + [item_id]
     try:
         with db._connect() as conn:
+            existing = conn.execute(
+                "SELECT source FROM home_brand WHERE id = ?", (item_id,)
+            ).fetchone()
+            if existing is None:
+                return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+            # related 후보는 독립 브랜드로 활성화 금지 — 승인은 /approve 로
+            # 시드의 보조 검색어(related_terms_json)에 편입한다.
+            if existing["source"] == "related" and fields.get("active") == 1:
+                return jsonify({
+                    "error": "related 후보는 활성화 불가 — POST /api/admin/home-brands/<id>/approve 로 "
+                             "시드의 보조 검색어에 추가하세요",
+                    "code": "RELATED_ACTIVATE_FORBIDDEN",
+                }), 400
             res = conn.execute(
                 f"UPDATE home_brand SET {set_clause} WHERE id = ?", params
             )
@@ -4097,11 +4135,10 @@ def home_brands_update(item_id: int):
                 return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
             conn.commit()
             row = conn.execute(
-                "SELECT id, brand, therapeutic_area, source, related_from, active, "
-                "created_at, updated_at FROM home_brand WHERE id=?",
+                f"SELECT {_HOME_BRAND_COLS} FROM home_brand WHERE id=?",
                 (item_id,),
             ).fetchone()
-        _editable_factors.invalidate_cache()
+        _bust_home_brand_caches()
         return jsonify({"item": _home_brand_row_to_dict(row)})
     except sqlite3.IntegrityError:
         return jsonify({"error": "brand 중복", "code": "DUPLICATE"}), 400
@@ -4119,22 +4156,42 @@ def home_brands_delete(item_id: int):
             if res.rowcount == 0:
                 return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
             conn.commit()
-        _editable_factors.invalidate_cache()
+        _bust_home_brand_caches()
         return jsonify({"ok": True})
     except Exception as e:
         logger.error("home_brands_delete 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 
+@app.post("/api/admin/home-brands/<int:item_id>/approve")
+@require_auth(role="admin")
+def home_brands_approve(item_id: int):
+    """related 후보 승인 — 후보 brand 를 원본 시드(related_from)의 related_terms_json
+    보조 검색어에 추가하고 후보 행을 삭제한다. (독립 브랜드로 승격하지 않음 —
+    집계는 시드 brand 하나로 합산.) 거절은 기존 DELETE 사용."""
+    try:
+        res = _editable_factors.approve_related_candidate(item_id)
+        _bust_home_brand_caches()
+        return jsonify({"ok": True, **res})
+    except LookupError:
+        return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+    except ValueError as e:
+        return jsonify({"error": str(e), "code": "INVALID"}), 400
+    except Exception as e:
+        logger.error("home_brands_approve 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @app.post("/api/admin/home-brands/expand")
 @require_auth(role="admin")
 def home_brands_expand():
-    """Naver 연관검색어(자동완성, 크레덴셜 불필요) 로 신규 브랜드 후보 제안(source='related',
-    active=0) — admin 이 이후 PATCH active=1 로 승인해야 Home 브랜드 트래픽에 반영."""
+    """Naver 연관검색어(자동완성, 크레덴셜 불필요) 로 보조 검색어 후보 제안(source='related',
+    active=0 대기 큐) — admin 이 이후 POST /<id>/approve 로 승인하면 원본 시드의
+    보조 검색어(related_terms_json)로 편입되어 해당 시드의 검색을 넓힌다."""
     try:
         from agents import naver_related
         res = naver_related.expand_home_brands()
-        _editable_factors.invalidate_cache()
+        _bust_home_brand_caches()
         return jsonify(res)
     except Exception as e:
         logger.error("home_brands_expand 실패: %s", e, exc_info=True)
@@ -5027,6 +5084,11 @@ def mail_sub_preview(item_id: int):
         subject, body_html, body_text = _mail_render_digest(
             name=item["name"], dashboard_url=dashboard_url,
             keywords=item["keywords"], media=item["media"],
+            scope={
+                "brands": item["brands"], "companies": item["companies"],
+                "policy_topics": item["policy_topics"], "disease_areas": item["disease_areas"],
+                "custom_sources": item["custom_sources"],
+            },
         )
         return jsonify({"subject": subject, "html": body_html, "text": body_text})
     except Exception as e:
@@ -5067,6 +5129,11 @@ def mail_sub_test_send(item_id: int):
                 dashboard_url=dashboard_url,
                 keywords=item["keywords"],
                 media=item["media"],
+                scope={
+                    "brands": item["brands"], "companies": item["companies"],
+                    "policy_topics": item["policy_topics"], "disease_areas": item["disease_areas"],
+                    "custom_sources": item["custom_sources"],
+                },
             )
             result = {
                 "ok": True,
@@ -5087,9 +5154,9 @@ def mail_sub_test_send(item_id: int):
 @app.get("/api/mail-subscriptions/<int:item_id>/scope")
 @require_auth()
 def mail_sub_scope(item_id: int):
-    """subscription → dashboard_scope JSON 반환 + 헤르메스 채널 스냅샷 저장.
+    """subscription → dashboard_scope JSON 반환 (읽기 전용).
 
-    헤르메스(외부 GPT-5.5)가 이 스콥을 읽어 검토·작성·매일 발송한다. 대쉬보드는 발송하지 않음.
+    GET 은 스냅샷 파일을 쓰지 않는다 — 헤르메스 채널 스냅샷 기록은 test-request POST 에서만 수행.
     """
     owner = request.user["sub"]  # type: ignore[attr-defined]
     try:
@@ -5100,12 +5167,11 @@ def mail_sub_scope(item_id: int):
             ).fetchone()
         if row is None:
             return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
-        from agents.daily_mailing.subscription_bridge import subscription_to_scope, write_scope_snapshot
+        from agents.daily_mailing.subscription_bridge import subscription_to_scope
         item = _mail_sub_row_to_dict(row)
         item["owner_email"] = owner
         scope = subscription_to_scope(item)
-        snapshot_path = write_scope_snapshot(scope)
-        return jsonify({"scope": scope, "snapshot_path": str(snapshot_path)})
+        return jsonify({"scope": scope})
     except Exception as e:
         logger.error("mail_sub_scope 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500

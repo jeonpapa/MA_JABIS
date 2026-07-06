@@ -7,6 +7,7 @@ export interface HomeBrand {
   source: 'seed' | 'related';
   related_from: string | null;
   active: number; // SQLite INTEGER 0/1 — not a real boolean
+  related_terms: string[]; // 승인된 보조 검색어 (seed 행 전용) — 시드 검색을 넓히는 하위 질의
   created_at: string;
   updated_at: string;
 }
@@ -25,6 +26,14 @@ export interface HomeBrandPatch {
   source?: 'seed' | 'related';
   related_from?: string | null;
   active?: boolean;
+  related_terms?: string[];
+}
+
+export interface HomeBrandApproveResult {
+  ok: true;
+  seed: string;
+  term: string;
+  related_terms: string[];
 }
 
 export interface HomeBrandExpandResult {
@@ -68,4 +77,11 @@ export async function deleteHomeBrand(id: number): Promise<void> {
 
 export async function expandHomeBrands(): Promise<HomeBrandExpandResult> {
   return api.post<HomeBrandExpandResult>('/api/admin/home-brands/expand');
+}
+
+/** related 후보 승인 — 원본 시드의 보조 검색어(related_terms)로 편입 + 후보 행 삭제 */
+export async function approveHomeBrandCandidate(
+  id: number,
+): Promise<HomeBrandApproveResult> {
+  return api.post<HomeBrandApproveResult>(`/api/admin/home-brands/${id}/approve`);
 }

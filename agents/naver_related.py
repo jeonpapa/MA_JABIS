@@ -183,16 +183,25 @@ def expand_home_brands(
     per_seed: int = 8,
 ) -> dict:
     """활성 home_brand(또는 지정된 seeds) 각각에 대해 연관검색어를 조회, 브랜드일법한
-    후보만 필터링해 home_brand 에 source='related', active=0 으로 추가 제안.
+    후보만 필터링해 home_brand 에 source='related', active=0 **대기 큐** 로 추가 제안.
+    (승인 시 독립 브랜드가 아니라 시드의 related_terms_json 보조 검색어로 편입된다.)
 
     Returns: {"seeds_processed": int, "candidates_added": int}
     """
-    from agents.editable_factors import add_related_candidates, get_home_brands
+    from agents.editable_factors import (
+        add_related_candidates,
+        get_home_brand_groups,
+        get_home_brands,
+    )
 
     if seeds is None:
         seeds = get_home_brands(db_path)
 
+    # 시드 브랜드 + 이미 승인된 보조 검색어(related_terms) 모두 제외 — 승인된 검색어가
+    # 후보로 무한 재제안되는 것을 방지.
     existing = {b.lower() for b in get_home_brands(db_path)}
+    for g in get_home_brand_groups(db_path):
+        existing.update(t.lower() for t in (g.get("terms") or []))
     candidates: list[dict] = []
     seen_this_run: set[str] = set()
 

@@ -107,6 +107,14 @@ class _DbBase:
                 )
                 logger.info("Migrated: competitor_trend.importance added")
 
+            # home_brand: related_terms_json (승인된 보조 검색어 JSON 배열, 2026-07-06)
+            hb_cols = {row[1] for row in conn.execute("PRAGMA table_info(home_brand)")}
+            if hb_cols and "related_terms_json" not in hb_cols:
+                conn.execute(
+                    "ALTER TABLE home_brand ADD COLUMN related_terms_json TEXT"
+                )
+                logger.info("Migrated: home_brand.related_terms_json added")
+
             # foreign_drug_dosing: default_pack_count (pack pricing 국가 fallback)
             fd_cols = {row[1] for row in conn.execute("PRAGMA table_info(foreign_drug_dosing)")}
             if "default_pack_count" not in fd_cols:

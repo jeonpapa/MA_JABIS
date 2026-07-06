@@ -16,6 +16,7 @@ import 하면 순환참조가 생기므로(두 모듈이 이 모듈을 가져다
 """
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 import time
@@ -60,6 +61,7 @@ CREATE TABLE IF NOT EXISTS home_brand (
     source TEXT NOT NULL DEFAULT 'seed',
     related_from TEXT,
     active INTEGER NOT NULL DEFAULT 1,
+    related_terms_json TEXT,
     created_at TEXT, updated_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_home_brand_active ON home_brand(active);
@@ -83,7 +85,64 @@ def _connect(db_path: Optional[Path] = None) -> sqlite3.Connection:
 def ensure_schema(db_path: Optional[Path] = None) -> None:
     with _connect(db_path) as conn:
         conn.executescript(_SCHEMA)
+        # 기존 DB 마이그레이션 — home_brand.related_terms_json (승인된 보조 검색어 JSON 배열).
+        # _SCHEMA 는 CREATE TABLE IF NOT EXISTS 라 기존 테이블에는 ALTER 가 필요하다.
+        try:
+            conn.execute("ALTER TABLE home_brand ADD COLUMN related_terms_json TEXT")
+        except sqlite3.OperationalError:
+            pass  # 이미 존재
+        _fold_promoted_related_rows(conn)
         conn.commit()
+
+
+def _fold_promoted_related_rows(conn: sqlite3.Connection) -> int:
+    """과거 승인 방식(source='related' 행을 active=1 로 승격)으로 독립 브랜드가 된 행을
+    원본 시드(related_from)의 related_terms_json 보조 검색어로 접어넣고 행을 삭제한다.
+
+    시드 행을 찾을 수 없으면(삭제됨/related_from 없음) 데이터 보존을 위해 해당 행을
+    source='seed' 독립 브랜드로 전환한다. idempotent — 대상 행이 없으면 no-op."""
+    try:
+        rows = conn.execute(
+            "SELECT id, brand, related_from FROM home_brand "
+            "WHERE source = 'related' AND active = 1"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return 0
+    folded = 0
+    for r in rows:
+        seed = None
+        if r["related_from"]:
+            seed = conn.execute(
+                "SELECT id, related_terms_json FROM home_brand WHERE brand = ?",
+                (r["related_from"],),
+            ).fetchone()
+        if seed is not None:
+            try:
+                terms = json.loads(seed["related_terms_json"] or "[]")
+            except Exception:
+                terms = []
+            if r["brand"] not in terms:
+                terms.append(r["brand"])
+            conn.execute(
+                "UPDATE home_brand SET related_terms_json = ?, updated_at = ? WHERE id = ?",
+                (json.dumps(terms, ensure_ascii=False), _now(), seed["id"]),
+            )
+            conn.execute("DELETE FROM home_brand WHERE id = ?", (r["id"],))
+            folded += 1
+            logger.info(
+                "[editable_factors] 승격된 related 행 '%s' → 시드 '%s' 보조 검색어로 이관",
+                r["brand"], r["related_from"],
+            )
+        else:
+            conn.execute(
+                "UPDATE home_brand SET source = 'seed', updated_at = ? WHERE id = ?",
+                (_now(), r["id"]),
+            )
+            logger.warning(
+                "[editable_factors] related 행 '%s' 의 시드('%s') 부재 — 독립 seed 로 전환",
+                r["brand"], r["related_from"],
+            )
+    return folded
 
 
 # ── in-process 캐시 ──────────────────────────────────────────────────────────
@@ -311,17 +370,69 @@ def get_home_brands(db_path: Optional[Path] = None) -> list:
     return items
 
 
+def get_home_brand_groups(db_path: Optional[Path] = None) -> list:
+    """활성 시드 브랜드 + 승인된 보조 검색어 그룹 목록.
+
+    반환: [{"brand": "키트루다", "terms": ["펨브롤리주맙", ...]}, ...]
+    보조 검색어(terms)는 해당 시드의 네이버 검색을 넓히는 하위 질의로, 집계는
+    시드 brand 하나로 합산된다(독립 브랜드 아님). 실패 시 DEFAULT_BRANDS 폴백
+    (terms 는 빈 배열)."""
+    key = _cache_key("home_brand_groups", db_path)
+    cached = _get_cached(key)
+    if cached is not None:
+        return cached  # type: ignore[return-value]
+
+    try:
+        seed_home_brands(db_path)
+        with _connect(db_path) as conn:
+            rows = conn.execute(
+                "SELECT brand, related_terms_json FROM home_brand "
+                "WHERE active = 1 ORDER BY id"
+            ).fetchall()
+        items = []
+        for r in rows:
+            try:
+                terms = json.loads(r["related_terms_json"] or "[]")
+            except Exception:
+                terms = []
+            items.append({
+                "brand": r["brand"],
+                "terms": [t for t in terms if isinstance(t, str) and t.strip()],
+            })
+        if not items:
+            raise ValueError("home_brand empty after seed")
+    except Exception as e:
+        logger.warning("[editable_factors] get_home_brand_groups DB 조회 실패, 상수 폴백: %s", e)
+        from agents.media_intelligence import DEFAULT_BRANDS
+
+        items = [{"brand": b, "terms": []} for b in DEFAULT_BRANDS]
+
+    _set_cached(key, items)
+    return items
+
+
 def add_related_candidates(db_path: Optional[Path], candidates: list) -> int:
-    """Naver 연관검색어 확장 후보 등록 — source='related', active=0 (admin 승인 전까지
-    get_home_brands() 집계에서 제외). candidates = [{"brand": ..., "related_from": ...}].
-    이미 존재하는 brand(UNIQUE) 는 INSERT OR IGNORE 로 건너뛴다. 반환값: 실제 추가된 행 수."""
+    """Naver 연관검색어 확장 후보 등록 — source='related', active=0 **대기 큐 전용**
+    (절대 active=1 로 승격하지 않음 — 승인은 approve_related_candidate() 가 시드의
+    related_terms_json 에 보조 검색어로 편입). candidates = [{"brand": ..., "related_from": ...}].
+    이미 존재하는 brand(UNIQUE) 또는 이미 승인된 보조 검색어는 건너뛴다.
+    반환값: 실제 추가된 행 수."""
     ensure_schema(db_path)
     now = _now()
     added = 0
     with _connect(db_path) as conn:
+        # 이미 승인된 보조 검색어 전체 (재제안 방지)
+        approved: set = set()
+        for r in conn.execute(
+            "SELECT related_terms_json FROM home_brand WHERE related_terms_json IS NOT NULL"
+        ).fetchall():
+            try:
+                approved.update(t.lower() for t in json.loads(r["related_terms_json"] or "[]"))
+            except Exception:
+                continue
         for c in candidates:
             brand = (c.get("brand") or "").strip()
-            if not brand:
+            if not brand or brand.lower() in approved:
                 continue
             cur = conn.execute(
                 """INSERT OR IGNORE INTO home_brand
@@ -333,3 +444,46 @@ def add_related_candidates(db_path: Optional[Path], candidates: list) -> int:
                 added += 1
         conn.commit()
     return added
+
+
+def approve_related_candidate(candidate_id: int, db_path: Optional[Path] = None) -> dict:
+    """related 후보 승인 — 후보의 brand 를 원본 시드(related_from)의
+    related_terms_json 에 보조 검색어로 추가하고 후보 행을 삭제한다.
+
+    반환: {"seed": 시드브랜드, "term": 승인된 검색어, "related_terms": [...전체]}
+    예외: LookupError(후보 없음) / ValueError(related 후보 아님 · 시드 부재)."""
+    ensure_schema(db_path)
+    with _connect(db_path) as conn:
+        cand = conn.execute(
+            "SELECT id, brand, source, related_from FROM home_brand WHERE id = ?",
+            (candidate_id,),
+        ).fetchone()
+        if cand is None:
+            raise LookupError(f"home_brand id={candidate_id} not found")
+        if cand["source"] != "related":
+            raise ValueError("related 후보 행이 아님 — 승인 대상은 source='related' 만")
+        seed_brand = cand["related_from"]
+        seed = None
+        if seed_brand:
+            seed = conn.execute(
+                "SELECT id, brand, related_terms_json FROM home_brand "
+                "WHERE brand = ? AND source != 'related'",
+                (seed_brand,),
+            ).fetchone()
+        if seed is None:
+            raise ValueError(f"원본 시드 브랜드('{seed_brand}') 를 찾을 수 없음")
+        try:
+            terms = json.loads(seed["related_terms_json"] or "[]")
+        except Exception:
+            terms = []
+        if cand["brand"] not in terms:
+            terms.append(cand["brand"])
+        now = _now()
+        conn.execute(
+            "UPDATE home_brand SET related_terms_json = ?, updated_at = ? WHERE id = ?",
+            (json.dumps(terms, ensure_ascii=False), now, seed["id"]),
+        )
+        conn.execute("DELETE FROM home_brand WHERE id = ?", (candidate_id,))
+        conn.commit()
+    invalidate_cache()
+    return {"seed": seed["brand"], "term": cand["brand"], "related_terms": terms}

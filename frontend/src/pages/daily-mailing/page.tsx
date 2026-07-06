@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   listMailSubscriptions, createMailSubscription, updateMailSubscription,
-  deleteMailSubscription, testSendMailSubscription, fetchSubscriptionScope,
+  deleteMailSubscription, testSendMailSubscription,
   requestTestMail,
   type MailSubscription,
 } from '@/api/mailSubscriptions';
@@ -12,23 +12,21 @@ interface PreviewModalState {
   html: string;
 }
 
-interface ScopeModalState {
-  subscriptionName: string;
-  scope: Record<string, unknown>;
-  snapshotPath: string;
-}
-
+// 스콥 프리셋 — 각 용어는 정확히 한 그룹에만 존재한다 (그룹 간 중복 금지).
+// 정책·제도·기관 용어는 PRESET_POLICY_TOPICS, 치료분야 용어는 PRESET_DISEASE_AREAS 로.
 const PRESET_KEYWORDS = [
-  '약가 인하', '급여 등재', '보험 적용', '심평원', '건강보험공단', '보건복지부',
-  '임상시험', '허가 승인', '파이프라인', '바이오시밀러', '제네릭', 'RSA',
-  '위험분담제', '선별급여', '비급여', '항암제', '면역항암제', '표적치료제',
-  'HTA', '약제급여평가위원회', '약가협상', '실거래가', '사용량-약가 연동',
+  '약가 인하', '급여 등재', '보험 적용', '임상시험', '허가 승인',
+  '파이프라인', '바이오시밀러', '제네릭', '실거래가',
 ];
 
 const PRESET_BRANDS = ['Keytruda', 'Gardasil', 'Lynparza', 'Welireg', 'Bridion', 'Emend'];
 const PRESET_COMPANIES = ['MSD', '한국MSD'];
-const PRESET_POLICY_TOPICS = ['약평위', '암질심', '건정심', '위험분담', '약가협상', '사용량-약가'];
-const PRESET_DISEASE_AREAS = ['oncology', 'vaccine'];
+const PRESET_POLICY_TOPICS = [
+  '약평위', '암질심', '건정심', '약가협상', '위험분담제', 'RSA',
+  '사용량-약가 연동', '선별급여', '비급여', 'HTA',
+  '심평원', '건강보험공단', '보건복지부',
+];
+const PRESET_DISEASE_AREAS = ['oncology', 'vaccine', '항암제', '면역항암제', '표적치료제'];
 
 const MEDIA_CATEGORIES = [
   {
@@ -76,7 +74,7 @@ const MEDIA_CATEGORIES = [
 
 export default function DailyMailingPage() {
   const [isDark, setIsDark] = useState(false);
-  const [selectedKeywords, setSelectedKeywords] = useState<string[]>(['약가 인하', '급여 등재', '심평원']);
+  const [selectedKeywords, setSelectedKeywords] = useState<string[]>(['약가 인하', '급여 등재']);
   const [customKeyword, setCustomKeyword] = useState('');
   const [selectedMedia, setSelectedMedia] = useState<string[]>(['medi', 'yakup', 'hankyung']);
   const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
@@ -108,9 +106,15 @@ export default function DailyMailingPage() {
   const [testRequestNote, setTestRequestNote] = useState<{ id: number; message: string; ok: boolean } | null>(null);
   const [activeTab, setActiveTab] = useState<'new' | 'saved'>('new');
   const [previewModal, setPreviewModal] = useState<PreviewModalState | null>(null);
-  const [scopeModal, setScopeModal] = useState<ScopeModalState | null>(null);
-  const [scopeLoadingId, setScopeLoadingId] = useState<number | null>(null);
-  const [scopeCopied, setScopeCopied] = useState(false);
+
+  // 크로스필드 dedupe: 구조화 그룹(브랜드/회사/정책/질환)에서 선택한 용어는
+  // 자유 키워드로 중복 저장하지 않는다. 저장 가능 조건 = 스콥 전체에 1개 이상의 용어.
+  const structuredScopeTerms = new Set([
+    ...selectedBrands, ...selectedCompanies, ...selectedPolicyTopics, ...selectedDiseaseAreas,
+  ]);
+  const dedupedKeywords = selectedKeywords.filter(k => !structuredScopeTerms.has(k));
+  const scopeTermCount = dedupedKeywords.length + selectedBrands.length + selectedCompanies.length
+    + selectedPolicyTopics.length + selectedDiseaseAreas.length;
 
   const reload = async () => {
     setListError(null);
@@ -236,19 +240,6 @@ export default function DailyMailingPage() {
     }
   };
 
-  const handleExportScope = async (id: number, name: string) => {
-    setScopeLoadingId(id);
-    try {
-      const r = await fetchSubscriptionScope(id);
-      setScopeCopied(false);
-      setScopeModal({ subscriptionName: name, scope: r.scope, snapshotPath: r.snapshot_path });
-    } catch (e) {
-      alert(e instanceof Error ? e.message : '스콥 내보내기 실패');
-    } finally {
-      setScopeLoadingId(null);
-    }
-  };
-
   const handleRequestTestMail = async (id: number) => {
     if (!window.confirm('헤르메스에 테스트 메일을 요청할까요? 검토 후 [TEST] 메일이 발송됩니다.')) return;
     setTestRequestId(id);
@@ -266,12 +257,12 @@ export default function DailyMailingPage() {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (selectedKeywords.length === 0 || selectedMedia.length === 0 || emailList.length === 0) return;
+    if (scopeTermCount === 0 || selectedMedia.length === 0 || emailList.length === 0) return;
     setSubmitting(true);
     try {
       await createMailSubscription({
         name: settingName.trim() || '새 메일링 설정',
-        keywords: selectedKeywords,
+        keywords: dedupedKeywords,
         media: selectedMedia,
         schedule,
         time: scheduleTime,
@@ -440,49 +431,97 @@ export default function DailyMailingPage() {
                 className={`w-full rounded-xl px-4 py-3 text-sm focus:outline-none transition-colors ${inputBg} ${inputFocus} ${inputText}`} />
             </div>
 
-            {/* Keywords */}
-            <div className={`${cardBg} rounded-2xl border ${cardBorder} p-6`}>
-              <h3 className={`font-bold text-sm mb-1 flex items-center gap-2 ${textMain}`}>
-                <span className={`w-5 h-5 flex items-center justify-center ${accentColor}`}><i className="ri-price-tag-3-line text-sm"></i></span>
-                모니터링 키워드
-              </h3>
-              <p className={`${textSub} text-xs mb-4`}>프리셋에서 선택하거나 직접 입력하세요</p>
-              {selectedKeywords.length > 0 && (
-                <div className={`flex flex-wrap gap-2 mb-4 p-3 rounded-xl border ${divider}`}>
-                  {selectedKeywords.map(kw => (
-                    <span key={kw} className={`flex items-center gap-1.5 border text-xs px-3 py-1.5 rounded-full ${tagSelected}`}>
-                      {kw}
-                      <button type="button" onClick={() => removeKeyword(kw)} className="w-3.5 h-3.5 flex items-center justify-center hover:opacity-70 cursor-pointer transition-colors"><i className="ri-close-line text-xs"></i></button>
-                    </span>
-                  ))}
-                </div>
-              )}
-              <div className="flex flex-wrap gap-2 mb-4">
-                {PRESET_KEYWORDS.map(kw => (
-                  <button type="button" key={kw} onClick={() => toggleKeyword(kw)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-medium cursor-pointer whitespace-nowrap transition-all ${selectedKeywords.includes(kw) ? tagSelected : tagDefault}`}>
-                    {selectedKeywords.includes(kw) && <i className="ri-check-line mr-1 text-xs"></i>}{kw}
-                  </button>
-                ))}
+            {/* 모니터링 스콥 — 무엇을 찾을지 (5개 그룹 통합 섹션) */}
+            <div className="space-y-3">
+              <div className={`rounded-2xl border p-5 ${accentBg} ${accentBorder}`}>
+                <h2 className={`font-bold text-base flex items-center gap-2 ${textMain}`}>
+                  <span className={`w-5 h-5 flex items-center justify-center ${accentColor}`}><i className="ri-crosshair-2-line"></i></span>
+                  모니터링 스콥 — 무엇을 찾을지
+                </h2>
+                <p className={`${textSub} text-xs mt-1.5 leading-relaxed`}>
+                  헤르메스가 검색·검토할 대상입니다. 브랜드 / 회사 / 정책·제도 / 질환 영역 / 자유 키워드 중 <span className={`font-semibold ${accentColor}`}>한 그룹 이상</span>에 항목이 있으면 저장할 수 있습니다.
+                  같은 용어는 한 그룹에만 저장됩니다 (구조화 그룹 우선).
+                </p>
               </div>
-              <div className="flex gap-2">
-                <input type="text" placeholder="직접 키워드 입력..." value={customKeyword} onChange={e => setCustomKeyword(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addCustomKeyword())}
-                  className={`flex-1 rounded-xl px-4 py-2.5 text-sm focus:outline-none transition-colors ${inputBg} ${inputFocus} ${inputText}`} />
-                <button type="button" onClick={addCustomKeyword}
-                  className={`flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-xl cursor-pointer whitespace-nowrap transition-colors border ${accentBg} ${accentBorder} ${accentColor} hover:opacity-80`}>
-                  <span className="w-4 h-4 flex items-center justify-center"><i className="ri-add-line text-sm"></i></span>추가
-                </button>
-              </div>
+
+              {/* Brands */}
+              {renderScopeGroup({
+                icon: 'ri-capsule-line',
+                title: '브랜드 — 제품명',
+                hint: '모니터링할 제품(브랜드)명 (선택)',
+                values: selectedBrands,
+                presets: PRESET_BRANDS,
+                onToggle: toggleBrand,
+                onRemove: removeBrand,
+                customValue: customBrand,
+                onCustomChange: setCustomBrand,
+                onAddCustom: addCustomBrand,
+              })}
+
+              {/* Companies */}
+              {renderScopeGroup({
+                icon: 'ri-building-2-line',
+                title: '회사 — 제약사명',
+                hint: '모니터링할 제약회사명 (선택)',
+                values: selectedCompanies,
+                presets: PRESET_COMPANIES,
+                onToggle: toggleCompany,
+                onRemove: removeCompany,
+                customValue: customCompany,
+                onCustomChange: setCustomCompany,
+                onAddCustom: addCustomCompany,
+              })}
+
+              {/* Policy Topics */}
+              {renderScopeGroup({
+                icon: 'ri-government-line',
+                title: '정책·제도 — 위원회·기관·급여 제도',
+                hint: '약평위·암질심 등 위원회, 심평원 등 기관, 급여·약가 제도 용어 (선택)',
+                values: selectedPolicyTopics,
+                presets: PRESET_POLICY_TOPICS,
+                onToggle: togglePolicyTopic,
+                onRemove: removePolicyTopic,
+                customValue: customPolicyTopic,
+                onCustomChange: setCustomPolicyTopic,
+                onAddCustom: addCustomPolicyTopic,
+              })}
+
+              {/* Disease Areas */}
+              {renderScopeGroup({
+                icon: 'ri-heart-pulse-line',
+                title: '질환 영역 — 치료 분야',
+                hint: '질환·치료 영역 (예: oncology, 항암제) (선택)',
+                values: selectedDiseaseAreas,
+                presets: PRESET_DISEASE_AREAS,
+                onToggle: toggleDiseaseArea,
+                onRemove: removeDiseaseArea,
+                customValue: customDiseaseArea,
+                onCustomChange: setCustomDiseaseArea,
+                onAddCustom: addCustomDiseaseArea,
+              })}
+
+              {/* Free Keywords */}
+              {renderScopeGroup({
+                icon: 'ri-price-tag-3-line',
+                title: '자유 키워드 (기타)',
+                hint: '위 그룹에 속하지 않는 일반 키워드. 다른 그룹에서 이미 선택한 용어는 저장 시 여기서 자동 제외됩니다',
+                values: selectedKeywords,
+                presets: PRESET_KEYWORDS,
+                onToggle: toggleKeyword,
+                onRemove: removeKeyword,
+                customValue: customKeyword,
+                onCustomChange: setCustomKeyword,
+                onAddCustom: addCustomKeyword,
+              })}
             </div>
 
             {/* Media Selection */}
             <div className={`${cardBg} rounded-2xl border ${cardBorder} p-6`}>
               <h3 className={`font-bold text-sm mb-1 flex items-center gap-2 ${textMain}`}>
                 <span className={`w-5 h-5 flex items-center justify-center ${accentColor}`}><i className="ri-newspaper-line text-sm"></i></span>
-                모니터링 미디어
+                모니터링 미디어 — 어디서 찾을지
               </h3>
-              <p className={`${textSub} text-xs mb-4`}>모니터링할 미디어를 선택하세요</p>
+              <p className={`${textSub} text-xs mb-4`}>위 스콥을 검색할 매체를 선택하세요 (스콥과 별개의 "검색 위치" 설정)</p>
               <div className="grid grid-cols-2 gap-4">
                 {MEDIA_CATEGORIES.map(cat => {
                   const allSelected = cat.items.every(i => selectedMedia.includes(i.id));
@@ -552,62 +591,6 @@ export default function DailyMailingPage() {
                 )}
               </div>
             </div>
-
-            {/* Brands */}
-            {renderScopeGroup({
-              icon: 'ri-capsule-line',
-              title: '브랜드',
-              hint: '모니터링할 브랜드를 선택하거나 직접 입력하세요 (선택)',
-              values: selectedBrands,
-              presets: PRESET_BRANDS,
-              onToggle: toggleBrand,
-              onRemove: removeBrand,
-              customValue: customBrand,
-              onCustomChange: setCustomBrand,
-              onAddCustom: addCustomBrand,
-            })}
-
-            {/* Companies */}
-            {renderScopeGroup({
-              icon: 'ri-building-2-line',
-              title: '회사',
-              hint: '모니터링할 회사를 선택하거나 직접 입력하세요 (선택)',
-              values: selectedCompanies,
-              presets: PRESET_COMPANIES,
-              onToggle: toggleCompany,
-              onRemove: removeCompany,
-              customValue: customCompany,
-              onCustomChange: setCustomCompany,
-              onAddCustom: addCustomCompany,
-            })}
-
-            {/* Policy Topics */}
-            {renderScopeGroup({
-              icon: 'ri-government-line',
-              title: '정책 토픽',
-              hint: '모니터링할 정책 토픽을 선택하거나 직접 입력하세요 (선택)',
-              values: selectedPolicyTopics,
-              presets: PRESET_POLICY_TOPICS,
-              onToggle: togglePolicyTopic,
-              onRemove: removePolicyTopic,
-              customValue: customPolicyTopic,
-              onCustomChange: setCustomPolicyTopic,
-              onAddCustom: addCustomPolicyTopic,
-            })}
-
-            {/* Disease Areas */}
-            {renderScopeGroup({
-              icon: 'ri-heart-pulse-line',
-              title: '질환 영역',
-              hint: '모니터링할 질환 영역을 선택하거나 직접 입력하세요 (선택)',
-              values: selectedDiseaseAreas,
-              presets: PRESET_DISEASE_AREAS,
-              onToggle: toggleDiseaseArea,
-              onRemove: removeDiseaseArea,
-              customValue: customDiseaseArea,
-              onCustomChange: setCustomDiseaseArea,
-              onAddCustom: addCustomDiseaseArea,
-            })}
 
             {/* Schedule */}
             <div className={`${cardBg} rounded-2xl border ${cardBorder} p-6`}>
@@ -679,12 +662,12 @@ export default function DailyMailingPage() {
             {/* Submit */}
             <div className={`flex items-center justify-between rounded-2xl border p-5 ${sumBg}`}>
               <div className={`flex items-center gap-4 text-xs ${textSub}`}>
-                <span className="flex items-center gap-1.5"><span className={`w-3.5 h-3.5 flex items-center justify-center ${accentColor}`}><i className="ri-price-tag-3-line text-xs"></i></span>키워드 {selectedKeywords.length}개</span>
+                <span className="flex items-center gap-1.5"><span className={`w-3.5 h-3.5 flex items-center justify-center ${accentColor}`}><i className="ri-crosshair-2-line text-xs"></i></span>스콥 용어 {scopeTermCount}개</span>
                 <span className="flex items-center gap-1.5"><span className={`w-3.5 h-3.5 flex items-center justify-center ${accentColor}`}><i className="ri-newspaper-line text-xs"></i></span>미디어 {selectedMedia.length}개</span>
                 <span className="flex items-center gap-1.5"><span className={`w-3.5 h-3.5 flex items-center justify-center ${accentColor}`}><i className="ri-mail-line text-xs"></i></span>수신자 {emailList.length}명</span>
                 <span className="flex items-center gap-1.5"><span className={`w-3.5 h-3.5 flex items-center justify-center ${accentColor}`}><i className="ri-time-line text-xs"></i></span>{schedule} {scheduleTime}</span>
               </div>
-              <button type="submit" disabled={submitting || selectedKeywords.length === 0 || selectedMedia.length === 0 || emailList.length === 0}
+              <button type="submit" disabled={submitting || scopeTermCount === 0 || selectedMedia.length === 0 || emailList.length === 0}
                 className="flex items-center gap-2 bg-teal-600 text-white text-sm font-bold px-6 py-2.5 rounded-xl cursor-pointer whitespace-nowrap hover:bg-teal-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
                 <span className="w-4 h-4 flex items-center justify-center"><i className={submitting ? 'ri-loader-4-line animate-spin text-sm' : 'ri-save-line text-sm'}></i></span>{submitting ? '저장 중…' : '설정 저장'}
               </button>
@@ -734,10 +717,6 @@ export default function DailyMailingPage() {
                       {setting.schedule}
                       {setting.schedule === 'Weekly' && setting.weekDay ? ` ${setting.weekDay.slice(0, 3)}` : ''} {setting.time}
                     </span>
-                    <button onClick={() => handleExportScope(setting.id, setting.name)} disabled={scopeLoadingId === setting.id}
-                      className={`text-xs px-3 py-1 rounded-full cursor-pointer whitespace-nowrap transition-all border disabled:opacity-50 ${isDark ? 'border-[#7C3AED]/30 text-[#7C3AED] hover:bg-[#7C3AED]/10' : 'border-purple-300 text-purple-600 hover:bg-purple-50'}`}>
-                      {scopeLoadingId === setting.id ? '내보내는 중…' : '스콥 내보내기'}
-                    </button>
                     <button onClick={() => handleTestSend(setting.id, setting.name)} disabled={testingId === setting.id}
                       className={`text-xs px-3 py-1 rounded-full cursor-pointer whitespace-nowrap transition-all border disabled:opacity-50 ${isDark ? 'border-[#00E5CC]/30 text-[#00E5CC] hover:bg-[#00E5CC]/10' : 'border-teal-300 text-teal-600 hover:bg-teal-50'}`}>
                       {testingId === setting.id ? '생성 중…' : '미리보기'}
@@ -765,9 +744,10 @@ export default function DailyMailingPage() {
                 )}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <p className={`${textMuted} text-xs mb-2`}>모니터링 키워드</p>
+                    <p className={`${textMuted} text-xs mb-2`}>자유 키워드</p>
                     <div className="flex flex-wrap gap-1.5">
                       {setting.keywords.map(kw => <span key={kw} className={`text-xs px-2.5 py-1 rounded-full border ${tagDefault}`}>{kw}</span>)}
+                      {setting.keywords.length === 0 && <span className={`text-xs ${textMuted}`}>—</span>}
                     </div>
                   </div>
                   <div>
@@ -859,54 +839,6 @@ export default function DailyMailingPage() {
         </div>
       )}
 
-      {scopeModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setScopeModal(null)}>
-          <div className={`absolute inset-0 ${isDark ? 'bg-black/70' : 'bg-black/40'} backdrop-blur-sm`} />
-          <div
-            onClick={e => e.stopPropagation()}
-            className={`relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl border shadow-2xl ${cardBg} ${cardBorder}`}
-          >
-            <button
-              onClick={() => setScopeModal(null)}
-              className={`absolute top-4 right-4 w-9 h-9 flex items-center justify-center rounded-full cursor-pointer transition-colors z-10 ${isDark ? 'bg-[#0D1117] text-[#8B9BB4] hover:text-white hover:bg-[#1E2530]' : 'bg-gray-100 text-gray-400 hover:text-gray-700 hover:bg-gray-200'}`}
-            >
-              <i className="ri-close-line text-lg"></i>
-            </button>
-            <div className="p-6">
-              <div className="flex items-center gap-2 mb-1">
-                <span className={`w-5 h-5 flex items-center justify-center ${accentColor}`}><i className="ri-file-code-line text-sm"></i></span>
-                <h3 className={`font-bold text-sm ${textMain}`}>스콥 내보내기 — {scopeModal.subscriptionName}</h3>
-              </div>
-              <div className={`rounded-xl border px-4 py-3 mb-4 flex items-start gap-2 ${previewBg}`}>
-                <span className={`w-4 h-4 flex items-center justify-center flex-shrink-0 mt-0.5 ${accentColor}`}><i className="ri-information-line text-sm"></i></span>
-                <p className={`${textSub} text-xs`}>
-                  이 스콥을 헤르메스가 읽어 매일 발송합니다. 스냅샷: <span className={`${textMain} font-mono`}>{scopeModal.snapshotPath}</span>
-                </p>
-              </div>
-              <div className="flex justify-end mb-2">
-                <button
-                  onClick={async () => {
-                    try {
-                      await navigator.clipboard.writeText(JSON.stringify(scopeModal.scope, null, 2));
-                      setScopeCopied(true);
-                      setTimeout(() => setScopeCopied(false), 2000);
-                    } catch {
-                      // clipboard 권한 없을 수 있음 — 무시
-                    }
-                  }}
-                  className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg cursor-pointer whitespace-nowrap transition-colors border ${accentBg} ${accentBorder} ${accentColor} hover:opacity-80`}
-                >
-                  <span className="w-3.5 h-3.5 flex items-center justify-center"><i className={scopeCopied ? 'ri-check-line text-xs' : 'ri-file-copy-line text-xs'}></i></span>
-                  {scopeCopied ? '복사됨' : 'JSON 복사'}
-                </button>
-              </div>
-              <pre className={`rounded-xl border p-4 text-xs overflow-x-auto ${previewBg} ${textMain}`}>
-                {JSON.stringify(scopeModal.scope, null, 2)}
-              </pre>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

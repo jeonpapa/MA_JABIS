@@ -474,7 +474,9 @@ CREATE INDEX IF NOT EXISTS idx_news_factor_scope ON news_keyword_factor(scope, k
 
 -- Home 브랜드 언급 카드 모니터링 브랜드 (Phase 3, DEFAULT_BRANDS DB화). 빈 테이블이면
 -- get_home_brands() 가 agents.media_intelligence.DEFAULT_BRANDS 상수로 폴백.
--- source='seed' 는 초기 상수 시드, 'related' 는 Naver 연관검색어 확장 후보(admin 승인 전 active=0).
+-- source='seed' 는 초기 상수 시드, 'related' 는 Naver 연관검색어 확장 후보의 **대기 큐**
+-- (항상 active=0 — 승인 시 독립 브랜드로 승격하지 않고 시드 행의 related_terms_json
+--  보조 검색어 배열에 편입 후 후보 행 삭제. 집계는 시드 brand 하나로 합산).
 CREATE TABLE IF NOT EXISTS home_brand (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     brand TEXT NOT NULL UNIQUE,
@@ -482,6 +484,7 @@ CREATE TABLE IF NOT EXISTS home_brand (
     source TEXT NOT NULL DEFAULT 'seed',   -- 'seed' | 'related'
     related_from TEXT,                      -- related 후보의 원본 seed 브랜드
     active INTEGER NOT NULL DEFAULT 1,
+    related_terms_json TEXT,                -- 승인된 보조 검색어 JSON 배열 (seed 행 전용)
     created_at TEXT, updated_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_home_brand_active ON home_brand(active);

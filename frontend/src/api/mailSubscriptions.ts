@@ -54,7 +54,6 @@ export interface TestSendResult {
 
 export interface SubscriptionScopeResponse {
   scope: Record<string, unknown>;
-  snapshot_path: string;
 }
 
 export interface TestMailRequestResult {
