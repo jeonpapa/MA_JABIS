@@ -6216,6 +6216,19 @@ def service_request_outbox():
         return jsonify({"error": str(e)}), 500
 
 
+@app.get("/api/admin/service-requests/outbox/count")
+@require_auth(role="admin")
+def service_request_outbox_count():
+    """outbox 대기 건수 — 사이드바 배지/관리 페이지 배너용 경량 카운트."""
+    if _service_requests_store is None:
+        return _service_requests_unavailable()
+    try:
+        return jsonify({"count": _service_requests_store.count_outbox()})
+    except Exception as e:
+        logger.error("service_request_outbox_count 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @app.post("/api/admin/service-requests/<int:request_id>/claim")
 @require_auth(role="admin")
 def service_request_claim(request_id: int):

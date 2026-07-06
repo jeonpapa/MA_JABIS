@@ -186,6 +186,20 @@ def test_outbox_lists_only_sent(db):
     assert srs.list_outbox(db_path=db) == []
 
 
+def test_count_outbox_counts_only_sent(db):
+    # 빈 DB (테이블 자동 생성) → 0
+    assert srs.count_outbox(db_path=db) == 0
+    _create(db, title="아직 open")
+    assert srs.count_outbox(db_path=db) == 0
+    sent1 = _send(db, title="위임 1")
+    _send(db, title="위임 2")
+    assert srs.count_outbox(db_path=db) == 2
+    # claim 하면 outbox 에서 빠진다
+    srs.claim_request(sent1["id"], "claude-code", db_path=db)
+    assert srs.count_outbox(db_path=db) == 1
+    assert srs.count_outbox(db_path=db) == len(srs.list_outbox(db_path=db))
+
+
 def test_claim_only_from_sent(db):
     open_item = _create(db, title="open 상태")
     assert srs.claim_request(open_item["id"], "claude-code", db_path=db) is None

@@ -12,6 +12,7 @@ import {
   AppUser,
 } from '@/utils/authUsers';
 import { getTabVisibility, setTabVisibility, isTabVisible } from '@/utils/tabVisibility';
+import { fetchOutboxCount } from '@/api/serviceRequests';
 
 export interface NavItem {
   path: string;
@@ -79,6 +80,26 @@ export default function Sidebar() {
   const [addingUser, setAddingUser] = useState(false);
 
   const popupRef = useRef<HTMLDivElement>(null);
+
+  // 서비스 보완 요청 outbox(sent) 대기 건수 배지 — admin 전용.
+  // 비관리자는 절대 fetch 하지 않고, 실패 시 0(배지 없음)으로 조용히 처리.
+  const [outboxCount, setOutboxCount] = useState(0);
+  useEffect(() => {
+    if (!adminMode) return;
+    let cancelled = false;
+    const refresh = () => {
+      void fetchOutboxCount().then(n => {
+        if (!cancelled) setOutboxCount(n);
+      });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+    // location.pathname: 라우트 이동 시 재조회 (sent 처리 직후 배지 최신화)
+  }, [adminMode, location.pathname]);
 
   // 현재 경로가 숨겨진 탭이면 홈으로 리다이렉트
   useEffect(() => {
@@ -274,6 +295,14 @@ export default function Sidebar() {
                       <i className={`${item.icon} text-base`}></i>
                     </span>
                     {item.label}
+                    {item.path === '/admin/service-requests' && outboxCount > 0 && (
+                      <span
+                        className="ml-auto flex-shrink-0 min-w-[18px] h-[18px] px-1.5 flex items-center justify-center rounded-full bg-[#00E5CC] text-[#0A0E1A] text-[10px] font-bold leading-none"
+                        title={`미처리 요청(outbox) ${outboxCount}건`}
+                      >
+                        {outboxCount > 99 ? '99+' : outboxCount}
+                      </span>
+                    )}
                   </NavLink>
                 </li>
               ))}

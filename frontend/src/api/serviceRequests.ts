@@ -232,3 +232,17 @@ export async function fetchOutbox(): Promise<SR[]> {
   const r = await api.get<{ items?: SR[] }>('/api/admin/service-requests/outbox');
   return r?.items ?? [];
 }
+
+/**
+ * outbox 대기 건수 (사이드바 배지/배너용).
+ * 실패해도 절대 throw 하지 않고 0 반환 — 배지 실패가 네비게이션을 깨면 안 됨.
+ */
+export async function fetchOutboxCount(): Promise<number> {
+  try {
+    const r = await api.get<{ count?: number }>('/api/admin/service-requests/outbox/count');
+    const n = r?.count ?? 0;
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+}

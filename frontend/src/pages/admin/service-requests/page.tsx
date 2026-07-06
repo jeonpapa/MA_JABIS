@@ -11,6 +11,7 @@ import {
   adminClaim,
   adminResolve,
   fetchServiceRequest,
+  fetchOutboxCount,
   REQUEST_TYPE_LABELS,
   PRIORITY_LABELS,
   STATUS_LABELS,
@@ -99,6 +100,10 @@ export default function AdminServiceRequestsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // outbox(sent) 대기 배너 — 필터와 무관하게 전체 카운트 (실패 시 0 → 배너 없음)
+  const [outboxCount, setOutboxCount] = useState(0);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+
   const [filterStatus, setFilterStatus] = useState('');
   const [filterPriority, setFilterPriority] = useState('');
   const [filterType, setFilterType] = useState('');
@@ -162,6 +167,8 @@ export default function AdminServiceRequestsPage() {
     } finally {
       setLoading(false);
     }
+    // 배너 카운트는 목록 필터와 무관 — 실패해도 throw 하지 않음 (0 반환)
+    void fetchOutboxCount().then(setOutboxCount);
   };
 
   useEffect(() => {
@@ -243,6 +250,8 @@ export default function AdminServiceRequestsPage() {
       }
     } finally {
       setBusyAction(null);
+      // send/claim/resolve 로 outbox 수가 변할 수 있음 — 배너/배지 소스 최신화
+      void fetchOutboxCount().then(setOutboxCount);
     }
   };
 
@@ -374,6 +383,27 @@ export default function AdminServiceRequestsPage() {
       </div>
 
       <div className="px-8 py-6 space-y-5">
+        {/* outbox 대기 배너 — 비차단, 닫기 가능 */}
+        {outboxCount > 0 && !bannerDismissed && (
+          <div className="bg-[#00E5CC]/10 border border-[#00E5CC]/30 rounded-2xl px-5 py-3 flex items-center gap-3">
+            <span className="w-5 h-5 flex items-center justify-center flex-shrink-0">
+              <i className="ri-inbox-unarchive-line text-[#00E5CC]"></i>
+            </span>
+            <p className="text-[#00E5CC] text-xs font-semibold flex-1">
+              미처리 요청(outbox) {outboxCount}건 — 에이전트가{' '}
+              <code className="bg-[#0D1117] px-1.5 py-0.5 rounded text-[11px] font-mono">cli outbox</code>
+              로 픽업해 처리합니다.
+            </p>
+            <button
+              onClick={() => setBannerDismissed(true)}
+              className="w-5 h-5 flex items-center justify-center text-[#00E5CC]/70 hover:text-white cursor-pointer transition-colors flex-shrink-0"
+              title="배너 닫기"
+            >
+              <i className="ri-close-line text-sm"></i>
+            </button>
+          </div>
+        )}
+
         {/* 필터 */}
         <div className="bg-[#161B27] rounded-2xl border border-[#1E2530] p-4 flex flex-wrap items-end gap-3">
           <div className="w-40">

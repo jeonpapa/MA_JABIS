@@ -491,6 +491,16 @@ def list_outbox(limit: int = 200, *, db_path: str | Path | None = None) -> list[
     return [_row_to_dict(r) for r in rows]
 
 
+def count_outbox(db_path: str | Path | None = None) -> int:
+    """outbox 대기 건수 — status='sent' COUNT (대쉬보드 배지/배너용 경량 조회)."""
+    ensure_service_request_tables(db_path)
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM service_request WHERE status='sent'"
+        ).fetchone()
+    return int(row[0]) if row else 0
+
+
 def claim_request(
     request_id: int,
     actor_email: str,
