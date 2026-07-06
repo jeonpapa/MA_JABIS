@@ -42,7 +42,20 @@ GOV_AGENCIES = [
      "queries": ["건강보험정책심의위원회 약가", "약제급여평가위원회", "약가 인하 정책",
                  "급여 적정성 재평가", "위험분담제 약가", "사용량 약가 연동",
                  "2026 약가제도 개편", "선별급여", "신약 급여 등재", "실거래가 약가"]},
+    # ── S4 소스 확장 (Access Insight) — 국회·환자단체·의료진/학회 engage 신호 ──
+    # agency 태그는 영문 상수로 유지 (S1 classifier 매핑·seed 업그레이드 체크의 키).
+    {"agency": "NATIONAL_ASSEMBLY",
+     "queries": ["국회 보건복지위원회 약가", "국정감사 급여", "의원 법안 발의 약가",
+                 "건강보험 국회 법안"]},
+    {"agency": "PATIENT_GROUP",
+     "queries": ["환자단체 급여", "환우회 청원", "환자단체 기자회견", "환자 접근성 신약"]},
+    {"agency": "MEDICAL_SOCIETY",
+     "queries": ["학회 급여 성명", "의사회 급여 권고", "진료지침 급여", "전문의 의견 약가"]},
 ]
+
+# S4 확장 agency 태그 — editable_factors 의 기존-DB 업그레이드 시드가 이 태그로
+# "해당 agency 의 gov_seed 행이 하나도 없으면 상수에서 시드" 를 판정한다.
+S4_AGENCY_TAGS = ("NATIONAL_ASSEMBLY", "PATIENT_GROUP", "MEDICAL_SOCIETY")
 
 # 관련성 게이트용 보건/약가 맥락어 — 표면에 최소 1개 있어야 정책뉴스로 인정 (일반어 오수집 방지)
 _CONTEXT_ANCHORS = (

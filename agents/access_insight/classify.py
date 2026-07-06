@@ -15,10 +15,16 @@ KOL_OPINION = "KOL_OPINION"
 RESULT_REPORT = "RESULT_REPORT"
 
 # 우선순위 순서 (특이도 높은 카테고리 먼저 매치).
+# S4 소스 확장 (국회 NATIONAL_ASSEMBLY · 환자단체 PATIENT_GROUP · 의료진/학회
+# MEDICAL_SOCIETY seed) 기사가 fallback 이 아닌 의도한 유형으로 분류되도록 보강.
+# 주의: 무맥락 "기자회견" 은 제약사/정부 회견도 잡아 오분류하므로 제외 —
+# 환자단체 회견은 "환자단체"/"환우회" 표면어로 커버된다.
 _KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    (PATIENT_PETITION, ("환자단체", "환우회", "청원", "탄원")),
-    (KOL_OPINION, ("학회", "의료진", "전문가", "교수", "의사회", "의학회")),
-    (GOV_STATEMENT, ("국회", "복지위", "보건복지위", "의원", "국정감사")),
+    (PATIENT_PETITION, ("환자단체", "환우회", "청원", "탄원", "환자 접근성")),
+    (KOL_OPINION, ("학회", "의료진", "전문가", "교수", "의사회", "의학회",
+                   "진료지침", "전문의")),
+    (GOV_STATEMENT, ("국회", "복지위", "보건복지위", "의원", "국정감사",
+                     "법안", "발의")),
     (IR_RELEASE, ("ir", "실적", "컨퍼런스콜", "보도자료", "press release", "매출")),
     (RESULT_REPORT, ("암질심 결과", "약평위 결과", "급여 결정", "통과", "부결")),
     (PRE_AGENDA_LEAK, ("상정", "안건", "예정", "심의 예정")),

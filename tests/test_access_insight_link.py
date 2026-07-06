@@ -209,6 +209,35 @@ def test_classify_pre_agenda_leak():
     assert st == PRE_AGENDA_LEAK
 
 
+# ── S4 소스 확장 — 국회·환자단체·의료진 신규 lexicon 매핑 ─────────────────
+
+def test_classify_s4_patient_access_keyword():
+    st, phrases = classify_signal_type(
+        "신약 환자 접근성 개선 요구", "치료 기회 확대 주장", "gov_policy")
+    assert st == PATIENT_PETITION
+    assert "환자 접근성" in phrases
+
+
+def test_classify_s4_medical_society_guideline():
+    st, phrases = classify_signal_type(
+        "진료지침 개정, 급여 기준 반영 요청", "전문의 대상 설문", "gov_policy")
+    assert st == KOL_OPINION
+    assert set(phrases) & {"진료지침", "전문의"}
+
+
+def test_classify_s4_assembly_bill():
+    st, phrases = classify_signal_type(
+        "약가 제도 개선 법안 발의", "건강보험법 개정안 국회 제출", "gov_policy")
+    assert st == GOV_STATEMENT
+    assert set(phrases) & {"법안", "발의", "국회"}
+
+
+def test_classify_s4_pharma_press_conference_not_patient():
+    # 무맥락 '기자회견' 은 lexicon 에 없어야 함 — 제약사 회견이 PATIENT 로 오분류 금지
+    st, _ = classify_signal_type("제약사 신제품 기자회견", "매출 목표 발표", "competitor")
+    assert st == IR_RELEASE
+
+
 def test_classify_fallback_gov_policy_kind():
     st, phrases = classify_signal_type("특이 키워드 없는 제목", "본문도 평범함", "gov_policy")
     assert st == GOV_STATEMENT

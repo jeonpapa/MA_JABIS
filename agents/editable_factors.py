@@ -221,8 +221,45 @@ def seed_editable_factors(db_path: Optional[Path] = None) -> dict:
                     (term, now, now),
                 )
                 seeded["news_keyword_factor"] += 1
+
+        # ── S4 소스 확장 업그레이드 시드 (국회·환자단체·의료진/학회) ──────────
+        # 위 블록은 테이블이 비어있을 때만 동작하므로, 이미 seed 된 기존 DB 에는
+        # 신규 agency 의 gov_seed 가 영원히 추가되지 않는다. S4 agency 태그별로
+        # "해당 agency 행이 0개일 때만" 상수에서 시드해 기존 DB 를 업그레이드한다.
+        # (agency 행이 1개라도 있으면 no-op — admin 이 개별 term 을 삭제/수정해도
+        #  되살리지 않는다. agency 전체 비활성화는 active=0 PATCH 로.)
+        seeded["news_keyword_factor_s4"] = _ensure_s4_gov_seeds(conn, now)
         conn.commit()
     return seeded
+
+
+def _ensure_s4_gov_seeds(conn: sqlite3.Connection, now: str) -> int:
+    """S4 확장 agency(gov_seed) 를 기존 DB 에 idempotent 하게 추가. 반환: 추가 행 수."""
+    from agents.gov_policy_news import GOV_AGENCIES, S4_AGENCY_TAGS
+
+    added = 0
+    for ag in GOV_AGENCIES:
+        agency = ag["agency"]
+        if agency not in S4_AGENCY_TAGS:
+            continue
+        cnt = conn.execute(
+            "SELECT COUNT(*) FROM news_keyword_factor "
+            "WHERE scope = 'gov' AND kind = 'gov_seed' AND agency = ?",
+            (agency,),
+        ).fetchone()[0]
+        if cnt:
+            continue
+        for q in ag["queries"]:
+            conn.execute(
+                """INSERT INTO news_keyword_factor
+                   (scope, kind, agency, term, active, created_at, updated_at)
+                   VALUES ('gov','gov_seed',?,?,1,?,?)""",
+                (agency, q, now, now),
+            )
+            added += 1
+        logger.info("[editable_factors] S4 gov_seed 업그레이드: %s (%d terms)",
+                    agency, len(ag["queries"]))
+    return added
 
 
 # ── 로더 (seed-if-empty → SELECT → 예외 시 상수 폴백) ─────────────────────────
