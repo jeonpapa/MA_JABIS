@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from agents.daily_mailing.storage import (
     ensure_daily_mailing_tables,
     load_admin_kanban,
+    load_latest_run_for_subscription,
     persist_daily_mailing_run,
 )
 from agents.ingest.daily_mailing_sync import sync_daily_mailing_runs
@@ -138,6 +139,37 @@ def test_reviewer_findings_dict_normalized_to_list(tmp_path):
     k = load_admin_kanban(db_path=db)
     item = next(i for lane in k["lanes"] for i in lane["items"] if i.get("article_id") == "a1")
     assert item["reviewer_findings"] == [finding]
+
+
+def test_load_latest_run_for_subscription(tmp_path):
+    """'최근 발송 보기' 데이터 소스 — subscription_id → owner_email → 전체 최신 폴백."""
+    db = tmp_path / "latest.db"
+    # 빈 DB → None
+    assert load_latest_run_for_subscription(1, "a@x.com", db_path=db) is None
+    base = {"status": "quality_gated_draft", "keywords": ["키트루다"],
+            "items": [{"title": "t", "matched_keywords": ["키트루다"]}]}
+    persist_daily_mailing_run(
+        {**base, "run_id": "R-OLD", "generated_at": "2026-07-01T02:00:00+09:00",
+         "subscription_id": 1, "owner_email": "a@x.com"},
+        articles=[_article("a-old")], html_path="/tmp/old.html", db_path=db)
+    persist_daily_mailing_run(
+        {**base, "run_id": "R-NEW", "generated_at": "2026-07-05T02:00:00+09:00",
+         "subscription_id": 1, "owner_email": "a@x.com"},
+        articles=[_article("a-new")], html_path="/tmp/new.html", db_path=db)
+    persist_daily_mailing_run(
+        {**base, "run_id": "R-OTHER", "generated_at": "2026-07-06T02:00:00+09:00",
+         "subscription_id": 2, "owner_email": "b@x.com"},
+        articles=[_article("a-other")], db_path=db)
+    # subscription_id 일치 시 그 구독의 최신 run (더 최신인 타 구독 run 이 아님)
+    run = load_latest_run_for_subscription(1, "a@x.com", db_path=db)
+    assert run["run_id"] == "R-NEW" and run["html_path"] == "/tmp/new.html"
+    assert run["keywords"] == ["키트루다"]
+    assert run["draft_items"] and run["draft_items"][0]["title"] == "t"
+    # subscription_id 미일치 → owner_email 폴백
+    assert load_latest_run_for_subscription(99, "b@x.com", db_path=db)["run_id"] == "R-OTHER"
+    # 둘 다 미일치 → 전체 최신 폴백
+    assert load_latest_run_for_subscription(99, "nobody@x.com", db_path=db)["run_id"] == "R-OTHER"
+    assert load_latest_run_for_subscription(None, None, db_path=db)["run_id"] == "R-OTHER"
 
 
 @pytest.mark.skipif(not SAMPLE_BUNDLE.exists(), reason="sample run bundle not present")

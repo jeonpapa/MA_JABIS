@@ -12,6 +12,15 @@ interface PreviewModalState {
   html: string;
 }
 
+// IME(한글) 조합 중 Enter 는 무시 — 조합 미완성 음절(예: "윈레브에어"의 "어")이
+// 별도 chip 으로 등록되는 버그 방지. 모든 chip 입력의 Enter 커밋은 이 헬퍼를 사용한다.
+const onEnterCommit = (fn: () => void) => (e: React.KeyboardEvent<HTMLInputElement>) => {
+  if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+    e.preventDefault();
+    fn();
+  }
+};
+
 // 스콥 프리셋 — 각 용어는 정확히 한 그룹에만 존재한다 (그룹 간 중복 금지).
 // 정책·제도·기관 용어는 PRESET_POLICY_TOPICS, 치료분야 용어는 PRESET_DISEASE_AREAS 로.
 const PRESET_KEYWORDS = [
@@ -19,14 +28,15 @@ const PRESET_KEYWORDS = [
   '파이프라인', '바이오시밀러', '제네릭', '실거래가',
 ];
 
-const PRESET_BRANDS = ['Keytruda', 'Gardasil', 'Lynparza', 'Welireg', 'Bridion', 'Emend'];
+// 한국 매체 모니터링이므로 프리셋은 한국어 표기 우선 (영문 표기는 Naver 검색 리콜이 낮음)
+const PRESET_BRANDS = ['키트루다', '가다실', '린파자', '웰리렉', '브리디온', '에멘드'];
 const PRESET_COMPANIES = ['MSD', '한국MSD'];
 const PRESET_POLICY_TOPICS = [
   '약평위', '암질심', '건정심', '약가협상', '위험분담제', 'RSA',
   '사용량-약가 연동', '선별급여', '비급여', 'HTA',
   '심평원', '건강보험공단', '보건복지부',
 ];
-const PRESET_DISEASE_AREAS = ['oncology', 'vaccine', '항암제', '면역항암제', '표적치료제'];
+const PRESET_DISEASE_AREAS = ['항암제', '면역항암제', '표적치료제', '백신'];
 
 const MEDIA_CATEGORIES = [
   {
@@ -106,6 +116,7 @@ export default function DailyMailingPage() {
   const [testRequestNote, setTestRequestNote] = useState<{ id: number; message: string; ok: boolean } | null>(null);
   const [activeTab, setActiveTab] = useState<'new' | 'saved'>('new');
   const [previewModal, setPreviewModal] = useState<PreviewModalState | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
 
   // 크로스필드 dedupe: 구조화 그룹(브랜드/회사/정책/질환)에서 선택한 용어는
   // 자유 키워드로 중복 저장하지 않는다. 저장 가능 조건 = 스콥 전체에 1개 이상의 용어.
@@ -196,6 +207,45 @@ export default function DailyMailingPage() {
     if (trimmed && emailRegex.test(trimmed) && !emailList.includes(trimmed)) { setEmailList(prev => [...prev, trimmed]); setEmailInput(''); }
   };
   const removeEmail = (email: string) => { setEmailList(prev => prev.filter(e => e !== email)); };
+
+  const resetForm = () => {
+    setSettingName('');
+    setSelectedKeywords(['약가 인하', '급여 등재']);
+    setCustomKeyword('');
+    setSelectedMedia(['medi', 'yakup', 'hankyung']);
+    setSelectedBrands([]); setCustomBrand('');
+    setSelectedCompanies([]); setCustomCompany('');
+    setSelectedPolicyTopics([]); setCustomPolicyTopic('');
+    setSelectedDiseaseAreas([]); setCustomDiseaseArea('');
+    setCustomSources([]); setCustomSourceUrl(''); setCustomSourceName(''); setCustomSourceError(null);
+    setSchedule('Daily'); setScheduleTime('08:00'); setWeekDay('Monday');
+    setEmailInput(''); setEmailList(['marketaccess@msd.com']);
+  };
+
+  // 저장된 설정 카드 → 편집 모드: 저장값 전체를 폼 state 로 복원 후 '새 설정' 탭으로 이동.
+  const startEdit = (setting: MailSubscription) => {
+    setEditingId(setting.id);
+    setSettingName(setting.name);
+    setSelectedKeywords(setting.keywords ?? []);
+    setSelectedMedia(setting.media ?? []);
+    setSelectedBrands(setting.brands ?? []);
+    setSelectedCompanies(setting.companies ?? []);
+    setSelectedPolicyTopics(setting.policy_topics ?? []);
+    setSelectedDiseaseAreas(setting.disease_areas ?? []);
+    setCustomSources(setting.custom_sources ?? []);
+    setSchedule(setting.schedule);
+    setScheduleTime(setting.time);
+    setWeekDay(setting.weekDay ?? 'Monday');
+    setEmailList(setting.emails ?? []);
+    setCustomKeyword(''); setCustomBrand(''); setCustomCompany('');
+    setCustomPolicyTopic(''); setCustomDiseaseArea('');
+    setCustomSourceUrl(''); setCustomSourceName(''); setCustomSourceError(null);
+    setEmailInput('');
+    setActiveTab('new');
+  };
+
+  const cancelEdit = () => { setEditingId(null); resetForm(); };
+
   const toggleSetting = async (id: number, next: boolean) => {
     try {
       await updateMailSubscription(id, { active: next });
@@ -229,12 +279,14 @@ export default function DailyMailingPage() {
         alert(`발송 완료 → ${r.recipients.join(', ')}`);
       } else if (r.ok && r.mode === 'dry-run') {
         alert(`[Dry-run] SMTP 미설정. ${r.message ?? ''}`);
+      } else if (r.ok && r.mode === 'none') {
+        alert(r.message ?? '아직 헤르메스 발송 이력이 없습니다 — 실제 메일은 헤르메스가 작성·발송합니다.');
       } else {
-        alert(`미리보기 생성 실패: ${r.message ?? ''}`);
+        alert(`최근 발송 브리프 로드 실패: ${r.message ?? ''}`);
       }
       await reload();
     } catch (e) {
-      alert(e instanceof Error ? e.message : '미리보기 생성 실패');
+      alert(e instanceof Error ? e.message : '최근 발송 브리프 로드 실패');
     } finally {
       setTestingId(null);
     }
@@ -259,8 +311,11 @@ export default function DailyMailingPage() {
     e.preventDefault();
     if (scopeTermCount === 0 || selectedMedia.length === 0 || emailList.length === 0) return;
     setSubmitting(true);
+    const isEdit = editingId != null;
     try {
-      await createMailSubscription({
+      // 생성/수정이 동일한 payload 빌더를 공유한다. 수정 시 active 는 건드리지 않는다
+      // (비활성 상태의 설정을 편집해도 강제 재활성화되지 않도록).
+      const payload = {
         name: settingName.trim() || '새 메일링 설정',
         keywords: dedupedKeywords,
         media: selectedMedia,
@@ -268,16 +323,23 @@ export default function DailyMailingPage() {
         time: scheduleTime,
         weekDay: schedule === 'Weekly' ? weekDay : null,
         emails: emailList,
-        active: true,
         brands: selectedBrands,
         companies: selectedCompanies,
         policyTopics: selectedPolicyTopics,
         diseaseAreas: selectedDiseaseAreas,
         customSources,
-      });
+      };
+      if (isEdit) {
+        await updateMailSubscription(editingId, payload);
+      } else {
+        await createMailSubscription({ ...payload, active: true });
+      }
       setSubmitStatus('success');
-      setSubmitMessage('모니터링 스콥이 저장되었습니다. 헤르메스 에이전트가 매일 이 스콥으로 검토·작성·발송합니다.');
-      setSettingName('');
+      setSubmitMessage(isEdit
+        ? '설정이 수정되었습니다. 헤르메스 에이전트가 다음 발송부터 수정된 스콥을 사용합니다.'
+        : '모니터링 스콥이 저장되었습니다. 헤르메스 에이전트가 매일 이 스콥으로 검토·작성·발송합니다.');
+      setEditingId(null);
+      resetForm();
       await reload();
       setActiveTab('saved');
       setTimeout(() => { setSubmitStatus('idle'); setSubmitMessage(null); }, 3000);
@@ -359,7 +421,7 @@ export default function DailyMailingPage() {
       )}
       <div className="flex gap-2">
         <input type="text" placeholder="직접 입력..." value={opts.customValue} onChange={e => opts.onCustomChange(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), opts.onAddCustom())}
+          onKeyDown={onEnterCommit(opts.onAddCustom)}
           className={`flex-1 rounded-xl px-4 py-2.5 text-sm focus:outline-none transition-colors ${inputBg} ${inputFocus} ${inputText}`} />
         <button type="button" onClick={opts.onAddCustom}
           className={`flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-xl cursor-pointer whitespace-nowrap transition-colors border ${accentBg} ${accentBorder} ${accentColor} hover:opacity-80`}>
@@ -421,6 +483,18 @@ export default function DailyMailingPage() {
 
         {activeTab === 'new' && (
           <form data-readdy-form id="daily-mailing-form" onSubmit={handleSubmit} className="space-y-5">
+            {editingId != null && (
+              <div className={`flex items-center justify-between rounded-2xl border p-4 ${accentBg} ${accentBorder}`}>
+                <p className={`text-xs font-medium flex items-center gap-1.5 ${accentColor}`}>
+                  <i className="ri-edit-line text-sm"></i>
+                  저장된 설정 수정 중 — "{settingName || '(이름 없음)'}" · 저장 시 기존 설정을 덮어씁니다
+                </p>
+                <button type="button" onClick={cancelEdit}
+                  className={`text-xs px-3 py-1 rounded-full cursor-pointer whitespace-nowrap transition-all border ${isDark ? 'border-[#2A3545] text-[#8B9BB4] hover:text-white' : 'border-gray-300 text-gray-500 hover:text-gray-900'}`}>
+                  취소
+                </button>
+              </div>
+            )}
             {/* Setting Name */}
             <div className={`${cardBg} rounded-2xl border ${cardBorder} p-6`}>
               <h3 className={`font-bold text-sm mb-4 flex items-center gap-2 ${textMain}`}>
@@ -490,7 +564,7 @@ export default function DailyMailingPage() {
               {renderScopeGroup({
                 icon: 'ri-heart-pulse-line',
                 title: '질환 영역 — 치료 분야',
-                hint: '질환·치료 영역 (예: oncology, 항암제) (선택)',
+                hint: '질환·치료 영역 (예: 항암제, 백신) (선택)',
                 values: selectedDiseaseAreas,
                 presets: PRESET_DISEASE_AREAS,
                 onToggle: toggleDiseaseArea,
@@ -575,11 +649,11 @@ export default function DailyMailingPage() {
                 <div className="flex flex-col sm:flex-row gap-2">
                   <input type="text" placeholder="https://example.com/news" value={customSourceUrl}
                     onChange={e => { setCustomSourceUrl(e.target.value); setCustomSourceError(null); }}
-                    onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addCustomSource())}
+                    onKeyDown={onEnterCommit(addCustomSource)}
                     className={`flex-1 rounded-xl px-4 py-2.5 text-sm focus:outline-none transition-colors ${inputBg} ${inputFocus} ${inputText}`} />
                   <input type="text" placeholder="이름(선택)" value={customSourceName}
                     onChange={e => setCustomSourceName(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addCustomSource())}
+                    onKeyDown={onEnterCommit(addCustomSource)}
                     className={`sm:w-40 rounded-xl px-4 py-2.5 text-sm focus:outline-none transition-colors ${inputBg} ${inputFocus} ${inputText}`} />
                   <button type="button" onClick={addCustomSource}
                     className={`flex items-center justify-center gap-2 text-sm font-medium px-4 py-2.5 rounded-xl cursor-pointer whitespace-nowrap transition-colors border ${accentBg} ${accentBorder} ${accentColor} hover:opacity-80`}>
@@ -650,7 +724,7 @@ export default function DailyMailingPage() {
               )}
               <div className="flex gap-2">
                 <input type="email" name="email" placeholder="이메일 주소 입력..." value={emailInput} onChange={e => setEmailInput(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEmail())}
+                  onKeyDown={onEnterCommit(addEmail)}
                   className={`flex-1 rounded-xl px-4 py-2.5 text-sm focus:outline-none transition-colors ${inputBg} ${inputFocus} ${inputText}`} />
                 <button type="button" onClick={addEmail}
                   className={`flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-xl cursor-pointer whitespace-nowrap transition-colors border ${accentBg} ${accentBorder} ${accentColor} hover:opacity-80`}>
@@ -667,10 +741,18 @@ export default function DailyMailingPage() {
                 <span className="flex items-center gap-1.5"><span className={`w-3.5 h-3.5 flex items-center justify-center ${accentColor}`}><i className="ri-mail-line text-xs"></i></span>수신자 {emailList.length}명</span>
                 <span className="flex items-center gap-1.5"><span className={`w-3.5 h-3.5 flex items-center justify-center ${accentColor}`}><i className="ri-time-line text-xs"></i></span>{schedule} {scheduleTime}</span>
               </div>
-              <button type="submit" disabled={submitting || scopeTermCount === 0 || selectedMedia.length === 0 || emailList.length === 0}
-                className="flex items-center gap-2 bg-teal-600 text-white text-sm font-bold px-6 py-2.5 rounded-xl cursor-pointer whitespace-nowrap hover:bg-teal-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                <span className="w-4 h-4 flex items-center justify-center"><i className={submitting ? 'ri-loader-4-line animate-spin text-sm' : 'ri-save-line text-sm'}></i></span>{submitting ? '저장 중…' : '설정 저장'}
-              </button>
+              <div className="flex items-center gap-2">
+                {editingId != null && (
+                  <button type="button" onClick={cancelEdit}
+                    className={`text-sm font-medium px-4 py-2.5 rounded-xl cursor-pointer whitespace-nowrap transition-colors border ${isDark ? 'border-[#2A3545] text-[#8B9BB4] hover:text-white' : 'border-gray-300 text-gray-500 hover:text-gray-900'}`}>
+                    취소
+                  </button>
+                )}
+                <button type="submit" disabled={submitting || scopeTermCount === 0 || selectedMedia.length === 0 || emailList.length === 0}
+                  className="flex items-center gap-2 bg-teal-600 text-white text-sm font-bold px-6 py-2.5 rounded-xl cursor-pointer whitespace-nowrap hover:bg-teal-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                  <span className="w-4 h-4 flex items-center justify-center"><i className={submitting ? 'ri-loader-4-line animate-spin text-sm' : 'ri-save-line text-sm'}></i></span>{submitting ? '저장 중…' : editingId != null ? '수정 저장' : '설정 저장'}
+                </button>
+              </div>
             </div>
           </form>
         )}
@@ -717,9 +799,13 @@ export default function DailyMailingPage() {
                       {setting.schedule}
                       {setting.schedule === 'Weekly' && setting.weekDay ? ` ${setting.weekDay.slice(0, 3)}` : ''} {setting.time}
                     </span>
+                    <button onClick={() => startEdit(setting)}
+                      className={`flex items-center gap-1 text-xs px-3 py-1 rounded-full cursor-pointer whitespace-nowrap transition-all border ${isDark ? 'border-[#2A3545] text-[#8B9BB4] hover:text-white hover:border-[#00E5CC]/40' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
+                      <i className="ri-edit-line text-xs"></i>수정
+                    </button>
                     <button onClick={() => handleTestSend(setting.id, setting.name)} disabled={testingId === setting.id}
                       className={`text-xs px-3 py-1 rounded-full cursor-pointer whitespace-nowrap transition-all border disabled:opacity-50 ${isDark ? 'border-[#00E5CC]/30 text-[#00E5CC] hover:bg-[#00E5CC]/10' : 'border-teal-300 text-teal-600 hover:bg-teal-50'}`}>
-                      {testingId === setting.id ? '생성 중…' : '미리보기'}
+                      {testingId === setting.id ? '불러오는 중…' : '최근 발송 보기'}
                     </button>
                     <button onClick={() => handleRequestTestMail(setting.id)} disabled={testRequestId === setting.id}
                       className={`flex items-center gap-1 text-xs px-3 py-1 rounded-full cursor-pointer whitespace-nowrap transition-all border disabled:opacity-50 ${isDark ? 'border-[#F59E0B]/30 text-[#F59E0B] hover:bg-[#F59E0B]/10' : 'border-amber-300 text-amber-600 hover:bg-amber-50'}`}>
@@ -816,10 +902,10 @@ export default function DailyMailingPage() {
             <div className="p-6">
               <div className="flex items-center gap-2 mb-1">
                 <span className={`w-5 h-5 flex items-center justify-center ${accentColor}`}><i className="ri-mail-open-line text-sm"></i></span>
-                <h3 className={`font-bold text-sm ${textMain}`}>메일 미리보기 — {previewModal.subscriptionName}</h3>
+                <h3 className={`font-bold text-sm ${textMain}`}>최근 발송 브리프 — {previewModal.subscriptionName}</h3>
               </div>
               <p className={`${textSub} text-xs mb-4`}>
-                이 화면은 미리보기입니다. 실제 발송은 헤르메스 에이전트가 이 스콥을 검토한 뒤 수행합니다. 대쉬보드는 메일을 직접 발송하지 않습니다.
+                아래는 이 스콥으로 헤르메스가 실제 작성한 최신 브리프입니다. 대쉬보드는 메일을 직접 발송하지 않습니다.
               </p>
               <div className={`rounded-xl border px-4 py-3 mb-4 ${previewBg}`}>
                 <p className={`${textMuted} text-[10px] mb-1`}>제목</p>

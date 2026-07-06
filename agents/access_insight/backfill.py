@@ -25,7 +25,14 @@ from .classify import (
     signal_weight,
     unclassified_allowed,
 )
-from .link import DEFAULT_DB_PATH, build_alias_index, resolve_drug
+from .link import (
+    DEFAULT_DB_PATH,
+    PROMINENCE_PASSING,
+    build_alias_index,
+    drug_in_text,
+    drug_prominence,
+    resolve_drug_with_prominence,
+)
 
 PathLike = Union[str, Path]
 
@@ -36,26 +43,30 @@ _TIER_LETTER = TIER_LETTER  # 하위호환 별칭
 
 DEFAULT_KINDS: tuple[str, ...] = ("competitor", "gov_policy", "msd_asset")
 
-# B5 — 약제 유형별 예상(진입) 위원회.
-#   항암제 → 암질심(AMJILSIM), 비항암제 → 급여기준소위(BENEFIT_SUBCOMMITTEE).
-#   약평위(YAKPYUNGWI)는 두 경로 공통의 후속 단계이므로 pre-committee 로는 쓰지 않는다.
+# A2 — 약제 track 별 예상(진입) 위원회.
+#   도메인 사실 (korea-drug-pricing-system): 약평위(약제급여평가위원회)는 항암/일반
+#   **공통**의 결정 위원회이고, 항암제만 그 앞에 암질심을 추가로 거친다.
+#   급여기준소위(BENEFIT_SUBCOMMITTEE)는 내부 평가 소위원회로 track 진입 위원회가
+#   아니다 — enum 상수는 하위호환용으로만 유지하고 더 이상 배정에 쓰지 않는다.
 COMMITTEE_AMJILSIM = "AMJILSIM"
 COMMITTEE_YAKPYUNGWI = "YAKPYUNGWI"
-COMMITTEE_BENEFIT_SUB = "BENEFIT_SUBCOMMITTEE"
+COMMITTEE_BENEFIT_SUB = "BENEFIT_SUBCOMMITTEE"  # deprecated — 진입 위원회로 사용 금지
 
 
 def expected_committee(is_oncology: Optional[int]) -> Optional[str]:
     """약제 is_oncology 플래그 → 예상 진입 위원회 라벨.
 
-    - 1(항암)          → AMJILSIM (암질심/DREC)
-    - 0(비항암)         → BENEFIT_SUBCOMMITTEE (급여기준소위/BSC)
+    - 1(항암)          → AMJILSIM (암질심)
+    - 0(일반)          → YAKPYUNGWI (약평위 — 일반약도 약평위에 도달한다.
+      구 BENEFIT_SUBCOMMITTEE 배정은 폐기: 급여기준소위는 내부 소위이지 진입 위원회가
+      아니며, 소위 세션 일정이 없어 일반약 신호가 세션 미배정으로 남았었다)
     - None(미상, 백필 전) → None — 위원회 배정을 committee-agnostic 으로 두어 백필 전
-      항암제(예: Keytruda)를 BSC 로 오단정하지 않는다.
+      항암제(예: Keytruda)를 오단정하지 않는다.
     """
     if is_oncology == 1:
         return COMMITTEE_AMJILSIM
     if is_oncology == 0:
-        return COMMITTEE_BENEFIT_SUB
+        return COMMITTEE_YAKPYUNGWI
     return None
 
 
@@ -109,6 +120,19 @@ def load_sessions_sorted(conn: sqlite3.Connection) -> list[tuple]:
     return [(r["session_date"], r["session_id"], r["committee_type"]) for r in rows]
 
 
+def _has_prominence_column(conn: sqlite3.Connection) -> bool:
+    return any(
+        r[1] == "prominence"
+        for r in conn.execute("PRAGMA table_info(amjilsim_media_signals)")
+    )
+
+
+def ensure_prominence_column(conn: sqlite3.Connection) -> None:
+    """amjilsim_media_signals.prominence TEXT 멱등 추가 (A1)."""
+    if not _has_prominence_column(conn):
+        conn.execute("ALTER TABLE amjilsim_media_signals ADD COLUMN prominence TEXT")
+
+
 def insert_signal(
     conn: sqlite3.Connection,
     *,
@@ -126,12 +150,15 @@ def insert_signal(
     weight: float = 1.0,
     source_verified: str = "snippet_match",
     committee_target: str = "UNKNOWN",
+    prominence: Optional[str] = None,
 ) -> bool:
     """amjilsim_media_signals 에 1행 INSERT. (url, drug_id) 멱등 — 이미 있으면 False.
 
     커밋은 호출자 책임. 기존 행은 절대 UPDATE/DELETE 하지 않는다 (INSERT-only).
     스키마의 UNIQUE(outlet, url) 충돌(예: alias 인덱스 변경으로 같은 기사가 다른
     drug 으로 재해석된 경우)도 duplicate 로 흡수해 기존 행을 보호한다.
+
+    prominence 는 A1 컬럼 — 미마이그레이션 DB(컬럼 없음)에서는 자동으로 생략한다.
     """
     existing = conn.execute(
         "SELECT 1 FROM amjilsim_media_signals WHERE url = ? AND drug_id = ? LIMIT 1",
@@ -139,32 +166,37 @@ def insert_signal(
     ).fetchone()
     if existing:
         return False
+    columns = [
+        "drug_id", "session_id", "tier", "outlet", "url", "title", "published_at",
+        "snippet", "signal_type", "signal_phrases", "crossref_count", "weight",
+        "crawled_at", "source_verified", "committee_target",
+    ]
+    values: list = [
+        drug_id,
+        session_id,
+        tier,
+        outlet,
+        url,
+        title,
+        published_at,
+        snippet,
+        signal_type,
+        json.dumps(signal_phrases, ensure_ascii=False),
+        crossref_count,
+        weight,
+        _now_iso(),
+        source_verified,
+        committee_target,
+    ]
+    if prominence is not None and _has_prominence_column(conn):
+        columns.append("prominence")
+        values.append(prominence)
+    placeholders = ",".join("?" for _ in columns)
     try:
         conn.execute(
-            """
-            INSERT INTO amjilsim_media_signals (
-                drug_id, session_id, tier, outlet, url, title, published_at,
-                snippet, signal_type, signal_phrases, crossref_count, weight,
-                crawled_at, source_verified, committee_target
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """,
-            (
-                drug_id,
-                session_id,
-                tier,
-                outlet,
-                url,
-                title,
-                published_at,
-                snippet,
-                signal_type,
-                json.dumps(signal_phrases, ensure_ascii=False),
-                crossref_count,
-                weight,
-                _now_iso(),
-                source_verified,
-                committee_target,
-            ),
+            f"INSERT INTO amjilsim_media_signals ({', '.join(columns)}) "
+            f"VALUES ({placeholders})",
+            values,
         )
     except sqlite3.IntegrityError:
         return False
@@ -186,6 +218,8 @@ def backfill_signals(
         seed_lexicon(conn)
         lexicon = load_lexicon(path)
         unc_ok = unclassified_allowed(conn)
+        # A1 — prominence 컬럼 멱등 보장.
+        ensure_prominence_column(conn)
 
         drug_rows = conn.execute(
             "SELECT drug_id, brand_kr, expected_session_id, "
@@ -217,17 +251,19 @@ def backfill_signals(
             "duplicate_skipped": 0,
             "by_signal_type": {},
             "by_drug": {},
+            "by_prominence": {},
         }
 
         for row in rows:
             stats["scanned"] += 1
             title = row["title"] or ""
             snippet = row["description"] or ""
-            brand = row["brand"] or ""
             kind = row["kind"] or ""
-            text = f"{title} {snippet} {brand}"
 
-            drug_id = resolve_drug(text, index)
+            # A1 — 매칭 텍스트는 title+snippet 만. competitor_news.brand (크롤 쿼리
+            # 태그) 는 기사 표면 텍스트가 아니므로 제외 — 표면에 약 이름이 없는
+            # 기사가 신호로 잡히던 오탐의 근원이었다.
+            drug_id, prominence = resolve_drug_with_prominence(title, snippet, index)
             if drug_id is None:
                 stats["unmatched"] += 1
                 continue
@@ -243,11 +279,19 @@ def backfill_signals(
 
             session_id = expected_session.get(drug_id)
             if not session_id and pub_date:
-                # B5 — 항암/비항암에 맞는 위원회 세션만 최근접 배정.
-                #   is_oncology 미상(NULL) → expected_committee=None → committee-agnostic
-                #   (구 동작 보존); 명시적 비항암(0) → BSC → 암질심 강제 배정 금지.
+                # A2 — track 에 맞는 위원회 세션만 최근접 배정.
+                #   oncology → AMJILSIM, general → YAKPYUNGWI,
+                #   is_oncology 미상(NULL) → committee-agnostic (구 동작 보존).
                 committee = expected_committee(drug_oncology.get(drug_id))
                 session_id = nearest_session_id(sessions_sorted, pub_date, committee_type=committee)
+
+            # A1 — source_verified: 발췌에 약물 거명이 있으면 snippet_match,
+            # 제목에만 있으면 headline_only.
+            source_verified = (
+                "snippet_match"
+                if drug_in_text(drug_id, snippet, index)
+                else "headline_only"
+            )
 
             inserted = insert_signal(
                 conn,
@@ -263,7 +307,8 @@ def backfill_signals(
                 signal_phrases=phrases,
                 crossref_count=0,
                 weight=weight,
-                source_verified="snippet_match",
+                source_verified=source_verified,
+                prominence=prominence,
             )
             if not inserted:
                 stats["duplicate_skipped"] += 1
@@ -271,6 +316,7 @@ def backfill_signals(
             stats["inserted"] += 1
             stats["by_signal_type"][signal_type] = stats["by_signal_type"].get(signal_type, 0) + 1
             stats["by_drug"][drug_id] = stats["by_drug"].get(drug_id, 0) + 1
+            stats["by_prominence"][prominence] = stats["by_prominence"].get(prominence, 0) + 1
 
         conn.commit()
     finally:
@@ -422,6 +468,132 @@ def backfill_oncology(db_path: Optional[PathLike] = None) -> dict:
         "by_rule": by_rule,
         "manual_review": manual_review,
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# A1 — prominence 재판정 (기존 행 UPDATE-only, 멱등)
+# ─────────────────────────────────────────────────────────────────────────────
+def backfill_prominence(db_path: Optional[PathLike] = None) -> dict:
+    """기존 amjilsim_media_signals 전 행의 prominence 를 저장된 title/snippet 로
+    재판정해 UPDATE (행 삭제/INSERT 없음 — 아카이브 보존, 재실행 멱등).
+
+    행의 **자체 drug_id** 기준으로 판정한다 (alias 인덱스 재해석 금지 — 과거 brand
+    태그 매칭으로 들어와 기사 표면에 약 이름이 없는 행은 'passing' 이 되어 momentum
+    에서 제외된다). source_verified 도 snippet_match↔headline_only 를 실제 발췌
+    거명 여부로 교정한다 (body_verified 는 건드리지 않음).
+
+    CLI: python scheduler.py --backfill-prominence-now
+    """
+    path = str(db_path or DEFAULT_DB_PATH)
+    index = build_alias_index(path)
+
+    conn = _connect(path)
+    try:
+        ensure_prominence_column(conn)
+
+        rows = conn.execute(
+            "SELECT id, drug_id, title, snippet, prominence, source_verified "
+            "FROM amjilsim_media_signals WHERE drug_id IS NOT NULL"
+        ).fetchall()
+
+        stats: dict = {
+            "total": len(rows),
+            "updated": 0,
+            "source_verified_fixed": 0,
+            "by_prominence": {},
+        }
+        for r in rows:
+            prom = drug_prominence(r["drug_id"], r["title"] or "", r["snippet"] or "", index)
+            stats["by_prominence"][prom] = stats["by_prominence"].get(prom, 0) + 1
+
+            sv = r["source_verified"]
+            if sv in ("snippet_match", "headline_only"):
+                new_sv = (
+                    "snippet_match"
+                    if drug_in_text(r["drug_id"], r["snippet"] or "", index)
+                    else "headline_only"
+                )
+            else:  # body_verified 등 상위 검증 상태는 보존
+                new_sv = sv
+
+            if prom != r["prominence"] or new_sv != sv:
+                conn.execute(
+                    "UPDATE amjilsim_media_signals SET prominence = ?, source_verified = ? "
+                    "WHERE id = ?",
+                    (prom, new_sv, r["id"]),
+                )
+                stats["updated"] += 1
+                if new_sv != sv:
+                    stats["source_verified_fixed"] += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return stats
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# A2 — track 별 위원회 기준 세션 재배정 (기존 행 UPDATE-only, 멱등)
+# ─────────────────────────────────────────────────────────────────────────────
+def relink_sessions(db_path: Optional[PathLike] = None) -> dict:
+    """기존 신호의 session_id 를 약제 track 에 맞는 위원회 세션으로 재배정.
+
+    배정 규칙 (INSERT 경로와 동일 우선순위):
+      ① 약제의 expected_session_id (큐레이션 값) — 있으면 그대로.
+      ② published_at 이후(>=) 최근접 세션 — oncology→AMJILSIM, general→YAKPYUNGWI,
+        미상(NULL)→committee-agnostic.
+      ③ 해당 위원회 세션이 없으면 NULL (잘못된 위원회 세션에 남겨두지 않는다 —
+        예: 마운자로(일반)가 암질심 세션에 잘못 붙어 있던 건을 해소).
+
+    UPDATE-only, 재실행 멱등. CLI: python scheduler.py --relink-sessions-now
+    """
+    path = str(db_path or DEFAULT_DB_PATH)
+    conn = _connect(path)
+    try:
+        has_onco = _has_oncology_column(conn)
+        onco_col = "is_oncology" if has_onco else "NULL AS is_oncology"
+        drug_rows = conn.execute(
+            f"SELECT drug_id, expected_session_id, {onco_col} FROM amjilsim_drugs"
+        ).fetchall()
+        expected_session = {r["drug_id"]: r["expected_session_id"] for r in drug_rows}
+        drug_oncology = {r["drug_id"]: r["is_oncology"] for r in drug_rows}
+        sessions_sorted = load_sessions_sorted(conn)
+
+        rows = conn.execute(
+            "SELECT id, drug_id, session_id, published_at FROM amjilsim_media_signals "
+            "WHERE drug_id IS NOT NULL"
+        ).fetchall()
+
+        stats: dict = {
+            "total": len(rows),
+            "changed": 0,
+            "cleared": 0,
+            "by_committee": {},
+        }
+        for r in rows:
+            drug_id = r["drug_id"]
+            committee = expected_committee(drug_oncology.get(drug_id))
+            desired = expected_session.get(drug_id)
+            if not desired and r["published_at"]:
+                desired = nearest_session_id(
+                    sessions_sorted, r["published_at"], committee_type=committee
+                )
+            desired = desired or None
+
+            key = committee or "AGNOSTIC"
+            stats["by_committee"][key] = stats["by_committee"].get(key, 0) + 1
+
+            if desired != r["session_id"]:
+                conn.execute(
+                    "UPDATE amjilsim_media_signals SET session_id = ? WHERE id = ?",
+                    (desired, r["id"]),
+                )
+                stats["changed"] += 1
+                if desired is None:
+                    stats["cleared"] += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return stats
 
 
 if __name__ == "__main__":

@@ -39,6 +39,17 @@ _index_lock = threading.Lock()
 
 PathLike = Union[str, Path]
 
+# A1 — 신호 prominence (기사 내 약물 거명의 두드러짐 정도).
+#   'title'       : alias 가 제목에 등장 — 그 약이 기사의 주제.
+#   'body_strong' : 제목엔 없지만 발췌(snippet)에 2회 이상 또는 첫 문장에 등장.
+#   'passing'     : 발췌 중간에 1회 스치듯 언급 (산업 라운드업 나열 등) —
+#                   momentum 집계에서 제외 (아카이브 행은 보존).
+PROMINENCE_TITLE = "title"
+PROMINENCE_BODY_STRONG = "body_strong"
+PROMINENCE_PASSING = "passing"
+
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?…。])\s+")
+
 
 def invalidate_index_cache() -> None:
     """테스트/재시딩 후 캐시 무효화."""
@@ -149,6 +160,19 @@ def build_alias_index(db_path: Optional[PathLike] = None) -> dict[str, int]:
     return index
 
 
+def _best_match(lowered: str, index: dict[str, int]) -> tuple[Optional[int], str]:
+    """소문자 텍스트에서 가장 긴 매치 alias 의 (drug_id, alias) 를 반환."""
+    best_alias = ""
+    best_drug_id: Optional[int] = None
+    for alias, drug_id in index.items():
+        if len(alias) <= len(best_alias):
+            continue
+        if alias in lowered:
+            best_alias = alias
+            best_drug_id = drug_id
+    return best_drug_id, best_alias
+
+
 def resolve_drug(
     text: str,
     index: Optional[dict[str, int]] = None,
@@ -158,19 +182,92 @@ def resolve_drug(
 
     여러 alias 가 매치되면 가장 긴 alias 를 우선한다 (짧은 alias 의 우발적
     substring 오탐 — 예: '액' — 을 피하기 위함). 매치 없으면 None.
+
+    ⚠️ prominence 를 판정하지 않는 하위호환 wrapper — 신규 코드는
+    `resolve_drug_with_prominence(title, snippet)` 를 사용할 것.
     """
     if not text:
         return None
     if index is None:
         index = build_alias_index(db_path)
-    lowered = text.lower()
+    drug_id, _ = _best_match(text.lower(), index)
+    return drug_id
 
-    best_alias = ""
-    best_drug_id: Optional[int] = None
-    for alias, drug_id in index.items():
-        if len(alias) <= len(best_alias):
-            continue
-        if alias in lowered:
-            best_alias = alias
-            best_drug_id = drug_id
-    return best_drug_id
+
+def _first_sentence(text: str) -> str:
+    return _SENTENCE_SPLIT_RE.split(text.strip(), 1)[0]
+
+
+def _aliases_of(drug_id: int, index: dict[str, int]) -> list[str]:
+    return [alias for alias, did in index.items() if did == drug_id]
+
+
+def drug_in_text(
+    drug_id: int,
+    text: str,
+    index: Optional[dict[str, int]] = None,
+    db_path: Optional[PathLike] = None,
+) -> bool:
+    """해당 drug_id 의 alias 가 text 에 하나라도 등장하는지 (source_verified 판정용)."""
+    if not text:
+        return False
+    if index is None:
+        index = build_alias_index(db_path)
+    lowered = text.lower()
+    return any(alias in lowered for alias in _aliases_of(drug_id, index))
+
+
+def drug_prominence(
+    drug_id: int,
+    title: str,
+    snippet: str,
+    index: Optional[dict[str, int]] = None,
+    db_path: Optional[PathLike] = None,
+) -> str:
+    """확정된 drug_id 에 대한 prominence 판정 ('title'|'body_strong'|'passing').
+
+    - alias 가 제목에 등장                      → 'title'
+    - 발췌에 2회 이상 또는 발췌 첫 문장에 등장    → 'body_strong'
+    - 발췌 중간 1회 (또는 어디에도 미등장 — 예:
+      과거 brand 태그 매칭으로 들어온 행)        → 'passing'
+    """
+    if index is None:
+        index = build_alias_index(db_path)
+    title_l = (title or "").lower()
+    snip_l = (snippet or "").lower()
+    aliases = _aliases_of(drug_id, index)
+
+    if any(alias in title_l for alias in aliases):
+        return PROMINENCE_TITLE
+    if snip_l:
+        occurrences = max((snip_l.count(alias) for alias in aliases), default=0)
+        if occurrences >= 2:
+            return PROMINENCE_BODY_STRONG
+        first = _first_sentence(snip_l)
+        if any(alias in first for alias in aliases):
+            return PROMINENCE_BODY_STRONG
+    return PROMINENCE_PASSING
+
+
+def resolve_drug_with_prominence(
+    title: str,
+    snippet: str,
+    index: Optional[dict[str, int]] = None,
+    db_path: Optional[PathLike] = None,
+) -> tuple[Optional[int], Optional[str]]:
+    """(drug_id, prominence) 반환 — A1 prominence gate 의 진입점.
+
+    매칭 텍스트는 title+snippet 만 사용한다 (competitor_news.brand 크롤 쿼리 태그
+    금지 — 기사 표면에 없는 약이 신호로 잡히는 오탐의 근원). 미매치 시 (None, None).
+    """
+    if index is None:
+        index = build_alias_index(db_path)
+    title_l = (title or "").lower()
+    snip_l = (snippet or "").lower()
+    combined = f"{title_l} {snip_l}".strip()
+    if not combined:
+        return None, None
+    drug_id, _ = _best_match(combined, index)
+    if drug_id is None:
+        return None, None
+    return drug_id, drug_prominence(drug_id, title_l, snip_l, index)

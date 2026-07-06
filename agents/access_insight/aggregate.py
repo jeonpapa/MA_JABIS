@@ -53,28 +53,71 @@ _NORMALIZE_DAYS = 30.0
 _PREDICT_HIGH = 3.0
 _PREDICT_MEDIUM = 1.0
 
+# A3 — 프론트 legend/tooltip 이 예측 버킷과 동일 임계값을 쓰도록 API 로 노출하는
+# 단일 소스. leaderboard / drug detail 응답의 `score_bands` 필드.
+SCORE_BANDS: dict[str, float] = {"high": _PREDICT_HIGH, "medium": _PREDICT_MEDIUM}
+
+
+def score_bands() -> dict[str, float]:
+    """momentum 예측 버킷 임계값 (API 응답용 복사본)."""
+    return dict(SCORE_BANDS)
+
+
 # session_imminent 판정 기준 (일).
 _SESSION_IMMINENT_DAYS = 45
 
 
-# B5 — 약제 유형별 예상 진입 위원회 라벨 (프론트가 DREC/ODAC/BSC 로 표기).
+# A2 — 약제 track 별 예상 진입 위원회 라벨 (정확한 국내 위원회 명칭 기준).
+#   약평위(약제급여평가위원회)는 항암/일반 공통의 결정 위원회, 항암제만 앞에
+#   암질심을 추가로 거친다. 급여기준소위는 내부 소위 — 진입 위원회로 쓰지 않는다.
 COMMITTEE_AMJILSIM = "AMJILSIM"
-COMMITTEE_BENEFIT_SUB = "BENEFIT_SUBCOMMITTEE"
+COMMITTEE_YAKPYUNGWI = "YAKPYUNGWI"
+COMMITTEE_BENEFIT_SUB = "BENEFIT_SUBCOMMITTEE"  # deprecated — 하위호환 상수만 유지
 
 
 def _expected_committee(is_oncology):
     """is_oncology → 예상 진입 위원회 라벨.
 
-    - 1(항암)           → AMJILSIM (암질심/DREC)
-    - 0(비항암)          → BENEFIT_SUBCOMMITTEE (급여기준소위/BSC)
+    - 1(항암)           → AMJILSIM (암질심)
+    - 0(일반)           → YAKPYUNGWI (약평위 — 일반약도 약평위에 도달한다)
     - None(미상, 백필 전)  → None — 프론트가 라벨을 숨길 수 있게 UNKNOWN 처리.
-      (NULL 을 BSC 로 단정하면 백필 전 Keytruda 등 항암제가 BSC 로 오표기된다.)
+      (NULL 을 특정 위원회로 단정하면 백필 전 항암제가 오표기된다.)
     """
     if is_oncology == 1:
         return COMMITTEE_AMJILSIM
     if is_oncology == 0:
-        return COMMITTEE_BENEFIT_SUB
+        return COMMITTEE_YAKPYUNGWI
     return None
+
+
+# A2 — track / stage 모델.
+def _track_of(is_oncology) -> str:
+    """is_oncology(1/0/NULL) → track ('oncology'|'general'|'unknown')."""
+    if is_oncology == 1:
+        return "oncology"
+    if is_oncology == 0:
+        return "general"
+    return "unknown"
+
+
+_STAGE_LABELS: dict[str, str] = {
+    "permit": "허가",
+    "submission": "신청",
+    "amjilsim": "암질심",
+    "yakpyungwi": "약평위",
+    "negotiation": "공단협상",
+    "final_notice": "건정심·고시",
+    "listing": "등재",
+}
+
+# current_stage enum → 시퀀스 상 '현재 위치' 스테이지 key (LISTED 는 전체 완료).
+_CURRENT_STAGE_POSITION: dict[str, Optional[str]] = {
+    "LISTED": None,                       # 모든 스테이지 done
+    "POST_NEGOTIATION": "final_notice",   # 협상 완료 → 고시 대기
+    "NEGOTIATION": "negotiation",
+    "YAKPYUNGWI_PASSED": "negotiation",   # 약평위 통과 → 다음은 공단협상
+    "AMJILSIM_PASSED": "yakpyungwi",      # 암질심 통과 → 다음은 약평위
+}
 
 
 def _connect(db_path: PathLike) -> sqlite3.Connection:
@@ -87,6 +130,23 @@ def _has_oncology_column(conn: sqlite3.Connection) -> bool:
     return any(
         r[1] == "is_oncology" for r in conn.execute("PRAGMA table_info(amjilsim_drugs)")
     )
+
+
+def _has_prominence_column(conn: sqlite3.Connection) -> bool:
+    return any(
+        r[1] == "prominence"
+        for r in conn.execute("PRAGMA table_info(amjilsim_media_signals)")
+    )
+
+
+def _row_get(row: Optional[sqlite3.Row], key: str):
+    """스키마 이질성(테스트 DB 등) 방어 — 컬럼이 없으면 None."""
+    if row is None:
+        return None
+    try:
+        return row[key]
+    except (IndexError, KeyError):
+        return None
 
 
 def _parse_date(value) -> Optional[date]:
@@ -121,15 +181,159 @@ def _recency_factor(pub: date, ref: date, window_days: int) -> float:
 
 
 def _get_drug(conn: sqlite3.Connection, drug_id: int) -> Optional[sqlite3.Row]:
-    onco = "is_oncology" if _has_oncology_column(conn) else "NULL AS is_oncology"
+    # SELECT * — 스키마 이질성(테스트 DB, 마이그레이션 전 프로드) 방어는 _row_get 몫.
     return conn.execute(
-        f"""
-        SELECT drug_id, product_slug, brand_kr, brand_en, expected_session_id,
-               amjilsim_pass_date, yakpyungwi_pass_date, {onco}
-        FROM amjilsim_drugs WHERE drug_id = ?
-        """,
-        (drug_id,),
+        "SELECT * FROM amjilsim_drugs WHERE drug_id = ?", (drug_id,)
     ).fetchone()
+
+
+def _milestone_dates(conn: sqlite3.Connection, drug_row: sqlite3.Row) -> dict:
+    """analog_reports / indication_reimbursement 기반 마일스톤 날짜 3종.
+
+    반환: {mfds_permit_date, first_reimbursement_date, reimbursement_effective_date}
+    (테이블 부재 시 None — 테스트 DB 등 방어).
+    """
+    out = {
+        "mfds_permit_date": None,
+        "first_reimbursement_date": None,
+        "reimbursement_effective_date": None,
+    }
+    brand_kr = _row_get(drug_row, "brand_kr") or ""
+    if brand_kr:
+        try:
+            analog_row = conn.execute(
+                """
+                SELECT mfds_permit_date, first_reimbursement_date FROM analog_reports
+                WHERE brand_name = ? OR brand_name LIKE ?
+                ORDER BY mfds_permit_date ASC LIMIT 1
+                """,
+                (brand_kr, f"{brand_kr}%"),
+            ).fetchone()
+            if analog_row is not None:
+                out["mfds_permit_date"] = analog_row["mfds_permit_date"]
+                out["first_reimbursement_date"] = analog_row["first_reimbursement_date"]
+        except sqlite3.Error:
+            pass
+
+    product_slug = _row_get(drug_row, "product_slug")
+    if product_slug:
+        try:
+            eff_row = conn.execute(
+                """
+                SELECT MIN(ir.effective_date) AS eff
+                FROM indication_reimbursement ir
+                JOIN indications_master im ON im.indication_id = ir.indication_id
+                WHERE im.product = ? AND ir.is_reimbursed = 1 AND ir.effective_date IS NOT NULL
+                """,
+                (product_slug,),
+            ).fetchone()
+            if eff_row is not None and eff_row["eff"]:
+                out["reimbursement_effective_date"] = eff_row["eff"]
+        except sqlite3.Error:
+            pass
+    return out
+
+
+def _track_and_stages(
+    conn: sqlite3.Connection,
+    drug_row: sqlite3.Row,
+    milestones: Optional[dict] = None,
+) -> tuple[str, list[dict], str]:
+    """(track, stages, current_stage) — A2 track/stage 모델.
+
+    stage 시퀀스:
+      oncology : 허가 → 신청 → 암질심 → 약평위 → 공단협상 → 건정심·고시 → 등재
+      general  : 동일하되 암질심 제외 (일반약도 약평위에는 도달)
+      unknown  : general 시퀀스 기본, 단 amjilsim_pass_date 증거가 있으면 암질심 포함.
+
+    current_stage (뒤에서부터 판정):
+      등재 증거 → LISTED / 협상완료·등재예정월 → POST_NEGOTIATION(고시대기) /
+      negotiation_status AGREED·IN_PROGRESS → NEGOTIATION / 약평위 통과 →
+      YAKPYUNGWI_PASSED / (항암) 암질심 통과 → AMJILSIM_PASSED / 그 외 → PRE_COMMITTEE.
+
+    status: 날짜 증거가 있는 스테이지 = done, 현재 위치 = current, 이후 = pending.
+    현재 위치보다 앞이지만 날짜가 없는 스테이지는 done (경과 암시 — 날짜 미상).
+    """
+    is_oncology = _row_get(drug_row, "is_oncology")
+    track = _track_of(is_oncology)
+    if milestones is None:
+        milestones = _milestone_dates(conn, drug_row)
+
+    submitted = _row_get(drug_row, "submitted_date")
+    amjilsim_date = _row_get(drug_row, "amjilsim_pass_date")
+    yakpyungwi_date = _row_get(drug_row, "yakpyungwi_pass_date")
+    neg_status = (_row_get(drug_row, "negotiation_status") or "").strip().upper()
+    neg_done_date = (
+        _row_get(drug_row, "negotiation_complete_date")
+        or _row_get(drug_row, "nhis_registered_ym")
+    )
+    listing_date = (
+        milestones.get("first_reimbursement_date")
+        or milestones.get("reimbursement_effective_date")
+    )
+
+    include_amjilsim = track == "oncology" or (track == "unknown" and bool(amjilsim_date))
+    seq = ["permit", "submission"]
+    if include_amjilsim:
+        seq.append("amjilsim")
+    seq += ["yakpyungwi", "negotiation", "final_notice", "listing"]
+
+    dates: dict[str, Optional[str]] = {
+        "permit": milestones.get("mfds_permit_date"),
+        "submission": submitted,
+        "amjilsim": amjilsim_date,
+        "yakpyungwi": yakpyungwi_date,
+        "negotiation": neg_done_date,
+        "final_notice": None,  # 건정심·고시일 직접 소스 없음 — 등재 시 done 암시
+        "listing": listing_date,
+    }
+
+    # current_stage — 뒤(등재)에서부터.
+    if listing_date:
+        current_stage = "LISTED"
+    elif neg_done_date:
+        current_stage = "POST_NEGOTIATION"
+    elif neg_status in ("AGREED", "IN_PROGRESS"):
+        current_stage = "NEGOTIATION"
+    elif yakpyungwi_date:
+        current_stage = "YAKPYUNGWI_PASSED"
+    elif include_amjilsim and amjilsim_date:
+        current_stage = "AMJILSIM_PASSED"
+    else:
+        current_stage = "PRE_COMMITTEE"
+
+    # 현재 위치 인덱스: ① 날짜 증거의 마지막 done 다음, ② current_stage 매핑 위치 —
+    # 둘 중 더 뒤쪽 (증거 결측이 있어도 current_stage 와 모순되지 않게).
+    done_keys = {k for k in seq if dates.get(k)}
+    if listing_date:
+        done_keys.add("final_notice")  # 등재됐다면 고시는 경과
+    evidence_idx = (
+        max(seq.index(k) for k in done_keys) + 1 if done_keys else 0
+    )
+    if current_stage == "LISTED":
+        current_idx = len(seq)
+    else:
+        pos_key = _CURRENT_STAGE_POSITION.get(current_stage)
+        pos_idx = seq.index(pos_key) if pos_key in seq else 0
+        current_idx = min(max(evidence_idx, pos_idx), len(seq) - 1)
+
+    stages = []
+    for i, key in enumerate(seq):
+        if i < current_idx:
+            status = "done"
+        elif i == current_idx:
+            status = "current"
+        else:
+            status = "pending"
+        stages.append(
+            {
+                "key": key,
+                "label": _STAGE_LABELS[key],
+                "date": dates.get(key),
+                "status": status,
+            }
+        )
+    return track, stages, current_stage
 
 
 def _get_session(conn: sqlite3.Connection, session_id: Optional[int]) -> Optional[sqlite3.Row]:
@@ -155,7 +359,7 @@ def _reference_date(
     직전 momentum 이 핵심 가설이므로). ② 없으면 as_of(주입값). ③ 그것도 없으면 해당
     약제의 최신 signal published_at (wall-clock 호출 금지 — 결정론적 fallback).
     """
-    session_row = _get_session(conn, drug_row["expected_session_id"]) if drug_row else None
+    session_row = _get_session(conn, _row_get(drug_row, "expected_session_id")) if drug_row else None
     if session_row is not None and session_row["session_date"]:
         return _parse_date(session_row["session_date"]), session_row
 
@@ -186,6 +390,8 @@ def drug_momentum(
     - by_type: SIGNAL_TYPES 6종 카운트
     - engage_diversity: count>0 인 signal_type 종류 수 (참여 폭)
     - trend: 기준일 기준 최근 30일 vs 그 이전 30일 신호 수 비교
+    - excluded_passing: A1 prominence gate 로 집계에서 제외된 스침(passing) 신호 수
+      (행은 보존 — journey 에서 flag 로 노출)
     """
     path = str(db_path or DEFAULT_DB_PATH)
     conn = _connect(path)
@@ -196,22 +402,31 @@ def drug_momentum(
 
         ref_date, session_row = _reference_date(conn, drug_row, as_of)
 
+        has_prom = _has_prominence_column(conn)
+        prom_col = "prominence" if has_prom else "NULL AS prominence"
+
         by_type = {t: 0 for t in SIGNAL_TYPES}
         weighted_sum = 0.0
         signal_count = 0
+        excluded_passing = 0
         recent_30d = 0
         prior_30d = 0
 
         if ref_date is not None:
             window_start = ref_date - timedelta(days=window_days)
             rows = conn.execute(
-                "SELECT published_at, signal_type, weight FROM amjilsim_media_signals "
-                "WHERE drug_id = ?",
+                f"SELECT published_at, signal_type, weight, {prom_col} "
+                "FROM amjilsim_media_signals WHERE drug_id = ?",
                 (drug_id,),
             ).fetchall()
             for r in rows:
                 pub = _parse_date(r["published_at"])
                 if pub is None or pub < window_start or pub > ref_date:
+                    continue
+                # A1 — 스침(passing) 언급은 momentum 집계에서 제외.
+                #   prominence 미백필(NULL) 행은 종전대로 포함 (안전 기본값).
+                if r["prominence"] == "passing":
+                    excluded_passing += 1
                     continue
                 signal_count += 1
                 stype = r["signal_type"] or ""
@@ -239,12 +454,16 @@ def drug_momentum(
         else:
             direction = "flat"
 
-        is_oncology = drug_row["is_oncology"]
+        is_oncology = _row_get(drug_row, "is_oncology")
+        track, stages, current_stage = _track_and_stages(conn, drug_row)
         return {
             "drug_id": drug_id,
-            "brand_kr": drug_row["brand_kr"],
-            "product_slug": drug_row["product_slug"],
+            "brand_kr": _row_get(drug_row, "brand_kr"),
+            "product_slug": _row_get(drug_row, "product_slug"),
             "is_oncology": is_oncology,
+            "track": track,
+            "stages": stages,
+            "current_stage": current_stage,
             "expected_committee": _expected_committee(is_oncology),
             "reference_date": ref_date.isoformat() if ref_date else None,
             "expected_session": (
@@ -259,6 +478,7 @@ def drug_momentum(
             ),
             "window_days": window_days,
             "signal_count": signal_count,
+            "excluded_passing": excluded_passing,
             "weighted_sum": weighted_sum,
             "momentum_score": momentum_score,
             "by_type": by_type,
@@ -330,37 +550,62 @@ def leaderboard(
 
 
 def list_drugs_with_signals(db_path: Optional[PathLike] = None) -> list[dict]:
-    """signal 이 하나라도 있는 약제 목록 (picker UI 용) — signal_count 내림차순."""
+    """signal 이 하나라도 있는 약제 목록 (picker UI 용) — signal_count 내림차순.
+
+    signal_count 는 A1 prominence gate 적용 후(passing 제외) 카운트, passing_count
+    는 제외분 (prominence 컬럼 없는 DB 는 전량 포함·passing 0).
+    """
     path = str(db_path or DEFAULT_DB_PATH)
     conn = _connect(path)
     try:
         onco = "d.is_oncology" if _has_oncology_column(conn) else "NULL"
+        if _has_prominence_column(conn):
+            count_expr = "SUM(CASE WHEN s.prominence = 'passing' THEN 0 ELSE 1 END)"
+            passing_expr = "SUM(CASE WHEN s.prominence = 'passing' THEN 1 ELSE 0 END)"
+        else:
+            count_expr = "COUNT(s.id)"
+            passing_expr = "0"
         rows = conn.execute(
             f"""
             SELECT d.drug_id AS drug_id, d.brand_kr AS brand_kr,
-                   {onco} AS is_oncology, COUNT(s.id) AS signal_count
+                   {onco} AS is_oncology,
+                   {count_expr} AS signal_count,
+                   {passing_expr} AS passing_count
             FROM amjilsim_drugs d
             JOIN amjilsim_media_signals s ON s.drug_id = d.drug_id
             GROUP BY d.drug_id, d.brand_kr
             ORDER BY signal_count DESC
             """
         ).fetchall()
-        return [
-            {
-                "drug_id": r["drug_id"],
-                "brand_kr": r["brand_kr"],
-                "is_oncology": r["is_oncology"],
-                "expected_committee": _expected_committee(r["is_oncology"]),
-                "signal_count": r["signal_count"],
-            }
-            for r in rows
-        ]
+        items = []
+        for r in rows:
+            drug_row = _get_drug(conn, r["drug_id"])
+            track, stages, current_stage = _track_and_stages(conn, drug_row)
+            items.append(
+                {
+                    "drug_id": r["drug_id"],
+                    "brand_kr": r["brand_kr"],
+                    "is_oncology": r["is_oncology"],
+                    "track": track,
+                    "stages": stages,
+                    "current_stage": current_stage,
+                    "expected_committee": _expected_committee(r["is_oncology"]),
+                    "signal_count": r["signal_count"],
+                    "passing_count": r["passing_count"],
+                }
+            )
+        return items
     finally:
         conn.close()
 
 
 def journey(drug_id: int, db_path: Optional[PathLike] = None) -> dict:
-    """약제 1건의 전체 journey(신호 + 위원회 세션 + 급여 마일스톤), 시간순 정렬."""
+    """약제 1건의 전체 journey(신호 + 위원회 세션 + 급여 마일스톤), 시간순 정렬.
+
+    A1 — passing(스침) 신호도 반환하되 각 신호에 `prominence` 와 `passing` flag 를
+    붙인다 (행 보존 — UI 는 toggle 뒤로 숨김). 신호 밀도 지표(signal_count 등)는
+    passing 을 제외하고 계산한다.
+    """
     path = str(db_path or DEFAULT_DB_PATH)
     conn = _connect(path)
     try:
@@ -368,8 +613,9 @@ def journey(drug_id: int, db_path: Optional[PathLike] = None) -> dict:
         if drug_row is None:
             raise ValueError(f"unknown drug_id={drug_id}")
 
+        prom_col = "prominence" if _has_prominence_column(conn) else "NULL AS prominence"
         signal_rows = conn.execute(
-            "SELECT published_at, signal_type, title, url, weight, outlet, session_id "
+            f"SELECT published_at, signal_type, title, url, weight, outlet, session_id, {prom_col} "
             "FROM amjilsim_media_signals WHERE drug_id = ? ORDER BY published_at ASC, id ASC",
             (drug_id,),
         ).fetchall()
@@ -381,13 +627,17 @@ def journey(drug_id: int, db_path: Optional[PathLike] = None) -> dict:
                 "url": r["url"],
                 "weight": r["weight"],
                 "outlet": r["outlet"],
+                "prominence": r["prominence"],
+                "passing": r["prominence"] == "passing",
             }
             for r in signal_rows
         ]
+        passing_count = sum(1 for s in signals if s["passing"])
 
         session_ids = {r["session_id"] for r in signal_rows if r["session_id"] is not None}
-        if drug_row["expected_session_id"] is not None:
-            session_ids.add(drug_row["expected_session_id"])
+        expected_sid = _row_get(drug_row, "expected_session_id")
+        if expected_sid is not None:
+            session_ids.add(expected_sid)
 
         sessions = []
         for sid in session_ids:
@@ -404,50 +654,27 @@ def journey(drug_id: int, db_path: Optional[PathLike] = None) -> dict:
                 )
         sessions.sort(key=lambda s: s["session_date"] or "")
 
+        mile3 = _milestone_dates(conn, drug_row)
         milestones = {
-            "amjilsim_pass_date": drug_row["amjilsim_pass_date"],
-            "yakpyungwi_pass_date": drug_row["yakpyungwi_pass_date"],
-            "mfds_permit_date": None,
-            "first_reimbursement_date": None,
-            "reimbursement_effective_date": None,
+            "amjilsim_pass_date": _row_get(drug_row, "amjilsim_pass_date"),
+            "yakpyungwi_pass_date": _row_get(drug_row, "yakpyungwi_pass_date"),
+            **mile3,
         }
 
-        brand_kr = drug_row["brand_kr"] or ""
-        if brand_kr:
-            analog_row = conn.execute(
-                """
-                SELECT mfds_permit_date, first_reimbursement_date FROM analog_reports
-                WHERE brand_name = ? OR brand_name LIKE ?
-                ORDER BY mfds_permit_date ASC LIMIT 1
-                """,
-                (brand_kr, f"{brand_kr}%"),
-            ).fetchone()
-            if analog_row is not None:
-                milestones["mfds_permit_date"] = analog_row["mfds_permit_date"]
-                milestones["first_reimbursement_date"] = analog_row["first_reimbursement_date"]
-
-        product_slug = drug_row["product_slug"]
-        if product_slug:
-            eff_row = conn.execute(
-                """
-                SELECT MIN(ir.effective_date) AS eff
-                FROM indication_reimbursement ir
-                JOIN indications_master im ON im.indication_id = ir.indication_id
-                WHERE im.product = ? AND ir.is_reimbursed = 1 AND ir.effective_date IS NOT NULL
-                """,
-                (product_slug,),
-            ).fetchone()
-            if eff_row is not None and eff_row["eff"]:
-                milestones["reimbursement_effective_date"] = eff_row["eff"]
-
-        is_oncology = drug_row["is_oncology"]
+        is_oncology = _row_get(drug_row, "is_oncology")
+        track, stages, current_stage = _track_and_stages(conn, drug_row, milestones=mile3)
         return {
             "drug_id": drug_id,
-            "brand_kr": drug_row["brand_kr"],
-            "product_slug": product_slug,
+            "brand_kr": _row_get(drug_row, "brand_kr"),
+            "product_slug": _row_get(drug_row, "product_slug"),
             "is_oncology": is_oncology,
+            "track": track,
+            "stages": stages,
+            "current_stage": current_stage,
             "expected_committee": _expected_committee(is_oncology),
             "signals": signals,
+            "signal_count": len(signals) - passing_count,
+            "passing_count": passing_count,
             "sessions": sessions,
             "milestones": milestones,
         }

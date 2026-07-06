@@ -722,6 +722,16 @@ def main():
         action="store_true",
         help="amjilsim_drugs.is_oncology 캐스케이드 백필 (ATC/efficacy/analog/indication)",
     )
+    parser.add_argument(
+        "--backfill-prominence-now",
+        action="store_true",
+        help="기존 amjilsim_media_signals prominence 재판정 (title/body_strong/passing UPDATE-only, 멱등)",
+    )
+    parser.add_argument(
+        "--relink-sessions-now",
+        action="store_true",
+        help="신호 session_id 를 약제 track 별 위원회(항암=암질심/일반=약평위) 세션으로 재배정 (UPDATE-only, 멱등)",
+    )
     args = parser.parse_args()
 
     config = load_config()
@@ -836,6 +846,28 @@ def main():
             "is_oncology 백필: oncology=%s general=%s by_rule=%s (manual_review=%s건)",
             res.get("oncology"), res.get("general"), res.get("by_rule"),
             len(res.get("manual_review", [])),
+        )
+        return
+
+    if args.backfill_prominence_now:
+        logger.info("amjilsim_media_signals prominence 재판정 즉시 실행 (A1, UPDATE-only)")
+        from agents.access_insight.backfill import backfill_prominence
+        res = backfill_prominence()
+        logger.info(
+            "prominence 백필: total=%s updated=%s source_verified_fixed=%s by_prominence=%s",
+            res.get("total"), res.get("updated"),
+            res.get("source_verified_fixed"), res.get("by_prominence"),
+        )
+        return
+
+    if args.relink_sessions_now:
+        logger.info("신호 session_id track 별 위원회 재배정 즉시 실행 (A2, UPDATE-only)")
+        from agents.access_insight.backfill import relink_sessions
+        res = relink_sessions()
+        logger.info(
+            "세션 재배정: total=%s changed=%s cleared=%s by_committee=%s",
+            res.get("total"), res.get("changed"),
+            res.get("cleared"), res.get("by_committee"),
         )
         return
 

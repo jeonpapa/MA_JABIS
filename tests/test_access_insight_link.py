@@ -303,11 +303,16 @@ def test_backfill_inserts_matched_signals_and_skips_unmatched(tmp_path):
     assert a1["drug_id"] == 2  # 키트루다
     assert a1["signal_type"] == RESULT_REPORT  # "통과" 매치
     assert a1["crossref_count"] == 0
-    assert a1["source_verified"] == "snippet_match"
+    # A1 — 발췌에 약물 미거명(제목에만) → headline_only + prominence='title'
+    assert a1["source_verified"] == "headline_only"
+    assert a1["prominence"] == "title"
 
     a2 = next(r for r in rows if r["url"] == "https://example.com/a2")
     assert a2["drug_id"] == 1  # 웰리렉
     assert a2["signal_type"] == GOV_STATEMENT
+    # A1 — 발췌 첫 문장 거명 → body_strong + snippet_match
+    assert a2["source_verified"] == "snippet_match"
+    assert a2["prominence"] == "body_strong"
     # nearest session_date >= pub_date(2026-04-01) among sessions (2026-01-10 completed, 2026-06-10, 2026-09-05)
     assert a2["session_id"] == 101
 

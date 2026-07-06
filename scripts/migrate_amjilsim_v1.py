@@ -326,17 +326,24 @@ def run_migrate(db_path: Path, rollback: bool = False, seed: bool = False) -> No
     #   B5: amjilsim_sessions.committee_type CHECK 에 'BENEFIT_SUBCOMMITTEE' (rebuild, 멱등).
     try:
         from agents.access_insight.classify import ensure_lexicon_schema, seed_lexicon
-        from agents.access_insight.backfill import ensure_oncology_column
+        from agents.access_insight.backfill import (
+            ensure_oncology_column,
+            ensure_prominence_column,
+        )
 
         ensure_lexicon_schema(conn)
         seeded = seed_lexicon(conn)
         ensure_oncology_column(conn)
+        # A1 — amjilsim_media_signals.prominence TEXT (title/body_strong/passing).
+        #   값 채우기는 scheduler.py --backfill-prominence-now (UPDATE-only, 멱등).
+        ensure_prominence_column(conn)
         conn.commit()
         unc = ensure_signal_type_unclassified(conn)
         bsc = ensure_benefit_subcommittee_check(conn)
         conn.commit()
         print(
             f"✅ B7 lexicon 스키마+seed (seed rows: {seeded}) / B6 is_oncology 컬럼 / "
+            f"A1 prominence 컬럼 / "
             f"UNCLASSIFIED CHECK rebuild={unc} / BENEFIT_SUBCOMMITTEE CHECK rebuild={bsc}"
         )
     except Exception as e:  # pragma: no cover - 마이그레이션 편의

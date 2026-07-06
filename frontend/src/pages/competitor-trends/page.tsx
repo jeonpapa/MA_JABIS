@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { listCompetitorTrends, COMPETITOR_BADGES, type CompetitorTrend } from '@/api/competitorTrends';
 import {
   fetchCompetitorNews,
@@ -257,13 +256,6 @@ export default function CompetitorTrendsPage() {
                 className={`bg-transparent text-sm focus:outline-none w-48 ${inputText}`}
               />
             </div>
-            <Link
-              to="/admin/competitor-trends"
-              className="flex items-center gap-2 bg-teal-600 text-white text-sm font-semibold px-4 py-2 rounded-lg cursor-pointer whitespace-nowrap hover:bg-teal-700 transition-colors"
-            >
-              <span className="w-4 h-4 flex items-center justify-center"><i className="ri-filter-3-line text-sm"></i></span>
-              수집 관리
-            </Link>
             {isAdmin && (
               <button
                 onClick={() => setShowBrandsModal(true)}

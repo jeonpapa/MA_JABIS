@@ -345,11 +345,12 @@ def test_oncology_english_abbrev_and_inn_override(db):
     assert flags[23] == 0 and flags[36] == 0 and flags[21] == 0
 
 
-# ── B5: committee-aware nearest_session + expected_committee ──────────────────
+# ── B5/A2: committee-aware nearest_session + expected_committee ───────────────
 def test_expected_committee():
     assert B.expected_committee(1) == "AMJILSIM"
-    assert B.expected_committee(0) == "BENEFIT_SUBCOMMITTEE"
-    # 미상(백필 전) → None (BSC 로 단정하면 백필 전 항암제가 오표기) — committee-agnostic.
+    # A2 — 일반약의 진입 위원회는 약평위 (급여기준소위는 내부 소위 — 폐기).
+    assert B.expected_committee(0) == "YAKPYUNGWI"
+    # 미상(백필 전) → None (특정 위원회로 단정하면 백필 전 항암제가 오표기) — committee-agnostic.
     assert B.expected_committee(None) is None
 
 
@@ -372,8 +373,11 @@ def test_nearest_session_committee_aware():
     ]
     # 항암 → 암질심 세션만
     assert B.nearest_session_id(sessions, "2026-05-01", committee_type="AMJILSIM") == 10
-    # 비항암 → 급여기준소위 세션 없음 → None (암질심 강제 배정 금지)
-    assert B.nearest_session_id(sessions, "2026-05-01", committee_type="BENEFIT_SUBCOMMITTEE") is None
+    # 일반 → 약평위 세션만 (암질심 강제 배정 금지)
+    assert B.nearest_session_id(sessions, "2026-05-01", committee_type="YAKPYUNGWI") == 20
+    # 해당 위원회 세션 일정이 없으면 None (다른 위원회로 강제 배정하지 않음)
+    only_amjilsim = [("2026-05-27", 10, "AMJILSIM")]
+    assert B.nearest_session_id(only_amjilsim, "2026-05-01", committee_type="YAKPYUNGWI") is None
     # committee 미지정 → 위원회 무관 최근접
     assert B.nearest_session_id(sessions, "2026-06-01") == 20
 
@@ -402,7 +406,10 @@ def test_leaderboard_class_filter_and_fields(db):
 
     gen = leaderboard(db_path=db, drug_class="general")
     assert [d["drug_id"] for d in gen] == [2]
-    assert gen[0]["expected_committee"] == "BENEFIT_SUBCOMMITTEE"
+    # A2 — 일반약 진입 위원회 = 약평위 (구 BENEFIT_SUBCOMMITTEE 폐기)
+    assert gen[0]["expected_committee"] == "YAKPYUNGWI"
+    assert gen[0]["track"] == "general"
+    assert onco[0]["track"] == "oncology"
 
     allrows = leaderboard(db_path=db)
     assert len(allrows) == 2

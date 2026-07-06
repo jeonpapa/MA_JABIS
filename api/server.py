@@ -5058,6 +5058,9 @@ def mail_sub_delete(item_id: int):
 def mail_preview():
     """Daily Mailing 프리뷰 — 실데이터로 렌더된 HTML 반환.
 
+    NOTE(retire 후보): 구 daily-monitoring digest 렌더러. daily-mailing 페이지는
+    /test-send(최근 헤르메스 브리프)로 이전되어 이 엔드포인트를 더 이상 사용하지 않는다.
+
     Query:
       - name: 구독 이름 (default "Daily Dossier")
       - keywords: 콤마 구분
@@ -5085,7 +5088,11 @@ def mail_preview():
 @app.post("/api/mail-subscriptions/<int:item_id>/preview")
 @require_auth()
 def mail_sub_preview(item_id: int):
-    """저장된 구독에 대한 프리뷰 JSON ({subject, html, text})."""
+    """저장된 구독에 대한 프리뷰 JSON ({subject, html, text}).
+
+    NOTE(retire 후보): 구 daily-monitoring digest 렌더러. daily-mailing 페이지는
+    /test-send(최근 헤르메스 브리프)로 이전되어 이 엔드포인트를 더 이상 사용하지 않는다.
+    """
     owner = request.user["sub"]  # type: ignore[attr-defined]
     try:
         with db._connect() as conn:
@@ -5129,6 +5136,12 @@ def daily_mailing_admin_kanban():
 @app.post("/api/mail-subscriptions/<int:item_id>/test-send")
 @require_auth()
 def mail_sub_test_send(item_id: int):
+    """최근 발송 보기 — 이 구독으로 헤르메스가 실제 작성한 최신 브리프를 반환.
+
+    과거에는 구 daily-monitoring digest(_mail_render_digest)를 렌더해 실제 발송물과
+    다른 내용을 보여줬다. 이제 daily_mailing_run 의 최신 산출물(html_path 파일 우선,
+    없으면 draft_items 재렌더)을 반환한다. 발송 이력이 없으면 mode='none'.
+    """
     owner = request.user["sub"]  # type: ignore[attr-defined]
     try:
         with db._connect() as conn:
@@ -5136,32 +5149,60 @@ def mail_sub_test_send(item_id: int):
                 f"SELECT {_MAIL_SUB_COLS} FROM mail_subscription WHERE id=? AND owner_email=?",
                 (item_id, owner),
             ).fetchone()
-            if row is None:
-                return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
-            item = _mail_sub_row_to_dict(row)
-            dashboard_url = request.host_url.rstrip("/").replace(":5001", ":3000")
-            subject, body_html, body_text = _mail_render_digest(
-                name=item["name"],
-                dashboard_url=dashboard_url,
-                keywords=item["keywords"],
-                media=item["media"],
-                scope={
-                    "brands": item["brands"], "companies": item["companies"],
-                    "policy_topics": item["policy_topics"], "disease_areas": item["disease_areas"],
-                    "custom_sources": item["custom_sources"],
-                },
-            )
-            result = {
-                "ok": True,
-                "mode": "preview",
-                "sent": False,
-                "recipients": item["emails"],
-                "subject": subject,
-                "html": body_html,
-                "text": body_text,
-                "message": "초안 미리보기만 생성했습니다. 승인된 Gmail draft/send 단계 전에는 실제 발송하지 않습니다.",
-            }
-        return jsonify(result)
+        if row is None:
+            return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+        item = _mail_sub_row_to_dict(row)
+        no_history = {
+            "ok": True,
+            "mode": "none",
+            "sent": False,
+            "recipients": item["emails"],
+            "message": "아직 헤르메스 발송 이력이 없습니다 — 실제 메일은 헤르메스가 작성·발송합니다.",
+        }
+        try:
+            from agents.daily_mailing.storage import load_latest_run_for_subscription
+        except Exception:  # 모듈 미탑재 배포 방어 (kanban 임포트와 동일 케이스)
+            return jsonify(no_history)
+        run = load_latest_run_for_subscription(item_id, owner)
+        if run is None:
+            return jsonify(no_history)
+        body_html = None
+        html_path = run.get("html_path")
+        if html_path:
+            try:
+                from pathlib import Path as _Path
+                p = _Path(html_path)
+                if p.is_file():
+                    body_html = p.read_text(encoding="utf-8")
+            except Exception as read_err:
+                logger.warning("daily_mailing 브리프 html_path 읽기 실패(%s): %s", html_path, read_err)
+        if body_html is None and run.get("draft_items"):
+            try:
+                from agents.daily_mailing.writer import render_daily_draft_html
+                draft_items = run["draft_items"]
+                body_html = render_daily_draft_html(
+                    items=draft_items,
+                    keywords=run.get("keywords") or item["keywords"],
+                    window_label=run.get("window_label") or "이전 24시간",
+                    max_items=max(len(draft_items), 1),
+                )
+            except Exception as render_err:
+                logger.error("daily_mailing 브리프 재렌더 실패: %s", render_err, exc_info=True)
+        if body_html is None:
+            return jsonify(no_history)
+        generated = (run.get("generated_at") or "")[:10]
+        subject = f"[Daily Mailing] {item['name']}" + (f" · {generated}" if generated else "")
+        return jsonify({
+            "ok": True,
+            "mode": "preview",
+            "sent": False,
+            "recipients": item["emails"],
+            "subject": subject,
+            "html": body_html,
+            "run_id": run.get("run_id"),
+            "generated_at": run.get("generated_at"),
+            "message": "이 스콥으로 헤르메스가 실제 작성한 최신 브리프입니다. 대쉬보드는 메일을 직접 발송하지 않습니다.",
+        })
     except Exception as e:
         logger.error("mail_sub_test_send 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
@@ -6312,6 +6353,7 @@ def reimb_pipeline_admin_session_create():
 # ──────────────────────────────────────────────────────────────────────────────
 
 from agents import access_insight as _access_insight
+from agents.access_insight.aggregate import score_bands as _ai_score_bands
 
 
 @app.get("/api/access-insight/leaderboard")
@@ -6325,7 +6367,9 @@ def access_insight_leaderboard():
         items = _access_insight.leaderboard(
             window_days=window_days, limit=limit, drug_class=drug_class
         )
-        return jsonify({"items": items})
+        # A3 — score_bands: 프론트 legend/tooltip 이 예측 버킷(HIGH/MEDIUM)과
+        # 동일 임계값을 쓰도록 단일 소스로 노출.
+        return jsonify({"items": items, "score_bands": _ai_score_bands()})
     except Exception as e:
         logger.error("access_insight_leaderboard 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
@@ -6348,7 +6392,9 @@ def access_insight_drug_detail(drug_id: int):
         window_days = request.args.get("window_days", default=90, type=int)
         momentum = _access_insight.drug_momentum(drug_id, window_days=window_days)
         journey = _access_insight.journey(drug_id)
-        return jsonify({"momentum": momentum, "journey": journey})
+        return jsonify(
+            {"momentum": momentum, "journey": journey, "score_bands": _ai_score_bands()}
+        )
     except ValueError as e:
         return jsonify({"error": str(e)}), 404
     except Exception as e:

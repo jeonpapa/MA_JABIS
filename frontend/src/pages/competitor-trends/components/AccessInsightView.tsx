@@ -14,10 +14,12 @@ import {
 } from 'recharts';
 import {
   committeeLabel,
+  DEFAULT_SCORE_BANDS, normalizeScoreBands,
   fetchAccessDrugs, fetchAccessDrugJourney, fetchAccessLeaderboard,
   SIGNAL_TYPES,
   type DrugClass, type DrugJourney, type DrugListItem, type DrugMomentum,
-  type JourneyMilestones, type SignalType,
+  type JourneyMilestones, type JourneySignal, type ScoreBands, type SignalType,
+  type StageItem, type Track,
 } from '@/api/accessInsight';
 
 // ── 색상 팔레트 ────────────────────────────────────────────────────────────────
@@ -51,13 +53,23 @@ interface MilestoneDef {
   icon: string;
 }
 
+// A2: 영문 약칭(DREC/ODAC) 폐기 — 정확한 한국어 명칭 사용.
 const MILESTONE_DEFS: MilestoneDef[] = [
   { key: 'mfds_permit_date', label: '식약처 허가', color: '#6366F1', icon: 'ri-file-shield-2-line' },
-  { key: 'amjilsim_pass_date', label: 'DREC 통과', color: '#EA580C', icon: 'ri-hospital-line' },
-  { key: 'yakpyungwi_pass_date', label: 'ODAC 통과', color: '#0EA5E9', icon: 'ri-checkbox-circle-line' },
+  { key: 'amjilsim_pass_date', label: '암질심 통과', color: '#EA580C', icon: 'ri-hospital-line' },
+  { key: 'yakpyungwi_pass_date', label: '약평위 통과', color: '#0EA5E9', icon: 'ri-checkbox-circle-line' },
   { key: 'first_reimbursement_date', label: '최초 급여 등재', color: '#EAB308', icon: 'ri-flag-2-line' },
   { key: 'reimbursement_effective_date', label: '급여 발효', color: '#A855F7', icon: 'ri-calendar-check-line' },
 ];
+
+/**
+ * A2 — 트랙별 마일스톤 정의. 일반 트랙(약평위 직행)은 암질심을 거치지 않으므로
+ * 암질심 마일스톤을 차트/범례에서 아예 제외한다. oncology/unknown/미상은 전체 노출.
+ */
+function milestoneDefsForTrack(track: Track | null | undefined): MilestoneDef[] {
+  if (track === 'general') return MILESTONE_DEFS.filter(d => d.key !== 'amjilsim_pass_date');
+  return MILESTONE_DEFS;
+}
 
 const WINDOW_OPTIONS = [
   { label: '30일', days: 30 },
@@ -132,7 +144,12 @@ interface ChartBuild {
   maxStack: number;
 }
 
-function buildChart(journey: DrugJourney, momentum: DrugMomentum): ChartBuild {
+function buildChart(
+  journey: DrugJourney,
+  momentum: DrugMomentum,
+  track: Track | null | undefined,
+  includePassing: boolean,
+): ChartBuild {
   const nowTs = Date.now();
   const signalTsList = journey.signals
     .map(s => parseTs(s.published_at))
@@ -165,6 +182,9 @@ function buildChart(journey: DrugJourney, momentum: DrugMomentum): ChartBuild {
   const domainEnd = lastWeek + WEEK_MS / 2;
 
   for (const s of journey.signals) {
+    // A1 — 간접(passing) 언급은 momentum 지표에서 제외되므로 밀도 차트에서도 기본 제외
+    // (토글 ON 시 포함). prominence 부재(구버전)는 실질 신호로 취급해 포함.
+    if (!includePassing && s.prominence === 'passing') continue;
     const ts = parseTs(s.published_at);
     if (ts == null || ts < firstWeek || ts > endTs) continue;
     const idx = bucketIndex.get(weekFloor(ts));
@@ -197,7 +217,8 @@ function buildChart(journey: DrugJourney, momentum: DrugMomentum): ChartBuild {
 
   const milestonesInRange: ChartMilestone[] = [];
   const milestonesBefore: ChartMilestone[] = [];
-  for (const def of MILESTONE_DEFS) {
+  // A2 — 일반 트랙은 암질심 마일스톤 자체를 렌더하지 않는다.
+  for (const def of milestoneDefsForTrack(track)) {
     const raw = journey.milestones[def.key];
     const ts = parseTs(raw);
     if (ts == null) continue;
@@ -251,12 +272,124 @@ function TrendArrow({ direction, isDark }: { direction: 'up' | 'down' | 'flat'; 
   return <i className={`ri-subtract-line text-base flex-shrink-0 ${isDark ? 'text-[#4A5568]' : 'text-gray-400'}`} title="변화 없음"></i>;
 }
 
+// ── 트랙 배지 (A2) ─────────────────────────────────────────────────────────────
+
+function TrackBadge({ track }: { track: Track | null | undefined }) {
+  // unknown/미상(구버전 응답)은 배지를 숨긴다.
+  if (track !== 'oncology' && track !== 'general') return null;
+  return (
+    <span
+      className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${
+        track === 'oncology' ? 'bg-rose-500/10 text-rose-400' : 'bg-sky-500/10 text-sky-400'
+      }`}
+    >
+      {track === 'oncology' ? '항암 트랙' : '일반 트랙'}
+    </span>
+  );
+}
+
+// ── 스테이지 스텝퍼 (A2) ────────────────────────────────────────────────────────
+// stages[] 를 수평 스텝퍼로 렌더 — done=teal(채움) / current=amber(강조) / pending=grey.
+// 날짜는 라벨 아래 표기 + hover title 툴팁.
+
+function StageStepper({ stages, isDark }: { stages: StageItem[]; isDark: boolean }) {
+  const pendingDot = isDark ? 'border-[#4A5568] bg-transparent' : 'border-gray-300 bg-transparent';
+  const pendingText = isDark ? 'text-[#4A5568]' : 'text-gray-400';
+  const doneText = isDark ? 'text-[#8B9BB4]' : 'text-gray-500';
+  const connector = isDark ? 'bg-[#2A3545]' : 'bg-gray-200';
+  const doneConnector = isDark ? 'bg-teal-500/50' : 'bg-teal-400/60';
+
+  return (
+    <div className="flex items-start overflow-x-auto pb-1" role="list" aria-label="급여 진입 스테이지">
+      {stages.map((st, i) => {
+        const done = st.status === 'done';
+        const current = st.status === 'current';
+        const dotCls = done
+          ? 'bg-teal-500 border-teal-500 text-white'
+          : current
+            ? 'bg-amber-500 border-amber-500 text-white ring-2 ring-amber-500/30'
+            : pendingDot;
+        const labelCls = current
+          ? 'text-amber-500 font-bold'
+          : done
+            ? `${doneText} font-semibold`
+            : `${pendingText} font-medium`;
+        return (
+          <div
+            key={st.key || i}
+            role="listitem"
+            className="flex flex-col items-center min-w-[64px] flex-1 relative"
+            title={`${st.label} · ${st.date ? st.date.slice(0, 10) : '—'}`}
+          >
+            {/* 연결선 (첫 스텝 제외) — done→done 구간은 teal */}
+            {i > 0 && (
+              <span
+                className={`absolute top-[9px] right-1/2 w-full h-0.5 -translate-x-[10px] ${
+                  done || current ? doneConnector : connector
+                }`}
+                style={{ width: 'calc(100% - 20px)' }}
+              ></span>
+            )}
+            <span className={`w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center flex-shrink-0 z-[1] ${dotCls}`}>
+              {done && <i className="ri-check-line text-[11px] leading-none"></i>}
+              {current && <span className="w-1.5 h-1.5 rounded-full bg-white"></span>}
+            </span>
+            <span className={`text-[10px] mt-1 whitespace-nowrap ${labelCls}`}>{st.label}</span>
+            <span className={`text-[9px] tabular-nums whitespace-nowrap ${current ? 'text-amber-500' : pendingText}`}>
+              {st.date ? st.date.slice(0, 10) : '—'}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── momentum 점수 설명 (A3) ────────────────────────────────────────────────────
+// ri-question-line hover 팝오버 — score_bands 기반 구간 설명. 확정 예측 아님을 명시.
+
+function MomentumInfo({
+  bands, isDark, align = 'left',
+}: {
+  bands: ScoreBands; isDark: boolean; align?: 'left' | 'right';
+}) {
+  const text =
+    `momentum = 위원회 기준일 직전 30일당 미디어·이해관계자 신호 강도(신호수 × 유형·매체 가중 × 최근성). ` +
+    `높음(≥${bands.high}) = 위원회 임박 시점 정부·국회·환자단체·학회 등재추진 활동 밀집 = 등재 가능성 참고 신호(확정 아님). ` +
+    `${bands.medium}~${bands.high}=보통, <${bands.medium}=낮음.`;
+  return (
+    <span className="relative inline-flex group align-middle">
+      <i
+        className={`ri-question-line text-sm cursor-help ${isDark ? 'text-[#4A5568] hover:text-[#8B9BB4]' : 'text-gray-400 hover:text-gray-600'}`}
+        aria-label="momentum 점수 설명"
+      ></i>
+      <span
+        className={`invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-opacity absolute z-30 top-full mt-1.5 ${
+          align === 'right' ? 'right-0' : 'left-0'
+        } w-72 rounded-lg border p-3 text-[11px] font-normal leading-relaxed normal-case tracking-normal text-left shadow-xl ${
+          isDark ? 'bg-[#161B27] border-[#2A3545] text-[#8B9BB4]' : 'bg-white border-gray-200 text-gray-600'
+        }`}
+      >
+        {text}
+      </span>
+    </span>
+  );
+}
+
+/** A3 — momentum 점수 밴드별 강조색 (≥high=amber / ≥medium=중립 accent / 미만=grey). */
+function scoreBandColor(score: number, bands: ScoreBands, isDark: boolean): string {
+  const s = Number.isFinite(score) ? score : 0;
+  if (s >= bands.high) return 'text-amber-500';
+  if (s >= bands.medium) return isDark ? 'text-[#00E5CC]' : 'text-teal-600';
+  return isDark ? 'text-[#8B9BB4]' : 'text-gray-400';
+}
+
 // ── 리더보드 카드 ──────────────────────────────────────────────────────────────
 
 function LeaderboardCard({
-  item, rank, active, onClick, isDark,
+  item, rank, active, onClick, isDark, bands,
 }: {
-  item: DrugMomentum; rank: number; active: boolean; onClick: () => void; isDark: boolean;
+  item: DrugMomentum; rank: number; active: boolean; onClick: () => void; isDark: boolean; bands: ScoreBands;
 }) {
   const cardBg = isDark ? 'bg-[#161B27]' : 'bg-white';
   const cardBorder = active
@@ -265,7 +398,9 @@ function LeaderboardCard({
   const textMain = isDark ? 'text-white' : 'text-gray-900';
   const textMuted = isDark ? 'text-[#4A5568]' : 'text-gray-400';
   const total = Math.max(item.signal_count, 1);
-  const scoreColor = isDark ? 'text-[#00E5CC]' : 'text-teal-600';
+  const score = Number.isFinite(item.momentum_score) ? item.momentum_score : 0;
+  // A3 — 점수 밴드별 색 (≥high amber / ≥medium 중립 / <medium grey)
+  const scoreColor = scoreBandColor(score, bands, isDark);
 
   return (
     <button
@@ -291,7 +426,7 @@ function LeaderboardCard({
 
       <div className="flex items-end justify-between mt-2 gap-2">
         <div>
-          <p className={`text-2xl font-bold leading-none tabular-nums ${scoreColor}`}>{item.momentum_score.toFixed(1)}</p>
+          <p className={`text-2xl font-bold leading-none tabular-nums ${scoreColor}`}>{score.toFixed(1)}</p>
           <p className={`text-[10px] mt-1 ${textMuted}`}>momentum · 신호 {item.signal_count}건</p>
         </div>
         {item.session_imminent && item.expected_session && (
@@ -321,6 +456,8 @@ export default function AccessInsightView({ isDark }: { isDark: boolean }) {
   const [leaderboard, setLeaderboard] = useState<DrugMomentum[]>([]);
   const [lbLoading, setLbLoading] = useState(true);
   const [lbError, setLbError] = useState<string | null>(null);
+  // A3 — momentum 점수 구간 경계 (백엔드 score_bands, 없으면 high=3/medium=1 폴백)
+  const [scoreBands, setScoreBands] = useState<ScoreBands>(DEFAULT_SCORE_BANDS);
 
   const [drugList, setDrugList] = useState<DrugListItem[]>([]);
   const [search, setSearch] = useState(''); // B5 — brand_kr substring 검색
@@ -330,6 +467,8 @@ export default function AccessInsightView({ isDark }: { isDark: boolean }) {
   const [journey, setJourney] = useState<DrugJourney | null>(null);
   const [jLoading, setJLoading] = useState(false);
   const [jError, setJError] = useState<string | null>(null);
+  // A1 — 간접(passing) 언급 신호 표시 토글 (기본 숨김, 약제 변경 시 초기화)
+  const [showPassing, setShowPassing] = useState(false);
 
   const cardBg = isDark ? 'bg-[#161B27]' : 'bg-white';
   const cardBorder = isDark ? 'border-[#1E2530]' : 'border-gray-200';
@@ -348,11 +487,12 @@ export default function AccessInsightView({ isDark }: { isDark: boolean }) {
     let alive = true;
     setLbLoading(true);
     fetchAccessLeaderboard(windowDays, 30, classFilter === 'all' ? undefined : classFilter)
-      .then(items => {
+      .then(r => {
         if (!alive) return;
-        setLeaderboard(items);
+        setLeaderboard(r.items);
+        if (r.score_bands) setScoreBands(normalizeScoreBands(r.score_bands)); // A3
         setLbError(null);
-        setSelectedId(prev => (prev != null ? prev : (items[0]?.drug_id ?? null)));
+        setSelectedId(prev => (prev != null ? prev : (r.items[0]?.drug_id ?? null)));
       })
       .catch(e => { if (alive) setLbError(e instanceof Error ? e.message : '조회 실패'); })
       .finally(() => { if (alive) setLbLoading(false); });
@@ -381,6 +521,7 @@ export default function AccessInsightView({ isDark }: { isDark: boolean }) {
   }, []);
 
   useEffect(() => {
+    setShowPassing(false); // A1 — 약제 변경 시 간접 언급 토글 초기화
     if (selectedId == null) { setMomentum(null); setJourney(null); return; }
     let alive = true;
     setJLoading(true);
@@ -389,6 +530,7 @@ export default function AccessInsightView({ isDark }: { isDark: boolean }) {
         if (!alive) return;
         setMomentum(r.momentum);
         setJourney(r.journey);
+        if (r.score_bands) setScoreBands(normalizeScoreBands(r.score_bands)); // A3
         setJError(null);
       })
       .catch(e => { if (alive) setJError(e instanceof Error ? e.message : '조회 실패'); })
@@ -396,10 +538,21 @@ export default function AccessInsightView({ isDark }: { isDark: boolean }) {
     return () => { alive = false; };
   }, [selectedId, windowDays]);
 
+  // A2 — 트랙/스테이지 (momentum 우선, journey 폴백 — 구버전 응답에는 둘 다 없을 수 있음)
+  const track: Track | null = momentum?.track ?? journey?.track ?? null;
+  const stages: StageItem[] = useMemo(() => {
+    const raw = momentum?.stages ?? journey?.stages;
+    return Array.isArray(raw) ? raw : [];
+  }, [momentum, journey]);
+
   const chart = useMemo(() => {
     if (!momentum || !journey) return null;
-    return buildChart(journey, momentum);
-  }, [momentum, journey]);
+    // A1 — showPassing 토글이 차트 밀도에도 반영 (기본 제외, momentum 지표와 일치)
+    return buildChart(journey, momentum, track, showPassing);
+  }, [momentum, journey, track, showPassing]);
+
+  // A2 — 일반 트랙은 암질심 마일스톤을 범례에서도 제외
+  const visibleMilestoneDefs = useMemo(() => milestoneDefsForTrack(track), [track]);
 
   // B5 — 리더보드 카드 검색 필터 (원래 rank 유지).
   const visibleLeaderboard = useMemo(() => {
@@ -424,9 +577,15 @@ export default function AccessInsightView({ isDark }: { isDark: boolean }) {
   }, [drugList, search, classFilter]);
 
   const recentSignals = useMemo(() => {
-    if (!journey) return [];
+    if (!journey || !Array.isArray(journey.signals)) return [];
     return [...journey.signals].sort((a, b) => (b.published_at || '').localeCompare(a.published_at || ''));
   }, [journey]);
+
+  // A1 — 간접(passing) 언급 분리. prominence 부재(구버전 데이터)는 실질 신호로 취급.
+  const isPassingSignal = (s: JourneySignal) => s.prominence === 'passing';
+  const substantiveSignals = useMemo(() => recentSignals.filter(s => !isPassingSignal(s)), [recentSignals]);
+  const passingCount = recentSignals.length - substantiveSignals.length;
+  const displayedSignals = showPassing ? recentSignals : substantiveSignals;
 
   return (
     <div className="space-y-5">
@@ -483,7 +642,11 @@ export default function AccessInsightView({ isDark }: { isDark: boolean }) {
         {/* ── 좌: momentum 리더보드 ── */}
         <div className="xl:col-span-4 space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className={`text-sm font-bold ${textMain}`}>Momentum 리더보드</h3>
+            <h3 className={`text-sm font-bold flex items-center gap-1.5 ${textMain}`}>
+              Momentum 리더보드
+              {/* A3 — 점수 의미 설명 팝오버 */}
+              <MomentumInfo bands={scoreBands} isDark={isDark} align="left" />
+            </h3>
           </div>
 
           {/* B5 — 약제 검색 (brand_kr substring · 전체 약제 대상, 결과 선택 시 journey 오픈) */}
@@ -571,6 +734,7 @@ export default function AccessInsightView({ isDark }: { isDark: boolean }) {
                   active={selectedId === item.drug_id}
                   onClick={() => setSelectedId(item.drug_id)}
                   isDark={isDark}
+                  bands={scoreBands}
                 />
               ))}
             </div>
@@ -602,17 +766,25 @@ export default function AccessInsightView({ isDark }: { isDark: boolean }) {
               <div className={`${cardBg} rounded-2xl border ${cardBorder} p-5`}>
                 <div className="flex items-start justify-between flex-wrap gap-3">
                   <div>
-                    <h3 className={`text-lg font-bold ${textMain}`}>{momentum.brand_kr}</h3>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className={`text-lg font-bold ${textMain}`}>{momentum.brand_kr}</h3>
+                      {/* A2 — 트랙 배지 (unknown/미상은 숨김) */}
+                      <TrackBadge track={track} />
+                    </div>
                     <p className={`text-xs mt-0.5 ${textMuted}`}>
                       기준일 {momentum.reference_date ?? '—'} · 관측 {momentum.window_days}일
-                      {/* 분류 미상(null/UNKNOWN)이면 committeeLabel 이 '' → 라벨 숨김 (잘못된 BSC 방지) */}
-                      {committeeLabel(momentum.expected_committee) && ` · 예상 진입 위원회 ${committeeLabel(momentum.expected_committee)}`}
                     </p>
                   </div>
                   <div className="flex items-center gap-5">
                     <div className="text-right">
-                      <p className={`text-2xl font-bold leading-none tabular-nums ${accentColor}`}>{momentum.momentum_score.toFixed(2)}</p>
-                      <p className={`text-[10px] mt-1 ${textMuted}`}>momentum score</p>
+                      <p className={`text-2xl font-bold leading-none tabular-nums ${scoreBandColor(momentum.momentum_score, scoreBands, isDark)}`}>
+                        {(Number.isFinite(momentum.momentum_score) ? momentum.momentum_score : 0).toFixed(2)}
+                      </p>
+                      <p className={`text-[10px] mt-1 flex items-center justify-end gap-1 ${textMuted}`}>
+                        momentum score
+                        {/* A3 — 점수 의미 설명 팝오버 */}
+                        <MomentumInfo bands={scoreBands} isDark={isDark} align="right" />
+                      </p>
                     </div>
                     <div className="text-right">
                       <p className={`text-2xl font-bold leading-none tabular-nums ${textMain}`}>{momentum.signal_count}</p>
@@ -626,6 +798,17 @@ export default function AccessInsightView({ isDark }: { isDark: boolean }) {
                     </div>
                   </div>
                 </div>
+                {/* A2 — 스테이지 스텝퍼 ("예상 진입 위원회" 단일 라벨을 대체).
+                    stages 부재(구버전 응답) 시 expected_committee 한국어 라벨로 폴백. */}
+                {stages.length > 0 ? (
+                  <div className={`mt-3 pt-3 border-t ${cardBorder}`}>
+                    <StageStepper stages={stages} isDark={isDark} />
+                  </div>
+                ) : committeeLabel(momentum.expected_committee) ? (
+                  <p className={`mt-3 pt-3 border-t ${cardBorder} text-xs ${textSub}`}>
+                    예상 진입 위원회 <span className={`font-semibold ${textMain}`}>{committeeLabel(momentum.expected_committee)}</span>
+                  </p>
+                ) : null}
                 {momentum.expected_session && (
                   <div className={`mt-3 pt-3 border-t ${cardBorder} flex items-center gap-2 text-xs ${textSub}`}>
                     <i className="ri-calendar-event-line"></i>
@@ -709,7 +892,7 @@ export default function AccessInsightView({ isDark }: { isDark: boolean }) {
                     </span>
                   ))}
                   <span className={`mx-1 ${textMuted}`}>|</span>
-                  {MILESTONE_DEFS.map(m => (
+                  {visibleMilestoneDefs.map(m => (
                     <span key={m.key} className="flex items-center gap-1.5">
                       <span className="w-2 h-2 flex-shrink-0" style={{ backgroundColor: m.color, transform: 'rotate(45deg)' }}></span>
                       {m.label}
@@ -731,19 +914,41 @@ export default function AccessInsightView({ isDark }: { isDark: boolean }) {
                 )}
               </div>
 
-              {/* 최근 신호 리스트 */}
+              {/* 최근 신호 리스트 — A1: 기본은 실질 신호만, 간접(passing) 언급은 토글로 노출 */}
               <div className={`${cardBg} rounded-2xl border ${cardBorder} p-5`}>
-                <h4 className={`text-xs font-bold uppercase tracking-wider mb-3 ${textMuted}`}>최근 신호 ({recentSignals.length}건)</h4>
-                {recentSignals.length === 0 ? (
-                  <p className={`text-sm ${textMuted}`}>수집된 신호가 없습니다</p>
+                <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+                  <h4 className={`text-xs font-bold uppercase tracking-wider ${textMuted}`}>
+                    최근 신호 ({displayedSignals.length}건)
+                  </h4>
+                  {passingCount > 0 && (
+                    <button
+                      onClick={() => setShowPassing(v => !v)}
+                      className={`text-[11px] font-semibold px-2 py-1 rounded-md border cursor-pointer transition-colors ${
+                        showPassing
+                          ? (isDark ? 'border-[#2A3545] bg-[#1E2530] text-[#8B9BB4]' : 'border-gray-300 bg-gray-100 text-gray-600')
+                          : (isDark ? 'border-[#1E2530] text-[#4A5568] hover:text-[#8B9BB4]' : 'border-gray-200 text-gray-400 hover:text-gray-600')
+                      }`}
+                    >
+                      <i className={`mr-1 ${showPassing ? 'ri-eye-off-line' : 'ri-eye-line'}`}></i>
+                      {showPassing ? `간접 언급 ${passingCount}건 숨기기` : `간접 언급 ${passingCount}건 표시`}
+                    </button>
+                  )}
+                </div>
+                {displayedSignals.length === 0 ? (
+                  <p className={`text-sm ${textMuted}`}>
+                    {recentSignals.length === 0
+                      ? '수집된 신호가 없습니다'
+                      : '실질 신호가 없습니다 — 간접 언급만 수집됨 (위 토글로 표시)'}
+                  </p>
                 ) : (
                   <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
-                    {recentSignals.map((s, i) => {
+                    {displayedSignals.map((s, i) => {
                       const type = (SIGNAL_TYPES as string[]).includes(s.signal_type) ? s.signal_type as SignalType : null;
+                      const passing = isPassingSignal(s);
                       const color = type ? SIGNAL_COLORS[type] : '#9CA3AF';
                       const label = type ? SIGNAL_LABELS[type] : s.signal_type;
                       return (
-                        <div key={i} className={`flex items-start gap-2.5 py-1.5 ${i > 0 ? `border-t ${cardBorder}` : ''}`}>
+                        <div key={i} className={`flex items-start gap-2.5 py-1.5 ${i > 0 ? `border-t ${cardBorder}` : ''} ${passing ? 'opacity-70' : ''}`}>
                           <span className={`text-[11px] tabular-nums flex-shrink-0 w-20 pt-0.5 ${textMuted}`}>{formatDate(s.published_at)}</span>
                           <span
                             className="text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 whitespace-nowrap mt-0.5"
@@ -751,6 +956,17 @@ export default function AccessInsightView({ isDark }: { isDark: boolean }) {
                           >
                             {label}
                           </span>
+                          {/* A1 — 간접(passing) 언급 배지: 라운드업·스치는 언급 */}
+                          {passing && (
+                            <span
+                              className={`text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0 whitespace-nowrap mt-0.5 ${
+                                isDark ? 'bg-[#1E2530] text-[#4A5568]' : 'bg-gray-100 text-gray-400'
+                              }`}
+                              title="간접 언급 — 라운드업성·부수적 언급 (momentum 참고도 낮음)"
+                            >
+                              간접
+                            </span>
+                          )}
                           <div className="min-w-0 flex-1">
                             {s.url ? (
                               <a href={s.url} target="_blank" rel="noopener noreferrer"

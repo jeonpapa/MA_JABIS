@@ -368,6 +368,45 @@ def persist_daily_mailing_run(
     return {"run_id": run_id, "article_count": len(article_cards), "expires_at": expires_at}
 
 
+def load_latest_run_for_subscription(
+    subscription_id: int | None,
+    owner_email: str | None = None,
+    *,
+    db_path: str | Path = DEFAULT_DB_PATH,
+) -> dict | None:
+    """구독의 최신 헤르메스 run 1건 반환 (없으면 None).
+
+    '최근 발송 보기'가 대쉬보드 digest 가 아닌 실제 헤르메스 브리프를 보여주기 위해 사용.
+    폴백 순서: subscription_id 일치 → owner_email 일치 → 전체 최신.
+    반환 dict 에는 raw 컬럼(html_path, draft_items_json 등) 외에 파싱된
+    ``draft_items``/``keywords`` 키를 추가한다.
+    """
+    ensure_daily_mailing_tables(db_path)
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        row = None
+        if subscription_id is not None:
+            row = conn.execute(
+                "SELECT * FROM daily_mailing_run WHERE subscription_id=? ORDER BY generated_at DESC LIMIT 1",
+                (subscription_id,),
+            ).fetchone()
+        if row is None and owner_email:
+            row = conn.execute(
+                "SELECT * FROM daily_mailing_run WHERE owner_email=? ORDER BY generated_at DESC LIMIT 1",
+                (owner_email,),
+            ).fetchone()
+        if row is None:
+            row = conn.execute(
+                "SELECT * FROM daily_mailing_run ORDER BY generated_at DESC LIMIT 1"
+            ).fetchone()
+    if row is None:
+        return None
+    run = dict(row)
+    run["draft_items"] = _json_or(run.get("draft_items_json"), [])
+    run["keywords"] = _json_or(run.get("keywords_json"), [])
+    return run
+
+
 def load_admin_kanban(db_path: str | Path = DEFAULT_DB_PATH, *, limit_runs: int = 20) -> dict:
     ensure_daily_mailing_tables(db_path)
     purge_expired_daily_mailing_rows(db_path)

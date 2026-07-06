@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Iterable, Optional, Sequence, Union
 
 from agents.access_insight.backfill import (
+    ensure_prominence_column,
     expected_committee,
     insert_signal,
     load_sessions_sorted,
@@ -37,7 +38,11 @@ from agents.access_insight.classify import (
     signal_weight,
     unclassified_allowed,
 )
-from agents.access_insight.link import build_alias_index, resolve_drug
+from agents.access_insight.link import (
+    build_alias_index,
+    drug_in_text,
+    resolve_drug_with_prominence,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +86,9 @@ def extract_signals(
         lexicon = load_lexicon(path)
         unc_ok = unclassified_allowed(conn)
 
+        # A1 — prominence 컬럼 멱등 보장.
+        ensure_prominence_column(conn)
+
         has_onco = any(
             r[1] == "is_oncology" for r in conn.execute("PRAGMA table_info(amjilsim_drugs)")
         )
@@ -106,25 +114,26 @@ def extract_signals(
             "by_tier": {},
         }
 
-        # ── pass 1: 약물 resolve (crossref 집계용) ──
-        candidates: list[tuple] = []  # (article, drug_id)
+        # ── pass 1: 약물 resolve + prominence 판정 (crossref 집계용) ──
+        candidates: list[tuple] = []  # (article, drug_id, prominence)
         for art in articles:
             stats["scanned"] += 1
-            text = f"{art.title or ''} {art.snippet or ''}"
-            drug_id = resolve_drug(text, index)
+            drug_id, prominence = resolve_drug_with_prominence(
+                art.title or "", art.snippet or "", index
+            )
             if drug_id is None:
                 stats["unmatched"] += 1
                 continue
             stats["matched"] += 1
-            candidates.append((art, drug_id))
+            candidates.append((art, drug_id, prominence))
 
         # crossref_count: 같은 약물을 거명한 서로 다른 매체 수 (배치 내)
         outlets_by_drug: dict[int, set[str]] = {}
-        for art, drug_id in candidates:
+        for art, drug_id, _prom in candidates:
             outlets_by_drug.setdefault(drug_id, set()).add(art.outlet or "unknown")
 
         # ── pass 2: 분류 + 행 구성 + 멱등 INSERT ──
-        for art, drug_id in candidates:
+        for art, drug_id, prominence in candidates:
             title = art.title or ""
             snippet = art.snippet or ""
             kind = getattr(art, "kind", "fresh_crawl") or "fresh_crawl"
@@ -138,15 +147,16 @@ def extract_signals(
 
             session_id = expected_session.get(drug_id)
             if not session_id and pub_date:
-                # B5 — 항암/비항암에 맞는 위원회 세션만 최근접 배정.
-                #   is_oncology 미상(NULL) → expected_committee=None → committee-agnostic.
+                # A2 — track 에 맞는 위원회 세션만 최근접 배정.
+                #   oncology → AMJILSIM, general → YAKPYUNGWI,
+                #   is_oncology 미상(NULL) → committee-agnostic.
                 committee = expected_committee(drug_oncology.get(drug_id))
                 session_id = nearest_session_id(sessions_sorted, pub_date, committee_type=committee)
 
             # 발췌에 약물 거명 → snippet_match, 제목에만 → headline_only
             source_verified = (
                 "snippet_match"
-                if snippet and resolve_drug(snippet, index) == drug_id
+                if snippet and drug_in_text(drug_id, snippet, index)
                 else "headline_only"
             )
 
@@ -166,6 +176,7 @@ def extract_signals(
                 weight=weight,
                 source_verified=source_verified,
                 committee_target=_committee_target(f"{title} {snippet}"),
+                prominence=prominence,
             )
             if not inserted:
                 stats["duplicate_skipped"] += 1
