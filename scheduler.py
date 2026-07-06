@@ -339,6 +339,32 @@ def competitor_news_daily_job():
         logger.exception("Gov Policy News 매일 fetch 실패: %s", e)
 
 
+def access_insight_fresh_signal_job():
+    """매주 월요일 04:00 Seoul — Access Insight 신선 신호 크롤 (S5).
+
+    tier A(전문지)/B(종합지)/D(미분류) 매체 기사(최근 8일)를 수집해 신호로 적재:
+      ① Naver News API 1-pass (amjilsim_drugs 추적 약제 + 위원회 키워드) — 도메인
+         tier 로 A/B/D 버킷 분류 (agents/amjilsim_tracker/crawlers/tiered_news).
+      ② T1 전문지 직접 검색 갭필러 (tier1_news_sites — 키 불필요).
+      → signal_extractor: 약물 거명(resolve_drug) + signal_type 분류(classify)
+      → amjilsim_media_signals (url, drug_id) 멱등 INSERT.
+    INSERT-only — S1 백필 기존 행은 절대 변경하지 않음. 재실행 안전(중복 0).
+    Naver 키 미설정 시 Naver 축만 skip (사이트 축은 진행).
+    """
+    logger.info("━━━ Access Insight 신선 신호 주간 크롤 시작 ━━━")
+    try:
+        from agents.amjilsim_tracker.signal_extractor import run_fresh_crawl
+        res = run_fresh_crawl()
+        logger.info(
+            "신선 신호 크롤 완료: articles=%d matched=%d inserted=%d dup=%d (tier별 %s)",
+            res.get("articles", 0), res.get("matched", 0),
+            res.get("inserted", 0), res.get("duplicate_skipped", 0),
+            res.get("by_tier", {}),
+        )
+    except Exception as e:
+        logger.exception("Access Insight 신선 신호 크롤 실패: %s", e)
+
+
 def competitor_trend_promote_job():
     """매일 07:00 Seoul — 아카이브(competitor_news) 최근 2일 뉴스 → 동향 카드 승격.
 
@@ -681,6 +707,11 @@ def main():
         action="store_true",
         help="아카이브 뉴스 → 경쟁사 동향 카드 승격 즉시 실행",
     )
+    parser.add_argument(
+        "--fresh-signals-now",
+        action="store_true",
+        help="Access Insight 신선 신호 크롤 즉시 실행 (tier A/B/D → amjilsim_media_signals)",
+    )
     args = parser.parse_args()
 
     config = load_config()
@@ -770,6 +801,11 @@ def main():
     if args.promote_trends_now:
         logger.info("경쟁사 동향 카드 승격 즉시 실행 (아카이브→카드)")
         competitor_trend_promote_job()
+        return
+
+    if args.fresh_signals_now:
+        logger.info("Access Insight 신선 신호 크롤 즉시 실행")
+        access_insight_fresh_signal_job()
         return
 
     # 스케줄러 설정: 매월 1일 09:00
@@ -883,6 +919,22 @@ def main():
         trigger=CronTrigger(hour=7, minute=0, timezone="Asia/Seoul"),
         id="competitor_trend_promote",
         name="경쟁사 동향 카드 일일 승격 (아카이브→카드)",
+        replace_existing=True,
+    )
+
+    # Access Insight 신선 신호 — 매주 월요일 04:00 Seoul (S5: tier A/B/D 크롤 →
+    # signal_extractor → amjilsim_media_signals 멱등 INSERT. competitor_news
+    # 주간 크롤(03:30)과 같은 소스 패밀리·주간 cadence, 30분 후행)
+    scheduler.add_job(
+        access_insight_fresh_signal_job,
+        trigger=CronTrigger(
+            day_of_week="mon",
+            hour=4,
+            minute=0,
+            timezone="Asia/Seoul",
+        ),
+        id="access_insight_fresh_signals",
+        name="Access Insight 신선 신호 주간 크롤 (tier A/B/D → media signals)",
         replace_existing=True,
     )
 
