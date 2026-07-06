@@ -13,7 +13,14 @@ import {
 } from '@/utils/authUsers';
 import { getTabVisibility, setTabVisibility, isTabVisible } from '@/utils/tabVisibility';
 
-const allNavItems = [
+export interface NavItem {
+  path: string;
+  label: string;
+  icon: string;
+  exact?: boolean;
+}
+
+export const allNavItems: NavItem[] = [
   { path: '/', label: 'Dashboard Overview', icon: 'ri-dashboard-3-line', exact: true },
   { path: '/domestic-pricing', label: 'Domestic Pricing', icon: 'ri-price-tag-3-line' },
   { path: '/regimen-cost', label: 'Regimen Cost', icon: 'ri-bar-chart-box-line' },
@@ -24,10 +31,11 @@ const allNavItems = [
   { path: '/reimbursement-status', label: 'Reimbursement Status', icon: 'ri-article-line' },
   { path: '/policy-intelligence', label: 'Policy Intelligence', icon: 'ri-government-line' },
   { path: '/analog-search', label: 'Listing Analog Search', icon: 'ri-search-eye-line' },
+  { path: '/my-requests', label: '내 개선 요청', icon: 'ri-feedback-line' },
 ];
 
 // admin 전용 — tabVisibility 미적용 (관리 기능은 항상 노출)
-const adminNavItems = [
+export const adminNavItems: NavItem[] = [
   { path: '/admin/market-share', label: '시장점유율 업로드', icon: 'ri-upload-cloud-2-line' },
   { path: '/admin/msd-pipeline', label: 'MSD 파이프라인', icon: 'ri-git-branch-line' },
   { path: '/admin/competitor-trends', label: 'MNC 동향 관리', icon: 'ri-building-2-line' },
@@ -35,6 +43,7 @@ const adminNavItems = [
   { path: '/admin/reimbursement-pipeline', label: '심의 파이프라인 관리', icon: 'ri-route-line' },
   { path: '/admin/daily-mailing-kanban', label: 'Daily Mailing 칸반', icon: 'ri-kanban-view' },
   { path: '/admin/home-brands', label: '홈 브랜드 관리', icon: 'ri-capsule-line' },
+  { path: '/admin/service-requests', label: '서비스 보완 요청', icon: 'ri-customer-service-2-line' },
 ];
 
 type SettingsTab = 'account' | 'users' | 'tabs';

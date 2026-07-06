@@ -5991,6 +5991,215 @@ def analog_search_feedback_list():
         return jsonify({"error": str(e)}), 500
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# 서비스 보완/개선 요청 (Service Request) MVP
+#   사용자: 생성 + 본인 조회 / 관리자: 트리아지 + Claude 패키지 + 확인 + sent 마킹.
+#   send-to-claude 는 외부 호출 없음 (마크다운 확정 저장/반환만).
+#   Analog Search 피드백(/api/analog/search-feedback)과는 별개 기능.
+# ──────────────────────────────────────────────────────────────────────────────
+
+try:  # 방어적 import — store 미탑재 시 해당 엔드포인트만 503
+    from agents.service_requests import store as _service_requests_store  # noqa: E402
+except Exception as _e:  # pragma: no cover
+    _service_requests_store = None
+    logger.warning("agents.service_requests.store 미존재 — service-request 엔드포인트 비활성 (%s)", _e)
+
+
+def _coerce_service_request_input(body: dict) -> dict | tuple[dict, str]:
+    """생성 입력 검증 — 성공 시 kwargs dict, 실패 시 ({}, "msg")."""
+    out: dict = {}
+    title = (body.get("title") or "").strip()
+    if not title:
+        return ({}, "title required")
+    out["title"] = title
+    for field in ("body", "expected_outcome", "page_path", "page_label", "source_url"):
+        if field in body:
+            val = body.get(field)
+            if val is not None and not isinstance(val, str):
+                return ({}, f"{field} must be string")
+            out[field] = (val or "").strip() or None
+    if "request_type" in body and body.get("request_type"):
+        if body["request_type"] not in _service_requests_store.REQUEST_TYPES:
+            return ({}, "request_type must be bug|improvement|feature|data|other")
+        out["request_type"] = body["request_type"]
+    if "priority" in body and body.get("priority"):
+        if body["priority"] not in _service_requests_store.PRIORITIES:
+            return ({}, "priority must be low|medium|high|urgent")
+        out["priority"] = body["priority"]
+    if "context" in body and body.get("context") is not None:
+        if not isinstance(body["context"], dict):
+            return ({}, "context must be object")
+        out["context"] = body["context"]
+    return out
+
+
+def _service_requests_unavailable():
+    return jsonify({"error": "service_requests 모듈 미탑재", "code": "UNAVAILABLE"}), 503
+
+
+@app.post("/api/service-requests")
+@require_auth()
+def service_request_create():
+    if _service_requests_store is None:
+        return _service_requests_unavailable()
+    owner = request.user["sub"]  # type: ignore[attr-defined]
+    body = request.get_json(silent=True) or {}
+    result = _coerce_service_request_input(body)
+    if isinstance(result, tuple):
+        _, msg = result
+        return jsonify({"error": msg, "code": "INVALID"}), 400
+    try:
+        item = _service_requests_store.create_request(owner, **result)
+        return jsonify({"item": item}), 201
+    except Exception as e:
+        logger.error("service_request_create 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/service-requests/mine")
+@require_auth()
+def service_request_mine():
+    if _service_requests_store is None:
+        return _service_requests_unavailable()
+    owner = request.user["sub"]  # type: ignore[attr-defined]
+    try:
+        return jsonify({"items": _service_requests_store.list_mine(owner)})
+    except Exception as e:
+        logger.error("service_request_mine 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/service-requests/<int:request_id>")
+@require_auth()
+def service_request_detail(request_id: int):
+    if _service_requests_store is None:
+        return _service_requests_unavailable()
+    user = request.user  # type: ignore[attr-defined]
+    try:
+        item = _service_requests_store.get_request(request_id)
+        if item is None:
+            return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+        if item["owner_email"] != user["sub"] and user.get("role") != "admin":
+            return jsonify({"error": "forbidden", "code": "AUTH_FORBIDDEN"}), 403
+        return jsonify({"item": item, "events": _service_requests_store.list_events(request_id)})
+    except Exception as e:
+        logger.error("service_request_detail 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/admin/service-requests")
+@require_auth(role="admin")
+def service_request_admin_list():
+    if _service_requests_store is None:
+        return _service_requests_unavailable()
+    try:
+        limit = min(int(request.args.get("limit", 500)), 500)
+        items = _service_requests_store.list_all(
+            status=request.args.get("status") or None,
+            priority=request.args.get("priority") or None,
+            request_type=request.args.get("type") or None,
+            limit=limit,
+        )
+        return jsonify({"items": items})
+    except Exception as e:
+        logger.error("service_request_admin_list 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.patch("/api/admin/service-requests/<int:request_id>")
+@require_auth(role="admin")
+def service_request_admin_update(request_id: int):
+    if _service_requests_store is None:
+        return _service_requests_unavailable()
+    actor = request.user["sub"]  # type: ignore[attr-defined]
+    body = request.get_json(silent=True) or {}
+    if "status" in body and body.get("status") not in _service_requests_store.STATUSES:
+        return jsonify({"error": "invalid status", "code": "INVALID"}), 400
+    if "priority" in body and body.get("priority") not in _service_requests_store.PRIORITIES:
+        return jsonify({"error": "invalid priority", "code": "INVALID"}), 400
+    if "request_type" in body and body.get("request_type") not in _service_requests_store.REQUEST_TYPES:
+        return jsonify({"error": "invalid request_type", "code": "INVALID"}), 400
+    try:
+        item = _service_requests_store.admin_update(
+            request_id, actor,
+            status=body.get("status"),
+            priority=body.get("priority"),
+            request_type=body.get("request_type"),
+            admin_note=body.get("admin_note"),
+        )
+        if item is None:
+            return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+        return jsonify({"item": item})
+    except Exception as e:
+        logger.error("service_request_admin_update 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/admin/service-requests/<int:request_id>/claude-package")
+@require_auth(role="admin")
+def service_request_claude_package(request_id: int):
+    if _service_requests_store is None:
+        return _service_requests_unavailable()
+    actor = request.user["sub"]  # type: ignore[attr-defined]
+    body = request.get_json(silent=True) or {}
+    try:
+        result = _service_requests_store.save_package(
+            request_id, actor,
+            mode=body.get("mode") or "generate",
+            markdown=body.get("markdown"),
+        )
+        if isinstance(result, tuple):
+            _, msg = result
+            if msg == "not found":
+                return jsonify({"error": msg, "code": "NOT_FOUND"}), 404
+            return jsonify({"error": msg, "code": "INVALID"}), 400
+        return jsonify({"item": result, "markdown": result.get("package_markdown")})
+    except Exception as e:
+        logger.error("service_request_claude_package 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/admin/service-requests/<int:request_id>/confirm")
+@require_auth(role="admin")
+def service_request_confirm(request_id: int):
+    if _service_requests_store is None:
+        return _service_requests_unavailable()
+    actor = request.user["sub"]  # type: ignore[attr-defined]
+    body = request.get_json(silent=True) or {}
+    try:
+        result = _service_requests_store.confirm_request(
+            request_id, actor, body.get("checklist") or {})
+        if isinstance(result, tuple):
+            _, msg = result
+            if msg == "not found":
+                return jsonify({"error": msg, "code": "NOT_FOUND"}), 404
+            return jsonify({"error": msg, "code": "CHECKLIST_INCOMPLETE"}), 400
+        return jsonify({"item": result})
+    except Exception as e:
+        logger.error("service_request_confirm 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/admin/service-requests/<int:request_id>/send-to-claude")
+@require_auth(role="admin")
+def service_request_send(request_id: int):
+    """sent 마킹 — 외부 Claude 호출 없음. 최종 마크다운 저장/반환만."""
+    if _service_requests_store is None:
+        return _service_requests_unavailable()
+    actor = request.user["sub"]  # type: ignore[attr-defined]
+    try:
+        result = _service_requests_store.send_to_claude(request_id, actor)
+        if isinstance(result, tuple):
+            _, msg = result
+            if msg == "not found":
+                return jsonify({"error": msg, "code": "NOT_FOUND"}), 404
+            return jsonify({"error": msg, "code": "NOT_CONFIRMED"}), 409
+        return jsonify({"item": result, "markdown": result.get("sent_markdown")})
+    except Exception as e:
+        logger.error("service_request_send 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @app.get("/api/policy-intelligence/overview")
 @require_auth()
 def policy_intelligence_overview():

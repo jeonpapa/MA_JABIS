@@ -4,6 +4,7 @@ import { AppRoutes } from "./router";
 import { I18nextProvider } from "react-i18next";
 import i18n from "./i18n";
 import Sidebar from "@/components/feature/Sidebar";
+import ServiceRequestButton from "@/components/service-requests/ServiceRequestButton";
 import { hasToken, fetchMe } from "@/utils/authUsers";
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
@@ -50,6 +51,8 @@ function Layout() {
       <main className="flex-1 ml-60 min-h-screen overflow-y-auto">
         <AppRoutes />
       </main>
+      {/* 글로벌 개선 요청 FAB — 인증된 레이아웃에서만 (로그인 페이지 제외) */}
+      <ServiceRequestButton />
     </div>
   );
 }

@@ -15,6 +15,7 @@ const DEFAULT_VISIBILITY: TabVisibility = {
   '/reimbursement-status': true,
   '/policy-intelligence': true,
   '/analog-search': true,
+  '/my-requests': true,
 };
 
 export function getTabVisibility(): TabVisibility {

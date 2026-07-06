@@ -9,6 +9,7 @@ import DailyMailingPage from '@/pages/daily-mailing/page';
 import ReimbursementStatusPage from '@/pages/reimbursement-status/page';
 import PolicyIntelligencePage from '@/pages/policy-intelligence/page';
 import AnalogSearchPage from '@/pages/analog-search/page';
+import MyRequestsPage from '@/pages/service-requests/mine';
 import LoginPage from '@/pages/login/page';
 import NotFound from '@/pages/NotFound';
 // admin — 각 페이지가 fetchMe() 로 role 셀프 가드 (v2 패턴)
@@ -19,6 +20,7 @@ import AdminReimbursementPage from '@/pages/admin/reimbursement/page';
 import AdminReimbursementPipelinePage from '@/pages/admin/reimbursement-pipeline/page';
 import AdminDailyMailingKanbanPage from '@/pages/admin/daily-mailing-kanban/page';
 import AdminHomeBrandsPage from '@/pages/admin/home-brands/page';
+import AdminServiceRequestsPage from '@/pages/admin/service-requests/page';
 
 const routes: RouteObject[] = [
   { path: '/login', element: <LoginPage /> },
@@ -32,6 +34,7 @@ const routes: RouteObject[] = [
   { path: '/reimbursement-status', element: <ReimbursementStatusPage /> },
   { path: '/policy-intelligence', element: <PolicyIntelligencePage /> },
   { path: '/analog-search', element: <AnalogSearchPage /> },
+  { path: '/my-requests', element: <MyRequestsPage /> },
   { path: '/admin/market-share', element: <AdminMarketSharePage /> },
   { path: '/admin/msd-pipeline', element: <AdminMsdPipelinePage /> },
   { path: '/admin/competitor-trends', element: <AdminCompetitorTrendsPage /> },
@@ -39,6 +42,7 @@ const routes: RouteObject[] = [
   { path: '/admin/reimbursement-pipeline', element: <AdminReimbursementPipelinePage /> },
   { path: '/admin/daily-mailing-kanban', element: <AdminDailyMailingKanbanPage /> },
   { path: '/admin/home-brands', element: <AdminHomeBrandsPage /> },
+  { path: '/admin/service-requests', element: <AdminServiceRequestsPage /> },
   { path: '*', element: <NotFound /> },
 ];
 
