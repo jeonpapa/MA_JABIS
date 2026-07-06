@@ -16,8 +16,15 @@ function statusTone(status: string | null | undefined): string {
   const v = (status || '').toLowerCase();
   if (v === 'sent' || v === 'done' || v === 'confirmed') return 'bg-[#00E5CC]/10 text-[#00E5CC]';
   if (v === 'rejected') return 'bg-red-500/10 text-red-400';
-  if (v === 'in_review' || v === 'packaged') return 'bg-[#F59E0B]/10 text-[#F59E0B]';
+  if (v === 'in_review' || v === 'packaged' || v === 'in_progress') return 'bg-[#F59E0B]/10 text-[#F59E0B]';
+  if (v === 'wont_fix') return 'bg-[#1E2530] text-[#8B9BB4]';
   return 'bg-[#3B82F6]/10 text-[#60A5FA]';
+}
+
+/** 처리 결과 섹션 노출 대상 상태 (delegation-loop resolution) */
+function isResolutionStatus(status: string | null | undefined): boolean {
+  const v = (status || '').toLowerCase();
+  return v === 'in_progress' || v === 'done' || v === 'wont_fix';
 }
 
 function priorityTone(priority: string | null | undefined): string {
@@ -235,6 +242,48 @@ export default function MyRequestsPage() {
                   {detail.item.expected_outcome || '—'}
                 </p>
               </div>
+
+              {/* 처리 결과 (delegation-loop resolution) */}
+              {isResolutionStatus(detail.item.status) && (
+                <div className="bg-[#0D1117] border border-[#00E5CC]/20 rounded-xl p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-white text-xs font-bold">
+                      <i className="ri-tools-line mr-1 text-[#00E5CC]"></i>처리 결과
+                    </p>
+                    <span className={`text-[10px] px-2 py-0.5 rounded ${statusTone(detail.item.status)}`}>
+                      {statusLabel(detail.item.status)}
+                    </span>
+                  </div>
+                  {(detail.item.status || '').toLowerCase() === 'in_progress' && !detail.item.resolution_note && (
+                    <p className="text-[#8B9BB4] text-xs">
+                      요청이 접수되어 현재 작업이 진행 중입니다. 완료되면 처리 내용이 여기에 표시됩니다.
+                    </p>
+                  )}
+                  {detail.item.resolution_note && (
+                    <div>
+                      <p className="text-[#4A5568] text-[10px] mb-1">처리 내용</p>
+                      <p className="text-[#C9D4E3] text-xs whitespace-pre-wrap leading-relaxed">
+                        {detail.item.resolution_note}
+                      </p>
+                    </div>
+                  )}
+                  {detail.item.commit_ref && (
+                    <div>
+                      <p className="text-[#4A5568] text-[10px] mb-1">반영 커밋</p>
+                      <p className="text-[#C9D4E3] text-[11px] font-mono break-all">
+                        {detail.item.commit_ref}
+                      </p>
+                    </div>
+                  )}
+                  {(detail.item.claimed_at || detail.item.resolved_at) && (
+                    <p className="text-[#4A5568] text-[10px]">
+                      {detail.item.claimed_at && <>작업 시작 {fmtDate(detail.item.claimed_at)}</>}
+                      {detail.item.claimed_at && detail.item.resolved_at && ' · '}
+                      {detail.item.resolved_at && <>처리 완료 {fmtDate(detail.item.resolved_at)}</>}
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* 타임라인 */}
               <div>

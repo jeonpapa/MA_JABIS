@@ -5995,6 +5995,9 @@ def analog_search_feedback_list():
 # 서비스 보완/개선 요청 (Service Request) MVP
 #   사용자: 생성 + 본인 조회 / 관리자: 트리아지 + Claude 패키지 + 확인 + sent 마킹.
 #   send-to-claude 는 외부 호출 없음 (마크다운 확정 저장/반환만).
+#   위임 루프(B): outbox(sent) → claim(in_progress) → resolve(done|wont_fix).
+#     에이전트 채널은 CLI(agents/service_requests/cli.py)가 1차, 아래 admin API 는 원격/수동용.
+#     런북: docs/service_requests/AGENT_HANDOFF.md
 #   Analog Search 피드백(/api/analog/search-feedback)과는 별개 기능.
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -6197,6 +6200,64 @@ def service_request_send(request_id: int):
         return jsonify({"item": result, "markdown": result.get("sent_markdown")})
     except Exception as e:
         logger.error("service_request_send 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/admin/service-requests/outbox")
+@require_auth(role="admin")
+def service_request_outbox():
+    """위임 루프 outbox — status='sent' (에이전트 원격/수동 소비용. CLI 와 동일 소스)."""
+    if _service_requests_store is None:
+        return _service_requests_unavailable()
+    try:
+        return jsonify({"items": _service_requests_store.list_outbox()})
+    except Exception as e:
+        logger.error("service_request_outbox 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/admin/service-requests/<int:request_id>/claim")
+@require_auth(role="admin")
+def service_request_claim(request_id: int):
+    """에이전트 픽업 — sent → in_progress."""
+    if _service_requests_store is None:
+        return _service_requests_unavailable()
+    actor = request.user["sub"]  # type: ignore[attr-defined]
+    try:
+        item = _service_requests_store.claim_request(request_id, actor)
+        if item is None:
+            return jsonify({"error": "not claimable (status != sent)", "code": "NOT_CLAIMABLE"}), 409
+        return jsonify({"item": item})
+    except Exception as e:
+        logger.error("service_request_claim 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/admin/service-requests/<int:request_id>/resolve")
+@require_auth(role="admin")
+def service_request_resolve(request_id: int):
+    """에이전트 결과 동기화 — in_progress|sent → done|wont_fix (+resolution_note/commit_ref)."""
+    if _service_requests_store is None:
+        return _service_requests_unavailable()
+    actor = request.user["sub"]  # type: ignore[attr-defined]
+    body = request.get_json(silent=True) or {}
+    try:
+        result = _service_requests_store.resolve_request(
+            request_id, actor,
+            status=body.get("status") or "",
+            resolution_note=(body.get("resolution_note") or "").strip(),
+            commit_ref=body.get("commit_ref"),
+        )
+        if isinstance(result, tuple):
+            _, msg = result
+            if msg == "not found":
+                return jsonify({"error": msg, "code": "NOT_FOUND"}), 404
+            if msg == "not resolvable":
+                return jsonify({"error": msg, "code": "NOT_RESOLVABLE"}), 409
+            return jsonify({"error": msg, "code": "INVALID"}), 400
+        return jsonify({"item": result})
+    except Exception as e:
+        logger.error("service_request_resolve 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 

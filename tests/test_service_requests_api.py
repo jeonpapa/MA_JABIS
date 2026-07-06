@@ -168,6 +168,87 @@ def test_admin_endpoints_blocked_for_user(client):
         ("post", f"/api/admin/service-requests/{rid}/claude-package", {"mode": "generate"}),
         ("post", f"/api/admin/service-requests/{rid}/confirm", {"checklist": FULL_CHECKLIST}),
         ("post", f"/api/admin/service-requests/{rid}/send-to-claude", None),
+        ("get", "/api/admin/service-requests/outbox", None),
+        ("post", f"/api/admin/service-requests/{rid}/claim", None),
+        ("post", f"/api/admin/service-requests/{rid}/resolve",
+         {"status": "done", "resolution_note": "x"}),
     ):
         r = getattr(client, method)(url, json=payload, headers=user_h)
         assert r.status_code == 403, url
+
+
+# ── 위임 루프 (outbox → claim → resolve) ──────────────────────────────────────
+
+def _sent(client) -> int:
+    """생성→패키지→확인→sent 까지 진행, request id 반환."""
+    rid = _create(client).get_json()["item"]["id"]
+    admin_h = _headers(ADMIN, role="admin")
+    client.post(f"/api/admin/service-requests/{rid}/claude-package",
+                json={"mode": "generate"}, headers=admin_h)
+    client.post(f"/api/admin/service-requests/{rid}/confirm",
+                json={"checklist": FULL_CHECKLIST}, headers=admin_h)
+    r = client.post(f"/api/admin/service-requests/{rid}/send-to-claude", headers=admin_h)
+    assert r.status_code == 200
+    return rid
+
+
+def test_outbox_claim_resolve_flow(client):
+    admin_h = _headers(ADMIN, role="admin")
+    _create(client, title="아직 open")  # outbox 미포함
+    rid = _sent(client)
+    # outbox 는 sent 만
+    r = client.get("/api/admin/service-requests/outbox", headers=admin_h)
+    assert r.status_code == 200
+    items = r.get_json()["items"]
+    assert [i["id"] for i in items] == [rid]
+    assert srs.NO_DEPLOY_LINE in items[0]["package_markdown"]
+    # claim → in_progress
+    r2 = client.post(f"/api/admin/service-requests/{rid}/claim", headers=admin_h)
+    assert r2.status_code == 200
+    item = r2.get_json()["item"]
+    assert item["status"] == "in_progress" and item["claimed_by"] == ADMIN
+    # 이중 claim → 409
+    r3 = client.post(f"/api/admin/service-requests/{rid}/claim", headers=admin_h)
+    assert r3.status_code == 409 and r3.get_json()["code"] == "NOT_CLAIMABLE"
+    # outbox 에서 사라짐
+    assert client.get("/api/admin/service-requests/outbox",
+                      headers=admin_h).get_json()["items"] == []
+    # resolve → done + 필드
+    r4 = client.post(f"/api/admin/service-requests/{rid}/resolve",
+                     json={"status": "done", "resolution_note": "정렬 수정",
+                           "commit_ref": "abc1234"}, headers=admin_h)
+    assert r4.status_code == 200
+    item = r4.get_json()["item"]
+    assert item["status"] == "done"
+    assert item["resolution_note"] == "정렬 수정"
+    assert item["commit_ref"] == "abc1234"
+    assert item["resolved_by"] == ADMIN and item["resolved_at"]
+    # 감사 이벤트
+    events = client.get(f"/api/service-requests/{rid}", headers=admin_h).get_json()["events"]
+    assert [e["event_type"] for e in events] == [
+        "create", "package", "confirm", "send", "claim", "resolve"]
+
+
+def test_resolve_validation(client):
+    admin_h = _headers(ADMIN, role="admin")
+    rid = _sent(client)
+    # bad status → 400 INVALID
+    r = client.post(f"/api/admin/service-requests/{rid}/resolve",
+                    json={"status": "rejected", "resolution_note": "x"}, headers=admin_h)
+    assert r.status_code == 400 and r.get_json()["code"] == "INVALID"
+    # 빈 note → 400 INVALID (CLI/UI 제출 게이트와 동일 계약)
+    r_note = client.post(f"/api/admin/service-requests/{rid}/resolve",
+                         json={"status": "done", "resolution_note": "  "}, headers=admin_h)
+    assert r_note.status_code == 400 and r_note.get_json()["code"] == "INVALID"
+    # 미존재 → 404
+    r2 = client.post("/api/admin/service-requests/99999/resolve",
+                     json={"status": "done", "resolution_note": "x"}, headers=admin_h)
+    assert r2.status_code == 404
+    # sent 에서 직접 resolve (claim 생략) OK — wont_fix
+    r3 = client.post(f"/api/admin/service-requests/{rid}/resolve",
+                     json={"status": "wont_fix", "resolution_note": "정책 충돌"}, headers=admin_h)
+    assert r3.status_code == 200 and r3.get_json()["item"]["status"] == "wont_fix"
+    # 종결 후 재-resolve → 409
+    r4 = client.post(f"/api/admin/service-requests/{rid}/resolve",
+                     json={"status": "done", "resolution_note": "again"}, headers=admin_h)
+    assert r4.status_code == 409 and r4.get_json()["code"] == "NOT_RESOLVABLE"

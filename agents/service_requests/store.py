@@ -23,8 +23,17 @@ from pathlib import Path
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[2] / "data" / "db" / "drug_prices.db"
 
-# 요청 상태 흐름: open → in_review → packaged → confirmed → sent (+ rejected/done)
-STATUSES = ("open", "in_review", "packaged", "confirmed", "sent", "rejected", "done")
+# 요청 상태 흐름:
+#   open → in_review → packaged → confirmed → sent            (대쉬보드 = 입력/기록)
+#   sent → in_progress → done|wont_fix                        (에이전트 위임 루프 = outbox → claim → resolve)
+# (+ rejected)
+STATUSES = (
+    "open", "in_review", "packaged", "confirmed", "sent",
+    "in_progress", "rejected", "done", "wont_fix",
+)
+
+# resolve 로 허용되는 최종 상태
+RESOLUTION_STATUSES = ("done", "wont_fix")
 REQUEST_TYPES = ("bug", "improvement", "feature", "data", "other")
 PRIORITIES = ("low", "medium", "high", "urgent")
 PACKAGE_STATUSES = ("none", "draft", "final")
@@ -65,13 +74,19 @@ CREATE TABLE IF NOT EXISTS service_request (
     confirmed_at     TEXT,
     sent_at          TEXT,
     sent_markdown    TEXT,
+    resolution_note  TEXT,
+    commit_ref       TEXT,
+    claimed_by       TEXT,
+    claimed_at       TEXT,
+    resolved_by      TEXT,
+    resolved_at      TEXT,
     created_at       TEXT NOT NULL,
     updated_at       TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_service_request_owner ON service_request(owner_email);
 CREATE INDEX IF NOT EXISTS idx_service_request_status ON service_request(status);
 
--- 감사 이벤트 (append-only) — create/update/package/confirm/send/reject
+-- 감사 이벤트 (append-only) — create/update/package/confirm/send/claim/resolve
 CREATE TABLE IF NOT EXISTS service_request_event (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     request_id   INTEGER NOT NULL,
@@ -119,6 +134,13 @@ def ensure_service_request_tables(db_path: str | Path | None = None) -> None:
             "confirmed_at": "ALTER TABLE service_request ADD COLUMN confirmed_at TEXT",
             "sent_at": "ALTER TABLE service_request ADD COLUMN sent_at TEXT",
             "sent_markdown": "ALTER TABLE service_request ADD COLUMN sent_markdown TEXT",
+            # 위임 루프 (outbox → claim → resolve) 필드
+            "resolution_note": "ALTER TABLE service_request ADD COLUMN resolution_note TEXT",
+            "commit_ref": "ALTER TABLE service_request ADD COLUMN commit_ref TEXT",
+            "claimed_by": "ALTER TABLE service_request ADD COLUMN claimed_by TEXT",
+            "claimed_at": "ALTER TABLE service_request ADD COLUMN claimed_at TEXT",
+            "resolved_by": "ALTER TABLE service_request ADD COLUMN resolved_by TEXT",
+            "resolved_at": "ALTER TABLE service_request ADD COLUMN resolved_at TEXT",
         }.items():
             if col not in existing:
                 conn.execute(ddl)
@@ -445,6 +467,98 @@ def send_to_claude(
         )
         _add_event(conn, request_id, actor_email, "send",
                    from_status="confirmed", to_status="sent")
+        conn.commit()
+        row = _fetch_row(conn, request_id)
+    return _row_to_dict(row)
+
+
+# ── 위임 루프 (outbox → claim → resolve) ──────────────────────────────────────
+#   대쉬보드=입력/기록, 외부 Claude Code 에이전트=실작업, 결과=resolve 로 동기화.
+#   (헤르메스 daily_mailing 위임 패턴 미러링 — 대쉬보드는 스콥/패키지만, 작업은 에이전트.)
+
+def list_outbox(limit: int = 200, *, db_path: str | Path | None = None) -> list[dict]:
+    """에이전트 소비용 outbox — status='sent' (위임됐지만 아직 claim/resolve 안 됨).
+
+    full row(package_markdown/sent_markdown 포함), 최신순.
+    """
+    ensure_service_request_tables(db_path)
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM service_request WHERE status='sent' "
+            "ORDER BY sent_at DESC, id DESC LIMIT ?",
+            (int(limit),),
+        ).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+def claim_request(
+    request_id: int,
+    actor_email: str,
+    *,
+    db_path: str | Path | None = None,
+) -> dict | None:
+    """에이전트 픽업 — status='sent' 에서만 → 'in_progress' + claimed_by/at + event=claim.
+
+    sent 가 아니면 None (이미 claim 됐거나 미발송 — 멱등 소비 안전).
+    """
+    ensure_service_request_tables(db_path)
+    with _connect(db_path) as conn:
+        row = _fetch_row(conn, request_id)
+        if row is None or row["status"] != "sent":
+            return None
+        now = _now()
+        conn.execute(
+            "UPDATE service_request SET status='in_progress', claimed_by=?, claimed_at=?, updated_at=? WHERE id=?",
+            (actor_email, now, now, request_id),
+        )
+        _add_event(conn, request_id, actor_email, "claim",
+                   from_status="sent", to_status="in_progress")
+        conn.commit()
+        row = _fetch_row(conn, request_id)
+    return _row_to_dict(row)
+
+
+def resolve_request(
+    request_id: int,
+    actor_email: str,
+    *,
+    status: str,
+    resolution_note: str,
+    commit_ref: str | None = None,
+    db_path: str | Path | None = None,
+) -> dict | tuple[None, str]:
+    """에이전트 결과 동기화 — status ∈ {done, wont_fix} + resolution_note (+commit_ref).
+
+    in_progress 또는 sent 에서 허용 (에이전트가 claim 없이 직접 resolve 가능).
+    아니면 (None, "not resolvable"). 잘못된 status 는 (None, "bad status").
+    resolution_note 는 필수 (CLI --note/UI 제출 게이트와 동일 계약). 비면 (None, "note required").
+    """
+    ensure_service_request_tables(db_path)
+    if status not in RESOLUTION_STATUSES:
+        return (None, "bad status")
+    resolution_note = (resolution_note or "").strip()
+    if not resolution_note:
+        return (None, "note required")
+    with _connect(db_path) as conn:
+        row = _fetch_row(conn, request_id)
+        if row is None:
+            return (None, "not found")
+        if row["status"] not in ("in_progress", "sent"):
+            return (None, "not resolvable")
+        now = _now()
+        conn.execute(
+            """
+            UPDATE service_request
+               SET status=?, resolution_note=?, commit_ref=?, resolved_by=?, resolved_at=?, updated_at=?
+             WHERE id=?
+            """,
+            (status, resolution_note, commit_ref, actor_email, now, now, request_id),
+        )
+        _add_event(
+            conn, request_id, actor_email, "resolve",
+            from_status=row["status"], to_status=status, note=resolution_note,
+            payload={"resolution_note": resolution_note, "commit_ref": commit_ref},
+        )
         conn.commit()
         row = _fetch_row(conn, request_id)
     return _row_to_dict(row)

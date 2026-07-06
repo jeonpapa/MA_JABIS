@@ -13,8 +13,10 @@ export type SRStatus =
   | 'packaged'
   | 'confirmed'
   | 'sent'
+  | 'in_progress'
   | 'rejected'
-  | 'done';
+  | 'done'
+  | 'wont_fix';
 export type SRPackageStatus = 'none' | 'draft' | 'final';
 
 export interface ChecklistState {
@@ -53,6 +55,13 @@ export interface SR {
   confirmed_at?: string | null;
   sent_at?: string | null;
   sent_markdown?: string | null;
+  // ── delegation-loop resolution (백엔드 병행 구축 — 필드 부재 가능, 방어적 소비) ──
+  resolution_note?: string | null;
+  commit_ref?: string | null;
+  claimed_by?: string | null;
+  claimed_at?: string | null;
+  resolved_by?: string | null;
+  resolved_at?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
 }
@@ -119,8 +128,10 @@ export const STATUS_LABELS: Record<string, string> = {
   packaged: '패키지 작성',
   confirmed: '확인 완료',
   sent: '전달됨',
+  in_progress: '작업 중',
   rejected: '반려',
   done: '완료',
+  wont_fix: '반영 안 함',
 };
 
 export const EVENT_TYPE_LABELS: Record<string, string> = {
@@ -130,6 +141,8 @@ export const EVENT_TYPE_LABELS: Record<string, string> = {
   confirm: '최종 확인',
   send: 'Claude 전달',
   reject: '반려',
+  claim: '작업 시작',
+  resolve: '처리 완료',
 };
 
 // ── API 함수 ────────────────────────────────────────────────────────────────
@@ -190,4 +203,32 @@ export async function adminSend(id: number): Promise<{ item: SR; markdown: strin
     `/api/admin/service-requests/${id}/send-to-claude`,
   );
   return { item: r.item, markdown: r?.markdown ?? '' };
+}
+
+// ── delegation-loop resolution (claim / resolve / outbox) ───────────────────
+
+export type SRResolveStatus = 'done' | 'wont_fix';
+
+export interface AdminResolveInput {
+  status: SRResolveStatus;
+  resolution_note: string;
+  commit_ref?: string;
+}
+
+/** 작업 시작 선언 (sent → in_progress) */
+export async function adminClaim(id: number): Promise<SR> {
+  const r = await api.post<{ item: SR }>(`/api/admin/service-requests/${id}/claim`);
+  return r.item;
+}
+
+/** 처리 결과 기록 (→ done | wont_fix). 400 {error, code:'INVALID'} 가능 */
+export async function adminResolve(id: number, input: AdminResolveInput): Promise<SR> {
+  const r = await api.post<{ item: SR }>(`/api/admin/service-requests/${id}/resolve`, input);
+  return r.item;
+}
+
+/** Claude 에 전달된(sent) 대기 요청 목록 */
+export async function fetchOutbox(): Promise<SR[]> {
+  const r = await api.get<{ items?: SR[] }>('/api/admin/service-requests/outbox');
+  return r?.items ?? [];
 }

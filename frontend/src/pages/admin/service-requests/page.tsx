@@ -8,6 +8,8 @@ import {
   adminPackage,
   adminConfirm,
   adminSend,
+  adminClaim,
+  adminResolve,
   fetchServiceRequest,
   REQUEST_TYPE_LABELS,
   PRIORITY_LABELS,
@@ -19,6 +21,7 @@ import {
   type SRStatus,
   type SRPriority,
   type SRRequestType,
+  type SRResolveStatus,
   type ChecklistState,
 } from '@/api/serviceRequests';
 
@@ -28,7 +31,8 @@ function statusTone(status: string | null | undefined): string {
   const v = (status || '').toLowerCase();
   if (v === 'sent' || v === 'done' || v === 'confirmed') return 'bg-[#00E5CC]/10 text-[#00E5CC]';
   if (v === 'rejected') return 'bg-red-500/10 text-red-400';
-  if (v === 'in_review' || v === 'packaged') return 'bg-[#F59E0B]/10 text-[#F59E0B]';
+  if (v === 'in_review' || v === 'packaged' || v === 'in_progress') return 'bg-[#F59E0B]/10 text-[#F59E0B]';
+  if (v === 'wont_fix') return 'bg-[#1E2530] text-[#8B9BB4]';
   return 'bg-[#3B82F6]/10 text-[#60A5FA]';
 }
 
@@ -51,7 +55,18 @@ function statusLabel(status: string | null | undefined): string {
   return STATUS_LABELS[status] ?? status;
 }
 
-const STATUS_OPTIONS: SRStatus[] = ['open', 'in_review', 'packaged', 'confirmed', 'sent', 'rejected', 'done'];
+const STATUS_OPTIONS: SRStatus[] = [
+  'open',
+  'in_review',
+  'packaged',
+  'confirmed',
+  'sent',
+  'in_progress',
+  'done',
+  'wont_fix',
+  'rejected',
+];
+const RESOLVE_STATUS_OPTIONS: SRResolveStatus[] = ['done', 'wont_fix'];
 const PRIORITY_OPTIONS: SRPriority[] = ['low', 'medium', 'high', 'urgent'];
 const TYPE_OPTIONS: SRRequestType[] = ['bug', 'improvement', 'feature', 'data', 'other'];
 
@@ -107,6 +122,11 @@ export default function AdminServiceRequestsPage() {
   // 확인 체크리스트
   const [checklist, setChecklist] = useState<ChecklistState>({ ...EMPTY_CHECKLIST });
 
+  // 처리(resolve) 패널 상태
+  const [resolveStatus, setResolveStatus] = useState<SRResolveStatus>('done');
+  const [resolveNote, setResolveNote] = useState('');
+  const [resolveCommitRef, setResolveCommitRef] = useState('');
+
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState('');
   const [actionErr, setActionErr] = useState('');
@@ -159,6 +179,11 @@ export default function AdminServiceRequestsPage() {
     setEditType((item.request_type as SRRequestType) || 'improvement');
     setAdminNote(item.admin_note ?? '');
     setChecklist(normalizeChecklist(item.checklist));
+    // 처리 패널 프리필 (필드 부재 시 기본값 — 방어적)
+    const st = (item.status || '').toLowerCase();
+    setResolveStatus(st === 'wont_fix' ? 'wont_fix' : 'done');
+    setResolveNote(item.resolution_note ?? '');
+    setResolveCommitRef(item.commit_ref ?? '');
   };
 
   const openDetail = async (id: number) => {
@@ -202,6 +227,12 @@ export default function AdminServiceRequestsPage() {
       if (e instanceof ApiError) {
         if (e.code === 'CHECKLIST_INCOMPLETE') {
           setActionErr('체크리스트 5개 항목을 모두 확인해야 confirm 할 수 있습니다.');
+        } else if (e.code === 'INVALID') {
+          setActionErr(`처리 입력이 유효하지 않습니다 (상태 done/wont_fix + 처리 내용 필수): ${e.message}`);
+        } else if (e.code === 'NOT_CLAIMABLE') {
+          setActionErr("sent 상태에서만 '작업 시작'을 할 수 있습니다 (이미 처리 중이거나 종료됨).");
+        } else if (e.code === 'NOT_RESOLVABLE') {
+          setActionErr('sent 또는 작업 중 상태에서만 처리 결과를 기록할 수 있습니다.');
         } else if (e.code === 'NOT_CONFIRMED' || e.status === 409) {
           setActionErr('confirm(최종 확인) 이후에만 Claude 로 전달할 수 있습니다.');
         } else {
@@ -279,6 +310,32 @@ export default function AdminServiceRequestsPage() {
       setActionMsg('Claude 핸드오프 패키지가 확정(sent) 저장되었습니다.');
     });
 
+  const handleClaim = () =>
+    runAction('claim', async () => {
+      if (!selected) return;
+      const item = await adminClaim(selected.id);
+      applyItem(item);
+      await refreshEvents(item.id);
+      setActionMsg('작업 시작(claim)으로 기록되었습니다. 상태: 작업 중');
+    });
+
+  const handleResolve = () =>
+    runAction('resolve', async () => {
+      if (!selected) return;
+      const item = await adminResolve(selected.id, {
+        status: resolveStatus,
+        resolution_note: resolveNote,
+        ...(resolveCommitRef.trim() ? { commit_ref: resolveCommitRef.trim() } : {}),
+      });
+      applyItem(item);
+      await refreshEvents(item.id);
+      setActionMsg(
+        resolveStatus === 'done'
+          ? '처리 결과가 완료(done)로 기록되었습니다.'
+          : '처리 결과가 반영 안 함(wont_fix)으로 기록되었습니다.',
+      );
+    });
+
   if (!authChecked) {
     return (
       <div className="min-h-screen flex items-center justify-center text-[#8B9BB4] text-sm">
@@ -288,7 +345,8 @@ export default function AdminServiceRequestsPage() {
   }
 
   const currentStatus = (selected?.status || '').toLowerCase();
-  const isSent = currentStatus === 'sent' || currentStatus === 'done';
+  // sent 여부는 상태만으로 판정 불가 (done/wont_fix 는 수동 경로로도 도달) — sent_at 존재를 함께 확인
+  const isSent = currentStatus === 'sent' || Boolean(selected?.sent_at);
 
   return (
     <div className="min-h-screen bg-[#0D1117] text-white">
@@ -345,6 +403,16 @@ export default function AdminServiceRequestsPage() {
               ))}
             </select>
           </div>
+          <button
+            onClick={() => setFilterStatus(filterStatus === 'sent' ? '' : 'sent')}
+            className={`text-[10px] font-semibold px-3 py-2 rounded-lg border transition-colors cursor-pointer ${
+              filterStatus === 'sent'
+                ? 'bg-[#00E5CC]/10 border-[#00E5CC]/40 text-[#00E5CC]'
+                : 'bg-[#0D1117] border-[#1E2530] text-[#8B9BB4] hover:text-white'
+            }`}
+          >
+            <i className="ri-inbox-unarchive-line mr-1"></i>Outbox (전달됨)
+          </button>
           <p className="text-[#4A5568] text-[10px] ml-auto">
             {loading ? '조회 중…' : `${items.length}건`}
           </p>
@@ -467,6 +535,46 @@ export default function AdminServiceRequestsPage() {
                     <p className="text-[#4A5568] text-[10px] truncate">
                       <i className="ri-link mr-1"></i>{selected.source_url}
                     </p>
+                  )}
+
+                  {/* 처리(resolution) 현황 — 필드가 있을 때만 노출 (방어적) */}
+                  {(selected.claimed_at || selected.claimed_by || selected.resolved_at ||
+                    selected.resolved_by || selected.resolution_note || selected.commit_ref) && (
+                    <div className="bg-[#0D1117] border border-[#00E5CC]/20 rounded-xl p-3 space-y-2 text-xs">
+                      <p className="text-white text-xs font-bold">
+                        <i className="ri-tools-line mr-1 text-[#00E5CC]"></i>처리 현황
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {(selected.claimed_by || selected.claimed_at) && (
+                          <div>
+                            <p className="text-[#4A5568] text-[10px] mb-0.5">작업 시작 (claim)</p>
+                            <p className="text-[#C9D4E3]">{selected.claimed_by || '—'}</p>
+                            <p className="text-[#8B9BB4] text-[10px]">{fmtDate(selected.claimed_at)}</p>
+                          </div>
+                        )}
+                        {(selected.resolved_by || selected.resolved_at) && (
+                          <div>
+                            <p className="text-[#4A5568] text-[10px] mb-0.5">처리 완료 (resolve)</p>
+                            <p className="text-[#C9D4E3]">{selected.resolved_by || '—'}</p>
+                            <p className="text-[#8B9BB4] text-[10px]">{fmtDate(selected.resolved_at)}</p>
+                          </div>
+                        )}
+                      </div>
+                      {selected.commit_ref && (
+                        <div>
+                          <p className="text-[#4A5568] text-[10px] mb-0.5">반영 커밋</p>
+                          <p className="text-[#C9D4E3] text-[11px] font-mono break-all">{selected.commit_ref}</p>
+                        </div>
+                      )}
+                      {selected.resolution_note && (
+                        <div>
+                          <p className="text-[#4A5568] text-[10px] mb-0.5">처리 내용</p>
+                          <p className="text-[#C9D4E3] whitespace-pre-wrap leading-relaxed">
+                            {selected.resolution_note}
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
 
@@ -658,6 +766,75 @@ export default function AdminServiceRequestsPage() {
                       </pre>
                     </div>
                   )}
+                </div>
+
+                {/* 처리 (claim → resolve) — 수동 처리 경로 */}
+                <div className="bg-[#161B27] rounded-2xl border border-[#1E2530] p-5 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-white font-bold text-sm">
+                      <i className="ri-tools-line mr-1 text-[#00E5CC]"></i>처리 (resolve)
+                    </h3>
+                    <span className={`text-[10px] px-2 py-0.5 rounded ${statusTone(selected.status)}`}>
+                      {statusLabel(selected.status)}
+                    </span>
+                  </div>
+                  <p className="text-[#8B9BB4] text-xs">
+                    전달된 요청의 실제 처리 결과를 기록합니다. &ldquo;작업 시작&rdquo;으로 작업 중(in_progress)
+                    상태를 선언한 뒤, 완료(done) 또는 반영 안 함(wont_fix)으로 마감하세요.
+                  </p>
+                  <div className="flex justify-start">
+                    <button
+                      onClick={handleClaim}
+                      disabled={busyAction !== null || currentStatus === 'in_progress'}
+                      className="flex items-center gap-1.5 bg-[#F59E0B]/10 border border-[#F59E0B]/30 text-[#F59E0B] text-xs font-semibold px-4 py-2 rounded-lg hover:bg-[#F59E0B]/20 transition-colors disabled:opacity-60 cursor-pointer"
+                    >
+                      <i className={busyAction === 'claim' ? 'ri-loader-4-line animate-spin' : 'ri-play-circle-line'}></i>
+                      작업 시작 (claim)
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[#4A5568] text-[10px] font-semibold mb-1">처리 결과 상태</label>
+                      <select
+                        value={resolveStatus}
+                        onChange={e => setResolveStatus(e.target.value as SRResolveStatus)}
+                        className={selectCls}
+                      >
+                        {RESOLVE_STATUS_OPTIONS.map(s => (
+                          <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[#4A5568] text-[10px] font-semibold mb-1">커밋 SHA (선택)</label>
+                      <input
+                        value={resolveCommitRef}
+                        onChange={e => setResolveCommitRef(e.target.value)}
+                        placeholder="예: 0a22e5f8"
+                        className={`${inputCls} font-mono`}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[#4A5568] text-[10px] font-semibold mb-1">처리 내용</label>
+                    <textarea
+                      value={resolveNote}
+                      onChange={e => setResolveNote(e.target.value)}
+                      rows={3}
+                      placeholder="무엇을 어떻게 반영했는지 (또는 반영하지 않은 사유)"
+                      className={`${inputCls} resize-none`}
+                    />
+                  </div>
+                  <div className="flex justify-end">
+                    <button
+                      onClick={handleResolve}
+                      disabled={busyAction !== null || !resolveNote.trim()}
+                      className="flex items-center gap-1.5 bg-[#00E5CC] text-[#0A0E1A] text-xs font-bold px-4 py-2 rounded-lg hover:bg-[#00C9B1] transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                    >
+                      <i className={busyAction === 'resolve' ? 'ri-loader-4-line animate-spin' : 'ri-check-double-line'}></i>
+                      처리 결과 기록 (resolve)
+                    </button>
+                  </div>
                 </div>
 
                 {/* 액션 메시지 */}
