@@ -298,7 +298,11 @@ def test_general_track_has_no_amjilsim_stage(db):
     keys = [s["key"] for s in m["stages"]]
     assert "amjilsim" not in keys           # 일반약은 암질심 스테이지 없음
     assert "yakpyungwi" in keys             # 약평위는 유지 (공통 결정 위원회)
-    assert m["current_stage"] == "PRE_COMMITTEE"
+    # submitted_date 있음 → 신청 done, 약평위 대기 (PRE_COMMITTEE 아님)
+    assert m["current_stage"] == "AWAITING_COMMITTEE"
+    by_key = {s["key"]: s for s in m["stages"]}
+    assert by_key["submission"]["status"] == "done"
+    assert by_key["yakpyungwi"]["status"] == "current"
     assert m["expected_committee"] == "YAKPYUNGWI"
 
     j = journey(2, db_path=db)
@@ -340,7 +344,71 @@ def test_unknown_track(db):
     m = drug_momentum(3, db_path=db, as_of="2026-07-01")
     assert m["track"] == "unknown"
     assert m["expected_committee"] is None
+    # 신청·예정·큐 증거가 전무 → 진짜 PRE_COMMITTEE
     assert m["current_stage"] == "PRE_COMMITTEE"
+
+
+# ── A2: 예정/대기 위원회 ⇒ 신청 done (단조 원칙) ─────────────────────────────
+
+def test_expected_session_implies_submission_done(db):
+    """림카토주 케이스: 암질심 예정(expected_session_id)만 있고 submitted_date/
+    pass date 전무 → 신청=done, 암질심=current(예정일+scheduled), PRE_COMMITTEE 아님."""
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO amjilsim_drugs (drug_id, brand_kr, is_oncology, "
+        "expected_session_id) VALUES (4, '림카토주', 1, 10)")
+    conn.execute(
+        "INSERT INTO analog_reports (brand_name, mfds_permit_date) "
+        "VALUES ('림카토주', '2025-11-28')")
+    _sig(conn, 4, "u4", "림카토주 암질심 상정", "본문", "2026-06-25", prominence="title")
+    conn.commit()
+    conn.close()
+
+    m = drug_momentum(4, db_path=db, as_of="2026-07-01")
+    assert m["current_stage"] == "AWAITING_COMMITTEE"
+    by_key = {s["key"]: s for s in m["stages"]}
+    assert by_key["permit"]["status"] == "done"
+    assert by_key["submission"]["status"] == "done"      # 예정 ⇒ 신청 경과
+    assert by_key["amjilsim"]["status"] == "current"
+    assert by_key["amjilsim"]["scheduled"] is True       # 프론트 '예정' 마커
+    assert by_key["amjilsim"]["date"] == "2026-07-08"    # SCHEDULED 세션일
+    assert by_key["yakpyungwi"]["status"] == "pending"
+    assert by_key["negotiation"]["status"] == "pending"
+    assert by_key["listing"]["status"] == "pending"
+    # done/pending 스테이지에는 scheduled 마커 없음
+    assert "scheduled" not in by_key["submission"]
+    assert "scheduled" not in by_key["yakpyungwi"]
+
+
+def test_queue_row_implies_submission_done(db):
+    """amjilsim_drug_queue_status 등재만으로도 신청=done + AWAITING_COMMITTEE.
+    unknown track 이라도 큐 committee_type=AMJILSIM 이면 암질심 스테이지 포함."""
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE amjilsim_drug_queue_status ("
+        "id INTEGER PRIMARY KEY, drug_id INTEGER NOT NULL, session_id INTEGER, "
+        "queue_state TEXT NOT NULL, queue_entry_date DATE, "
+        "n_th_attempt INTEGER NOT NULL DEFAULT 1, "
+        "observed_at TEXT DEFAULT (datetime('now')), "
+        "committee_type TEXT NOT NULL DEFAULT 'AMJILSIM')")
+    conn.execute(
+        "INSERT INTO amjilsim_drugs (drug_id, brand_kr, is_oncology) "
+        "VALUES (5, '큐대기약', NULL)")
+    conn.execute(
+        "INSERT INTO amjilsim_drug_queue_status (drug_id, queue_state, "
+        "committee_type) VALUES (5, 'REJECTED_REQUEUE', 'AMJILSIM')")
+    _sig(conn, 5, "u5", "큐대기약 재상정", "본문", "2026-06-25", prominence="title")
+    conn.commit()
+    conn.close()
+
+    m = drug_momentum(5, db_path=db, as_of="2026-07-01")
+    assert m["current_stage"] == "AWAITING_COMMITTEE"
+    by_key = {s["key"]: s for s in m["stages"]}
+    assert "amjilsim" in by_key                          # 큐 증거로 암질심 포함
+    assert by_key["submission"]["status"] == "done"
+    assert by_key["amjilsim"]["status"] == "current"
+    assert by_key["amjilsim"]["scheduled"] is True
+    assert by_key["amjilsim"]["date"] is None            # 예정 세션 미지정 — 날짜 없음
 
 
 # ── A2: 일반약 → 약평위 세션 배정 (암질심 금지) + relink ─────────────────────

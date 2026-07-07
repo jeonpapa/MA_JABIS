@@ -51,6 +51,12 @@ export interface StageItem {
   label: string;
   date: string | null;
   status: 'done' | 'current' | 'pending';
+  /**
+   * 예정(scheduled) 마커 — current 스테이지가 확정 통과일이 아닌 *예정된* 위원회
+   * 세션(예: 림카토주 암질심 예정)일 때 true, date 는 예정 세션일.
+   * 구버전 응답에는 필드 자체가 없음(그 경우 기존 렌더링 그대로).
+   */
+  scheduled?: boolean;
 }
 
 /** momentum 점수 구간 경계 (A3). 백엔드 score_bands. 없으면 DEFAULT_SCORE_BANDS 폴백. */

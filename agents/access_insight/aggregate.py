@@ -111,6 +111,8 @@ _STAGE_LABELS: dict[str, str] = {
 }
 
 # current_stage enum → 시퀀스 상 '현재 위치' 스테이지 key (LISTED 는 전체 완료).
+# AWAITING_COMMITTEE 는 약제별 위원회(항암=암질심, 일반=약평위)라 동적 —
+# _track_and_stages 내부에서 expected committee stage 로 직접 결정한다.
 _CURRENT_STAGE_POSITION: dict[str, Optional[str]] = {
     "LISTED": None,                       # 모든 스테이지 done
     "POST_NEGOTIATION": "final_notice",   # 협상 완료 → 고시 대기
@@ -249,10 +251,18 @@ def _track_and_stages(
     current_stage (뒤에서부터 판정):
       등재 증거 → LISTED / 협상완료·등재예정월 → POST_NEGOTIATION(고시대기) /
       negotiation_status AGREED·IN_PROGRESS → NEGOTIATION / 약평위 통과 →
-      YAKPYUNGWI_PASSED / (항암) 암질심 통과 → AMJILSIM_PASSED / 그 외 → PRE_COMMITTEE.
+      YAKPYUNGWI_PASSED / (항암) 암질심 통과 → AMJILSIM_PASSED /
+      신청·예정 증거(submitted_date, expected_session_id, committee queue) →
+      AWAITING_COMMITTEE / 그 외 → PRE_COMMITTEE (진짜 아무 진행 증거 없음).
 
     status: 날짜 증거가 있는 스테이지 = done, 현재 위치 = current, 이후 = pending.
     현재 위치보다 앞이지만 날짜가 없는 스테이지는 done (경과 암시 — 날짜 미상).
+    단조 원칙: 뒤 스테이지에 도달했거나 위원회에 예정/대기 중이면 '신청'은 done —
+    위원회 안건에 오르려면 신청이 선행되기 때문.
+
+    AWAITING_COMMITTEE 에서 예상 위원회 스테이지가 current 가 되며, 예정 세션
+    (amjilsim_sessions.status='SCHEDULED')이 있으면 그 stage dict 에
+    `scheduled: True` + `date`=예정 session_date 를 표기한다 (프론트 '예정' 렌더용).
     """
     is_oncology = _row_get(drug_row, "is_oncology")
     track = _track_of(is_oncology)
@@ -272,11 +282,49 @@ def _track_and_stages(
         or milestones.get("reimbursement_effective_date")
     )
 
-    include_amjilsim = track == "oncology" or (track == "unknown" and bool(amjilsim_date))
+    # 예정/대기 위원회 증거 — expected_session_id(예정 세션) 또는 committee queue.
+    # 위원회 안건/큐에 올랐다는 것 자체가 신청 경과의 증거다.
+    expected_session = _get_session(conn, _row_get(drug_row, "expected_session_id"))
+    queue_committee = None
+    has_queue_row = False
+    drug_id = _row_get(drug_row, "drug_id")
+    if drug_id is not None:
+        try:
+            q = conn.execute(
+                "SELECT committee_type FROM amjilsim_drug_queue_status "
+                "WHERE drug_id = ? ORDER BY observed_at DESC, id DESC LIMIT 1",
+                (drug_id,),
+            ).fetchone()
+            has_queue_row = q is not None
+            queue_committee = _row_get(q, "committee_type")
+        except sqlite3.Error:  # 테이블 부재 (테스트 DB / 마이그레이션 전) 방어
+            pass
+
+    expected_stage_key: Optional[str] = None
+    if expected_session is not None or has_queue_row:
+        committee_type = (
+            (_row_get(expected_session, "committee_type") or queue_committee or "")
+            .strip()
+            .upper()
+        )
+        if committee_type == COMMITTEE_YAKPYUNGWI:
+            expected_stage_key = "yakpyungwi"
+        elif committee_type == COMMITTEE_AMJILSIM:
+            expected_stage_key = "amjilsim"
+        else:
+            # committee_type 미상 — track 기준 기본 위원회.
+            expected_stage_key = "amjilsim" if track == "oncology" else "yakpyungwi"
+
+    include_amjilsim = track == "oncology" or (
+        track == "unknown" and (bool(amjilsim_date) or expected_stage_key == "amjilsim")
+    )
     seq = ["permit", "submission"]
     if include_amjilsim:
         seq.append("amjilsim")
     seq += ["yakpyungwi", "negotiation", "final_notice", "listing"]
+
+    if expected_stage_key == "amjilsim" and "amjilsim" not in seq:
+        expected_stage_key = "yakpyungwi"  # 일반약은 암질심 스킵 — 위원회=약평위
 
     dates: dict[str, Optional[str]] = {
         "permit": milestones.get("mfds_permit_date"),
@@ -299,6 +347,9 @@ def _track_and_stages(
         current_stage = "YAKPYUNGWI_PASSED"
     elif include_amjilsim and amjilsim_date:
         current_stage = "AMJILSIM_PASSED"
+    elif submitted or expected_stage_key is not None:
+        # 신청됨(또는 위원회 예정/대기 ⇒ 신청 경과 암시) — 위원회 결과 대기.
+        current_stage = "AWAITING_COMMITTEE"
     else:
         current_stage = "PRE_COMMITTEE"
 
@@ -313,9 +364,22 @@ def _track_and_stages(
     if current_stage == "LISTED":
         current_idx = len(seq)
     else:
-        pos_key = _CURRENT_STAGE_POSITION.get(current_stage)
+        if current_stage == "AWAITING_COMMITTEE":
+            # 약제의 위원회 스테이지가 현재 위치 (예정/대기 — 신청은 그 앞이라 done).
+            pos_key = expected_stage_key or (
+                "amjilsim" if include_amjilsim else "yakpyungwi"
+            )
+        else:
+            pos_key = _CURRENT_STAGE_POSITION.get(current_stage)
         pos_idx = seq.index(pos_key) if pos_key in seq else 0
         current_idx = min(max(evidence_idx, pos_idx), len(seq) - 1)
+
+    # 예정 세션 날짜 — current 인 위원회 스테이지에 '예정' 으로 표기할 값.
+    scheduled_date = None
+    if expected_session is not None and (
+        (_row_get(expected_session, "status") or "").strip().upper() == "SCHEDULED"
+    ):
+        scheduled_date = _row_get(expected_session, "session_date")
 
     stages = []
     for i, key in enumerate(seq):
@@ -325,14 +389,23 @@ def _track_and_stages(
             status = "current"
         else:
             status = "pending"
-        stages.append(
-            {
-                "key": key,
-                "label": _STAGE_LABELS[key],
-                "date": dates.get(key),
-                "status": status,
-            }
-        )
+        stage = {
+            "key": key,
+            "label": _STAGE_LABELS[key],
+            "date": dates.get(key),
+            "status": status,
+        }
+        if (
+            status == "current"
+            and expected_stage_key is not None
+            and key == expected_stage_key
+            and not dates.get(key)
+        ):
+            # 예정/대기 위원회 — 프론트가 '예정' 으로 렌더할 수 있게 마킹.
+            stage["scheduled"] = True
+            if scheduled_date:
+                stage["date"] = scheduled_date
+        stages.append(stage)
     return track, stages, current_stage
 
 

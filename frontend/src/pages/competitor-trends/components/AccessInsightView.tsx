@@ -291,6 +291,9 @@ function TrackBadge({ track }: { track: Track | null | undefined }) {
 // ── 스테이지 스텝퍼 (A2) ────────────────────────────────────────────────────────
 // stages[] 를 수평 스텝퍼로 렌더 — done=teal(채움) / current=amber(강조) / pending=grey.
 // 날짜는 라벨 아래 표기 + hover title 툴팁.
+// scheduled=true (백엔드 aggregate.py — 위원회 상정 *예정*) 인 current 스테이지는
+// 확정 통과일과 혼동되지 않도록 amber 점선(outline) 도트 + "예정" 필 + 날짜에
+// 시계 아이콘/예정 접두를 붙인다. scheduled 부재/false 는 기존 렌더링 그대로.
 
 function StageStepper({ stages, isDark }: { stages: StageItem[]; isDark: boolean }) {
   const pendingDot = isDark ? 'border-[#4A5568] bg-transparent' : 'border-gray-300 bg-transparent';
@@ -304,22 +307,26 @@ function StageStepper({ stages, isDark }: { stages: StageItem[]; isDark: boolean
       {stages.map((st, i) => {
         const done = st.status === 'done';
         const current = st.status === 'current';
+        const scheduled = st.scheduled === true;
         const dotCls = done
           ? 'bg-teal-500 border-teal-500 text-white'
           : current
-            ? 'bg-amber-500 border-amber-500 text-white ring-2 ring-amber-500/30'
+            ? scheduled
+              ? 'bg-transparent border-amber-500 border-dashed text-amber-500 ring-2 ring-amber-500/20'
+              : 'bg-amber-500 border-amber-500 text-white ring-2 ring-amber-500/30'
             : pendingDot;
         const labelCls = current
           ? 'text-amber-500 font-bold'
           : done
             ? `${doneText} font-semibold`
             : `${pendingText} font-medium`;
+        const dateStr = st.date ? st.date.slice(0, 10) : '—';
         return (
           <div
             key={st.key || i}
             role="listitem"
             className="flex flex-col items-center min-w-[64px] flex-1 relative"
-            title={`${st.label} · ${st.date ? st.date.slice(0, 10) : '—'}`}
+            title={scheduled ? `${st.label} · 예정 ${dateStr} (확정 아님)` : `${st.label} · ${dateStr}`}
           >
             {/* 연결선 (첫 스텝 제외) — done→done 구간은 teal */}
             {i > 0 && (
@@ -332,11 +339,20 @@ function StageStepper({ stages, isDark }: { stages: StageItem[]; isDark: boolean
             )}
             <span className={`w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center flex-shrink-0 z-[1] ${dotCls}`}>
               {done && <i className="ri-check-line text-[11px] leading-none"></i>}
-              {current && <span className="w-1.5 h-1.5 rounded-full bg-white"></span>}
+              {current && (scheduled
+                ? <i className="ri-time-line text-[11px] leading-none"></i>
+                : <span className="w-1.5 h-1.5 rounded-full bg-white"></span>)}
             </span>
-            <span className={`text-[10px] mt-1 whitespace-nowrap ${labelCls}`}>{st.label}</span>
+            <span className={`text-[10px] mt-1 whitespace-nowrap inline-flex items-center gap-1 ${labelCls}`}>
+              {st.label}
+              {scheduled && (
+                <span className="text-[8px] font-bold px-1 py-px rounded border border-dashed border-amber-500/60 text-amber-500 leading-none">
+                  예정
+                </span>
+              )}
+            </span>
             <span className={`text-[9px] tabular-nums whitespace-nowrap ${current ? 'text-amber-500' : pendingText}`}>
-              {st.date ? st.date.slice(0, 10) : '—'}
+              {scheduled && st.date ? `예정 ${dateStr}` : dateStr}
             </span>
           </div>
         );
