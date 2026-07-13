@@ -1,0 +1,4917 @@
+{
+  "generated_at": "2026-07-06T13:20:47.863199",
+  "window_days": 7,
+  "agencies": [
+    {
+      "agency": "보건복지부",
+      "label": "보건복지부",
+      "article_count": 854,
+      "keywords": [
+        {
+          "text": "급여",
+          "count": 302
+        },
+        {
+          "text": "도수치료",
+          "count": 298
+        },
+        {
+          "text": "탈모",
+          "count": 273
+        },
+        {
+          "text": "관리급여",
+          "count": 244
+        },
+        {
+          "text": "확대",
+          "count": 204
+        },
+        {
+          "text": "토론회",
+          "count": 196
+        },
+        {
+          "text": "건강보험",
+          "count": 194
+        },
+        {
+          "text": "적용",
+          "count": 173
+        },
+        {
+          "text": "환자",
+          "count": 164
+        },
+        {
+          "text": "정부",
+          "count": 147
+        },
+        {
+          "text": "제약",
+          "count": 129
+        },
+        {
+          "text": "치료",
+          "count": 115
+        },
+        {
+          "text": "공급",
+          "count": 111
+        },
+        {
+          "text": "치료제",
+          "count": 110
+        },
+        {
+          "text": "기준",
+          "count": 108
+        },
+        {
+          "text": "일부터",
+          "count": 103
+        },
+        {
+          "text": "삼진제약",
+          "count": 97
+        },
+        {
+          "text": "지원",
+          "count": 97
+        },
+        {
+          "text": "약가",
+          "count": 96
+        },
+        {
+          "text": "건보",
+          "count": 95
+        },
+        {
+          "text": "비급여",
+          "count": 93
+        },
+        {
+          "text": "가격",
+          "count": 81
+        },
+        {
+          "text": "제도",
+          "count": 81
+        },
+        {
+          "text": "중단",
+          "count": 73
+        },
+        {
+          "text": "주제",
+          "count": 69
+        },
+        {
+          "text": "등재",
+          "count": 67
+        },
+        {
+          "text": "시행",
+          "count": 66
+        },
+        {
+          "text": "신약개발",
+          "count": 66
+        },
+        {
+          "text": "희귀질환",
+          "count": 62
+        },
+        {
+          "text": "관리",
+          "count": 59
+        }
+      ],
+      "newsByKeyword": {
+        "급여": [
+          {
+            "title": "탈모 동지들이 그걸 이해 못 할까 [뉴스룸에서]",
+            "url": "https://n.news.naver.com/mnews/article/469/0000940535?sid=110",
+            "source": "한국일보",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "AI·성장이 국정 중심에 선 1년…“복지는 보이지 않았다”",
+            "url": "https://n.news.naver.com/mnews/article/028/0002812785?sid=102",
+            "source": "한겨레",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[금융신상] 신협·현대카드·국민카드 등",
+            "url": "http://www.bizwnews.com/news/articleView.html?idxno=139977",
+            "source": "bizwnews.com",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "약가유연제 '비밀계약' 운영 과제 부상… 유통·청구 현장 혼선 지속",
+            "url": "https://www.hitnews.co.kr/news/articleView.html?idxno=77409",
+            "source": "히트뉴스",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "간호사 32% 늘었지만…1인당 병상은 전남이 서울의 2.5배",
+            "url": "https://n.news.naver.com/mnews/article/001/0016176041?sid=102",
+            "source": "연합뉴스",
+            "date": "2026-07-05"
+          }
+        ],
+        "도수치료": [
+          {
+            "title": "'건보 적용' 도수치료 마음대로 못 받는다?... 7월부터 이렇게 바뀐다",
+            "url": "https://www.ggilbo.com/news/articleView.html?idxno=1167003",
+            "source": "ggilbo.com",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "[르포] “도수치료 받았단 말 마세요”…과잉진료 규제 첫날, 병원에선...",
+            "url": "https://n.news.naver.com/mnews/article/138/0002233122?sid=101",
+            "source": "ddaily.co.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "[토요칼럼] 탈모와 도수치료 논쟁이 남긴 숙제",
+            "url": "https://n.news.naver.com/mnews/article/015/0005306181?sid=110",
+            "source": "한국경제",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "관리급여 피해 사례 모으는 보건의료계…도수치료 기준 조정될까",
+            "url": "http://www.docdocdoc.co.kr/news/articleView.html?idxno=3040652",
+            "source": "청년의사",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "4만원 도수치료 안한다는 병원, 환자만 또 성지 찾게 생겼다 [Health&]",
+            "url": "https://n.news.naver.com/mnews/article/025/0003535309?sid=103",
+            "source": "중앙일보",
+            "date": "2026-07-04"
+          }
+        ],
+        "탈모": [
+          {
+            "title": "탈모 동지들이 그걸 이해 못 할까 [뉴스룸에서]",
+            "url": "https://n.news.naver.com/mnews/article/469/0000940535?sid=110",
+            "source": "한국일보",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[人터뷰+] “탈모, 부계 아닌 모계 유전이 더 강해”",
+            "url": "https://n.news.naver.com/mnews/article/011/0004638155?sid=102",
+            "source": "서울경제",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "탈모 급여, 첫발 뗐지만…남성형 탈모는 언제?",
+            "url": "https://weekly.hankooki.com/news/articleView.html?idxno=7172592",
+            "source": "weekly.hankooki.com",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "[티조Q&A] 탈모치료는 '모(毛)퓰리즘'?…'친탈 vs 반탈' 공방 낳는 탈모...",
+            "url": "https://n.news.naver.com/mnews/article/448/0000624232?sid=100",
+            "source": "news.tvchosun.com",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "“한달치 탈모약 1만원인데… 건보 적용까지 한다고요?”",
+            "url": "https://n.news.naver.com/mnews/article/023/0003985610?sid=102",
+            "source": "조선일보",
+            "date": "2026-07-04"
+          }
+        ],
+        "관리급여": [
+          {
+            "title": "'건보 적용' 도수치료 마음대로 못 받는다?... 7월부터 이렇게 바뀐다",
+            "url": "https://www.ggilbo.com/news/articleView.html?idxno=1167003",
+            "source": "ggilbo.com",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "[르포] “도수치료 받았단 말 마세요”…과잉진료 규제 첫날, 병원에선...",
+            "url": "https://n.news.naver.com/mnews/article/138/0002233122?sid=101",
+            "source": "ddaily.co.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "관리급여 피해 사례 모으는 보건의료계…도수치료 기준 조정될까",
+            "url": "http://www.docdocdoc.co.kr/news/articleView.html?idxno=3040652",
+            "source": "청년의사",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "\"총의료비 확대 없이 필수의료 강화 한계\"",
+            "url": "https://www.bosa.co.kr/news/articleView.html?idxno=3007669",
+            "source": "의약뉴스",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "도수치료 급여화 시작…병원은 '고용·운영' 더 걱정",
+            "url": "https://n.news.naver.com/mnews/article/421/0009038503?sid=105",
+            "source": "뉴스1",
+            "date": "2026-07-03"
+          }
+        ],
+        "확대": [
+          {
+            "title": "[정책탐구생활] 하반기부터 달라지는 제도는… 1~2주 단기 육아휴직 신...",
+            "url": "https://www.viva100.com/article/20260704500181",
+            "source": "viva100.com",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "[티조Q&A] 탈모치료는 '모(毛)퓰리즘'?…'친탈 vs 반탈' 공방 낳는 탈모...",
+            "url": "https://n.news.naver.com/mnews/article/448/0000624232?sid=100",
+            "source": "news.tvchosun.com",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "“한달치 탈모약 1만원인데… 건보 적용까지 한다고요?”",
+            "url": "https://n.news.naver.com/mnews/article/023/0003985610?sid=102",
+            "source": "조선일보",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "\"총의료비 확대 없이 필수의료 강화 한계\"",
+            "url": "https://www.bosa.co.kr/news/articleView.html?idxno=3007669",
+            "source": "의약뉴스",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "코트라, '한·독 런치패드 포럼' 개최 및 'K-테크패스' 확대",
+            "url": "https://www.cstimes.com/news/articleView.html?idxno=712074",
+            "source": "cstimes.com",
+            "date": "2026-07-03"
+          }
+        ],
+        "토론회": [
+          {
+            "title": "탈모 동지들이 그걸 이해 못 할까 [뉴스룸에서]",
+            "url": "https://n.news.naver.com/mnews/article/469/0000940535?sid=110",
+            "source": "한국일보",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[티조Q&A] 탈모치료는 '모(毛)퓰리즘'?…'친탈 vs 반탈' 공방 낳는 탈모...",
+            "url": "https://n.news.naver.com/mnews/article/448/0000624232?sid=100",
+            "source": "news.tvchosun.com",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "“한달치 탈모약 1만원인데… 건보 적용까지 한다고요?”",
+            "url": "https://n.news.naver.com/mnews/article/023/0003985610?sid=102",
+            "source": "조선일보",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "탈모약 건보 확대 '급제동'…보장성 우선순위 논란",
+            "url": "https://www.cnbizm.com/news/articleView.html?idxno=307502",
+            "source": "cnbizm.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "[정석만의 프리즘] 탈모약 건보 논란, 복지 확대에도 우선순위는 있다",
+            "url": "https://www.ajunews.com/view/20260702113043332",
+            "source": "아주경제",
+            "date": "2026-07-02"
+          }
+        ],
+        "건강보험": [
+          {
+            "title": "약가유연제 '비밀계약' 운영 과제 부상… 유통·청구 현장 혼선 지속",
+            "url": "https://www.hitnews.co.kr/news/articleView.html?idxno=77409",
+            "source": "히트뉴스",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[직썰 초대석] 신준수 식약처 의약품안전국장 \"K규제, 글로벌 표준 선도...",
+            "url": "https://www.ziksir.com/news/articleView.html?idxno=138938",
+            "source": "ziksir.com",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "'건보 적용' 도수치료 마음대로 못 받는다?... 7월부터 이렇게 바뀐다",
+            "url": "https://www.ggilbo.com/news/articleView.html?idxno=1167003",
+            "source": "ggilbo.com",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "[경인 Pick] 설 곳 잃은 물리치료사, 갈 곳 잃은 환자들",
+            "url": "https://www.kyeongin.com/article/1766778",
+            "source": "kyeongin.com",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "탈모 급여, 첫발 뗐지만…남성형 탈모는 언제?",
+            "url": "https://weekly.hankooki.com/news/articleView.html?idxno=7172592",
+            "source": "weekly.hankooki.com",
+            "date": "2026-07-05"
+          }
+        ],
+        "적용": [
+          {
+            "title": "'건보 적용' 도수치료 마음대로 못 받는다?... 7월부터 이렇게 바뀐다",
+            "url": "https://www.ggilbo.com/news/articleView.html?idxno=1167003",
+            "source": "ggilbo.com",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "[티조Q&A] 탈모치료는 '모(毛)퓰리즘'?…'친탈 vs 반탈' 공방 낳는 탈모...",
+            "url": "https://n.news.naver.com/mnews/article/448/0000624232?sid=100",
+            "source": "news.tvchosun.com",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "“한달치 탈모약 1만원인데… 건보 적용까지 한다고요?”",
+            "url": "https://n.news.naver.com/mnews/article/023/0003985610?sid=102",
+            "source": "조선일보",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "'성장은 계속된다'…코스닥 제약바이오·기기, 후속 전략 구체화",
+            "url": "https://www.medipana.com/news/articleView.html?idxno=414085",
+            "source": "메디파나뉴스",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "도수치료, 회당 4만3850원·연간 15회로 제한",
+            "url": "https://n.news.naver.com/mnews/article/036/0000053839?sid=101",
+            "source": "한겨레",
+            "date": "2026-07-03"
+          }
+        ],
+        "환자": [
+          {
+            "title": "탈모 동지들이 그걸 이해 못 할까 [뉴스룸에서]",
+            "url": "https://n.news.naver.com/mnews/article/469/0000940535?sid=110",
+            "source": "한국일보",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[직썰 초대석] 신준수 식약처 의약품안전국장 \"K규제, 글로벌 표준 선도...",
+            "url": "https://www.ziksir.com/news/articleView.html?idxno=138938",
+            "source": "ziksir.com",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "\"기술수출 이어 지분 투자까지\"… 아리바이오, 치매약 'AR1001' 상업화 가...",
+            "url": "https://www.ajunews.com/view/20260705124323326",
+            "source": "아주경제",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "[경인 Pick] 설 곳 잃은 물리치료사, 갈 곳 잃은 환자들",
+            "url": "https://www.kyeongin.com/article/1766778",
+            "source": "kyeongin.com",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "[르포] “도수치료 받았단 말 마세요”…과잉진료 규제 첫날, 병원에선...",
+            "url": "https://n.news.naver.com/mnews/article/138/0002233122?sid=101",
+            "source": "ddaily.co.kr",
+            "date": "2026-07-04"
+          }
+        ],
+        "정부": [
+          {
+            "title": "혁신형 제약기업 인증받으려면…100점 만점에 65점이상 획득해야",
+            "url": "https://n.news.naver.com/mnews/article/001/0016176916?sid=102",
+            "source": "연합뉴스",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[직썰 초대석] 신준수 식약처 의약품안전국장 \"K규제, 글로벌 표준 선도...",
+            "url": "https://www.ziksir.com/news/articleView.html?idxno=138938",
+            "source": "ziksir.com",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[정책탐구생활] 하반기부터 달라지는 제도는… 1~2주 단기 육아휴직 신...",
+            "url": "https://www.viva100.com/article/20260704500181",
+            "source": "viva100.com",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "비공개 데이터의 마법, '연합학습'...AI 신약개발 플랫폼의 조건",
+            "url": "https://www.pharmnews.com/news/articleView.html?idxno=304678",
+            "source": "팜뉴스",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "[단독] 환자 채워 연명 ‘좀비 요양병원’ 퇴출",
+            "url": "https://n.news.naver.com/mnews/article/023/0003985681?sid=102",
+            "source": "조선일보",
+            "date": "2026-07-04"
+          }
+        ],
+        "제약": [
+          {
+            "title": "복합제 기등재 약가인하 후속 논의...16% 일괄하락 기로",
+            "url": "https://www.dailypharm.com/user/news/340129?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "국민연금, IT·뷰티 담고 코스닥 소부장·바이오 덜었다",
+            "url": "https://it.chosun.com/news/articleView.html?idxno=2023092165146",
+            "source": "조선일보",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "혁신형 제약기업 인증받으려면…100점 만점에 65점이상 획득해야",
+            "url": "https://n.news.naver.com/mnews/article/001/0016176916?sid=102",
+            "source": "연합뉴스",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[직썰 초대석] 신준수 식약처 의약품안전국장 \"K규제, 글로벌 표준 선도...",
+            "url": "https://www.ziksir.com/news/articleView.html?idxno=138938",
+            "source": "ziksir.com",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "글로벌 가성비 K바이오, 제값 받으려면 [기자수첩]",
+            "url": "https://news.mtn.co.kr/news-detail/2026070505372389234",
+            "source": "news.mtn.co.kr",
+            "date": "2026-07-05"
+          }
+        ],
+        "치료": [
+          {
+            "title": "탈모 동지들이 그걸 이해 못 할까 [뉴스룸에서]",
+            "url": "https://n.news.naver.com/mnews/article/469/0000940535?sid=110",
+            "source": "한국일보",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[인터뷰] 이영렬 국립법무병원장 \"참교육보단 재범 막는 치료가 국민을...",
+            "url": "https://n.news.naver.com/mnews/article/053/0000059685?sid=102",
+            "source": "조선일보",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "[人터뷰+] “탈모, 부계 아닌 모계 유전이 더 강해”",
+            "url": "https://n.news.naver.com/mnews/article/011/0004638155?sid=102",
+            "source": "서울경제",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "[정책탐구생활] 하반기부터 달라지는 제도는… 1~2주 단기 육아휴직 신...",
+            "url": "https://www.viva100.com/article/20260704500181",
+            "source": "viva100.com",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "'건보 적용' 도수치료 마음대로 못 받는다?... 7월부터 이렇게 바뀐다",
+            "url": "https://www.ggilbo.com/news/articleView.html?idxno=1167003",
+            "source": "ggilbo.com",
+            "date": "2026-07-05"
+          }
+        ],
+        "공급": [
+          {
+            "title": "[직썰 초대석] 신준수 식약처 의약품안전국장 \"K규제, 글로벌 표준 선도...",
+            "url": "https://www.ziksir.com/news/articleView.html?idxno=138938",
+            "source": "ziksir.com",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "'성장은 계속된다'…코스닥 제약바이오·기기, 후속 전략 구체화",
+            "url": "https://www.medipana.com/news/articleView.html?idxno=414085",
+            "source": "메디파나뉴스",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "혁신형인증 개편 시행…65점 이상 인증, 공급망·ESG도 평가 반영",
+            "url": "https://www.kpanews.co.kr/news/articleView.html?idxno=537982",
+            "source": "약사공론",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "약가유연제 서류상 반품, 공급보고 '이것' 놓치면 낭패",
+            "url": "https://www.kpanews.co.kr/news/articleView.html?idxno=537951",
+            "source": "약사공론",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "[TOP's Pick] [제약] 대웅제약, 1452억 규모 엔블로 공급 계약 체결…역대...",
+            "url": "https://www.topdaily.kr/articles/110809",
+            "source": "topdaily.kr",
+            "date": "2026-07-02"
+          }
+        ],
+        "치료제": [
+          {
+            "title": "탈모 동지들이 그걸 이해 못 할까 [뉴스룸에서]",
+            "url": "https://n.news.naver.com/mnews/article/469/0000940535?sid=110",
+            "source": "한국일보",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[티조Q&A] 탈모치료는 '모(毛)퓰리즘'?…'친탈 vs 반탈' 공방 낳는 탈모...",
+            "url": "https://n.news.naver.com/mnews/article/448/0000624232?sid=100",
+            "source": "news.tvchosun.com",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "36조 치매 치료 시장 열린다···국산 치료제 경쟁 뜨거워진다",
+            "url": "https://www.seoulfn.com/news/articleView.html?idxno=632547",
+            "source": "seoulfn.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "탈모약 건보 확대 '급제동'…보장성 우선순위 논란",
+            "url": "https://www.cnbizm.com/news/articleView.html?idxno=307502",
+            "source": "cnbizm.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "COPD 3제 흡입제 '브레즈트리', 약가협상 돌입",
+            "url": "https://www.dailypharm.com/user/news/340068?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-03"
+          }
+        ],
+        "기준": [
+          {
+            "title": "AI·성장이 국정 중심에 선 1년…“복지는 보이지 않았다”",
+            "url": "https://n.news.naver.com/mnews/article/028/0002812785?sid=102",
+            "source": "한겨레",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "항생주사제 약가우대 실효성 논란…깐깐한 요건에 수급난 우려",
+            "url": "https://www.dailypharm.com/user/news/340127?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "산정률 하락 전 등재 막차...상반기 제네릭 진입 24%↑",
+            "url": "https://new.dailypharm.com/user/news/340122?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "관리급여 피해 사례 모으는 보건의료계…도수치료 기준 조정될까",
+            "url": "http://www.docdocdoc.co.kr/news/articleView.html?idxno=3040652",
+            "source": "청년의사",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "혁신형인증 개편 시행…65점 이상 인증, 공급망·ESG도 평가 반영",
+            "url": "https://www.kpanews.co.kr/news/articleView.html?idxno=537982",
+            "source": "약사공론",
+            "date": "2026-07-03"
+          }
+        ],
+        "일부터": [
+          {
+            "title": "'건보 적용' 도수치료 마음대로 못 받는다?... 7월부터 이렇게 바뀐다",
+            "url": "https://www.ggilbo.com/news/articleView.html?idxno=1167003",
+            "source": "ggilbo.com",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "도수치료 급여화 시작…병원은 '고용·운영' 더 걱정",
+            "url": "https://n.news.naver.com/mnews/article/421/0009038503?sid=105",
+            "source": "뉴스1",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "도수치료, 회당 4만3850원·연간 15회로 제한",
+            "url": "https://n.news.naver.com/mnews/article/036/0000053839?sid=101",
+            "source": "한겨레",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "도수치료 중단 병원 속출… 물리치료사 실직 위기",
+            "url": "https://n.news.naver.com/mnews/article/022/0004139908?sid=102",
+            "source": "세계일보",
+            "date": "2026-07-02"
+          },
+          {
+            "title": "政 \"도수치료 기준, 조정 가능…공급자·소비자 의견 모두 검토\"",
+            "url": "http://www.docdocdoc.co.kr/news/articleView.html?idxno=3040572",
+            "source": "청년의사",
+            "date": "2026-07-02"
+          }
+        ],
+        "삼진제약": [
+          {
+            "title": "36조 치매 치료 시장 열린다···국산 치료제 경쟁 뜨거워진다",
+            "url": "https://www.seoulfn.com/news/articleView.html?idxno=632547",
+            "source": "seoulfn.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "수급불안 로라제팜 퇴방 '당연지정'…알닥톤 약가보전 조정",
+            "url": "https://www.kpanews.co.kr/news/articleView.html?idxno=537815",
+            "source": "약사공론",
+            "date": "2026-07-02"
+          },
+          {
+            "title": "삼진제약, 국가필수의약품 '삼진로라제팜주' 출시",
+            "url": "https://www.pinpointnews.co.kr/news/articleView.html?idxno=464489",
+            "source": "pinpointnews.co.kr",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "삼진제약, 국가 필수ㆍ퇴방약 '삼진로라제팜주' 공급",
+            "url": "http://www.medisobizanews.com/news/articleView.html?idxno=139823",
+            "source": "medisobizanews.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "삼진제약, 국가 필수의약품 '삼진로라제팜주' 공급 개시",
+            "url": "https://n.news.naver.com/mnews/article/277/0005783812?sid=101",
+            "source": "아시아경제",
+            "date": "2026-07-01"
+          }
+        ],
+        "지원": [
+          {
+            "title": "AI·성장이 국정 중심에 선 1년…“복지는 보이지 않았다”",
+            "url": "https://n.news.naver.com/mnews/article/028/0002812785?sid=102",
+            "source": "한겨레",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "혁신형 제약기업 인증받으려면…100점 만점에 65점이상 획득해야",
+            "url": "https://n.news.naver.com/mnews/article/001/0016176916?sid=102",
+            "source": "연합뉴스",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[직썰 초대석] 신준수 식약처 의약품안전국장 \"K규제, 글로벌 표준 선도...",
+            "url": "https://www.ziksir.com/news/articleView.html?idxno=138938",
+            "source": "ziksir.com",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "간호사 32% 늘었지만…1인당 병상은 전남이 서울의 2.5배",
+            "url": "https://n.news.naver.com/mnews/article/001/0016176041?sid=102",
+            "source": "연합뉴스",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "최근 5년새 간호사 32% 늘었지만…1인당 병상수 편차 커",
+            "url": "https://n.news.naver.com/mnews/article/079/0004164905?sid=102",
+            "source": "nocutnews.co.kr",
+            "date": "2026-07-05"
+          }
+        ],
+        "약가": [
+          {
+            "title": "복합제 기등재 약가인하 후속 논의...16% 일괄하락 기로",
+            "url": "https://www.dailypharm.com/user/news/340129?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "항생주사제 약가우대 실효성 논란…깐깐한 요건에 수급난 우려",
+            "url": "https://www.dailypharm.com/user/news/340127?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "혁신형 제약기업 인증받으려면…100점 만점에 65점이상 획득해야",
+            "url": "https://n.news.naver.com/mnews/article/001/0016176916?sid=102",
+            "source": "연합뉴스",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "약가유연제 '비밀계약' 운영 과제 부상… 유통·청구 현장 혼선 지속",
+            "url": "https://www.hitnews.co.kr/news/articleView.html?idxno=77409",
+            "source": "히트뉴스",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[직썰 초대석] 신준수 식약처 의약품안전국장 \"K규제, 글로벌 표준 선도...",
+            "url": "https://www.ziksir.com/news/articleView.html?idxno=138938",
+            "source": "ziksir.com",
+            "date": "2026-07-06"
+          }
+        ],
+        "건보": [
+          {
+            "title": "'건보 적용' 도수치료 마음대로 못 받는다?... 7월부터 이렇게 바뀐다",
+            "url": "https://www.ggilbo.com/news/articleView.html?idxno=1167003",
+            "source": "ggilbo.com",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "“한달치 탈모약 1만원인데… 건보 적용까지 한다고요?”",
+            "url": "https://n.news.naver.com/mnews/article/023/0003985610?sid=102",
+            "source": "조선일보",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "건보공단, 특사경 수사단 출범 준비 본격 착수…재경부 수시증원 31명 승...",
+            "url": "https://www.mdtoday.co.kr/news/articleView.html?idxno=603447",
+            "source": "메디컬투데이",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "탈모약 건보 확대 '급제동'…보장성 우선순위 논란",
+            "url": "https://www.cnbizm.com/news/articleView.html?idxno=307502",
+            "source": "cnbizm.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "CT 재촬영 환자 4명 중 1명…건보 재정 줄줄 샌다",
+            "url": "https://www.welfarenews.net/news/articleView.html?idxno=208150",
+            "source": "welfarenews.net",
+            "date": "2026-07-03"
+          }
+        ],
+        "비급여": [
+          {
+            "title": "제주 난치병학생 연간 최대 300만원 지원",
+            "url": "https://n.news.naver.com/mnews/article/469/0000940417?sid=102",
+            "source": "한국일보",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "'건보 적용' 도수치료 마음대로 못 받는다?... 7월부터 이렇게 바뀐다",
+            "url": "https://www.ggilbo.com/news/articleView.html?idxno=1167003",
+            "source": "ggilbo.com",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "4만원 도수치료 안한다는 병원, 환자만 또 성지 찾게 생겼다 [Health&]",
+            "url": "https://n.news.naver.com/mnews/article/025/0003535309?sid=103",
+            "source": "중앙일보",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "도수치료 급여화 시작…병원은 '고용·운영' 더 걱정",
+            "url": "https://n.news.naver.com/mnews/article/421/0009038503?sid=105",
+            "source": "뉴스1",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "제주도교육청, 난치병학생 지원금 집중 신청 기간 운영",
+            "url": "http://www.samdailbo.com/news/articleView.html?idxno=267002",
+            "source": "samdailbo.com",
+            "date": "2026-07-03"
+          }
+        ],
+        "가격": [
+          {
+            "title": "도수치료, 회당 4만3850원·연간 15회로 제한",
+            "url": "https://n.news.naver.com/mnews/article/036/0000053839?sid=101",
+            "source": "한겨레",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "도수 가격, 횟수 제한에…병원들 \"수지 안 맞아\" 치료 중단",
+            "url": "https://n.news.naver.com/mnews/article/437/0000499422?sid=102",
+            "source": "news.jtbc.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "[단독] 종근당, 유사 직무 통·폐합...의사결정 속도 높여 약가 개편 파...",
+            "url": "http://www.consumernews.co.kr/news/articleView.html?idxno=758688",
+            "source": "consumernews.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "\"병원 내 금연 상식인데\"...아산병원 지하 주차장서 담배 피운 제약사 직...",
+            "url": "https://n.news.naver.com/mnews/article/008/0005381231?sid=101",
+            "source": "머니투데이",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "도수치료도 건보 적용… 4만원대로 주2회·연 15회만",
+            "url": "https://n.news.naver.com/mnews/article/081/0003657690?sid=101",
+            "source": "서울신문",
+            "date": "2026-07-02"
+          }
+        ],
+        "제도": [
+          {
+            "title": "복합제 기등재 약가인하 후속 논의...16% 일괄하락 기로",
+            "url": "https://www.dailypharm.com/user/news/340129?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[정책탐구생활] 하반기부터 달라지는 제도는… 1~2주 단기 육아휴직 신...",
+            "url": "https://www.viva100.com/article/20260704500181",
+            "source": "viva100.com",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "'건보 적용' 도수치료 마음대로 못 받는다?... 7월부터 이렇게 바뀐다",
+            "url": "https://www.ggilbo.com/news/articleView.html?idxno=1167003",
+            "source": "ggilbo.com",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "양구군, 의료급여 수급권자 촘촘한 의료지원 호응",
+            "url": "https://www.kukinews.com/article/view/kuk202607050025",
+            "source": "쿠키뉴스",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "관리급여 피해 사례 모으는 보건의료계…도수치료 기준 조정될까",
+            "url": "http://www.docdocdoc.co.kr/news/articleView.html?idxno=3040652",
+            "source": "청년의사",
+            "date": "2026-07-04"
+          }
+        ],
+        "중단": [
+          {
+            "title": "[직썰 초대석] 신준수 식약처 의약품안전국장 \"K규제, 글로벌 표준 선도...",
+            "url": "https://www.ziksir.com/news/articleView.html?idxno=138938",
+            "source": "ziksir.com",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "“한달치 탈모약 1만원인데… 건보 적용까지 한다고요?”",
+            "url": "https://n.news.naver.com/mnews/article/023/0003985610?sid=102",
+            "source": "조선일보",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "탈모약 건보 확대 '급제동'…보장성 우선순위 논란",
+            "url": "https://www.cnbizm.com/news/articleView.html?idxno=307502",
+            "source": "cnbizm.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "도수 가격, 횟수 제한에…병원들 \"수지 안 맞아\" 치료 중단",
+            "url": "https://n.news.naver.com/mnews/article/437/0000499422?sid=102",
+            "source": "news.jtbc.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "병원밖 치료센터 차리는 물리치료사들",
+            "url": "https://n.news.naver.com/mnews/article/020/0003730906?sid=102",
+            "source": "동아일보",
+            "date": "2026-07-02"
+          }
+        ],
+        "주제": [
+          {
+            "title": "[티조Q&A] 탈모치료는 '모(毛)퓰리즘'?…'친탈 vs 반탈' 공방 낳는 탈모...",
+            "url": "https://n.news.naver.com/mnews/article/448/0000624232?sid=100",
+            "source": "news.tvchosun.com",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "“한달치 탈모약 1만원인데… 건보 적용까지 한다고요?”",
+            "url": "https://n.news.naver.com/mnews/article/023/0003985610?sid=102",
+            "source": "조선일보",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "탈모약 건보 확대 '급제동'…보장성 우선순위 논란",
+            "url": "https://www.cnbizm.com/news/articleView.html?idxno=307502",
+            "source": "cnbizm.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "탈모약 건보 논의 제동…국민 토론회 전격 취소",
+            "url": "http://www.dailypop.kr/news/articleView.html?idxno=100155",
+            "source": "dailypop.kr",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "기조발표하는 임강섭 보건복지부 제약바이오산업과장",
+            "url": "https://n.news.naver.com/mnews/article/421/0009030751?sid=105",
+            "source": "뉴스1",
+            "date": "2026-06-30"
+          }
+        ],
+        "등재": [
+          {
+            "title": "복합제 기등재 약가인하 후속 논의...16% 일괄하락 기로",
+            "url": "https://www.dailypharm.com/user/news/340129?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "산정률 하락 전 등재 막차...상반기 제네릭 진입 24%↑",
+            "url": "https://new.dailypharm.com/user/news/340122?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "'스프라바토', 치료저항성 우울증 희망…\"급여까지 달려~달려~\"",
+            "url": "http://www.medisobizanews.com/news/articleView.html?idxno=139934",
+            "source": "medisobizanews.com",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "약가개편 대비했나…올 상반기 전문약 허가 3년 만에 최다",
+            "url": "https://new.dailypharm.com/user/news/340027?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-02"
+          },
+          {
+            "title": "희귀질환 치료제 신속등재 시범사업 공모, 사후평가ㆍ치료 연속성 쟁점",
+            "url": "http://www.newsmp.com/news/articleView.html?idxno=255577",
+            "source": "의학신문",
+            "date": "2026-07-02"
+          }
+        ],
+        "시행": [
+          {
+            "title": "[르포] “도수치료 받았단 말 마세요”…과잉진료 규제 첫날, 병원에선...",
+            "url": "https://n.news.naver.com/mnews/article/138/0002233122?sid=101",
+            "source": "ddaily.co.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "[단독] 환자 채워 연명 ‘좀비 요양병원’ 퇴출",
+            "url": "https://n.news.naver.com/mnews/article/023/0003985681?sid=102",
+            "source": "조선일보",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "관리급여 피해 사례 모으는 보건의료계…도수치료 기준 조정될까",
+            "url": "http://www.docdocdoc.co.kr/news/articleView.html?idxno=3040652",
+            "source": "청년의사",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "[열린세상] ‘디지털포용법’의 실효성 높이려면",
+            "url": "https://n.news.naver.com/mnews/article/081/0003658029?sid=110",
+            "source": "서울신문",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "혁신형인증 개편 시행…65점 이상 인증, 공급망·ESG도 평가 반영",
+            "url": "https://www.kpanews.co.kr/news/articleView.html?idxno=537982",
+            "source": "약사공론",
+            "date": "2026-07-03"
+          }
+        ],
+        "신약개발": [
+          {
+            "title": "비공개 데이터의 마법, '연합학습'...AI 신약개발 플랫폼의 조건",
+            "url": "https://www.pharmnews.com/news/articleView.html?idxno=304678",
+            "source": "팜뉴스",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "AI 신약개발, '모델'서 '연구 시스템' 경쟁으로 전환",
+            "url": "https://www.bosa.co.kr/news/articleView.html?idxno=3007585",
+            "source": "의약뉴스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "\"글로벌 AI 신약개발 가속화...한국은 인력·데이터 한계\"",
+            "url": "https://new.dailypharm.com/user/news/340086?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "휴온스, '오픈 이노베이션'으로 복지부 장관상…바이오 기술·투자 성과...",
+            "url": "http://www.newsroad.co.kr/news/articleView.html?idxno=61134",
+            "source": "newsroad.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "휴온스, 라이선스인·지분투자 성과로 보건복지부장관상 수상",
+            "url": "http://www.press9.kr/news/articleView.html?idxno=78784",
+            "source": "press9.kr",
+            "date": "2026-07-02"
+          }
+        ],
+        "희귀질환": [
+          {
+            "title": "제주 난치병학생 연간 최대 300만원 지원",
+            "url": "https://n.news.naver.com/mnews/article/469/0000940417?sid=102",
+            "source": "한국일보",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "제주교육청, 난치병 학생 지원금 신청 접수… 연 최대 300만원 지원",
+            "url": "https://www.gukjenews.com/news/articleView.html?idxno=3625466",
+            "source": "gukjenews.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "제주교육청, 난치병학생 1인당 연 최대 300만원 지원",
+            "url": "https://www.headlinejeju.co.kr/news/articleView.html?idxno=595462",
+            "source": "headlinejeju.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "제주 난치병 학생 연 최대 300만 원 지원…6~24일 집중 접수",
+            "url": "https://www.newsjeju.net/news/articleView.html?idxno=422898",
+            "source": "newsjeju.net",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "제주 난치병학생 지원금 신청하세요, 7월 24일까지",
+            "url": "https://www.mediajeju.com/news/articleView.html?idxno=365033",
+            "source": "mediajeju.com",
+            "date": "2026-07-03"
+          }
+        ],
+        "관리": [
+          {
+            "title": "\"전문성 높이고 정책 역량 강화\"…대구시약 팜페어·연수교육 성황",
+            "url": "https://www.kpanews.co.kr/news/articleView.html?idxno=538027",
+            "source": "약사공론",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "'건보 적용' 도수치료 마음대로 못 받는다?... 7월부터 이렇게 바뀐다",
+            "url": "https://www.ggilbo.com/news/articleView.html?idxno=1167003",
+            "source": "ggilbo.com",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "[경인 Pick] 설 곳 잃은 물리치료사, 갈 곳 잃은 환자들",
+            "url": "https://www.kyeongin.com/article/1766778",
+            "source": "kyeongin.com",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "[르포] “도수치료 받았단 말 마세요”…과잉진료 규제 첫날, 병원에선...",
+            "url": "https://n.news.naver.com/mnews/article/138/0002233122?sid=101",
+            "source": "ddaily.co.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "관리급여 피해 사례 모으는 보건의료계…도수치료 기준 조정될까",
+            "url": "http://www.docdocdoc.co.kr/news/articleView.html?idxno=3040652",
+            "source": "청년의사",
+            "date": "2026-07-04"
+          }
+        ]
+      }
+    },
+    {
+      "agency": "건강보험심사평가원",
+      "label": "건강보험심사평가원",
+      "article_count": 86,
+      "keywords": [
+        {
+          "text": "급여",
+          "count": 55
+        },
+        {
+          "text": "인사",
+          "count": 42
+        },
+        {
+          "text": "약제관리실장",
+          "count": 38
+        },
+        {
+          "text": "이소영",
+          "count": 38
+        },
+        {
+          "text": "신소연",
+          "count": 32
+        },
+        {
+          "text": "임상희",
+          "count": 32
+        },
+        {
+          "text": "관리실장",
+          "count": 31
+        },
+        {
+          "text": "급여조사실장",
+          "count": 31
+        },
+        {
+          "text": "박정혜",
+          "count": 31
+        },
+        {
+          "text": "심사평가연구실장",
+          "count": 28
+        },
+        {
+          "text": "박춘선",
+          "count": 27
+        },
+        {
+          "text": "약제",
+          "count": 26
+        },
+        {
+          "text": "약제급여평가위원회",
+          "count": 26
+        },
+        {
+          "text": "신약",
+          "count": 24
+        },
+        {
+          "text": "심의",
+          "count": 21
+        },
+        {
+          "text": "엑스코프리",
+          "count": 21
+        },
+        {
+          "text": "적정성",
+          "count": 21
+        },
+        {
+          "text": "뇌전증",
+          "count": 20
+        },
+        {
+          "text": "하반기",
+          "count": 18
+        },
+        {
+          "text": "약평위",
+          "count": 17
+        },
+        {
+          "text": "결과",
+          "count": 16
+        },
+        {
+          "text": "홍승권",
+          "count": 16
+        },
+        {
+          "text": "승진",
+          "count": 15
+        },
+        {
+          "text": "통과",
+          "count": 15
+        },
+        {
+          "text": "정선호",
+          "count": 14
+        },
+        {
+          "text": "환자",
+          "count": 14
+        },
+        {
+          "text": "치료",
+          "count": 13
+        },
+        {
+          "text": "홍보실장",
+          "count": 13
+        },
+        {
+          "text": "확대",
+          "count": 13
+        },
+        {
+          "text": "희귀",
+          "count": 13
+        }
+      ],
+      "newsByKeyword": {
+        "급여": [
+          {
+            "title": "원형탈모 '릴리·화이자·애브비' 3파전...'완전재생'이 승부처",
+            "url": "https://www.pharmnews.com/news/articleView.html?idxno=304675",
+            "source": "팜뉴스",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "꺼져가던 불씨 살린 '퍼제타' 보조요법, 암질심 다시 간다",
+            "url": "https://www.dailypharm.com/user/news/340131?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "‘6년간 기다렸다’…美 휩쓴 K-바이오 혁신신약 안방 상륙 눈앞에",
+            "url": "https://n.news.naver.com/mnews/article/016/0002665830?sid=101",
+            "source": "헤럴드경제",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "30주년 맞은 코스닥 새 상폐기준 적용... 'IND 승인 단축' 추진",
+            "url": "https://www.hitnews.co.kr/news/articleView.html?idxno=77391",
+            "source": "히트뉴스",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "심평원, 뇌전증·우울증 등 '신약 5종'에 대한 건강보험 급여 적정성 인...",
+            "url": "https://www.gukjenews.com/news/articleView.html?idxno=3625119",
+            "source": "gukjenews.com",
+            "date": "2026-07-03"
+          }
+        ],
+        "인사": [
+          {
+            "title": "심평원, 1급 정기인사 단행(7/1)",
+            "url": "https://www.medipana.com/news/articleView.html?idxno=413861",
+            "source": "메디파나뉴스",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "심평원 약제관리-성과평가실장 교체로 신약 관리 고삐",
+            "url": "https://www.dailypharm.com/user/news/339984?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "홍승권號 심평원 첫 인사…신약관리·AI 혁신에 방점",
+            "url": "https://www.medipana.com/news/articleView.html?idxno=413842",
+            "source": "메디파나뉴스",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "심사평가원, 2026년 하반기 1급 인사… 'AX혁신실' 신설",
+            "url": "http://www.medisobizanews.com/news/articleView.html?idxno=139818",
+            "source": "medisobizanews.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원",
+            "url": "https://www.cnbizm.com/news/articleView.html?idxno=307203",
+            "source": "cnbizm.com",
+            "date": "2026-07-01"
+          }
+        ],
+        "약제관리실장": [
+          {
+            "title": "심사평가원, 2026년 하반기 1급 인사… 'AX혁신실' 신설",
+            "url": "http://www.medisobizanews.com/news/articleView.html?idxno=139818",
+            "source": "medisobizanews.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원",
+            "url": "https://www.cnbizm.com/news/articleView.html?idxno=307203",
+            "source": "cnbizm.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원, 2026년 하반기 1급 인사 단행",
+            "url": "http://www.doctorstimes.com/news/articleView.html?idxno=238829",
+            "source": "doctorstimes.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "건강보험심사평가원, 2026년 하반기 1급 인사",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539723",
+            "source": "apsk.co.kr",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원",
+            "url": "https://www.jeonmae.co.kr/news/articleView.html?idxno=1270424",
+            "source": "jeonmae.co.kr",
+            "date": "2026-07-01"
+          }
+        ],
+        "이소영": [
+          {
+            "title": "심사평가원, 2026년 하반기 1급 인사… 'AX혁신실' 신설",
+            "url": "http://www.medisobizanews.com/news/articleView.html?idxno=139818",
+            "source": "medisobizanews.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원",
+            "url": "https://www.cnbizm.com/news/articleView.html?idxno=307203",
+            "source": "cnbizm.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원, 2026년 하반기 1급 인사 단행",
+            "url": "http://www.doctorstimes.com/news/articleView.html?idxno=238829",
+            "source": "doctorstimes.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "건강보험심사평가원, 2026년 하반기 1급 인사",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539723",
+            "source": "apsk.co.kr",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원",
+            "url": "https://www.jeonmae.co.kr/news/articleView.html?idxno=1270424",
+            "source": "jeonmae.co.kr",
+            "date": "2026-07-01"
+          }
+        ],
+        "신소연": [
+          {
+            "title": "심사평가원, 2026년 하반기 1급 인사… 'AX혁신실' 신설",
+            "url": "http://www.medisobizanews.com/news/articleView.html?idxno=139818",
+            "source": "medisobizanews.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원",
+            "url": "https://www.cnbizm.com/news/articleView.html?idxno=307203",
+            "source": "cnbizm.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원, 2026년 하반기 1급 인사 단행",
+            "url": "http://www.doctorstimes.com/news/articleView.html?idxno=238829",
+            "source": "doctorstimes.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "건강보험심사평가원, 2026년 하반기 1급 인사",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539723",
+            "source": "apsk.co.kr",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원",
+            "url": "https://www.jeonmae.co.kr/news/articleView.html?idxno=1270424",
+            "source": "jeonmae.co.kr",
+            "date": "2026-07-01"
+          }
+        ],
+        "임상희": [
+          {
+            "title": "심사평가원, 2026년 하반기 1급 인사… 'AX혁신실' 신설",
+            "url": "http://www.medisobizanews.com/news/articleView.html?idxno=139818",
+            "source": "medisobizanews.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원",
+            "url": "https://www.cnbizm.com/news/articleView.html?idxno=307203",
+            "source": "cnbizm.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원, 2026년 하반기 1급 인사 단행",
+            "url": "http://www.doctorstimes.com/news/articleView.html?idxno=238829",
+            "source": "doctorstimes.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "건강보험심사평가원, 2026년 하반기 1급 인사",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539723",
+            "source": "apsk.co.kr",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원",
+            "url": "https://www.jeonmae.co.kr/news/articleView.html?idxno=1270424",
+            "source": "jeonmae.co.kr",
+            "date": "2026-07-01"
+          }
+        ],
+        "관리실장": [
+          {
+            "title": "심평원, 1급 정기인사 단행(7/1)",
+            "url": "https://www.medipana.com/news/articleView.html?idxno=413861",
+            "source": "메디파나뉴스",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "심사평가원, 2026년 하반기 1급 인사… 'AX혁신실' 신설",
+            "url": "http://www.medisobizanews.com/news/articleView.html?idxno=139818",
+            "source": "medisobizanews.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원",
+            "url": "https://www.cnbizm.com/news/articleView.html?idxno=307203",
+            "source": "cnbizm.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원, 2026년 하반기 1급 인사 단행",
+            "url": "http://www.doctorstimes.com/news/articleView.html?idxno=238829",
+            "source": "doctorstimes.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "건강보험심사평가원, 2026년 하반기 1급 인사",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539723",
+            "source": "apsk.co.kr",
+            "date": "2026-07-01"
+          }
+        ],
+        "급여조사실장": [
+          {
+            "title": "심사평가원, 2026년 하반기 1급 인사… 'AX혁신실' 신설",
+            "url": "http://www.medisobizanews.com/news/articleView.html?idxno=139818",
+            "source": "medisobizanews.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원",
+            "url": "https://www.cnbizm.com/news/articleView.html?idxno=307203",
+            "source": "cnbizm.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원, 2026년 하반기 1급 인사 단행",
+            "url": "http://www.doctorstimes.com/news/articleView.html?idxno=238829",
+            "source": "doctorstimes.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "건강보험심사평가원, 2026년 하반기 1급 인사",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539723",
+            "source": "apsk.co.kr",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원",
+            "url": "https://www.jeonmae.co.kr/news/articleView.html?idxno=1270424",
+            "source": "jeonmae.co.kr",
+            "date": "2026-07-01"
+          }
+        ],
+        "박정혜": [
+          {
+            "title": "심사평가원, 2026년 하반기 1급 인사… 'AX혁신실' 신설",
+            "url": "http://www.medisobizanews.com/news/articleView.html?idxno=139818",
+            "source": "medisobizanews.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원",
+            "url": "https://www.cnbizm.com/news/articleView.html?idxno=307203",
+            "source": "cnbizm.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원, 2026년 하반기 1급 인사 단행",
+            "url": "http://www.doctorstimes.com/news/articleView.html?idxno=238829",
+            "source": "doctorstimes.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "건강보험심사평가원, 2026년 하반기 1급 인사",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539723",
+            "source": "apsk.co.kr",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원",
+            "url": "https://www.jeonmae.co.kr/news/articleView.html?idxno=1270424",
+            "source": "jeonmae.co.kr",
+            "date": "2026-07-01"
+          }
+        ],
+        "심사평가연구실장": [
+          {
+            "title": "심사평가원, 2026년 하반기 1급 인사… 'AX혁신실' 신설",
+            "url": "http://www.medisobizanews.com/news/articleView.html?idxno=139818",
+            "source": "medisobizanews.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원",
+            "url": "https://www.cnbizm.com/news/articleView.html?idxno=307203",
+            "source": "cnbizm.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원, 2026년 하반기 1급 인사 단행",
+            "url": "http://www.doctorstimes.com/news/articleView.html?idxno=238829",
+            "source": "doctorstimes.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "건강보험심사평가원, 2026년 하반기 1급 인사",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539723",
+            "source": "apsk.co.kr",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원",
+            "url": "https://www.jeonmae.co.kr/news/articleView.html?idxno=1270424",
+            "source": "jeonmae.co.kr",
+            "date": "2026-07-01"
+          }
+        ],
+        "박춘선": [
+          {
+            "title": "[인사] 건강보험심사평가원",
+            "url": "https://www.cnbizm.com/news/articleView.html?idxno=307203",
+            "source": "cnbizm.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원, 2026년 하반기 1급 인사 단행",
+            "url": "http://www.doctorstimes.com/news/articleView.html?idxno=238829",
+            "source": "doctorstimes.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원",
+            "url": "https://www.jeonmae.co.kr/news/articleView.html?idxno=1270424",
+            "source": "jeonmae.co.kr",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "심평원, 'AX혁신실' 신설…1급 인사 단행",
+            "url": "https://n.news.naver.com/mnews/article/008/0005379967?sid=101",
+            "source": "머니투데이",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "오늘의 인사-통일부 외",
+            "url": "https://n.news.naver.com/mnews/article/032/0003455450?sid=102",
+            "source": "경향신문",
+            "date": "2026-07-01"
+          }
+        ],
+        "약제": [
+          {
+            "title": "원형탈모 '릴리·화이자·애브비' 3파전...'완전재생'이 승부처",
+            "url": "https://www.pharmnews.com/news/articleView.html?idxno=304675",
+            "source": "팜뉴스",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "꺼져가던 불씨 살린 '퍼제타' 보조요법, 암질심 다시 간다",
+            "url": "https://www.dailypharm.com/user/news/340131?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "‘6년간 기다렸다’…美 휩쓴 K-바이오 혁신신약 안방 상륙 눈앞에",
+            "url": "https://n.news.naver.com/mnews/article/016/0002665830?sid=101",
+            "source": "헤럴드경제",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "30주년 맞은 코스닥 새 상폐기준 적용... 'IND 승인 단축' 추진",
+            "url": "https://www.hitnews.co.kr/news/articleView.html?idxno=77391",
+            "source": "히트뉴스",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "심평원, 뇌전증·우울증 등 '신약 5종'에 대한 건강보험 급여 적정성 인...",
+            "url": "https://www.gukjenews.com/news/articleView.html?idxno=3625119",
+            "source": "gukjenews.com",
+            "date": "2026-07-03"
+          }
+        ],
+        "약제급여평가위원회": [
+          {
+            "title": "‘6년간 기다렸다’…美 휩쓴 K-바이오 혁신신약 안방 상륙 눈앞에",
+            "url": "https://n.news.naver.com/mnews/article/016/0002665830?sid=101",
+            "source": "헤럴드경제",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "30주년 맞은 코스닥 새 상폐기준 적용... 'IND 승인 단축' 추진",
+            "url": "https://www.hitnews.co.kr/news/articleView.html?idxno=77391",
+            "source": "히트뉴스",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "심평원, 뇌전증·우울증 등 '신약 5종'에 대한 건강보험 급여 적정성 인...",
+            "url": "https://www.gukjenews.com/news/articleView.html?idxno=3625119",
+            "source": "gukjenews.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "동아 엑스코프리, 약평위 통과… 국산 뇌전증 신약 급여 희망적",
+            "url": "https://www.hitnews.co.kr/news/articleView.html?idxno=77369",
+            "source": "히트뉴스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "약제 급여 문턱 통과…뇌전증·우울증·희귀질환 치료 선택지 확대",
+            "url": "https://www.ccdailynews.com/news/articleView.html?idxno=2425768",
+            "source": "ccdailynews.com",
+            "date": "2026-07-03"
+          }
+        ],
+        "신약": [
+          {
+            "title": "‘6년간 기다렸다’…美 휩쓴 K-바이오 혁신신약 안방 상륙 눈앞에",
+            "url": "https://n.news.naver.com/mnews/article/016/0002665830?sid=101",
+            "source": "헤럴드경제",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "심평원, 뇌전증·우울증 등 '신약 5종'에 대한 건강보험 급여 적정성 인...",
+            "url": "https://www.gukjenews.com/news/articleView.html?idxno=3625119",
+            "source": "gukjenews.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "동아 엑스코프리, 약평위 통과… 국산 뇌전증 신약 급여 희망적",
+            "url": "https://www.hitnews.co.kr/news/articleView.html?idxno=77369",
+            "source": "히트뉴스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "뇌전증 치료제 '엑스코프리', 급여 청신호…약평위 통과",
+            "url": "http://www.hansbiz.co.kr/news/articleView.html?idxno=848014",
+            "source": "hansbiz.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "엑스코프리 등 5개 신약, 급여 진입 '청신호'",
+            "url": "https://www.sentv.co.kr/article/view/sentv202607030013",
+            "source": "sentv.co.kr",
+            "date": "2026-07-03"
+          }
+        ],
+        "심의": [
+          {
+            "title": "꺼져가던 불씨 살린 '퍼제타' 보조요법, 암질심 다시 간다",
+            "url": "https://www.dailypharm.com/user/news/340131?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "30주년 맞은 코스닥 새 상폐기준 적용... 'IND 승인 단축' 추진",
+            "url": "https://www.hitnews.co.kr/news/articleView.html?idxno=77391",
+            "source": "히트뉴스",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "심평원, 뇌전증·우울증 등 '신약 5종'에 대한 건강보험 급여 적정성 인...",
+            "url": "https://www.gukjenews.com/news/articleView.html?idxno=3625119",
+            "source": "gukjenews.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "동아 엑스코프리, 약평위 통과… 국산 뇌전증 신약 급여 희망적",
+            "url": "https://www.hitnews.co.kr/news/articleView.html?idxno=77369",
+            "source": "히트뉴스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "약제 급여 문턱 통과…뇌전증·우울증·희귀질환 치료 선택지 확대",
+            "url": "https://www.ccdailynews.com/news/articleView.html?idxno=2425768",
+            "source": "ccdailynews.com",
+            "date": "2026-07-03"
+          }
+        ],
+        "엑스코프리": [
+          {
+            "title": "‘6년간 기다렸다’…美 휩쓴 K-바이오 혁신신약 안방 상륙 눈앞에",
+            "url": "https://n.news.naver.com/mnews/article/016/0002665830?sid=101",
+            "source": "헤럴드경제",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "30주년 맞은 코스닥 새 상폐기준 적용... 'IND 승인 단축' 추진",
+            "url": "https://www.hitnews.co.kr/news/articleView.html?idxno=77391",
+            "source": "히트뉴스",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "동아 엑스코프리, 약평위 통과… 국산 뇌전증 신약 급여 희망적",
+            "url": "https://www.hitnews.co.kr/news/articleView.html?idxno=77369",
+            "source": "히트뉴스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "약제 급여 문턱 통과…뇌전증·우울증·희귀질환 치료 선택지 확대",
+            "url": "https://www.ccdailynews.com/news/articleView.html?idxno=2425768",
+            "source": "ccdailynews.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "심평원, 약평위…엑스코프리·스프라바토·네몰리주맙 등 8개 약제 급여...",
+            "url": "https://www.medigatenews.com/news/1932436033",
+            "source": "메디게이트뉴스",
+            "date": "2026-07-03"
+          }
+        ],
+        "적정성": [
+          {
+            "title": "‘6년간 기다렸다’…美 휩쓴 K-바이오 혁신신약 안방 상륙 눈앞에",
+            "url": "https://n.news.naver.com/mnews/article/016/0002665830?sid=101",
+            "source": "헤럴드경제",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "30주년 맞은 코스닥 새 상폐기준 적용... 'IND 승인 단축' 추진",
+            "url": "https://www.hitnews.co.kr/news/articleView.html?idxno=77391",
+            "source": "히트뉴스",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "심평원, 뇌전증·우울증 등 '신약 5종'에 대한 건강보험 급여 적정성 인...",
+            "url": "https://www.gukjenews.com/news/articleView.html?idxno=3625119",
+            "source": "gukjenews.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "동아 엑스코프리, 약평위 통과… 국산 뇌전증 신약 급여 희망적",
+            "url": "https://www.hitnews.co.kr/news/articleView.html?idxno=77369",
+            "source": "히트뉴스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "약제 급여 문턱 통과…뇌전증·우울증·희귀질환 치료 선택지 확대",
+            "url": "https://www.ccdailynews.com/news/articleView.html?idxno=2425768",
+            "source": "ccdailynews.com",
+            "date": "2026-07-03"
+          }
+        ],
+        "뇌전증": [
+          {
+            "title": "‘6년간 기다렸다’…美 휩쓴 K-바이오 혁신신약 안방 상륙 눈앞에",
+            "url": "https://n.news.naver.com/mnews/article/016/0002665830?sid=101",
+            "source": "헤럴드경제",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "30주년 맞은 코스닥 새 상폐기준 적용... 'IND 승인 단축' 추진",
+            "url": "https://www.hitnews.co.kr/news/articleView.html?idxno=77391",
+            "source": "히트뉴스",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "심평원, 뇌전증·우울증 등 '신약 5종'에 대한 건강보험 급여 적정성 인...",
+            "url": "https://www.gukjenews.com/news/articleView.html?idxno=3625119",
+            "source": "gukjenews.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "동아 엑스코프리, 약평위 통과… 국산 뇌전증 신약 급여 희망적",
+            "url": "https://www.hitnews.co.kr/news/articleView.html?idxno=77369",
+            "source": "히트뉴스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "약제 급여 문턱 통과…뇌전증·우울증·희귀질환 치료 선택지 확대",
+            "url": "https://www.ccdailynews.com/news/articleView.html?idxno=2425768",
+            "source": "ccdailynews.com",
+            "date": "2026-07-03"
+          }
+        ],
+        "하반기": [
+          {
+            "title": "심사평가원, 2026년 하반기 1급 인사… 'AX혁신실' 신설",
+            "url": "http://www.medisobizanews.com/news/articleView.html?idxno=139818",
+            "source": "medisobizanews.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원",
+            "url": "https://www.cnbizm.com/news/articleView.html?idxno=307203",
+            "source": "cnbizm.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원, 2026년 하반기 1급 인사 단행",
+            "url": "http://www.doctorstimes.com/news/articleView.html?idxno=238829",
+            "source": "doctorstimes.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "건강보험심사평가원, 2026년 하반기 1급 인사",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539723",
+            "source": "apsk.co.kr",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "심평원, 'AX혁신실' 신설…1급 인사 단행",
+            "url": "https://n.news.naver.com/mnews/article/008/0005379967?sid=101",
+            "source": "머니투데이",
+            "date": "2026-07-01"
+          }
+        ],
+        "약평위": [
+          {
+            "title": "‘6년간 기다렸다’…美 휩쓴 K-바이오 혁신신약 안방 상륙 눈앞에",
+            "url": "https://n.news.naver.com/mnews/article/016/0002665830?sid=101",
+            "source": "헤럴드경제",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "동아 엑스코프리, 약평위 통과… 국산 뇌전증 신약 급여 희망적",
+            "url": "https://www.hitnews.co.kr/news/articleView.html?idxno=77369",
+            "source": "히트뉴스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "심평원, 약평위…엑스코프리·스프라바토·네몰리주맙 등 8개 약제 급여...",
+            "url": "https://www.medigatenews.com/news/1932436033",
+            "source": "메디게이트뉴스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "세노바메이트·옥스루모 등 급여 청신호…린파자 등도 범위 확대",
+            "url": "https://www.koreahealthlog.com/news/articleView.html?idxno=57920",
+            "source": "koreahealthlog.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "뇌전증 치료제 '엑스코프리', 급여 청신호…약평위 통과",
+            "url": "http://www.hansbiz.co.kr/news/articleView.html?idxno=848014",
+            "source": "hansbiz.co.kr",
+            "date": "2026-07-03"
+          }
+        ],
+        "결과": [
+          {
+            "title": "심평원, 뇌전증·우울증 등 '신약 5종'에 대한 건강보험 급여 적정성 인...",
+            "url": "https://www.gukjenews.com/news/articleView.html?idxno=3625119",
+            "source": "gukjenews.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "약제 급여 문턱 통과…뇌전증·우울증·희귀질환 치료 선택지 확대",
+            "url": "https://www.ccdailynews.com/news/articleView.html?idxno=2425768",
+            "source": "ccdailynews.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "심평원, 약평위…엑스코프리·스프라바토·네몰리주맙 등 8개 약제 급여...",
+            "url": "https://www.medigatenews.com/news/1932436033",
+            "source": "메디게이트뉴스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "세노바메이트·옥스루모 등 급여 청신호…린파자 등도 범위 확대",
+            "url": "https://www.koreahealthlog.com/news/articleView.html?idxno=57920",
+            "source": "koreahealthlog.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "뇌전증 치료제 '엑스코프리', 급여 청신호…약평위 통과",
+            "url": "http://www.hansbiz.co.kr/news/articleView.html?idxno=848014",
+            "source": "hansbiz.co.kr",
+            "date": "2026-07-03"
+          }
+        ],
+        "홍승권": [
+          {
+            "title": "홍승권號 심평원 첫 인사…신약관리·AI 혁신에 방점",
+            "url": "https://www.medipana.com/news/articleView.html?idxno=413842",
+            "source": "메디파나뉴스",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "심사평가원, 2026년 하반기 1급 인사… 'AX혁신실' 신설",
+            "url": "http://www.medisobizanews.com/news/articleView.html?idxno=139818",
+            "source": "medisobizanews.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원, 2026년 하반기 1급 인사 단행",
+            "url": "http://www.doctorstimes.com/news/articleView.html?idxno=238829",
+            "source": "doctorstimes.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "건강보험심사평가원, 2026년 하반기 1급 인사",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539723",
+            "source": "apsk.co.kr",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "심평원, 'AX혁신실' 신설…1급 인사 단행",
+            "url": "https://n.news.naver.com/mnews/article/008/0005379967?sid=101",
+            "source": "머니투데이",
+            "date": "2026-07-01"
+          }
+        ],
+        "승진": [
+          {
+            "title": "심평원, 1급 정기인사 단행(7/1)",
+            "url": "https://www.medipana.com/news/articleView.html?idxno=413861",
+            "source": "메디파나뉴스",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원",
+            "url": "https://www.cnbizm.com/news/articleView.html?idxno=307203",
+            "source": "cnbizm.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "오늘의 인사-통일부 외",
+            "url": "https://n.news.naver.com/mnews/article/032/0003455450?sid=102",
+            "source": "경향신문",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "심평원 하반기 1급 정기인사(7/1)",
+            "url": "https://www.kpanews.co.kr/news/articleView.html?idxno=537727",
+            "source": "약사공론",
+            "date": "2026-06-30"
+          },
+          {
+            "title": "취임 석 달 홍승권표 첫 인사…심평원, RWE·사후평가 전면 배치",
+            "url": "https://www.pharmnews.com/news/articleView.html?idxno=304550",
+            "source": "팜뉴스",
+            "date": "2026-06-30"
+          }
+        ],
+        "통과": [
+          {
+            "title": "\"국산 첫 CAR-T '림카토', 7월 암질심 통과…10월 보험 기대\"",
+            "url": "http://www.medisobizanews.com/news/articleView.html?idxno=139932",
+            "source": "medisobizanews.com",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "동아 엑스코프리, 약평위 통과… 국산 뇌전증 신약 급여 희망적",
+            "url": "https://www.hitnews.co.kr/news/articleView.html?idxno=77369",
+            "source": "히트뉴스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "약제 급여 문턱 통과…뇌전증·우울증·희귀질환 치료 선택지 확대",
+            "url": "https://www.ccdailynews.com/news/articleView.html?idxno=2425768",
+            "source": "ccdailynews.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "뇌전증 치료제 '엑스코프리', 급여 청신호…약평위 통과",
+            "url": "http://www.hansbiz.co.kr/news/articleView.html?idxno=848014",
+            "source": "hansbiz.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "동아ST '엑스코프리' 약평위 통과, 급여 등재 청신호",
+            "url": "http://www.doctorsnews.co.kr/news/articleView.html?idxno=165275",
+            "source": "의협신문",
+            "date": "2026-07-03"
+          }
+        ],
+        "정선호": [
+          {
+            "title": "심평원, 1급 정기인사 단행(7/1)",
+            "url": "https://www.medipana.com/news/articleView.html?idxno=413861",
+            "source": "메디파나뉴스",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "오늘의 인사-통일부 외",
+            "url": "https://n.news.naver.com/mnews/article/032/0003455450?sid=102",
+            "source": "경향신문",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "심평원 하반기 1급 정기인사(7/1)",
+            "url": "https://www.kpanews.co.kr/news/articleView.html?idxno=537727",
+            "source": "약사공론",
+            "date": "2026-06-30"
+          },
+          {
+            "title": "취임 석 달 홍승권표 첫 인사…심평원, RWE·사후평가 전면 배치",
+            "url": "https://www.pharmnews.com/news/articleView.html?idxno=304550",
+            "source": "팜뉴스",
+            "date": "2026-06-30"
+          },
+          {
+            "title": "[인사] 심평원(2026년 7월 1일 자)",
+            "url": "https://www.ccdailynews.com/news/articleView.html?idxno=2425157",
+            "source": "ccdailynews.com",
+            "date": "2026-06-30"
+          }
+        ],
+        "환자": [
+          {
+            "title": "원형탈모 '릴리·화이자·애브비' 3파전...'완전재생'이 승부처",
+            "url": "https://www.pharmnews.com/news/articleView.html?idxno=304675",
+            "source": "팜뉴스",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "30주년 맞은 코스닥 새 상폐기준 적용... 'IND 승인 단축' 추진",
+            "url": "https://www.hitnews.co.kr/news/articleView.html?idxno=77391",
+            "source": "히트뉴스",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "‘세노바메이트’ 건보 급여 첫 관문 통과…뇌전증 환자 새 희망 되나",
+            "url": "https://www.kukinews.com/article/view/kuk202607030054",
+            "source": "쿠키뉴스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "팁소보, 약평위 통과…담관암 표적치료 급여 한발 앞으로",
+            "url": "https://www.medicopharma.co.kr/news/articleView.html?idxno=68605",
+            "source": "medicopharma.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "동아ST '엑스코프리', 급여 8부 능선···뇌전증藥 시장 30% 점유할까",
+            "url": "https://www.sisajournal-e.com/news/articleView.html?idxno=422172",
+            "source": "sisajournal-e.com",
+            "date": "2026-07-03"
+          }
+        ],
+        "치료": [
+          {
+            "title": "심평원, 뇌전증·우울증 등 '신약 5종'에 대한 건강보험 급여 적정성 인...",
+            "url": "https://www.gukjenews.com/news/articleView.html?idxno=3625119",
+            "source": "gukjenews.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "약제 급여 문턱 통과…뇌전증·우울증·희귀질환 치료 선택지 확대",
+            "url": "https://www.ccdailynews.com/news/articleView.html?idxno=2425768",
+            "source": "ccdailynews.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "세노바메이트·옥스루모 등 급여 청신호…린파자 등도 범위 확대",
+            "url": "https://www.koreahealthlog.com/news/articleView.html?idxno=57920",
+            "source": "koreahealthlog.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "뇌전증 치료제 '엑스코프리', 급여 청신호…약평위 통과",
+            "url": "http://www.hansbiz.co.kr/news/articleView.html?idxno=848014",
+            "source": "hansbiz.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "\"초고가 초희귀질환 신약 등장 경평면제 제도 한계\"",
+            "url": "http://www.newsmp.com/news/articleView.html?idxno=255695",
+            "source": "의학신문",
+            "date": "2026-07-03"
+          }
+        ],
+        "홍보실장": [
+          {
+            "title": "심평원, 1급 정기인사 단행(7/1)",
+            "url": "https://www.medipana.com/news/articleView.html?idxno=413861",
+            "source": "메디파나뉴스",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "오늘의 인사-통일부 외",
+            "url": "https://n.news.naver.com/mnews/article/032/0003455450?sid=102",
+            "source": "경향신문",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "심평원 하반기 1급 정기인사(7/1)",
+            "url": "https://www.kpanews.co.kr/news/articleView.html?idxno=537727",
+            "source": "약사공론",
+            "date": "2026-06-30"
+          },
+          {
+            "title": "취임 석 달 홍승권표 첫 인사…심평원, RWE·사후평가 전면 배치",
+            "url": "https://www.pharmnews.com/news/articleView.html?idxno=304550",
+            "source": "팜뉴스",
+            "date": "2026-06-30"
+          },
+          {
+            "title": "[인사] 심평원(2026년 7월 1일 자)",
+            "url": "https://www.ccdailynews.com/news/articleView.html?idxno=2425157",
+            "source": "ccdailynews.com",
+            "date": "2026-06-30"
+          }
+        ],
+        "확대": [
+          {
+            "title": "원형탈모 '릴리·화이자·애브비' 3파전...'완전재생'이 승부처",
+            "url": "https://www.pharmnews.com/news/articleView.html?idxno=304675",
+            "source": "팜뉴스",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "꺼져가던 불씨 살린 '퍼제타' 보조요법, 암질심 다시 간다",
+            "url": "https://www.dailypharm.com/user/news/340131?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "약제 급여 문턱 통과…뇌전증·우울증·희귀질환 치료 선택지 확대",
+            "url": "https://www.ccdailynews.com/news/articleView.html?idxno=2425768",
+            "source": "ccdailynews.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "심평원, 약평위…엑스코프리·스프라바토·네몰리주맙 등 8개 약제 급여...",
+            "url": "https://www.medigatenews.com/news/1932436033",
+            "source": "메디게이트뉴스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "세노바메이트·옥스루모 등 급여 청신호…린파자 등도 범위 확대",
+            "url": "https://www.koreahealthlog.com/news/articleView.html?idxno=57920",
+            "source": "koreahealthlog.com",
+            "date": "2026-07-03"
+          }
+        ],
+        "희귀": [
+          {
+            "title": "심평원, 뇌전증·우울증 등 '신약 5종'에 대한 건강보험 급여 적정성 인...",
+            "url": "https://www.gukjenews.com/news/articleView.html?idxno=3625119",
+            "source": "gukjenews.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "약제 급여 문턱 통과…뇌전증·우울증·희귀질환 치료 선택지 확대",
+            "url": "https://www.ccdailynews.com/news/articleView.html?idxno=2425768",
+            "source": "ccdailynews.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "\"초고가 초희귀질환 신약 등장 경평면제 제도 한계\"",
+            "url": "http://www.newsmp.com/news/articleView.html?idxno=255695",
+            "source": "의학신문",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "심평원 약제관리-성과평가실장 교체로 신약 관리 고삐",
+            "url": "https://www.dailypharm.com/user/news/339984?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[인사] 건강보험심사평가원",
+            "url": "https://www.jeonmae.co.kr/news/articleView.html?idxno=1270424",
+            "source": "jeonmae.co.kr",
+            "date": "2026-07-01"
+          }
+        ]
+      }
+    },
+    {
+      "agency": "국민건강보험공단",
+      "label": "국민건강보험공단",
+      "article_count": 12,
+      "keywords": [
+        {
+          "text": "급여",
+          "count": 7
+        },
+        {
+          "text": "위험",
+          "count": 5
+        },
+        {
+          "text": "베오바",
+          "count": 4
+        },
+        {
+          "text": "분담",
+          "count": 4
+        },
+        {
+          "text": "제일약품",
+          "count": 4
+        },
+        {
+          "text": "관리",
+          "count": 3
+        },
+        {
+          "text": "등재",
+          "count": 3
+        },
+        {
+          "text": "안내",
+          "count": 3
+        },
+        {
+          "text": "약가",
+          "count": 3
+        },
+        {
+          "text": "역할",
+          "count": 3
+        },
+        {
+          "text": "협상",
+          "count": 3
+        },
+        {
+          "text": "건널목",
+          "count": 2
+        },
+        {
+          "text": "고정가격계약",
+          "count": 2
+        },
+        {
+          "text": "공공주도형",
+          "count": 2
+        },
+        {
+          "text": "공정성",
+          "count": 2
+        },
+        {
+          "text": "공항",
+          "count": 2
+        },
+        {
+          "text": "과민성방광",
+          "count": 2
+        },
+        {
+          "text": "관촉",
+          "count": 2
+        },
+        {
+          "text": "기반",
+          "count": 2
+        },
+        {
+          "text": "넘어",
+          "count": 2
+        },
+        {
+          "text": "데이터",
+          "count": 2
+        },
+        {
+          "text": "리스크",
+          "count": 2
+        },
+        {
+          "text": "목전",
+          "count": 2
+        },
+        {
+          "text": "방안",
+          "count": 2
+        },
+        {
+          "text": "사업",
+          "count": 2
+        },
+        {
+          "text": "시장",
+          "count": 2
+        },
+        {
+          "text": "약가협상",
+          "count": 2
+        },
+        {
+          "text": "월부터",
+          "count": 2
+        },
+        {
+          "text": "절차",
+          "count": 2
+        },
+        {
+          "text": "정부",
+          "count": 2
+        }
+      ],
+      "newsByKeyword": {
+        "급여": [
+          {
+            "title": "급여 앞둔 '베오바' 1300억 과민성방광 시장 판도 바꿀까",
+            "url": "https://www.dailypharm.com/user/news/340078?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "제일약품 '베오바' 약가협상 돌입...출시 3년만 등재 목전",
+            "url": "https://www.dailypharm.com/user/news/339973?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "한국아스텔라스, 전이성 위암 표적치료제 '빌로이 300mg' 본격 출시",
+            "url": "https://www.medicopharma.co.kr/news/articleView.html?idxno=68574",
+            "source": "medicopharma.co.kr",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "뇌전증 제네릭 급여 진입…편두통 신약은 국내 판매 종료",
+            "url": "https://n.news.naver.com/mnews/article/366/0001175070?sid=101",
+            "source": "조선비즈",
+            "date": "2026-06-29"
+          }
+        ],
+        "위험": [
+          {
+            "title": "내년 \"자율주행차 상용화\"…보험사, 데이터 기반 리스크 관리 급부상",
+            "url": "http://www.hansbiz.co.kr/news/articleView.html?idxno=847509",
+            "source": "hansbiz.co.kr",
+            "date": "2026-07-02"
+          },
+          {
+            "title": "치매 진료 넘어 재산관리까지…공공신탁 역할 조명",
+            "url": "https://www.medipana.com/news/articleView.html?idxno=414016",
+            "source": "메디파나뉴스",
+            "date": "2026-07-02"
+          },
+          {
+            "title": "논산 관촉 건널목, 안전한 지하차도로 탈바꿈하다",
+            "url": "http://www.ccnnews.co.kr/news/articleView.html?idxno=411398",
+            "source": "ccnnews.co.kr",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "산재보험제도의 거대한 개미굴",
+            "url": "https://newscham.net/articles/116757",
+            "source": "newscham.net",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "중부발전 '금오도 해상풍력' 고정가격계약 확보… 공공주도 해상풍력 사...",
+            "url": "https://www.energydaily.co.kr/news/articleView.html?idxno=201002",
+            "source": "energydaily.co.kr",
+            "date": "2026-07-01"
+          }
+        ],
+        "베오바": [
+          {
+            "title": "급여 앞둔 '베오바' 1300억 과민성방광 시장 판도 바꿀까",
+            "url": "https://www.dailypharm.com/user/news/340078?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "제일약품 '베오바' 약가협상 돌입...출시 3년만 등재 목전",
+            "url": "https://www.dailypharm.com/user/news/339973?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-01"
+          }
+        ],
+        "분담": [
+          {
+            "title": "[위클립] 7월 1주",
+            "url": "https://www.laborplus.co.kr/news/articleView.html?idxno=41094",
+            "source": "laborplus.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "논산 관촉 건널목, 안전한 지하차도로 탈바꿈하다",
+            "url": "http://www.ccnnews.co.kr/news/articleView.html?idxno=411398",
+            "source": "ccnnews.co.kr",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "산재보험제도의 거대한 개미굴",
+            "url": "https://newscham.net/articles/116757",
+            "source": "newscham.net",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "중부발전 '금오도 해상풍력' 고정가격계약 확보… 공공주도 해상풍력 사...",
+            "url": "https://www.energydaily.co.kr/news/articleView.html?idxno=201002",
+            "source": "energydaily.co.kr",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[기자의 눈] 공항 통합보다 먼저 물어야할 것들",
+            "url": "https://n.news.naver.com/mnews/article/421/0009034879?sid=110",
+            "source": "뉴스1",
+            "date": "2026-07-01"
+          }
+        ],
+        "제일약품": [
+          {
+            "title": "급여 앞둔 '베오바' 1300억 과민성방광 시장 판도 바꿀까",
+            "url": "https://www.dailypharm.com/user/news/340078?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "제일약품 '베오바' 약가협상 돌입...출시 3년만 등재 목전",
+            "url": "https://www.dailypharm.com/user/news/339973?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-01"
+          }
+        ],
+        "관리": [
+          {
+            "title": "내년 \"자율주행차 상용화\"…보험사, 데이터 기반 리스크 관리 급부상",
+            "url": "http://www.hansbiz.co.kr/news/articleView.html?idxno=847509",
+            "source": "hansbiz.co.kr",
+            "date": "2026-07-02"
+          },
+          {
+            "title": "치매 진료 넘어 재산관리까지…공공신탁 역할 조명",
+            "url": "https://www.medipana.com/news/articleView.html?idxno=414016",
+            "source": "메디파나뉴스",
+            "date": "2026-07-02"
+          }
+        ],
+        "등재": [
+          {
+            "title": "제일약품 '베오바' 약가협상 돌입...출시 3년만 등재 목전",
+            "url": "https://www.dailypharm.com/user/news/339973?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "한국아스텔라스, 전이성 위암 표적치료제 '빌로이 300mg' 본격 출시",
+            "url": "https://www.medicopharma.co.kr/news/articleView.html?idxno=68574",
+            "source": "medicopharma.co.kr",
+            "date": "2026-07-01"
+          }
+        ],
+        "안내": [
+          {
+            "title": "도봉구醫, 2026년 제1차 전체이사회 개최",
+            "url": "http://www.doctorstimes.com/news/articleView.html?idxno=238852",
+            "source": "doctorstimes.com",
+            "date": "2026-07-01"
+          }
+        ],
+        "약가": [
+          {
+            "title": "급여 앞둔 '베오바' 1300억 과민성방광 시장 판도 바꿀까",
+            "url": "https://www.dailypharm.com/user/news/340078?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "제일약품 '베오바' 약가협상 돌입...출시 3년만 등재 목전",
+            "url": "https://www.dailypharm.com/user/news/339973?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "한국아스텔라스, 전이성 위암 표적치료제 '빌로이 300mg' 본격 출시",
+            "url": "https://www.medicopharma.co.kr/news/articleView.html?idxno=68574",
+            "source": "medicopharma.co.kr",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "뇌전증 제네릭 급여 진입…편두통 신약은 국내 판매 종료",
+            "url": "https://n.news.naver.com/mnews/article/366/0001175070?sid=101",
+            "source": "조선비즈",
+            "date": "2026-06-29"
+          }
+        ],
+        "역할": [
+          {
+            "title": "내년 \"자율주행차 상용화\"…보험사, 데이터 기반 리스크 관리 급부상",
+            "url": "http://www.hansbiz.co.kr/news/articleView.html?idxno=847509",
+            "source": "hansbiz.co.kr",
+            "date": "2026-07-02"
+          },
+          {
+            "title": "치매 진료 넘어 재산관리까지…공공신탁 역할 조명",
+            "url": "https://www.medipana.com/news/articleView.html?idxno=414016",
+            "source": "메디파나뉴스",
+            "date": "2026-07-02"
+          },
+          {
+            "title": "[기자의 눈] 공항 통합보다 먼저 물어야할 것들",
+            "url": "https://n.news.naver.com/mnews/article/421/0009034879?sid=110",
+            "source": "뉴스1",
+            "date": "2026-07-01"
+          }
+        ],
+        "협상": [
+          {
+            "title": "급여 앞둔 '베오바' 1300억 과민성방광 시장 판도 바꿀까",
+            "url": "https://www.dailypharm.com/user/news/340078?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "제일약품 '베오바' 약가협상 돌입...출시 3년만 등재 목전",
+            "url": "https://www.dailypharm.com/user/news/339973?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "한국아스텔라스, 전이성 위암 표적치료제 '빌로이 300mg' 본격 출시",
+            "url": "https://www.medicopharma.co.kr/news/articleView.html?idxno=68574",
+            "source": "medicopharma.co.kr",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "뇌전증 제네릭 급여 진입…편두통 신약은 국내 판매 종료",
+            "url": "https://n.news.naver.com/mnews/article/366/0001175070?sid=101",
+            "source": "조선비즈",
+            "date": "2026-06-29"
+          }
+        ],
+        "건널목": [
+          {
+            "title": "논산 관촉 건널목, 안전한 지하차도로 탈바꿈하다",
+            "url": "http://www.ccnnews.co.kr/news/articleView.html?idxno=411398",
+            "source": "ccnnews.co.kr",
+            "date": "2026-07-01"
+          }
+        ],
+        "고정가격계약": [
+          {
+            "title": "중부발전 '금오도 해상풍력' 고정가격계약 확보… 공공주도 해상풍력 사...",
+            "url": "https://www.energydaily.co.kr/news/articleView.html?idxno=201002",
+            "source": "energydaily.co.kr",
+            "date": "2026-07-01"
+          }
+        ],
+        "공공주도형": [
+          {
+            "title": "중부발전 '금오도 해상풍력' 고정가격계약 확보… 공공주도 해상풍력 사...",
+            "url": "https://www.energydaily.co.kr/news/articleView.html?idxno=201002",
+            "source": "energydaily.co.kr",
+            "date": "2026-07-01"
+          }
+        ],
+        "공정성": [
+          {
+            "title": "산재보험제도의 거대한 개미굴",
+            "url": "https://newscham.net/articles/116757",
+            "source": "newscham.net",
+            "date": "2026-07-01"
+          }
+        ],
+        "공항": [
+          {
+            "title": "[기자의 눈] 공항 통합보다 먼저 물어야할 것들",
+            "url": "https://n.news.naver.com/mnews/article/421/0009034879?sid=110",
+            "source": "뉴스1",
+            "date": "2026-07-01"
+          }
+        ],
+        "과민성방광": [
+          {
+            "title": "급여 앞둔 '베오바' 1300억 과민성방광 시장 판도 바꿀까",
+            "url": "https://www.dailypharm.com/user/news/340078?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-03"
+          }
+        ],
+        "관촉": [
+          {
+            "title": "논산 관촉 건널목, 안전한 지하차도로 탈바꿈하다",
+            "url": "http://www.ccnnews.co.kr/news/articleView.html?idxno=411398",
+            "source": "ccnnews.co.kr",
+            "date": "2026-07-01"
+          }
+        ],
+        "기반": [
+          {
+            "title": "내년 \"자율주행차 상용화\"…보험사, 데이터 기반 리스크 관리 급부상",
+            "url": "http://www.hansbiz.co.kr/news/articleView.html?idxno=847509",
+            "source": "hansbiz.co.kr",
+            "date": "2026-07-02"
+          }
+        ],
+        "넘어": [
+          {
+            "title": "내년 \"자율주행차 상용화\"…보험사, 데이터 기반 리스크 관리 급부상",
+            "url": "http://www.hansbiz.co.kr/news/articleView.html?idxno=847509",
+            "source": "hansbiz.co.kr",
+            "date": "2026-07-02"
+          },
+          {
+            "title": "치매 진료 넘어 재산관리까지…공공신탁 역할 조명",
+            "url": "https://www.medipana.com/news/articleView.html?idxno=414016",
+            "source": "메디파나뉴스",
+            "date": "2026-07-02"
+          }
+        ],
+        "데이터": [
+          {
+            "title": "내년 \"자율주행차 상용화\"…보험사, 데이터 기반 리스크 관리 급부상",
+            "url": "http://www.hansbiz.co.kr/news/articleView.html?idxno=847509",
+            "source": "hansbiz.co.kr",
+            "date": "2026-07-02"
+          }
+        ],
+        "리스크": [
+          {
+            "title": "내년 \"자율주행차 상용화\"…보험사, 데이터 기반 리스크 관리 급부상",
+            "url": "http://www.hansbiz.co.kr/news/articleView.html?idxno=847509",
+            "source": "hansbiz.co.kr",
+            "date": "2026-07-02"
+          }
+        ],
+        "목전": [
+          {
+            "title": "제일약품 '베오바' 약가협상 돌입...출시 3년만 등재 목전",
+            "url": "https://www.dailypharm.com/user/news/339973?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-01"
+          }
+        ],
+        "방안": [
+          {
+            "title": "[기자의 눈] 공항 통합보다 먼저 물어야할 것들",
+            "url": "https://n.news.naver.com/mnews/article/421/0009034879?sid=110",
+            "source": "뉴스1",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "도봉구醫, 2026년 제1차 전체이사회 개최",
+            "url": "http://www.doctorstimes.com/news/articleView.html?idxno=238852",
+            "source": "doctorstimes.com",
+            "date": "2026-07-01"
+          }
+        ],
+        "사업": [
+          {
+            "title": "치매 진료 넘어 재산관리까지…공공신탁 역할 조명",
+            "url": "https://www.medipana.com/news/articleView.html?idxno=414016",
+            "source": "메디파나뉴스",
+            "date": "2026-07-02"
+          },
+          {
+            "title": "논산 관촉 건널목, 안전한 지하차도로 탈바꿈하다",
+            "url": "http://www.ccnnews.co.kr/news/articleView.html?idxno=411398",
+            "source": "ccnnews.co.kr",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "중부발전 '금오도 해상풍력' 고정가격계약 확보… 공공주도 해상풍력 사...",
+            "url": "https://www.energydaily.co.kr/news/articleView.html?idxno=201002",
+            "source": "energydaily.co.kr",
+            "date": "2026-07-01"
+          }
+        ],
+        "시장": [
+          {
+            "title": "급여 앞둔 '베오바' 1300억 과민성방광 시장 판도 바꿀까",
+            "url": "https://www.dailypharm.com/user/news/340078?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "제일약품 '베오바' 약가협상 돌입...출시 3년만 등재 목전",
+            "url": "https://www.dailypharm.com/user/news/339973?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-01"
+          }
+        ],
+        "약가협상": [
+          {
+            "title": "제일약품 '베오바' 약가협상 돌입...출시 3년만 등재 목전",
+            "url": "https://www.dailypharm.com/user/news/339973?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-01"
+          }
+        ],
+        "월부터": [
+          {
+            "title": "치매 진료 넘어 재산관리까지…공공신탁 역할 조명",
+            "url": "https://www.medipana.com/news/articleView.html?idxno=414016",
+            "source": "메디파나뉴스",
+            "date": "2026-07-02"
+          },
+          {
+            "title": "뇌전증 제네릭 급여 진입…편두통 신약은 국내 판매 종료",
+            "url": "https://n.news.naver.com/mnews/article/366/0001175070?sid=101",
+            "source": "조선비즈",
+            "date": "2026-06-29"
+          }
+        ],
+        "절차": [
+          {
+            "title": "한국아스텔라스, 전이성 위암 표적치료제 '빌로이 300mg' 본격 출시",
+            "url": "https://www.medicopharma.co.kr/news/articleView.html?idxno=68574",
+            "source": "medicopharma.co.kr",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "뇌전증 제네릭 급여 진입…편두통 신약은 국내 판매 종료",
+            "url": "https://n.news.naver.com/mnews/article/366/0001175070?sid=101",
+            "source": "조선비즈",
+            "date": "2026-06-29"
+          }
+        ],
+        "정부": [
+          {
+            "title": "산재보험제도의 거대한 개미굴",
+            "url": "https://newscham.net/articles/116757",
+            "source": "newscham.net",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "[기자의 눈] 공항 통합보다 먼저 물어야할 것들",
+            "url": "https://n.news.naver.com/mnews/article/421/0009034879?sid=110",
+            "source": "뉴스1",
+            "date": "2026-07-01"
+          }
+        ]
+      }
+    },
+    {
+      "agency": "식품의약품안전처",
+      "label": "식품의약품안전처",
+      "article_count": 331,
+      "keywords": [
+        {
+          "text": "허가",
+          "count": 279
+        },
+        {
+          "text": "신약",
+          "count": 114
+        },
+        {
+          "text": "의약품",
+          "count": 90
+        },
+        {
+          "text": "심사",
+          "count": 84
+        },
+        {
+          "text": "치료제",
+          "count": 79
+        },
+        {
+          "text": "개발",
+          "count": 55
+        },
+        {
+          "text": "품목허가",
+          "count": 54
+        },
+        {
+          "text": "임상",
+          "count": 51
+        },
+        {
+          "text": "소세포폐암",
+          "count": 48
+        },
+        {
+          "text": "품목",
+          "count": 46
+        },
+        {
+          "text": "치료",
+          "count": 45
+        },
+        {
+          "text": "출시",
+          "count": 43
+        },
+        {
+          "text": "불면증",
+          "count": 41
+        },
+        {
+          "text": "시장",
+          "count": 41
+        },
+        {
+          "text": "제품",
+          "count": 40
+        },
+        {
+          "text": "승인",
+          "count": 38
+        },
+        {
+          "text": "의료기기",
+          "count": 38
+        },
+        {
+          "text": "데이비고",
+          "count": 37
+        },
+        {
+          "text": "비타민",
+          "count": 37
+        },
+        {
+          "text": "환자",
+          "count": 37
+        },
+        {
+          "text": "식품의약품안전처로",
+          "count": 35
+        },
+        {
+          "text": "신청",
+          "count": 33
+        },
+        {
+          "text": "품목허",
+          "count": 33
+        },
+        {
+          "text": "확대",
+          "count": 32
+        },
+        {
+          "text": "기반",
+          "count": 29
+        },
+        {
+          "text": "글로벌",
+          "count": 28
+        },
+        {
+          "text": "녹십자",
+          "count": 28
+        },
+        {
+          "text": "절차",
+          "count": 28
+        },
+        {
+          "text": "표준제조기준",
+          "count": 28
+        },
+        {
+          "text": "케미칼",
+          "count": 27
+        }
+      ],
+      "newsByKeyword": {
+        "허가": [
+          {
+            "title": "'TG-C' 부활 분수령… 운명의 美임상 3상",
+            "url": "https://n.news.naver.com/mnews/article/008/0005381644?sid=101",
+            "source": "머니투데이",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "'스타빅·포타겔' 소아 처방 왜 막히나…식약처, 적응증 변경 검토",
+            "url": "https://www.kpanews.co.kr/news/articleView.html?idxno=538047",
+            "source": "약사공론",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "'온젠티스' 시판 후 이상사례 36.42%…식약처, 허가사항 변경 추진",
+            "url": "https://www.kpanews.co.kr/news/articleView.html?idxno=538051",
+            "source": "약사공론",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "\"림카토 허가는 시작일 뿐…국내 첫 CAR-T 성공모델 만들 것\"",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539758",
+            "source": "apsk.co.kr",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "美·유럽 퇴출 위기 '이 약'…76명 사용한 국내는?",
+            "url": "https://n.news.naver.com/mnews/article/003/0014047427?sid=102",
+            "source": "뉴시스",
+            "date": "2026-07-06"
+          }
+        ],
+        "신약": [
+          {
+            "title": "국내사 만성질환 vs 다국적사 항암ㆍ비만…임상개발 '두 갈래'",
+            "url": "http://www.medisobizanews.com/news/articleView.html?idxno=139929",
+            "source": "medisobizanews.com",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[팜스 뷰] 마운자로 제네릭 이른 채비…한미약품 필두 K-비만약 생존전...",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539752",
+            "source": "apsk.co.kr",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "로수젯 ODT, 기존 산정규정 적용될까… 급여평가 향방 주목",
+            "url": "https://www.hitnews.co.kr/news/articleView.html?idxno=77410",
+            "source": "히트뉴스",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "갑상선안병증 치료제 경쟁시대…美, 신약 승인",
+            "url": "https://n.news.naver.com/mnews/article/003/0014046739?sid=102",
+            "source": "뉴시스",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "[바이오 핫클릭] 한미약품·SK바이오팜, '혁신 선도기업' 부상",
+            "url": "http://www.the-biz.co.kr/news/articleView.html?idxno=723711",
+            "source": "the-biz.co.kr",
+            "date": "2026-07-04"
+          }
+        ],
+        "의약품": [
+          {
+            "title": "'TG-C' 부활 분수령… 운명의 美임상 3상",
+            "url": "https://n.news.naver.com/mnews/article/008/0005381644?sid=101",
+            "source": "머니투데이",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "'스타빅·포타겔' 소아 처방 왜 막히나…식약처, 적응증 변경 검토",
+            "url": "https://www.kpanews.co.kr/news/articleView.html?idxno=538047",
+            "source": "약사공론",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "'온젠티스' 시판 후 이상사례 36.42%…식약처, 허가사항 변경 추진",
+            "url": "https://www.kpanews.co.kr/news/articleView.html?idxno=538051",
+            "source": "약사공론",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "\"림카토 허가는 시작일 뿐…국내 첫 CAR-T 성공모델 만들 것\"",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539758",
+            "source": "apsk.co.kr",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "美·유럽 퇴출 위기 '이 약'…76명 사용한 국내는?",
+            "url": "https://n.news.naver.com/mnews/article/003/0014047427?sid=102",
+            "source": "뉴시스",
+            "date": "2026-07-06"
+          }
+        ],
+        "심사": [
+          {
+            "title": "\"림카토 허가는 시작일 뿐…국내 첫 CAR-T 성공모델 만들 것\"",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539758",
+            "source": "apsk.co.kr",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[팜스 뷰] 마운자로 제네릭 이른 채비…한미약품 필두 K-비만약 생존전...",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539752",
+            "source": "apsk.co.kr",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[수출기업 생존기] ② 한스바이오메드 \"K-의료 수요 늘어나는데\"…인허...",
+            "url": "https://www.newspim.com/news/view/20260628000103",
+            "source": "newspim.com",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "식약처, 이중제형 비타민 심사 간소화한다",
+            "url": "https://n.news.naver.com/mnews/article/011/0004638206?sid=105",
+            "source": "서울경제",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "[기자수첩] 한미 지분戰이 던진 질문…'임성기 시간' 누가 지키나",
+            "url": "https://www.apnews.kr/news/articleView.html?idxno=3049491",
+            "source": "apnews.kr",
+            "date": "2026-07-04"
+          }
+        ],
+        "치료제": [
+          {
+            "title": "\"림카토 허가는 시작일 뿐…국내 첫 CAR-T 성공모델 만들 것\"",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539758",
+            "source": "apsk.co.kr",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[팜스 뷰] 마운자로 제네릭 이른 채비…한미약품 필두 K-비만약 생존전...",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539752",
+            "source": "apsk.co.kr",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "갑상선안병증 치료제 경쟁시대…美, 신약 승인",
+            "url": "https://n.news.naver.com/mnews/article/003/0014046739?sid=102",
+            "source": "뉴시스",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "[금주의 제약·바이오 톡톡] 의약품 수출 100억 달러 돌파... 한미약품 차...",
+            "url": "https://www.mediawatch.kr/news/article.html?no=260289",
+            "source": "mediawatch.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "[바이오 핫클릭] 한미약품·SK바이오팜, '혁신 선도기업' 부상",
+            "url": "http://www.the-biz.co.kr/news/articleView.html?idxno=723711",
+            "source": "the-biz.co.kr",
+            "date": "2026-07-04"
+          }
+        ],
+        "개발": [
+          {
+            "title": "국내사 만성질환 vs 다국적사 항암ㆍ비만…임상개발 '두 갈래'",
+            "url": "http://www.medisobizanews.com/news/articleView.html?idxno=139929",
+            "source": "medisobizanews.com",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[바이오 핫클릭] 한미약품·SK바이오팜, '혁신 선도기업' 부상",
+            "url": "http://www.the-biz.co.kr/news/articleView.html?idxno=723711",
+            "source": "the-biz.co.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "[기자수첩] 한미 지분戰이 던진 질문…'임성기 시간' 누가 지키나",
+            "url": "https://www.apnews.kr/news/articleView.html?idxno=3049491",
+            "source": "apnews.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "임상시험 승인 10일로 단축… 의약품 원료물질 인증제 도입",
+            "url": "https://n.news.naver.com/mnews/article/008/0005380926?sid=101",
+            "source": "머니투데이",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "일반의약품 개발 활성화된다",
+            "url": "https://www.bosa.co.kr/news/articleView.html?idxno=3007604",
+            "source": "의약뉴스",
+            "date": "2026-07-03"
+          }
+        ],
+        "품목허가": [
+          {
+            "title": "'TG-C' 부활 분수령… 운명의 美임상 3상",
+            "url": "https://n.news.naver.com/mnews/article/008/0005381644?sid=101",
+            "source": "머니투데이",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "P-CAB 제네릭 시장 열릴까…'시장성 vs 리스크' 복잡한 셈법",
+            "url": "https://www.medipana.com/news/articleView.html?idxno=414086",
+            "source": "메디파나뉴스",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[인터뷰] 박성민 큐어스트림 대표 “국내 최초 재사용 패치형 인슐린 펌...",
+            "url": "https://n.news.naver.com/mnews/article/366/0001176936?sid=101",
+            "source": "조선비즈",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[팜스 뷰] 마운자로 제네릭 이른 채비…한미약품 필두 K-비만약 생존전...",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539752",
+            "source": "apsk.co.kr",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "코오롱티슈진, 'TG-C' 법적 리스크 해소 수순…美 임상 3상에 쏠린 눈",
+            "url": "https://n.news.naver.com/mnews/article/008/0005381597?sid=101",
+            "source": "머니투데이",
+            "date": "2026-07-05"
+          }
+        ],
+        "임상": [
+          {
+            "title": "'TG-C' 부활 분수령… 운명의 美임상 3상",
+            "url": "https://n.news.naver.com/mnews/article/008/0005381644?sid=101",
+            "source": "머니투데이",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "재발 공포 파고든 '비급여 항암치료'…효과 근거는 부족",
+            "url": "http://www.docdocdoc.co.kr/news/articleView.html?idxno=3040673",
+            "source": "청년의사",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "국내사 만성질환 vs 다국적사 항암ㆍ비만…임상개발 '두 갈래'",
+            "url": "http://www.medisobizanews.com/news/articleView.html?idxno=139929",
+            "source": "medisobizanews.com",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "코오롱티슈진, 'TG-C' 법적 리스크 해소 수순…美 임상 3상에 쏠린 눈",
+            "url": "https://n.news.naver.com/mnews/article/008/0005381597?sid=101",
+            "source": "머니투데이",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "\"환각 줄이고 연산비 90%절감\" 딥노이드, 생성형 의료AI 기술연구 논문...",
+            "url": "https://www.catchnews.kr/news/articleView.html?idxno=125732",
+            "source": "catchnews.kr",
+            "date": "2026-07-03"
+          }
+        ],
+        "소세포폐암": [
+          {
+            "title": "식약처, 소세포폐암 치료제 서플루마주 허가",
+            "url": "http://www.docdocdoc.co.kr/news/articleView.html?idxno=3040567",
+            "source": "청년의사",
+            "date": "2026-07-02"
+          },
+          {
+            "title": "식약처, 수입 희귀의약품 '서플루마주' 허가...소세포폐암 치료 선택지...",
+            "url": "http://www.hemophilia.co.kr/news/articleView.html?idxno=42965",
+            "source": "hemophilia.co.kr",
+            "date": "2026-07-02"
+          },
+          {
+            "title": "[헬스 HOT 뉴스] 알보젠코리아, '서플루마' 식약처 허가…\"소세포폐암 1...",
+            "url": "http://www.bizwnews.com/news/articleView.html?idxno=139826",
+            "source": "bizwnews.com",
+            "date": "2026-07-02"
+          },
+          {
+            "title": "서플루마, 확장기 소세포폐암 식약처 품목허가",
+            "url": "http://www.whosaeng.com/171797",
+            "source": "후생신보",
+            "date": "2026-07-02"
+          },
+          {
+            "title": "식약처, 확장병기 소세포폐암 1차 치료제 '서플루마주' 허가",
+            "url": "http://www.kmedinfo.co.kr/news/articleView.html?idxno=96565",
+            "source": "kmedinfo.co.kr",
+            "date": "2026-07-01"
+          }
+        ],
+        "품목": [
+          {
+            "title": "'TG-C' 부활 분수령… 운명의 美임상 3상",
+            "url": "https://n.news.naver.com/mnews/article/008/0005381644?sid=101",
+            "source": "머니투데이",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "P-CAB 제네릭 시장 열릴까…'시장성 vs 리스크' 복잡한 셈법",
+            "url": "https://www.medipana.com/news/articleView.html?idxno=414086",
+            "source": "메디파나뉴스",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[인터뷰] 박성민 큐어스트림 대표 “국내 최초 재사용 패치형 인슐린 펌...",
+            "url": "https://n.news.naver.com/mnews/article/366/0001176936?sid=101",
+            "source": "조선비즈",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[팜스 뷰] 마운자로 제네릭 이른 채비…한미약품 필두 K-비만약 생존전...",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539752",
+            "source": "apsk.co.kr",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "로수젯 ODT, 기존 산정규정 적용될까… 급여평가 향방 주목",
+            "url": "https://www.hitnews.co.kr/news/articleView.html?idxno=77410",
+            "source": "히트뉴스",
+            "date": "2026-07-06"
+          }
+        ],
+        "치료": [
+          {
+            "title": "\"림카토 허가는 시작일 뿐…국내 첫 CAR-T 성공모델 만들 것\"",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539758",
+            "source": "apsk.co.kr",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "재발 공포 파고든 '비급여 항암치료'…효과 근거는 부족",
+            "url": "http://www.docdocdoc.co.kr/news/articleView.html?idxno=3040673",
+            "source": "청년의사",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[팜스 뷰] 마운자로 제네릭 이른 채비…한미약품 필두 K-비만약 생존전...",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539752",
+            "source": "apsk.co.kr",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "갑상선안병증 치료제 경쟁시대…美, 신약 승인",
+            "url": "https://n.news.naver.com/mnews/article/003/0014046739?sid=102",
+            "source": "뉴시스",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "'스타빅·포타겔' 소아 처방 금지…치료 공백에 약국가 긴장감 고조",
+            "url": "https://www.kpanews.co.kr/news/articleView.html?idxno=538008",
+            "source": "약사공론",
+            "date": "2026-07-04"
+          }
+        ],
+        "출시": [
+          {
+            "title": "[기자수첩] 한미 지분戰이 던진 질문…'임성기 시간' 누가 지키나",
+            "url": "https://www.apnews.kr/news/articleView.html?idxno=3049491",
+            "source": "apnews.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "일반의약품 개발 활성화된다",
+            "url": "https://www.bosa.co.kr/news/articleView.html?idxno=3007604",
+            "source": "의약뉴스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "식약처, 비타민 액상·정제 결합 일반약 허용 추진",
+            "url": "http://www.kmedinfo.co.kr/news/articleView.html?idxno=96615",
+            "source": "kmedinfo.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "식약처, 이중제형 비타민 신속 출시 길 열었다",
+            "url": "https://n.news.naver.com/mnews/article/001/0016174104?sid=101",
+            "source": "연합뉴스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "비타민 이중 제형 허용…비타민C 최대분량 2000mg 확대",
+            "url": "https://new.dailypharm.com/user/news/340095?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-03"
+          }
+        ],
+        "불면증": [
+          {
+            "title": "\"불면증ㆍ우울증 치료된다더니\"…식약처, 위해성분 든 해외직구식품 19...",
+            "url": "http://www.foodnews.co.kr/news/articleView.html?idxno=119210",
+            "source": "foodnews.co.kr",
+            "date": "2026-07-02"
+          },
+          {
+            "title": "불면증·우울증·불안증 치료효과 내세운 해외직구식품...소비자 주의 당...",
+            "url": "http://www.intn.co.kr/news/articleView.html?idxno=2051683",
+            "source": "intn.co.kr",
+            "date": "2026-07-02"
+          },
+          {
+            "title": "\"불면증·우울증 치료 효과 내세운 해외 직구 식품 주의\"",
+            "url": "https://n.news.naver.com/mnews/article/657/0000052979?sid=102",
+            "source": "dgmbc.com",
+            "date": "2026-07-02"
+          },
+          {
+            "title": "불면증·우울증 치료 내세운 해외직구 식품서 위해성분 무더기 확인",
+            "url": "https://www.ibabynews.com/news/articleView.html?idxno=152528",
+            "source": "ibabynews.com",
+            "date": "2026-07-02"
+          },
+          {
+            "title": "불면증 등에 효과?... 해외직구제품서 위해 성분 확인",
+            "url": "https://www.safetynews.co.kr/news/articleView.html?idxno=249336",
+            "source": "safetynews.co.kr",
+            "date": "2026-07-02"
+          }
+        ],
+        "시장": [
+          {
+            "title": "P-CAB 제네릭 시장 열릴까…'시장성 vs 리스크' 복잡한 셈법",
+            "url": "https://www.medipana.com/news/articleView.html?idxno=414086",
+            "source": "메디파나뉴스",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[팜스 뷰] 마운자로 제네릭 이른 채비…한미약품 필두 K-비만약 생존전...",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539752",
+            "source": "apsk.co.kr",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[단독] 휴젤, 스킨 부스터 판매 시작…유통망 확대 '시장 1위' 노린다",
+            "url": "https://n.news.naver.com/mnews/article/015/0005306397?sid=105",
+            "source": "한국경제",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "[주요공시] 한화에어로스페이스, 삼성전기, 계룡건설산업, 셀트리온, 서...",
+            "url": "https://www.kdpress.co.kr/news/articleView.html?idxno=206651",
+            "source": "kdpress.co.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "[금주의 제약·바이오 톡톡] 의약품 수출 100억 달러 돌파... 한미약품 차...",
+            "url": "https://www.mediawatch.kr/news/article.html?no=260289",
+            "source": "mediawatch.kr",
+            "date": "2026-07-04"
+          }
+        ],
+        "제품": [
+          {
+            "title": "스멕타 제제 소아 적응증 삭제 추진…\"제품 회수 없어\"",
+            "url": "https://www.dailypharm.com/user/news/340128?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[팜스 뷰] 마운자로 제네릭 이른 채비…한미약품 필두 K-비만약 생존전...",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539752",
+            "source": "apsk.co.kr",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "채규희 365mc 노원점 원장 “GLP-1 후 '브이올렛'으로 미세 관리”",
+            "url": "https://n.news.naver.com/mnews/article/030/0003444478?sid=105",
+            "source": "전자신문",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "“잠 잘 온다고 해서 먹었는데”…열어보니 황당 성분 가득, 뭐길래?",
+            "url": "https://n.news.naver.com/mnews/article/011/0004638231?sid=103",
+            "source": "서울경제",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "출산 필수품 '산모패드'…안전하게 사용 하려면?",
+            "url": "https://n.news.naver.com/mnews/article/003/0014047234?sid=102",
+            "source": "뉴시스",
+            "date": "2026-07-05"
+          }
+        ],
+        "승인": [
+          {
+            "title": "국내사 만성질환 vs 다국적사 항암ㆍ비만…임상개발 '두 갈래'",
+            "url": "http://www.medisobizanews.com/news/articleView.html?idxno=139929",
+            "source": "medisobizanews.com",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "채규희 365mc 노원점 원장 “GLP-1 후 '브이올렛'으로 미세 관리”",
+            "url": "https://n.news.naver.com/mnews/article/030/0003444478?sid=105",
+            "source": "전자신문",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "롯데바이오로직스 송도 1공장 완공으로 대형 CDMO 도약 발판 마련 : 박제...",
+            "url": "https://www.huffingtonpost.kr/article/258443",
+            "source": "huffingtonpost.kr",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "갑상선안병증 치료제 경쟁시대…美, 신약 승인",
+            "url": "https://n.news.naver.com/mnews/article/003/0014046739?sid=102",
+            "source": "뉴시스",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "데이터로 입증한 대웅 펙수클루… 고령 환자 처방 늘려 P-CAB 주도권 굳힌...",
+            "url": "https://www.thepublic.kr/news/articleView.html?idxno=310028",
+            "source": "thepublic.kr",
+            "date": "2026-07-04"
+          }
+        ],
+        "의료기기": [
+          {
+            "title": "[인터뷰] 박성민 큐어스트림 대표 “국내 최초 재사용 패치형 인슐린 펌...",
+            "url": "https://n.news.naver.com/mnews/article/366/0001176936?sid=101",
+            "source": "조선비즈",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "롯데바이오로직스 송도 1공장 완공으로 대형 CDMO 도약 발판 마련 : 박제...",
+            "url": "https://www.huffingtonpost.kr/article/258443",
+            "source": "huffingtonpost.kr",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "\"환각 줄이고 연산비 90%절감\" 딥노이드, 생성형 의료AI 기술연구 논문...",
+            "url": "https://www.catchnews.kr/news/articleView.html?idxno=125732",
+            "source": "catchnews.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "\"성능 입증\"…딥노이드, '의료AI' 연구 논문 발표",
+            "url": "https://n.news.naver.com/mnews/article/003/0014045436?sid=102",
+            "source": "뉴시스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "'필수의료기기 국산화'에 방점…식약처, 수입 의존 의료기기 심사 지원...",
+            "url": "https://www.kpanews.co.kr/news/articleView.html?idxno=537954",
+            "source": "약사공론",
+            "date": "2026-07-03"
+          }
+        ],
+        "데이비고": [
+          {
+            "title": "SK케미칼·한국에자이, 불면증 신약 '데이비고' 판매 협력",
+            "url": "https://www.asiatime.co.kr/article/20260701500223",
+            "source": "asiatime.co.kr",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "SK케미칼, 한국에자이와 국내 첫 ‘오렉신 차단’ 불면증 신약 ‘데이비...",
+            "url": "https://n.news.naver.com/mnews/article/015/0005304843?sid=105",
+            "source": "한국경제",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "SK케미칼, 한국에자이와 불면증 신약 '데이비고' 판매 계약",
+            "url": "http://www.medisobizanews.com/news/articleView.html?idxno=139815",
+            "source": "medisobizanews.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "SK케미칼, 한국에자이와 국내 첫 '오렉신 차단' 불면증 신약 '데이비고...",
+            "url": "https://n.news.naver.com/mnews/article/277/0005783749?sid=101",
+            "source": "아시아경제",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "SK케미칼, 한국에자이와 불면증 신약 ‘데이비고’ 코프로모션 계약 체...",
+            "url": "https://www.medigatenews.com/news/2751484874",
+            "source": "메디게이트뉴스",
+            "date": "2026-07-01"
+          }
+        ],
+        "비타민": [
+          {
+            "title": "식약처, 이중제형 비타민 심사 간소화한다",
+            "url": "https://n.news.naver.com/mnews/article/011/0004638206?sid=105",
+            "source": "서울경제",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "알약·액상 함께 먹는 비타민 나온다…식약처, 기준 개정 추진",
+            "url": "http://www.medisobizanews.com/news/articleView.html?idxno=139910",
+            "source": "medisobizanews.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "식약처, 비타민 액상·정제 결합 일반약 허용 추진",
+            "url": "http://www.kmedinfo.co.kr/news/articleView.html?idxno=96615",
+            "source": "kmedinfo.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "식약처, 이중제형 비타민 신속 출시 길 열었다",
+            "url": "https://n.news.naver.com/mnews/article/001/0016174104?sid=101",
+            "source": "연합뉴스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "비타민 이중 제형 허용…비타민C 최대분량 2000mg 확대",
+            "url": "https://new.dailypharm.com/user/news/340095?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-03"
+          }
+        ],
+        "환자": [
+          {
+            "title": "美·유럽 퇴출 위기 '이 약'…76명 사용한 국내는?",
+            "url": "https://n.news.naver.com/mnews/article/003/0014047427?sid=102",
+            "source": "뉴시스",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "갑상선안병증 치료제 경쟁시대…美, 신약 승인",
+            "url": "https://n.news.naver.com/mnews/article/003/0014046739?sid=102",
+            "source": "뉴시스",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "데이터로 입증한 대웅 펙수클루… 고령 환자 처방 늘려 P-CAB 주도권 굳힌...",
+            "url": "https://www.thepublic.kr/news/articleView.html?idxno=310028",
+            "source": "thepublic.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "JW중외 통풍신약 허가신청 준비…식약처와 대면회의",
+            "url": "https://new.dailypharm.com/user/news/340081?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한국GSK \"아렉스비, 18~49세 고위험군 적응증 확대\"",
+            "url": "https://n.news.naver.com/mnews/article/003/0014043820?sid=102",
+            "source": "뉴시스",
+            "date": "2026-07-02"
+          }
+        ],
+        "식품의약품안전처로": [
+          {
+            "title": "\"림카토 허가는 시작일 뿐…국내 첫 CAR-T 성공모델 만들 것\"",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539758",
+            "source": "apsk.co.kr",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[인터뷰] 박성민 큐어스트림 대표 “국내 최초 재사용 패치형 인슐린 펌...",
+            "url": "https://n.news.naver.com/mnews/article/366/0001176936?sid=101",
+            "source": "조선비즈",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[단독] 휴젤, 스킨 부스터 판매 시작…유통망 확대 '시장 1위' 노린다",
+            "url": "https://n.news.naver.com/mnews/article/015/0005306397?sid=105",
+            "source": "한국경제",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "갑상선안병증 치료제 경쟁시대…美, 신약 승인",
+            "url": "https://n.news.naver.com/mnews/article/003/0014046739?sid=102",
+            "source": "뉴시스",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "제도권 들어온 커프리스 혈압계…스카이랩스 상장 후 과제는 '매출'",
+            "url": "http://www.docdocdoc.co.kr/news/articleView.html?idxno=3040585",
+            "source": "청년의사",
+            "date": "2026-07-03"
+          }
+        ],
+        "신청": [
+          {
+            "title": "'스타빅·포타겔' 소아 처방 왜 막히나…식약처, 적응증 변경 검토",
+            "url": "https://www.kpanews.co.kr/news/articleView.html?idxno=538047",
+            "source": "약사공론",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "스멕타 제제 소아 적응증 삭제 추진…\"제품 회수 없어\"",
+            "url": "https://www.dailypharm.com/user/news/340128?REFERER=NP",
+            "source": "데일리팜",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[팜스 뷰] 마운자로 제네릭 이른 채비…한미약품 필두 K-비만약 생존전...",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539752",
+            "source": "apsk.co.kr",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[주요공시] 한화에어로스페이스, 삼성전기, 계룡건설산업, 셀트리온, 서...",
+            "url": "https://www.kdpress.co.kr/news/articleView.html?idxno=206651",
+            "source": "kdpress.co.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "[바이오 핫클릭] 한미약품·SK바이오팜, '혁신 선도기업' 부상",
+            "url": "http://www.the-biz.co.kr/news/articleView.html?idxno=723711",
+            "source": "the-biz.co.kr",
+            "date": "2026-07-04"
+          }
+        ],
+        "품목허": [
+          {
+            "title": "'TG-C' 부활 분수령… 운명의 美임상 3상",
+            "url": "https://n.news.naver.com/mnews/article/008/0005381644?sid=101",
+            "source": "머니투데이",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "P-CAB 제네릭 시장 열릴까…'시장성 vs 리스크' 복잡한 셈법",
+            "url": "https://www.medipana.com/news/articleView.html?idxno=414086",
+            "source": "메디파나뉴스",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[인터뷰] 박성민 큐어스트림 대표 “국내 최초 재사용 패치형 인슐린 펌...",
+            "url": "https://n.news.naver.com/mnews/article/366/0001176936?sid=101",
+            "source": "조선비즈",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[팜스 뷰] 마운자로 제네릭 이른 채비…한미약품 필두 K-비만약 생존전...",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539752",
+            "source": "apsk.co.kr",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "코오롱티슈진, 'TG-C' 법적 리스크 해소 수순…美 임상 3상에 쏠린 눈",
+            "url": "https://n.news.naver.com/mnews/article/008/0005381597?sid=101",
+            "source": "머니투데이",
+            "date": "2026-07-05"
+          }
+        ],
+        "확대": [
+          {
+            "title": "국내사 만성질환 vs 다국적사 항암ㆍ비만…임상개발 '두 갈래'",
+            "url": "http://www.medisobizanews.com/news/articleView.html?idxno=139929",
+            "source": "medisobizanews.com",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[단독] 휴젤, 스킨 부스터 판매 시작…유통망 확대 '시장 1위' 노린다",
+            "url": "https://n.news.naver.com/mnews/article/015/0005306397?sid=105",
+            "source": "한국경제",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "[주요공시] 한화에어로스페이스, 삼성전기, 계룡건설산업, 셀트리온, 서...",
+            "url": "https://www.kdpress.co.kr/news/articleView.html?idxno=206651",
+            "source": "kdpress.co.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "알약·액상 함께 먹는 비타민 나온다…식약처, 기준 개정 추진",
+            "url": "http://www.medisobizanews.com/news/articleView.html?idxno=139910",
+            "source": "medisobizanews.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "식약처, 비타민 액상·정제 결합 일반약 허용 추진",
+            "url": "http://www.kmedinfo.co.kr/news/articleView.html?idxno=96615",
+            "source": "kmedinfo.co.kr",
+            "date": "2026-07-03"
+          }
+        ],
+        "기반": [
+          {
+            "title": "[주요공시] 한화에어로스페이스, 삼성전기, 계룡건설산업, 셀트리온, 서...",
+            "url": "https://www.kdpress.co.kr/news/articleView.html?idxno=206651",
+            "source": "kdpress.co.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "\"환각 줄이고 연산비 90%절감\" 딥노이드, 생성형 의료AI 기술연구 논문...",
+            "url": "https://www.catchnews.kr/news/articleView.html?idxno=125732",
+            "source": "catchnews.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "\"성능 입증\"…딥노이드, '의료AI' 연구 논문 발표",
+            "url": "https://n.news.naver.com/mnews/article/003/0014045436?sid=102",
+            "source": "뉴시스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "임상시험 승인 10일로 단축… 의약품 원료물질 인증제 도입",
+            "url": "https://n.news.naver.com/mnews/article/008/0005380926?sid=101",
+            "source": "머니투데이",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "대웅제약 펙수클루, 실제 진료 기반 연구서 안전성 및 유효성 입증",
+            "url": "https://www.pharmnews.com/news/articleView.html?idxno=304650",
+            "source": "팜뉴스",
+            "date": "2026-07-03"
+          }
+        ],
+        "글로벌": [
+          {
+            "title": "[팜스 뷰] 마운자로 제네릭 이른 채비…한미약품 필두 K-비만약 생존전...",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539752",
+            "source": "apsk.co.kr",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "[주요공시] 한화에어로스페이스, 삼성전기, 계룡건설산업, 셀트리온, 서...",
+            "url": "https://www.kdpress.co.kr/news/articleView.html?idxno=206651",
+            "source": "kdpress.co.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "[바이오 핫클릭] 한미약품·SK바이오팜, '혁신 선도기업' 부상",
+            "url": "http://www.the-biz.co.kr/news/articleView.html?idxno=723711",
+            "source": "the-biz.co.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "숨 쉬는 것조차 힘든 질환…20년 만에 새 길 연 '윈레브에어' [약전약후...",
+            "url": "https://n.news.naver.com/mnews/article/421/0009040545?sid=103",
+            "source": "뉴스1",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "바이오솔루션, 카티라이프 中 상업화 성공…글로벌 확장 시작했다",
+            "url": "https://n.news.naver.com/mnews/article/008/0005381275?sid=101",
+            "source": "머니투데이",
+            "date": "2026-07-03"
+          }
+        ],
+        "녹십자": [
+          {
+            "title": "GC녹십자, 수두백신 '배리셀라주' 2도즈 국내 임상 3상 IND 승인",
+            "url": "https://www.pharmnews.com/news/articleView.html?idxno=304617",
+            "source": "팜뉴스",
+            "date": "2026-07-02"
+          },
+          {
+            "title": "식약처, GC녹십자 수두백신 '배리셀라주' 2도즈 국내 임상 3상 IND 승인",
+            "url": "https://www.m-i.kr/news/articleView.html?idxno=1387555",
+            "source": "m-i.kr",
+            "date": "2026-07-02"
+          },
+          {
+            "title": "GC녹십자, '배리셀라주' 2도즈 임상 3상 승인…다국가 검증 공정 가동",
+            "url": "https://www.ziksir.com/news/articleView.html?idxno=138864",
+            "source": "ziksir.com",
+            "date": "2026-07-02"
+          },
+          {
+            "title": "GC녹십자 수두 백신 '배리셀라주', 2회 접종 임상 3상 식약처 승인",
+            "url": "https://www.sentv.co.kr/article/view/sentv202607020170",
+            "source": "sentv.co.kr",
+            "date": "2026-07-02"
+          },
+          {
+            "title": "동국제약·GC녹십자, 글로벌 시장 공략 속도...성장 동력 확보 나서",
+            "url": "https://www.news2day.co.kr/article/20260702500150",
+            "source": "news2day.co.kr",
+            "date": "2026-07-02"
+          }
+        ],
+        "절차": [
+          {
+            "title": "[수출기업 생존기] ② 한스바이오메드 \"K-의료 수요 늘어나는데\"…인허...",
+            "url": "https://www.newspim.com/news/view/20260628000103",
+            "source": "newspim.com",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "롯데바이오로직스 송도 1공장 완공으로 대형 CDMO 도약 발판 마련 : 박제...",
+            "url": "https://www.huffingtonpost.kr/article/258443",
+            "source": "huffingtonpost.kr",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "[금주의 제약·바이오 톡톡] 의약품 수출 100억 달러 돌파... 한미약품 차...",
+            "url": "https://www.mediawatch.kr/news/article.html?no=260289",
+            "source": "mediawatch.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "식약처, 액상·정제 '이중제형' 비타민 신속 출시 지원",
+            "url": "https://n.news.naver.com/mnews/article/003/0014044609?sid=102",
+            "source": "뉴시스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "식약처, 액상·정제 '이중제형' 비타민 신속 출시 지원",
+            "url": "https://www.widedaily.com/news/articleView.html?idxno=296965",
+            "source": "widedaily.com",
+            "date": "2026-07-03"
+          }
+        ],
+        "표준제조기준": [
+          {
+            "title": "식약처, 이중제형 비타민 심사 간소화한다",
+            "url": "https://n.news.naver.com/mnews/article/011/0004638206?sid=105",
+            "source": "서울경제",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "일반의약품 개발 활성화된다",
+            "url": "https://www.bosa.co.kr/news/articleView.html?idxno=3007604",
+            "source": "의약뉴스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "알약·액상 함께 먹는 비타민 나온다…식약처, 기준 개정 추진",
+            "url": "http://www.medisobizanews.com/news/articleView.html?idxno=139910",
+            "source": "medisobizanews.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "식약처, 비타민 액상·정제 결합 일반약 허용 추진",
+            "url": "http://www.kmedinfo.co.kr/news/articleView.html?idxno=96615",
+            "source": "kmedinfo.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "식약처, 이중제형 비타민 신속 출시 길 열었다",
+            "url": "https://n.news.naver.com/mnews/article/001/0016174104?sid=101",
+            "source": "연합뉴스",
+            "date": "2026-07-03"
+          }
+        ],
+        "케미칼": [
+          {
+            "title": "SK케미칼·한국에자이, 불면증 신약 '데이비고' 판매 협력",
+            "url": "https://www.asiatime.co.kr/article/20260701500223",
+            "source": "asiatime.co.kr",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "SK케미칼, 한국에자이와 국내 첫 ‘오렉신 차단’ 불면증 신약 ‘데이비...",
+            "url": "https://n.news.naver.com/mnews/article/015/0005304843?sid=105",
+            "source": "한국경제",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "SK케미칼, 한국에자이와 불면증 신약 '데이비고' 판매 계약",
+            "url": "http://www.medisobizanews.com/news/articleView.html?idxno=139815",
+            "source": "medisobizanews.com",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "SK케미칼, 한국에자이와 국내 첫 '오렉신 차단' 불면증 신약 '데이비고...",
+            "url": "https://n.news.naver.com/mnews/article/277/0005783749?sid=101",
+            "source": "아시아경제",
+            "date": "2026-07-01"
+          },
+          {
+            "title": "SK케미칼, 한국에자이와 불면증 신약 ‘데이비고’ 코프로모션 계약 체...",
+            "url": "https://www.medigatenews.com/news/2751484874",
+            "source": "메디게이트뉴스",
+            "date": "2026-07-01"
+          }
+        ]
+      }
+    },
+    {
+      "agency": "정책일반",
+      "label": "정책일반",
+      "article_count": 99,
+      "keywords": [
+        {
+          "text": "한화생명",
+          "count": 165
+        },
+        {
+          "text": "특약",
+          "count": 149
+        },
+        {
+          "text": "선별급여",
+          "count": 142
+        },
+        {
+          "text": "배타적사용권",
+          "count": 67
+        },
+        {
+          "text": "치료",
+          "count": 52
+        },
+        {
+          "text": "시그니처",
+          "count": 50
+        },
+        {
+          "text": "보장",
+          "count": 45
+        },
+        {
+          "text": "암주요치료보장",
+          "count": 45
+        },
+        {
+          "text": "건강보험",
+          "count": 44
+        },
+        {
+          "text": "환자",
+          "count": 44
+        },
+        {
+          "text": "획득",
+          "count": 39
+        },
+        {
+          "text": "암보험",
+          "count": 37
+        },
+        {
+          "text": "부담",
+          "count": 31
+        },
+        {
+          "text": "급여",
+          "count": 30
+        },
+        {
+          "text": "통합보험",
+          "count": 24
+        },
+        {
+          "text": "신약",
+          "count": 22
+        },
+        {
+          "text": "치료비",
+          "count": 21
+        },
+        {
+          "text": "생명보험협회로",
+          "count": 19
+        },
+        {
+          "text": "탑재",
+          "count": 19
+        },
+        {
+          "text": "등재",
+          "count": 18
+        },
+        {
+          "text": "배타적",
+          "count": 18
+        },
+        {
+          "text": "주요치료",
+          "count": 17
+        },
+        {
+          "text": "적용",
+          "count": 15
+        },
+        {
+          "text": "사용권",
+          "count": 14
+        },
+        {
+          "text": "획득한",
+          "count": 13
+        },
+        {
+          "text": "개발",
+          "count": 12
+        },
+        {
+          "text": "신규",
+          "count": 12
+        },
+        {
+          "text": "스카이랩스",
+          "count": 11
+        },
+        {
+          "text": "업계",
+          "count": 11
+        },
+        {
+          "text": "공백",
+          "count": 10
+        }
+      ],
+      "newsByKeyword": {
+        "한화생명": [
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 9개월 획득",
+            "url": "https://www.thepublic.kr/news/articleView.html?idxno=310099",
+            "source": "thepublic.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "\"보장 공백 메웠다\"…한화생명, 선별급여 암특약 배타적사용권 획득",
+            "url": "https://www.apnews.kr/news/articleView.html?idxno=3049499",
+            "source": "apnews.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "한화생명, 암 치료 '보장 사각지대' 메운다…선별급여 특약 배타적 사용...",
+            "url": "https://www.thefairnews.co.kr/news/articleView.html?idxno=81175",
+            "source": "thefairnews.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "\"건보 적용돼도 수천만원 폭탄\" 숨은 암 치료비 공백, 한화생명이 깼다",
+            "url": "http://www.dailysmart.co.kr/news/articleView.html?idxno=126419",
+            "source": "dailysmart.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/030/0003444124?sid=101",
+            "source": "전자신문",
+            "date": "2026-07-03"
+          }
+        ],
+        "특약": [
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 9개월 획득",
+            "url": "https://www.thepublic.kr/news/articleView.html?idxno=310099",
+            "source": "thepublic.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "\"보장 공백 메웠다\"…한화생명, 선별급여 암특약 배타적사용권 획득",
+            "url": "https://www.apnews.kr/news/articleView.html?idxno=3049499",
+            "source": "apnews.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "한화생명, 암 치료 '보장 사각지대' 메운다…선별급여 특약 배타적 사용...",
+            "url": "https://www.thefairnews.co.kr/news/articleView.html?idxno=81175",
+            "source": "thefairnews.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/030/0003444124?sid=101",
+            "source": "전자신문",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 선별급여 암 주요치료 특약 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/277/0005785047?sid=101",
+            "source": "아시아경제",
+            "date": "2026-07-03"
+          }
+        ],
+        "선별급여": [
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 9개월 획득",
+            "url": "https://www.thepublic.kr/news/articleView.html?idxno=310099",
+            "source": "thepublic.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "\"보장 공백 메웠다\"…한화생명, 선별급여 암특약 배타적사용권 획득",
+            "url": "https://www.apnews.kr/news/articleView.html?idxno=3049499",
+            "source": "apnews.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "한화생명, 암 치료 '보장 사각지대' 메운다…선별급여 특약 배타적 사용...",
+            "url": "https://www.thefairnews.co.kr/news/articleView.html?idxno=81175",
+            "source": "thefairnews.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "\"건보 적용돼도 수천만원 폭탄\" 숨은 암 치료비 공백, 한화생명이 깼다",
+            "url": "http://www.dailysmart.co.kr/news/articleView.html?idxno=126419",
+            "source": "dailysmart.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/030/0003444124?sid=101",
+            "source": "전자신문",
+            "date": "2026-07-03"
+          }
+        ],
+        "배타적사용권": [
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 9개월 획득",
+            "url": "https://www.thepublic.kr/news/articleView.html?idxno=310099",
+            "source": "thepublic.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "\"보장 공백 메웠다\"…한화생명, 선별급여 암특약 배타적사용권 획득",
+            "url": "https://www.apnews.kr/news/articleView.html?idxno=3049499",
+            "source": "apnews.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/030/0003444124?sid=101",
+            "source": "전자신문",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 선별급여 암 주요치료 특약 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/277/0005785047?sid=101",
+            "source": "아시아경제",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 암환자 부담 낮추는 선별급여 보장 특약 '배타적사용권' 획득",
+            "url": "https://n.news.naver.com/mnews/article/421/0009038805?sid=101",
+            "source": "뉴스1",
+            "date": "2026-07-03"
+          }
+        ],
+        "치료": [
+          {
+            "title": "AI '1%' 보상 vs DTx 고시가 '19배'…혁신기술 고무줄 가격 제동 불가피",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539755",
+            "source": "apsk.co.kr",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 9개월 획득",
+            "url": "https://www.thepublic.kr/news/articleView.html?idxno=310099",
+            "source": "thepublic.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "\"보장 공백 메웠다\"…한화생명, 선별급여 암특약 배타적사용권 획득",
+            "url": "https://www.apnews.kr/news/articleView.html?idxno=3049499",
+            "source": "apnews.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "급여 삭제 위기 넘긴 레가론…수요 회복에 공급 '숨 고르기'",
+            "url": "https://www.kpanews.co.kr/news/articleView.html?idxno=537989",
+            "source": "약사공론",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "스카이랩스, '카트 비피 프로' 약물 임상 활용 가능성 국제 무대 소개",
+            "url": "http://www.docdocdoc.co.kr/news/articleView.html?idxno=3040620",
+            "source": "청년의사",
+            "date": "2026-07-03"
+          }
+        ],
+        "시그니처": [
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 9개월 획득",
+            "url": "https://www.thepublic.kr/news/articleView.html?idxno=310099",
+            "source": "thepublic.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/030/0003444124?sid=101",
+            "source": "전자신문",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 선별급여 암 주요치료 특약 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/277/0005785047?sid=101",
+            "source": "아시아경제",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 선별급여 암 주요치료 특약 배타적사용권 9개월",
+            "url": "https://n.news.naver.com/mnews/article/001/0016174124?sid=101",
+            "source": "연합뉴스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 선별급여 암 주요치료 특약 배타적사용권 획득",
+            "url": "https://www.ezyeconomy.com/news/articleView.html?idxno=237056",
+            "source": "ezyeconomy.com",
+            "date": "2026-07-03"
+          }
+        ],
+        "보장": [
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 9개월 획득",
+            "url": "https://www.thepublic.kr/news/articleView.html?idxno=310099",
+            "source": "thepublic.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "\"보장 공백 메웠다\"…한화생명, 선별급여 암특약 배타적사용권 획득",
+            "url": "https://www.apnews.kr/news/articleView.html?idxno=3049499",
+            "source": "apnews.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "한화생명, 암 치료 '보장 사각지대' 메운다…선별급여 특약 배타적 사용...",
+            "url": "https://www.thefairnews.co.kr/news/articleView.html?idxno=81175",
+            "source": "thefairnews.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/030/0003444124?sid=101",
+            "source": "전자신문",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 선별급여 암 주요치료 특약 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/277/0005785047?sid=101",
+            "source": "아시아경제",
+            "date": "2026-07-03"
+          }
+        ],
+        "암주요치료보장": [
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 9개월 획득",
+            "url": "https://www.thepublic.kr/news/articleView.html?idxno=310099",
+            "source": "thepublic.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "한화생명, 암 치료 '보장 사각지대' 메운다…선별급여 특약 배타적 사용...",
+            "url": "https://www.thefairnews.co.kr/news/articleView.html?idxno=81175",
+            "source": "thefairnews.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/030/0003444124?sid=101",
+            "source": "전자신문",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 선별급여 암 주요치료 특약 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/277/0005785047?sid=101",
+            "source": "아시아경제",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 암환자 부담 낮추는 선별급여 보장 특약 '배타적사용권' 획득",
+            "url": "https://n.news.naver.com/mnews/article/421/0009038805?sid=101",
+            "source": "뉴스1",
+            "date": "2026-07-03"
+          }
+        ],
+        "건강보험": [
+          {
+            "title": "스카이랩스, 반지형 혈압계 앞세워 글로벌 임상 데이터 플랫폼 공략",
+            "url": "https://n.news.naver.com/mnews/article/421/0009041006?sid=103",
+            "source": "뉴스1",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 9개월 획득",
+            "url": "https://www.thepublic.kr/news/articleView.html?idxno=310099",
+            "source": "thepublic.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "\"보장 공백 메웠다\"…한화생명, 선별급여 암특약 배타적사용권 획득",
+            "url": "https://www.apnews.kr/news/articleView.html?idxno=3049499",
+            "source": "apnews.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "스카이랩스, '카트 비피 프로' 약물 임상 활용 가능성 국제 무대 소개",
+            "url": "http://www.docdocdoc.co.kr/news/articleView.html?idxno=3040620",
+            "source": "청년의사",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "스카이랩스, '카트 비피 프로' 데이터 플랫폼 가능성 제시",
+            "url": "https://www.rapportian.com/news/articleView.html?idxno=237816",
+            "source": "라포르시안",
+            "date": "2026-07-03"
+          }
+        ],
+        "환자": [
+          {
+            "title": "스카이랩스, 반지형 혈압계 앞세워 글로벌 임상 데이터 플랫폼 공략",
+            "url": "https://n.news.naver.com/mnews/article/421/0009041006?sid=103",
+            "source": "뉴스1",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "\"보장 공백 메웠다\"…한화생명, 선별급여 암특약 배타적사용권 획득",
+            "url": "https://www.apnews.kr/news/articleView.html?idxno=3049499",
+            "source": "apnews.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "스카이랩스, 디지털 바이오마커 서밋서 데이터 플랫폼 사업 공개",
+            "url": "https://n.news.naver.com/mnews/article/014/0005543536?sid=103",
+            "source": "파이낸셜뉴스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 암 치료 '보장 사각지대' 메운다…선별급여 특약 배타적 사용...",
+            "url": "https://www.thefairnews.co.kr/news/articleView.html?idxno=81175",
+            "source": "thefairnews.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "\"건보 적용돼도 수천만원 폭탄\" 숨은 암 치료비 공백, 한화생명이 깼다",
+            "url": "http://www.dailysmart.co.kr/news/articleView.html?idxno=126419",
+            "source": "dailysmart.co.kr",
+            "date": "2026-07-03"
+          }
+        ],
+        "획득": [
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 9개월 획득",
+            "url": "https://www.thepublic.kr/news/articleView.html?idxno=310099",
+            "source": "thepublic.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "\"보장 공백 메웠다\"…한화생명, 선별급여 암특약 배타적사용권 획득",
+            "url": "https://www.apnews.kr/news/articleView.html?idxno=3049499",
+            "source": "apnews.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/030/0003444124?sid=101",
+            "source": "전자신문",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 선별급여 암 주요치료 특약 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/277/0005785047?sid=101",
+            "source": "아시아경제",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 암환자 부담 낮추는 선별급여 보장 특약 '배타적사용권' 획득",
+            "url": "https://n.news.naver.com/mnews/article/421/0009038805?sid=101",
+            "source": "뉴스1",
+            "date": "2026-07-03"
+          }
+        ],
+        "암보험": [
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 9개월 획득",
+            "url": "https://www.thepublic.kr/news/articleView.html?idxno=310099",
+            "source": "thepublic.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "\"보장 공백 메웠다\"…한화생명, 선별급여 암특약 배타적사용권 획득",
+            "url": "https://www.apnews.kr/news/articleView.html?idxno=3049499",
+            "source": "apnews.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/030/0003444124?sid=101",
+            "source": "전자신문",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 선별급여 암 주요치료 특약 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/277/0005785047?sid=101",
+            "source": "아시아경제",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 선별급여 암 주요치료 특약 배타적사용권 9개월",
+            "url": "https://n.news.naver.com/mnews/article/001/0016174124?sid=101",
+            "source": "연합뉴스",
+            "date": "2026-07-03"
+          }
+        ],
+        "부담": [
+          {
+            "title": "\"보장 공백 메웠다\"…한화생명, 선별급여 암특약 배타적사용권 획득",
+            "url": "https://www.apnews.kr/news/articleView.html?idxno=3049499",
+            "source": "apnews.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "한화생명, 암 치료 '보장 사각지대' 메운다…선별급여 특약 배타적 사용...",
+            "url": "https://www.thefairnews.co.kr/news/articleView.html?idxno=81175",
+            "source": "thefairnews.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "\"건보 적용돼도 수천만원 폭탄\" 숨은 암 치료비 공백, 한화생명이 깼다",
+            "url": "http://www.dailysmart.co.kr/news/articleView.html?idxno=126419",
+            "source": "dailysmart.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 암환자 부담 낮추는 선별급여 보장 특약 '배타적사용권' 획득",
+            "url": "https://n.news.naver.com/mnews/article/421/0009038805?sid=101",
+            "source": "뉴스1",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 암환자 '선별급여 치료 특약' 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/003/0014044614?sid=101",
+            "source": "뉴시스",
+            "date": "2026-07-03"
+          }
+        ],
+        "급여": [
+          {
+            "title": "AI '1%' 보상 vs DTx 고시가 '19배'…혁신기술 고무줄 가격 제동 불가피",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539755",
+            "source": "apsk.co.kr",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "스카이랩스, 반지형 혈압계 앞세워 글로벌 임상 데이터 플랫폼 공략",
+            "url": "https://n.news.naver.com/mnews/article/421/0009041006?sid=103",
+            "source": "뉴스1",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 9개월 획득",
+            "url": "https://www.thepublic.kr/news/articleView.html?idxno=310099",
+            "source": "thepublic.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "\"보장 공백 메웠다\"…한화생명, 선별급여 암특약 배타적사용권 획득",
+            "url": "https://www.apnews.kr/news/articleView.html?idxno=3049499",
+            "source": "apnews.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "급여 삭제 위기 넘긴 레가론…수요 회복에 공급 '숨 고르기'",
+            "url": "https://www.kpanews.co.kr/news/articleView.html?idxno=537989",
+            "source": "약사공론",
+            "date": "2026-07-04"
+          }
+        ],
+        "통합보험": [
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 9개월 획득",
+            "url": "https://www.thepublic.kr/news/articleView.html?idxno=310099",
+            "source": "thepublic.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/030/0003444124?sid=101",
+            "source": "전자신문",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 선별급여 암 주요치료 특약 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/277/0005785047?sid=101",
+            "source": "아시아경제",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 선별급여 암 주요치료 특약 배타적사용권 9개월",
+            "url": "https://n.news.naver.com/mnews/article/001/0016174124?sid=101",
+            "source": "연합뉴스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 선별급여 암 주요치료 특약 배타적사용권 획득",
+            "url": "https://www.ezyeconomy.com/news/articleView.html?idxno=237056",
+            "source": "ezyeconomy.com",
+            "date": "2026-07-03"
+          }
+        ],
+        "신약": [
+          {
+            "title": "스카이랩스, 반지형 혈압계 앞세워 글로벌 임상 데이터 플랫폼 공략",
+            "url": "https://n.news.naver.com/mnews/article/421/0009041006?sid=103",
+            "source": "뉴스1",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "스카이랩스, '카트 비피 프로' 약물 임상 활용 가능성 국제 무대 소개",
+            "url": "http://www.docdocdoc.co.kr/news/articleView.html?idxno=3040620",
+            "source": "청년의사",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "스카이랩스, '카트 비피 프로' 데이터 플랫폼 가능성 제시",
+            "url": "https://www.rapportian.com/news/articleView.html?idxno=237816",
+            "source": "라포르시안",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "디지털치료기기 급여 기준 제안…\"효과 입증 기술부터 적용\"",
+            "url": "https://www.medipana.com/news/articleView.html?idxno=414050",
+            "source": "메디파나뉴스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "스카이랩스, 반지형 혈압계로 글로벌 임상 시장 공략",
+            "url": "https://www.mdtoday.co.kr/news/articleView.html?idxno=603563",
+            "source": "메디컬투데이",
+            "date": "2026-07-03"
+          }
+        ],
+        "치료비": [
+          {
+            "title": "\"건보 적용돼도 수천만원 폭탄\" 숨은 암 치료비 공백, 한화생명이 깼다",
+            "url": "http://www.dailysmart.co.kr/news/articleView.html?idxno=126419",
+            "source": "dailysmart.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 암환자 부담 낮추는 선별급여 보장 특약 '배타적사용권' 획득",
+            "url": "https://n.news.naver.com/mnews/article/421/0009038805?sid=101",
+            "source": "뉴스1",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 암환자 '선별급여 치료 특약' 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/003/0014044614?sid=101",
+            "source": "뉴시스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 9개월 배타적사용권 획득",
+            "url": "https://www.cnbnews.com/news/articleView.html?idxno=1006807",
+            "source": "cnbnews.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "\"암치료비 부담 덜어줄 선별급여 보장강화\" 한화생명, 업계최초 '9개월...",
+            "url": "https://www.catchnews.kr/news/articleView.html?idxno=125727",
+            "source": "catchnews.kr",
+            "date": "2026-07-03"
+          }
+        ],
+        "생명보험협회로": [
+          {
+            "title": "한화생명, 암환자 부담 낮추는 선별급여 보장 특약 '배타적사용권' 획득",
+            "url": "https://n.news.naver.com/mnews/article/421/0009038805?sid=101",
+            "source": "뉴스1",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 선별급여 암 치료 특약으로 9개월 배타적사용권 획득",
+            "url": "http://www.fins.co.kr/news/articleView.html?idxno=109027",
+            "source": "fins.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 암환자 '선별급여 치료 특약' 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/003/0014044614?sid=101",
+            "source": "뉴시스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 암보험 ‘선별급여’ 공백 겨냥…배타적사용권 9개월 확보",
+            "url": "https://www.viva100.com/article/20260703500108",
+            "source": "viva100.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 암보험 '숨은 사각지대' 없앴다",
+            "url": "https://www.tournews21.com/news/articleView.html?idxno=137839",
+            "source": "tournews21.com",
+            "date": "2026-07-03"
+          }
+        ],
+        "탑재": [
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 9개월 획득",
+            "url": "https://www.thepublic.kr/news/articleView.html?idxno=310099",
+            "source": "thepublic.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/030/0003444124?sid=101",
+            "source": "전자신문",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 선별급여 암 주요치료 특약 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/277/0005785047?sid=101",
+            "source": "아시아경제",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 선별급여 암 주요치료 특약 배타적사용권 9개월",
+            "url": "https://n.news.naver.com/mnews/article/001/0016174124?sid=101",
+            "source": "연합뉴스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 선별급여 암 주요치료 특약 배타적사용권 획득",
+            "url": "https://www.ezyeconomy.com/news/articleView.html?idxno=237056",
+            "source": "ezyeconomy.com",
+            "date": "2026-07-03"
+          }
+        ],
+        "등재": [
+          {
+            "title": "AI '1%' 보상 vs DTx 고시가 '19배'…혁신기술 고무줄 가격 제동 불가피",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539755",
+            "source": "apsk.co.kr",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "스카이랩스, 반지형 혈압계 앞세워 글로벌 임상 데이터 플랫폼 공략",
+            "url": "https://n.news.naver.com/mnews/article/421/0009041006?sid=103",
+            "source": "뉴스1",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "스카이랩스, '카트 비피 프로' 약물 임상 활용 가능성 국제 무대 소개",
+            "url": "http://www.docdocdoc.co.kr/news/articleView.html?idxno=3040620",
+            "source": "청년의사",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "스카이랩스, '카트 비피 프로' 데이터 플랫폼 가능성 제시",
+            "url": "https://www.rapportian.com/news/articleView.html?idxno=237816",
+            "source": "라포르시안",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "디지털치료기기 급여 기준 제안…\"효과 입증 기술부터 적용\"",
+            "url": "https://www.medipana.com/news/articleView.html?idxno=414050",
+            "source": "메디파나뉴스",
+            "date": "2026-07-03"
+          }
+        ],
+        "배타적": [
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 9개월 획득",
+            "url": "https://www.thepublic.kr/news/articleView.html?idxno=310099",
+            "source": "thepublic.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "\"보장 공백 메웠다\"…한화생명, 선별급여 암특약 배타적사용권 획득",
+            "url": "https://www.apnews.kr/news/articleView.html?idxno=3049499",
+            "source": "apnews.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "한화생명, 암 치료 '보장 사각지대' 메운다…선별급여 특약 배타적 사용...",
+            "url": "https://www.thefairnews.co.kr/news/articleView.html?idxno=81175",
+            "source": "thefairnews.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/030/0003444124?sid=101",
+            "source": "전자신문",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 선별급여 암 주요치료 특약 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/277/0005785047?sid=101",
+            "source": "아시아경제",
+            "date": "2026-07-03"
+          }
+        ],
+        "주요치료": [
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 9개월 획득",
+            "url": "https://www.thepublic.kr/news/articleView.html?idxno=310099",
+            "source": "thepublic.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "한화생명, 암 치료 '보장 사각지대' 메운다…선별급여 특약 배타적 사용...",
+            "url": "https://www.thefairnews.co.kr/news/articleView.html?idxno=81175",
+            "source": "thefairnews.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/030/0003444124?sid=101",
+            "source": "전자신문",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 선별급여 암 주요치료 특약 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/277/0005785047?sid=101",
+            "source": "아시아경제",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 암환자 부담 낮추는 선별급여 보장 특약 '배타적사용권' 획득",
+            "url": "https://n.news.naver.com/mnews/article/421/0009038805?sid=101",
+            "source": "뉴스1",
+            "date": "2026-07-03"
+          }
+        ],
+        "적용": [
+          {
+            "title": "스카이랩스, 반지형 혈압계 앞세워 글로벌 임상 데이터 플랫폼 공략",
+            "url": "https://n.news.naver.com/mnews/article/421/0009041006?sid=103",
+            "source": "뉴스1",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "\"보장 공백 메웠다\"…한화생명, 선별급여 암특약 배타적사용권 획득",
+            "url": "https://www.apnews.kr/news/articleView.html?idxno=3049499",
+            "source": "apnews.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "스카이랩스, '카트 비피 프로' 약물 임상 활용 가능성 국제 무대 소개",
+            "url": "http://www.docdocdoc.co.kr/news/articleView.html?idxno=3040620",
+            "source": "청년의사",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "디지털치료기기 급여 기준 제안…\"효과 입증 기술부터 적용\"",
+            "url": "https://www.medipana.com/news/articleView.html?idxno=414050",
+            "source": "메디파나뉴스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "스카이랩스, 디지털 바이오마커 서밋서 데이터 플랫폼 사업 공개",
+            "url": "https://n.news.naver.com/mnews/article/014/0005543536?sid=103",
+            "source": "파이낸셜뉴스",
+            "date": "2026-07-03"
+          }
+        ],
+        "사용권": [
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 9개월 획득",
+            "url": "https://www.thepublic.kr/news/articleView.html?idxno=310099",
+            "source": "thepublic.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "\"보장 공백 메웠다\"…한화생명, 선별급여 암특약 배타적사용권 획득",
+            "url": "https://www.apnews.kr/news/articleView.html?idxno=3049499",
+            "source": "apnews.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "한화생명, 암 치료 '보장 사각지대' 메운다…선별급여 특약 배타적 사용...",
+            "url": "https://www.thefairnews.co.kr/news/articleView.html?idxno=81175",
+            "source": "thefairnews.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/030/0003444124?sid=101",
+            "source": "전자신문",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 선별급여 암 주요치료 특약 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/277/0005785047?sid=101",
+            "source": "아시아경제",
+            "date": "2026-07-03"
+          }
+        ],
+        "획득한": [
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 9개월 획득",
+            "url": "https://www.thepublic.kr/news/articleView.html?idxno=310099",
+            "source": "thepublic.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/030/0003444124?sid=101",
+            "source": "전자신문",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 선별급여 암 주요치료 특약 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/277/0005785047?sid=101",
+            "source": "아시아경제",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 선별급여 암 주요치료 특약 9개월 '배타적사용권'획득",
+            "url": "https://www.joongangenews.com/news/articleView.html?idxno=530281",
+            "source": "joongangenews.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, '선별급여 암주요치료보장' 9개월 배타적 사용권 획득",
+            "url": "http://www.ftoday.co.kr/news/articleView.html?idxno=361553",
+            "source": "ftoday.co.kr",
+            "date": "2026-07-03"
+          }
+        ],
+        "개발": [
+          {
+            "title": "AI '1%' 보상 vs DTx 고시가 '19배'…혁신기술 고무줄 가격 제동 불가피",
+            "url": "https://www.apsk.co.kr/news/articleView.html?idxno=539755",
+            "source": "apsk.co.kr",
+            "date": "2026-07-06"
+          },
+          {
+            "title": "스카이랩스, 반지형 혈압계 앞세워 글로벌 임상 데이터 플랫폼 공략",
+            "url": "https://n.news.naver.com/mnews/article/421/0009041006?sid=103",
+            "source": "뉴스1",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "스카이랩스, '카트 비피 프로' 약물 임상 활용 가능성 국제 무대 소개",
+            "url": "http://www.docdocdoc.co.kr/news/articleView.html?idxno=3040620",
+            "source": "청년의사",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "스카이랩스, '카트 비피 프로' 데이터 플랫폼 가능성 제시",
+            "url": "https://www.rapportian.com/news/articleView.html?idxno=237816",
+            "source": "라포르시안",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "디지털치료기기 급여 기준 제안…\"효과 입증 기술부터 적용\"",
+            "url": "https://www.medipana.com/news/articleView.html?idxno=414050",
+            "source": "메디파나뉴스",
+            "date": "2026-07-03"
+          }
+        ],
+        "신규": [
+          {
+            "title": "\"보장 공백 메웠다\"…한화생명, 선별급여 암특약 배타적사용권 획득",
+            "url": "https://www.apnews.kr/news/articleView.html?idxno=3049499",
+            "source": "apnews.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "한화생명, 암환자 '선별급여 치료 특약' 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/003/0014044614?sid=101",
+            "source": "뉴시스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 암환자 '선별급여 치료 특약' 배타적사용권 획득",
+            "url": "https://www.widedaily.com/news/articleView.html?idxno=296964",
+            "source": "widedaily.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 신규 특약 9개월 독점권 확보…암 환자 보장 확대",
+            "url": "http://www.srtimes.kr/news/articleView.html?idxno=206685",
+            "source": "srtimes.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 선별급여 암치료 보장 특약 출시…9개월 배타적사용권 획득",
+            "url": "https://www.industrynews.co.kr/news/articleView.html?idxno=82873",
+            "source": "industrynews.co.kr",
+            "date": "2026-07-03"
+          }
+        ],
+        "스카이랩스": [
+          {
+            "title": "스카이랩스, 반지형 혈압계 앞세워 글로벌 임상 데이터 플랫폼 공략",
+            "url": "https://n.news.naver.com/mnews/article/421/0009041006?sid=103",
+            "source": "뉴스1",
+            "date": "2026-07-05"
+          },
+          {
+            "title": "스카이랩스, '카트 비피 프로' 약물 임상 활용 가능성 국제 무대 소개",
+            "url": "http://www.docdocdoc.co.kr/news/articleView.html?idxno=3040620",
+            "source": "청년의사",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "스카이랩스, '카트 비피 프로' 데이터 플랫폼 가능성 제시",
+            "url": "https://www.rapportian.com/news/articleView.html?idxno=237816",
+            "source": "라포르시안",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "스카이랩스, 반지형 혈압계로 글로벌 임상 시장 공략",
+            "url": "https://www.mdtoday.co.kr/news/articleView.html?idxno=603563",
+            "source": "메디컬투데이",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "스카이랩스, 디지털 바이오마커 서밋서 데이터 플랫폼 사업 공개",
+            "url": "https://n.news.naver.com/mnews/article/014/0005543536?sid=103",
+            "source": "파이낸셜뉴스",
+            "date": "2026-07-03"
+          }
+        ],
+        "업계": [
+          {
+            "title": "한화생명, 암 치료 '보장 사각지대' 메운다…선별급여 특약 배타적 사용...",
+            "url": "https://www.thefairnews.co.kr/news/articleView.html?idxno=81175",
+            "source": "thefairnews.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, '선별급여 암 보장' 특약 배타적사용권 획득",
+            "url": "https://www.ziksir.com/news/articleView.html?idxno=138966",
+            "source": "ziksir.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, '선별급여 암 주요치료 특약' 9개월 배타적사용권 획득",
+            "url": "https://www.cnbnews.com/news/articleView.html?idxno=1006807",
+            "source": "cnbnews.com",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "\"암치료비 부담 덜어줄 선별급여 보장강화\" 한화생명, 업계최초 '9개월...",
+            "url": "https://www.catchnews.kr/news/articleView.html?idxno=125727",
+            "source": "catchnews.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 업계 첫 선별급여 암 주요치료 보장",
+            "url": "https://www.wolyo.co.kr/news/articleView.html?idxno=314528",
+            "source": "wolyo.co.kr",
+            "date": "2026-07-03"
+          }
+        ],
+        "공백": [
+          {
+            "title": "\"보장 공백 메웠다\"…한화생명, 선별급여 암특약 배타적사용권 획득",
+            "url": "https://www.apnews.kr/news/articleView.html?idxno=3049499",
+            "source": "apnews.kr",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "급여 삭제 위기 넘긴 레가론…수요 회복에 공급 '숨 고르기'",
+            "url": "https://www.kpanews.co.kr/news/articleView.html?idxno=537989",
+            "source": "약사공론",
+            "date": "2026-07-04"
+          },
+          {
+            "title": "\"건보 적용돼도 수천만원 폭탄\" 숨은 암 치료비 공백, 한화생명이 깼다",
+            "url": "http://www.dailysmart.co.kr/news/articleView.html?idxno=126419",
+            "source": "dailysmart.co.kr",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 암환자 '선별급여 치료 특약' 배타적사용권 획득",
+            "url": "https://n.news.naver.com/mnews/article/003/0014044614?sid=101",
+            "source": "뉴시스",
+            "date": "2026-07-03"
+          },
+          {
+            "title": "한화생명, 암보험 ‘선별급여’ 공백 겨냥…배타적사용권 9개월 확보",
+            "url": "https://www.viva100.com/article/20260703500108",
+            "source": "viva100.com",
+            "date": "2026-07-03"
+          }
+        ]
+      }
+    }
+  ]
+}
