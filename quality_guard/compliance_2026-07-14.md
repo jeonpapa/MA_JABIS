@@ -1,0 +1,65 @@
+# Rule Compliance 감사 — 2026-07-14 05:30
+
+## 요약
+- ✅ PASS: **12건**
+- ❌ FAIL: **0건**
+- ⏭ SKIP: **42건** (런타임 검증 불가)
+- 전체 메모리: 54건
+
+## ✅ PASS — 실행 증명 확보
+- **Feedback: Cache as permanent DB** — 영구 캐시 총 43 파일 (reason_cache=26, gov_summary=17)
+- **Project: Indication-level Approval** — indications_master 104건 · Keytruda 66건 분해 유지
+- **Project: MFDS Official Date Pipeline** — MFDS 40/43 (93%) 공식일 매핑
+- **Feedback: MFDS pattern matching** — 8개 baseline 모두 일치
+- **Project: Foreign scraper form_type** — form_type 585/585 (100%) 채움
+- **Feedback: Foreign daily cost total_pkg_mg** — ₩10M/day 초과 0건 (sanity cap 유효)
+- **Project: Comparator drug structure** — drug_latest ingredient 22096/67747 (32.6%) — 비교약제 필터 재가동
+- **Project: Price change reason quality** — 최근 26건 중 n_refs=0 5건(19%), low 6건(23%)
+- **Project: Price↔Approval coverage** — 가격↔허가 커버리지 100%
+- **Project: MFDS authoritative API** — MFDS API 통합 동작 — permit cache 1476건 / patent cache 37093건
+- **Project: Patent classification policy** — 5/5 baseline 분류 일치 (만료 3 / 유효 2). cache/5 api/0
+- **Project: Cross-national reimbursement** — reimbursement_xnational 44건 (last=2026-04-29). 분포: JP/CHUIKYO=7, UK/NICE=30, US/CMS=7
+
+## ⏭ SKIP — 런타임 신호 없음
+- _User Profile: Joseph_ — 사용자 프로파일 (정적)
+- _Project: Drug Price Dashboard_ — 프로젝트 프레임 (정적)
+- _Project: Home Dashboard 점검·강화_ — 신규 메모리 — rule_compliance/checks.py 에 체크 함수 추가 검토
+- _Project: Gov Policy News Archive_ — 신규 메모리 — rule_compliance/checks.py 에 체크 함수 추가 검토
+- _Project: 국내 약가 월별 자동 적재 루틴_ — 신규 메모리 — rule_compliance/checks.py 에 체크 함수 추가 검토
+- _Feedback: Web deployment order_ — 개발 순서 원칙
+- _Feedback: Deploy confirm gate_ — 배포 워크플로 (개발 관행 — 런타임 신호 없음)
+- _Project: Workbench Pivot_ — 피벗 결정 (process state)
+- _Project: Deployment Architecture_ — 배포 원칙 (개발 관행)
+- _Project: M6 Deployment_ — 신규 메모리 — rule_compliance/checks.py 에 체크 함수 추가 검토
+- _Project: 프로덕션 증분 데이터 동기화_ — 신규 메모리 — rule_compliance/checks.py 에 체크 함수 추가 검토
+- _Project: Reimb Status Overhaul_ — 신규 메모리 — rule_compliance/checks.py 에 체크 함수 추가 검토
+- _Project: TLS Remediation_ — TLS 환경 설정 (네트워크 런타임)
+- _Project: KR 허가(MFDS) vs 급여(HIRA) 분리_ — 데이터 모델링 원칙 (정적)
+- _Feedback: Auto-proceed with recommendations_ — 협업 스타일
+- _Project: Readdy Mockup Migration (v2)_ — UI 마이그레이션 계획 (process)
+- _Reference: Naver News API_ — 외부 시스템 참조
+- _Reference: HIRA 항암 공고_ — 외부 시스템 참조
+- _Project: Competitor+Mailing Plan_ — 프로세스 결정
+- _Feedback: Daily Mailing 리플랜 대기_ — 사용자 대기 상태
+- _Project: 급여 관리 admin 체크리스트_ — 수동 UI 체크리스트
+- _Project: Competitor Trends 자동 크롤_ — 주 1회 크론 — 별도 모니터
+- _Project: Competitor News Archive (Tier 1)_ — 신규 메모리 — rule_compliance/checks.py 에 체크 함수 추가 검토
+- _Project: Intl Pricing 강화_ — 신규 메모리 — rule_compliance/checks.py 에 체크 함수 추가 검토
+- _Feedback: Micromedex session reuse_ — 개발 관행
+- _Feedback: Verify rules actually fire_ — 이 에이전트 자체가 구현체
+- _Project: RuleComplianceAgent_ — 자기 참조 (재귀 방지)
+- _Project: health.kr secondary source_ — MFDS API 도입 후 보조 소스로 강등 — 운영 정책 (정적)
+- _Feedback: RSA invisible pricing_ — Intelligence (정적 사실) — RSA registry 운영으로 충족
+- _Project: Analog committee timeline_ — 신규 메모리 — rule_compliance/checks.py 에 체크 함수 추가 검토
+- _Project: Analog synonym+AND search_ — 신규 메모리 — rule_compliance/checks.py 에 체크 함수 추가 검토
+- _Project: Analog search feedback_ — 신규 메모리 — rule_compliance/checks.py 에 체크 함수 추가 검토
+- _Project: NHIS negotiation source_ — 신규 메모리 — rule_compliance/checks.py 에 체크 함수 추가 검토
+- _Feedback: KEB FX 고시회차 최종_ — KEB 환율 폼 동작 (외부 시스템 — 월간 자동갱신 잡으로 충족)
+- _Project: Flexible contract mechanism_ — 변동사유 5번째 기전 (MI agent 구현체 자체)
+- _Project: Foreign dose normalization_ — 해외약가 용량 정규화 (search/cache 경로 구현체 자체)
+- _Project: Regimen cost tab_ — 투약비용비교 탭 (신규 기능 — UI/CRUD 구현체)
+- _Project: Hermes KRPIA curation_ — policy_intelligence manifests 없음 (런타임 신호 없음)
+- _Project: Daily Mailing service_ — 신규 메모리 — rule_compliance/checks.py 에 체크 함수 추가 검토
+- _Project: Access Insight_ — 신규 메모리 — rule_compliance/checks.py 에 체크 함수 추가 검토
+- _Feedback: fable5 subagents_ — 신규 메모리 — rule_compliance/checks.py 에 체크 함수 추가 검토
+- _Project: Service Request MVP_ — 신규 메모리 — rule_compliance/checks.py 에 체크 함수 추가 검토
