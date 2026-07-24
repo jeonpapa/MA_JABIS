@@ -39,3 +39,22 @@ def test_fetch_scope_uses_raw_url(monkeypatch):
     scope = hermes_runner.fetch_scope("7", token="tok")
     assert scope["subscription_id"] == 7
     assert calls["url"].endswith("/scopes/7.json")
+
+
+def test_put_run_bundle_puts_and_updates_index(monkeypatch):
+    puts = []
+    def fake_req(method, url, token, body=None):
+        puts.append((method, url, body))
+        if method == "GET":
+            raise hermes_runner.urllib.error.HTTPError(url, 404, "nf", {}, None)
+        return {}
+    monkeypatch.setattr(hermes_runner, "_gh_request", fake_req)
+    monkeypatch.setattr(hermes_runner, "_http_get_bytes", lambda url, token: (_ for _ in ()).throw(Exception("no index")))
+    hermes_runner.put_run_bundle(
+        "run_20260724.json",
+        {"payload": {"run_id": "20260724", "subscription_id": 7}, "articles": []},
+        token="tok",
+    )
+    put_urls = [u for (m, u, _) in puts if m == "PUT"]
+    assert any(u.endswith("/runs/run_20260724.json") for u in put_urls)
+    assert any(u.endswith("/runs/runs_index.json") for u in put_urls)
