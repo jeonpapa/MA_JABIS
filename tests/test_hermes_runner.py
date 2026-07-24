@@ -75,3 +75,21 @@ def test_run_pipeline_parses_stdout_and_reads_html(monkeypatch, tmp_path):
     assert out["payload"]["run_id"] == "20260724"
     assert out["html_body"] == "<b>x</b>"
     assert out["summary"]["status"] == "ok"
+
+
+def test_process_scope_delivers_on_test_request(monkeypatch):
+    scope = {"subscription_id": 7, "delivery_mode": "gmail_draft",
+             "emails": ["a@x.com"], "test_request": {"requested_at": "t"}}
+    monkeypatch.setattr(hermes_runner, "run_pipeline", lambda *a, **k: {
+        "summary": {"status": "ok"},
+        "payload": {"run_id": "R1", "subscription_id": 7, "generated_at": "g"},
+        "html_body": "<b>x</b>", "articles": [],
+    })
+    delivered = {}
+    monkeypatch.setattr(hermes_runner, "_deliver", lambda scope, html, subject, decision: delivered.update(subject=subject) or {"ok": True})
+    committed = {}
+    monkeypatch.setattr(hermes_runner, "put_run_bundle", lambda name, bundle, token: committed.update(name=name, is_test=bundle.get("is_test")))
+    out = hermes_runner.process_scope(scope, "scope.json", "/tmp/out", "env", "db", token="tok", commit=True)
+    assert out["delivered"] is True
+    assert delivered["subject"].startswith("[TEST] ")
+    assert committed["is_test"] is True

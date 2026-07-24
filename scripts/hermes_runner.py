@@ -127,3 +127,84 @@ def run_pipeline(scope_path: str, out_dir: str, env_path: str, db_path: str) -> 
         rb = json.loads(Path(summary["review_board"]).read_text(encoding="utf-8"))
         articles = rb.get("articles", [])
     return {"summary": summary, "payload": payload, "html_body": html_body, "articles": articles}
+
+
+def _recipients(scope: dict) -> list[str]:
+    r = scope.get("emails") or scope.get("recipients") or []
+    if not r and scope.get("owner_email"):
+        r = [scope["owner_email"]]
+    return [x for x in r if x]
+
+
+def _deliver(scope: dict, html_body: str, subject: str, decision: dict) -> dict:
+    from agents.notify.gmail_delivery import create_gmail_draft, send_gmail_message
+    recipients = _recipients(scope)
+    if not recipients:
+        return {"ok": False, "message": "no recipients"}
+    if decision["mode"] == "gmail_send":
+        return send_gmail_message(recipients=recipients, subject=subject, body_html=html_body)
+    return create_gmail_draft(recipients=recipients, subject=subject, body_html=html_body)
+
+
+def process_scope(scope: dict, scope_path: str, out_dir: str, env_path: str,
+                  db_path: str, token: str | None, commit: bool) -> dict:
+    has_test = bool(scope.get("test_request"))
+    decision = decide_delivery(scope, has_test)
+    result = run_pipeline(scope_path, out_dir, env_path, db_path)
+    payload = result["payload"]
+    payload["is_test"] = decision["is_test"]
+    payload["delivery_mode"] = decision["mode"]
+
+    delivered = False
+    delivery_result = None
+    if decision["deliver"]:
+        subject = decision["subject_prefix"] + f"[MA Daily] {scope.get('name') or scope.get('subscription_id')}"
+        delivery_result = _deliver(scope, result["html_body"], subject, decision)
+        delivered = bool(delivery_result.get("ok"))
+        payload["delivery_status"] = "sent" if decision["mode"] == "gmail_send" and delivered else (
+            "draft_created" if delivered else "delivery_failed")
+
+    bundle = {"payload": payload, "articles": result["articles"], "is_test": decision["is_test"]}
+    committed = False
+    if commit and token:
+        name = f"run_{payload.get('run_id')}_sub{payload.get('subscription_id')}.json"
+        put_run_bundle(name, bundle, token)
+        committed = True
+    return {"subscription_id": scope.get("subscription_id"), "status": result["summary"].get("status"),
+            "delivered": delivered, "delivery_result": delivery_result, "committed": committed}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Hermes daily-mailing runner (push-triggered).")
+    g = ap.add_mutually_exclusive_group(required=True)
+    g.add_argument("--scope-ids", nargs="*", help="브릿지 scopes/<id>.json 에서 fetch")
+    g.add_argument("--scope-file", help="로컬 scope JSON (드라이런)")
+    ap.add_argument("--out-dir", default=str(REPO_ROOT / "runs" / "drafts"))
+    ap.add_argument("--env", default=str(REPO_ROOT / "config" / ".env"))
+    ap.add_argument("--db", default=str(REPO_ROOT / "data" / "db" / "drug_prices.db"))
+    ap.add_argument("--no-commit", action="store_true", help="run 번들 커밋 생략 (로컬 드라이런)")
+    args = ap.parse_args()
+
+    token = os.environ.get("DAILY_MAILING_RUNS_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    results = []
+    if args.scope_file:
+        scope = load_scope_local(args.scope_file)
+        results.append(process_scope(scope, args.scope_file, args.out_dir, args.env,
+                                     args.db, token, commit=not args.no_commit))
+    else:
+        for sid in args.scope_ids:
+            scope = fetch_scope(sid, token)
+            scope_path = str(Path(args.out_dir) / f"_scope_{sid}.json")
+            Path(args.out_dir).mkdir(parents=True, exist_ok=True)
+            Path(scope_path).write_text(json.dumps(scope, ensure_ascii=False), encoding="utf-8")
+            try:
+                results.append(process_scope(scope, scope_path, args.out_dir, args.env,
+                                             args.db, token, commit=not args.no_commit))
+            except Exception as e:
+                results.append({"subscription_id": sid, "error": str(e)})
+    print(json.dumps({"results": results}, ensure_ascii=False, indent=2))
+    return 0 if all("error" not in r for r in results) else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
