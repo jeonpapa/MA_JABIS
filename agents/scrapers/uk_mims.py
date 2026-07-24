@@ -1,331 +1,240 @@
 """
-영국 MIMS (mims.co.uk) 약가 스크레이퍼
+영국 MIMS 스크래퍼 — Scrapling StealthySession 기반 (2026-07-24 재구현)
 
-대상: https://www.mims.co.uk/
-로그인: 불필요 (구글 Referer 경유 시 공개 가격 표시)
+기존 DuckDuckGo + Playwright(공개접근) 방식은 MIMS 가 Cloudflare 봇차단("Just a moment")
++ 검색/가격 로그인벽을 강화하며 특히 프로덕션(데이터센터 IP)에서 상시 실패했다.
+Scrapling `StealthySession(solve_cloudflare=True)`(camoufox 스텔스)로 Cloudflare Turnstile 을
+자동 해결하고, MIMS 계정으로 로그인해 인증 검색한다. MIMS 는 심평원 인정 신뢰 소스라 유지.
 
-조회 흐름:
-  1) DuckDuckGo HTML 검색: "site:mims.co.uk {query} drugs" → MIMS URL 추출
-  2) Playwright로 Google Referer 헤더 설정 후 MIMS 약제 페이지 접근
-  3) "Price:" 섹션에서 용량별 GBP 가격 파싱
-     예: "100mg/4ml conc for soln for inf in vial, 2=£5260.00."
-  4) 모든 용량·포장 규격별 가격 추출 (list[dict])
+흐름:
+  1. StealthySession → Cloudflare Turnstile 자동 해결
+  2. /login 에서 쿠키 동의 + 이메일/비번(#btnSignIn) 로그인
+  3. /search/drugs?keywords={query} → 정확 매칭 시 302 로 약제 딥페이지 리다이렉트,
+     아니면 결과목록에서 후보 URL 추출
+  4. Price 섹션에서 용량별 £ 가격 추출 (기존 파싱 로직 재사용)
 
-가격 종류:
-  - Price: {dosage}={£ 금액} 형식으로 복수 포장 존재 가능
-  - 용량별 개별 결과로 반환
-
-HIRA 조정가:
-  source_type 없음 → 기본 ratio 적용 (PriceCalculator 참조)
-  (MIMS 가격은 NHS 공개가 / Manufacturer 리스트가)
+자격증명: config/.env `MIMS_UK_USERNAME` / `MIMS_UK_PASSWORD` (base.ENV_KEY_MAP).
+의존성: scrapling[fetchers] + camoufox (scripts: `scrapling install`).
 """
 
+import asyncio
+import json
 import logging
 import re
+from datetime import datetime
 from pathlib import Path
-from typing import Optional
-from urllib.parse import unquote
-
-import requests
-from playwright.async_api import Page
+from urllib.parse import quote
 
 from .base import BaseScraper
 
 logger = logging.getLogger(__name__)
 
-MIMS_BASE       = "https://www.mims.co.uk"
-DDG_HTML_URL    = "https://html.duckduckgo.com/html/"
-
-REQUESTS_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept-Language": "en-GB,en;q=0.9",
-}
+MIMS_BASE  = "https://www.mims.co.uk"
+LOGIN_URL  = f"{MIMS_BASE}/login"
+SEARCH_URL = f"{MIMS_BASE}/search/drugs"
 
 
 class UkMimsScraper(BaseScraper):
-    COUNTRY       = "UK"
-    CURRENCY      = "GBP"
-    SOURCE_LABEL  = "MIMS online (UK public price)"
-    REQUIRES_LOGIN = False          # 구글 Referer로 공개 접근
-
-    # Playwright 실행 옵션 (샌드박스 비활성화 필요)
-    PLAYWRIGHT_ARGS = [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-    ]
+    COUNTRY        = "UK"
+    CURRENCY       = "GBP"
+    SOURCE_LABEL   = "MIMS online (UK, 로그인)"
+    REQUIRES_LOGIN = True
 
     def __init__(self, cache_dir: Path = None, msd_only: bool = False, **kwargs):
         super().__init__(**kwargs)
         self.cache_dir = cache_dir or Path("data/foreign/uk")
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.msd_only = msd_only
-        self._session = requests.Session()
-        self._session.headers.update(REQUESTS_HEADERS)
 
-    # ────────────────────────────────────────────────────────────────────────
-    # 1) DuckDuckGo → MIMS URL 탐색
-    # ────────────────────────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────────────────
+    # Scrapling 동기 스크레이프 (asyncio.to_thread 로 실행 — StealthySession 은 동기)
+    # ──────────────────────────────────────────────────────────────────────
 
-    def _find_mims_urls(self, query: str) -> list[str]:
-        """
-        DuckDuckGo HTML 검색으로 MIMS 약제 페이지 URL 목록 반환.
-        site:mims.co.uk {query} 검색 → /drugs/ 경로 URL 추출
-        DDG 실패 시 직접 URL 구성으로 폴백.
-        """
+    def _scrape_sync(self, query: str) -> list[dict]:
+        user = (self.credentials or {}).get("username")
+        pw   = (self.credentials or {}).get("password")
+        if not user or not pw:
+            logger.warning("[UK] MIMS 자격증명 없음 (MIMS_UK_USERNAME/PASSWORD) — 스킵")
+            return []
         try:
-            r = self._session.get(
-                DDG_HTML_URL,
-                params={"q": f"site:mims.co.uk {query}"},
-                timeout=20,
-            )
-            r.raise_for_status()
+            from scrapling.fetchers import StealthySession
         except Exception as e:
-            logger.warning("[UK] DuckDuckGo 검색 실패: %s", e)
+            logger.error("[UK] scrapling 미설치 — pip install 'scrapling[fetchers]' + scrapling install: %s", e)
             return []
 
-        uddg_links = re.findall(r"uddg=([^&\"\s]+)", r.text)
-        urls = list(dict.fromkeys([
-            unquote(u)
-            for u in uddg_links
-            if "mims.co.uk/drugs" in unquote(u)
-        ]))
-
-        # DDG 검색 결과가 없으면 직접 URL 구성으로 폴백
-        if not urls:
-            slug = query.lower().replace(" ", "-")
-            fallback_url = f"{MIMS_BASE}/drugs/{slug}/"
-            logger.info("[UK] DDG 검색 결과 없음, 직접 URL 시도: %s", fallback_url)
-            urls = [fallback_url]
-
-        logger.info("[UK] DDG 검색 결과 MIMS URL: %d개 (query=%s)", len(urls), query)
-        return urls
-
-    # ────────────────────────────────────────────────────────────────────────
-    # 2) MIMS 약제 페이지에서 가격 추출
-    # ────────────────────────────────────────────────────────────────────────
-
-    async def _extract_prices_from_page(self, url: str, page: Page) -> list[dict]:
-        """
-        MIMS 약제 페이지에서 용량별 GBP 가격 목록 추출.
-
-        Price 섹션 예시:
-          Pembrolizumab
-          Price:
-          100mg/4ml conc for soln for inf in vial, 2=£5260.00.
-          395mg/2.4ml soln for inj in vial, 1=£5260.00.
-          790mg/4.8ml soln for inj in vial, 1=£10520.00.
-
-        반환: [{"dosage_strength": "100mg/4ml conc for soln for inf in vial, 2",
-                "local_price": 5260.0, ...}, ...]
-        """
-        await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
-        await page.wait_for_timeout(2500)
-
-        text = await page.inner_text("body")
-
-        # ── 제품명 ───────────────────────────────────────────────────────
-        product_name = ""
-        try:
-            product_name = await page.inner_text("h1", timeout=3_000)
-            product_name = product_name.strip()
-        except Exception:
-            pass
-
-        # ── 성분명 (How Supplied 아래 첫 줄 = INN) ───────────────────────
-        ingredient = ""
-        ing_match = re.search(
-            r"How Supplied:\s*([A-Za-z][a-z]+(?:\s+[A-Za-z]+)?)\s*\nPrice:",
-            text,
-            re.IGNORECASE,
-        )
-        if ing_match:
-            ingredient = ing_match.group(1).strip()
-
-        # ── 제조사 ────────────────────────────────────────────────────────
-        company = ""
-        mfr_match = re.search(r"Manufacturer:\s*([^\n]+)", text, re.IGNORECASE)
-        if mfr_match:
-            company = mfr_match.group(1).strip()
-
-        # ── 로그인 요구 감지 (가격 없으면 비급여 처리) ──────────────────
-        login_required = (
-            "log in or register" in text.lower()
-            and not re.search(r"£\s*[\d,\.]+", text)
-        )
-        if login_required:
-            logger.info("[UK] 로그인 필요 페이지 — 공개 가격 없음: %s", url)
-            return []
-
-        # ── Price 섹션 추출 ────────────────────────────────────────────────
-        # "Price:" ~ "Indications:" / "Legal Class:" 등 다음 섹션까지
-        price_section_match = re.search(
-            r"Price:(.*?)(?:Indications:|Legal Class:|How Supplied:|Manufacturer:|Drug Class:|$)",
-            text,
-            re.DOTALL | re.IGNORECASE,
-        )
-        if not price_section_match:
-            logger.warning("[UK] Price 섹션 미발견: %s", url)
-            return []
-
-        price_section = price_section_match.group(1)
-        # 용량=가격 패턴: "100mg/4ml conc for soln for inf in vial, 2=£5260.00."
-        # 또는 단순 "£5260.00"
-        price_lines = re.findall(
-            r"([^\n=£]+?)\s*=\s*£\s*([\d,\.]+)",
-            price_section,
-        )
-
-        if not price_lines:
-            # 단순 £ 가격만 있는 경우
-            simple_prices = re.findall(r"£\s*([\d,\.]+)", price_section)
-            if simple_prices:
-                raw = simple_prices[0].replace(",", "")
-                try:
-                    price_lines = [("", float(raw))]
-                except ValueError:
-                    pass
-
-        results = []
-        for dosage_raw, price_raw in price_lines:
-            price_raw_clean = price_raw.rstrip(".").replace(",", "")
+        def login_action(page):
+            page.wait_for_timeout(1500)
             try:
-                price = float(price_raw_clean)
+                page.click("#onetrust-accept-btn-handler", timeout=4000)  # 쿠키 동의
+            except Exception:
+                pass
+            page.fill("input[data-cy='loginEmail']", user, timeout=8000)
+            page.fill("input[data-cy='loginPassword']", pw, timeout=8000)
+            try:
+                page.click("#btnSignIn", timeout=8000)
+            except Exception:
+                pass
+            page.wait_for_timeout(5000)
+
+        results: list[dict] = []
+        with StealthySession(headless=self.headless, solve_cloudflare=True) as s:
+            lp = s.fetch(LOGIN_URL, page_action=login_action,
+                         network_idle=False, timeout=120000)
+            if "log in or register" in (lp.html_content or "").lower():
+                logger.warning("[UK] MIMS 로그인 실패 (로그인벽 잔존)")
+                return []
+
+            sr = s.fetch(f"{SEARCH_URL}?keywords={quote(query)}",
+                         network_idle=True, timeout=120000)
+            html = sr.html_content or ""
+            landed = (getattr(sr, "url", "") or "")
+
+            # 정확 매칭 시 검색은 약제 딥페이지로 302 리다이렉트된다 → 그 페이지가 결과.
+            # 아니면(결과 목록) 후보 딥링크를 추려 각각 방문.
+            if self._is_drug_page(landed):
+                pages = [(landed, html)]
+            else:
+                pages = []
+                for cu in self._pick_result_urls(html, query)[:3]:
+                    dp = s.fetch(cu, network_idle=True, timeout=120000)
+                    pages.append((cu, dp.html_content or ""))
+
+            for page_url, page_html in pages:
+                results.extend(self._parse_price_page(page_html, page_url))
+        return results
+
+    @staticmethod
+    def _is_drug_page(url: str) -> bool:
+        """/drugs/{...}/{name} 형태의 약제 상세 페이지인지 (검색/인덱스 페이지 제외)."""
+        if "/drugs/" not in url:
+            return False
+        tail = url.rstrip("/").rsplit("/", 1)[-1]
+        return tail not in ("drugs", "search") and "search" not in url
+
+    @staticmethod
+    def _pick_result_urls(html: str, query: str) -> list[str]:
+        """검색결과 목록에서 /drugs/ 딥링크 추출 (약제명 토큰 매칭 우선)."""
+        links = list(dict.fromkeys(re.findall(r"/drugs/[a-z0-9\-/]+", html)))
+        # 인덱스/브라우즈 링크(끝이 카테고리) 배제하고 query 토큰이 마지막 세그먼트에 있는 것 우선
+        q = query.lower().replace(" ", "-")
+        exact = [l for l in links if q in l.rsplit("/", 1)[-1]]
+        chosen = exact or links
+        return [MIMS_BASE + l for l in chosen]
+
+    # ──────────────────────────────────────────────────────────────────────
+    # 가격 페이지 파싱 (HTML → text → Price 섹션 용량별 £ 가격)
+    # ──────────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _html_to_text(html: str) -> str:
+        text = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", html)
+        text = re.sub(r"(?i)<br\s*/?>", "\n", text)
+        text = re.sub(r"(?i)</(p|div|li|tr|h[1-6]|section)>", "\n", text)
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = (text.replace("&pound;", "£").replace("&amp;", "&")
+                    .replace("&nbsp;", " ").replace("&#163;", "£"))
+        text = re.sub(r"[ \t]+", " ", text)
+        return text
+
+    @classmethod
+    def _parse_price_page(cls, html: str, url: str) -> list[dict]:
+        text = cls._html_to_text(html)
+
+        m = re.search(r"<h1[^>]*>([^<]+)</h1>", html)
+        product_name = m.group(1).strip() if m else ""
+
+        ingredient = ""
+        ing = re.search(r"How Supplied:\s*([A-Za-z][A-Za-z ]+?)\s*(?:\n|Price:)", text, re.I)
+        if ing:
+            ingredient = ing.group(1).strip()
+
+        company = ""
+        mfr = re.search(r"Manufacturer:\s*([^\n]+)", text, re.I)
+        if mfr:
+            company = mfr.group(1).strip()
+
+        # 로그인 상태에서 £ 가 아예 없으면 비급여/미표시
+        ps = re.search(
+            r"Price:(.*?)(?:Indications:|Legal Class:|How Supplied:|Manufacturer:|Drug Class:|$)",
+            text, re.S | re.I,
+        )
+        if not ps:
+            logger.info("[UK] Price 섹션 미발견(비급여?): %s", url)
+            return []
+
+        section = ps.group(1)
+        # "40mg blue oval f-c tab marked 177, 90=£11936.70." → (용량설명, 가격)
+        price_lines = re.findall(r"([^\n=£]+?)\s*=\s*£\s*([\d,\.]+)", section)
+        if not price_lines:
+            simple = re.findall(r"£\s*([\d,\.]+)", section)
+            if simple:
+                price_lines = [("", simple[0])]
+
+        rows = []
+        for dosage_raw, price_raw in price_lines:
+            try:
+                price = float(price_raw.rstrip(".").replace(",", ""))
             except ValueError:
                 continue
-
-            dosage_strength = dosage_raw.strip()
-            results.append({
+            rows.append({
                 "product_name":    product_name,
                 "ingredient":      ingredient,
-                "dosage_strength": dosage_strength,
+                "dosage_strength": dosage_raw.strip(),
                 "dosage_form":     "",
                 "package_unit":    "",
                 "local_price":     price,
                 "source_url":      url,
-                "extra": {
-                    "company":     company,
-                    "source_type": None,
-                },
+                "extra": {"company": company, "source_type": None},
             })
+        logger.info("[UK] %s — 용량별 가격 %d건", product_name or url, len(rows))
+        return rows
 
-        logger.info("[UK] %s — 용량별 가격 %d건", product_name or url, len(results))
-        return results
+    # ──────────────────────────────────────────────────────────────────────
+    # BaseScraper 인터페이스
+    # ──────────────────────────────────────────────────────────────────────
 
-    # ────────────────────────────────────────────────────────────────────────
-    # 3) BaseScraper 인터페이스 (run()에서 Playwright args 오버라이드 필요)
-    # ────────────────────────────────────────────────────────────────────────
+    async def search(self, query: str, page=None) -> list[dict]:
+        """run() 이 Scrapling 로 전체 처리하므로 직접 사용 안 함 (계약 충족용)."""
+        return []
 
-    async def search(self, query: str, page: Page) -> list[dict]:
-        """
-        MIMS에서 약제명으로 검색 후 용량별 GBP 가격 반환.
-        1. DuckDuckGo로 mims.co.uk URL 탐색
-        2. Google Referer 설정 후 MIMS 페이지 접근
-        3. Price 섹션에서 용량별 가격 추출
-        """
-        urls = self._find_mims_urls(query)
-        if not urls:
-            logger.info("[UK] '%s' MIMS URL 탐색 결과 없음 → 비급여", query)
-            return []
-
-        # 쿼리명이 URL 경로에 포함된 것 우선 정렬
-        q_slug = query.lower().replace(" ", "-")
-        urls_sorted = (
-            [u for u in urls if q_slug in u.lower()]
-            + [u for u in urls if q_slug not in u.lower()]
-        )
-
-        all_results = []
-        seen_urls = set()
-
-        for url in urls_sorted[:3]:
-            if url in seen_urls:
-                continue
-            seen_urls.add(url)
-
-            items = await self._extract_prices_from_page(url, page)
-            all_results.extend(items)
-
-            if all_results:
-                break   # 첫 번째 유효 결과에서 중단
-
-        if not all_results:
-            logger.info("[UK] '%s' 가격 없음 → 비급여", query)
-        return all_results
-
-    async def refresh(self, _page: Page) -> None:
-        """MIMS는 매번 실시간 조회."""
-        logger.info("[UK] MIMS 실시간 조회 방식")
+    async def refresh(self, _page=None) -> None:
+        logger.info("[UK] MIMS 공개가(로그인) — 캐시 없음")
 
     async def run(self, query: str) -> list[dict]:
-        """
-        BaseScraper.run() 오버라이드 — Playwright에 --no-sandbox 인수 추가.
-        (MIMS는 로그인 불필요, Google Referer만 설정)
-        """
-        import json
-        from datetime import datetime
-        from playwright.async_api import async_playwright
+        """Playwright 대신 Scrapling(StealthySession) 으로 로그인→검색→가격."""
+        logger.info("[UK] MIMS(Scrapling) 검색 시작: '%s'", query)
+        searched_at = datetime.now().isoformat()
+        try:
+            raw = await asyncio.to_thread(self._scrape_sync, query)
+        except Exception as e:
+            logger.error("[UK] MIMS 스크레이프 실패: %s", e, exc_info=True)
+            return []
 
-        logger.info("[UK] 검색 시작: '%s'", query)
         results = []
-
-        async with async_playwright() as pw:
-            browser = await pw.chromium.launch(
-                headless=self.headless,
-                args=self.PLAYWRIGHT_ARGS,
-            )
-            context = await browser.new_context(
-                user_agent=(
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/124.0.0.0 Safari/537.36"
-                ),
-                extra_http_headers={"Referer": "https://www.google.com/"},
-            )
-            page = await context.new_page()
-
-            try:
-                raw_results = await self.search(query, page)
-                logger.info("[UK] 검색 결과: %d건", len(raw_results))
-
-                searched_at = datetime.now().isoformat()
-                for item in raw_results:
-                    form_type = self._resolve_form_type(item)
-                    results.append({
-                        "searched_at":         searched_at,
-                        "query_name":          query,
-                        "country":             self.COUNTRY,
-                        "product_name":        item.get("product_name"),
-                        "ingredient":          item.get("ingredient"),
-                        "dosage_strength":     item.get("dosage_strength"),
-                        "dosage_form":         item.get("dosage_form"),
-                        "package_unit":        item.get("package_unit"),
-                        "local_price":         item.get("local_price"),
-                        "currency":            self.CURRENCY,
-                        "exchange_rate":       None,
-                        "exchange_rate_from":  None,
-                        "exchange_rate_to":    None,
-                        "factory_price_krw":   None,
-                        "vat_rate":            None,
-                        "distribution_margin": None,
-                        "adjusted_price_krw":  None,
-                        "source_url":          item.get("source_url", ""),
-                        "source_label":        self.SOURCE_LABEL,
-                        "raw_data":            json.dumps(
-                            item.get("extra", {}), ensure_ascii=False
-                        ),
-                        "form_type":           form_type,
-                    })
-
-            except Exception as e:
-                logger.error("[UK] 검색 오류: %s", e, exc_info=True)
-                raise
-            finally:
-                await context.close()
-                await browser.close()
-
+        for item in raw:
+            form_type = self._resolve_form_type(item)
+            results.append({
+                "searched_at":         searched_at,
+                "query_name":          query,
+                "country":             self.COUNTRY,
+                "product_name":        item.get("product_name", ""),
+                "ingredient":          item.get("ingredient", ""),
+                "dosage_strength":     item.get("dosage_strength", ""),
+                "dosage_form":         item.get("dosage_form", ""),
+                "package_unit":        item.get("package_unit", ""),
+                "local_price":         item.get("local_price"),
+                "currency":            self.CURRENCY,
+                "exchange_rate":       None,
+                "exchange_rate_from":  None,
+                "exchange_rate_to":    None,
+                "factory_price_krw":   None,
+                "vat_rate":            None,
+                "distribution_margin": None,
+                "adjusted_price_krw":  None,
+                "source_url":          item.get("source_url", ""),
+                "source_label":        self.SOURCE_LABEL,
+                "raw_data":            json.dumps(item.get("extra", {}), ensure_ascii=False),
+                "form_type":           form_type,
+            })
+        logger.info("[UK] 결과: %d건", len(results))
         return results

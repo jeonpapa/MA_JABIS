@@ -16,11 +16,14 @@ RUN npm run build   # → /build/out
 FROM python:3.12-slim
 WORKDIR /app
 
-# Playwright chromium + 시스템 의존성 (HIRA/KEB/스크레이퍼 headless 다운로드용)
+# Playwright chromium (HIRA/KEB/대부분 스크레이퍼) + Scrapling camoufox (UK MIMS Cloudflare 우회)
+# camoufox 는 Firefox 기반 → firefox 시스템 의존성 설치 후 `scrapling install` 로 브라우저 fetch.
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt \
     && playwright install chromium --with-deps \
-    && rm -rf /root/.cache/pip
+    && playwright install firefox --with-deps \
+    && scrapling install \
+    && rm -rf /root/.cache/pip /root/.cache/ms-playwright-download
 
 COPY . .
 COPY --from=frontend /build/out ./frontend/out
