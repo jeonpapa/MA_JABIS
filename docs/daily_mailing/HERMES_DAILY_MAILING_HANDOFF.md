@@ -84,3 +84,12 @@
   (미설정 시 `DAILY_MAILING_RUNS_TOKEN`/`GITHUB_TOKEN` 폴백 — 해당 토큰이 read-only 면 발행 실패 →
   local-only degrade). 헤르메스 pull 토큰은 별개(read 면 충분).
 - source registry: `config/source_registry.yaml`.
+
+## 8. push 트리거 (스콥 변경 → 즉시 반영, 2026-07-24)
+- 브릿지 `scopes/**` push → `notify-scope-change.yml` → `repository_dispatch(scope-changed)` → MA_AI_Dossier `hermes-daily-mailing.yml` → `scripts/hermes_runner.py`.
+- **test_request 만 즉시 발송** (기본 gmail_draft). 정규 발송은 기존 일일 스케줄 유지.
+- 필요 시크릿:
+  - 브릿지 repo: `DISPATCH_TOKEN`(MA_AI_Dossier repo dispatch PAT).
+  - MA_AI_Dossier repo: `NAVER_API_CLIENT_ID`, `NAVER_API_CLIENT_SECRET`, `GOOGLE_TOKEN_JSON`, `DAILY_MAILING_RUNS_TOKEN`.
+- 수동 드라이런: Actions → hermes-daily-mailing → Run workflow → scope_ids 입력.
+- 로컬 드라이런: `python scripts/hermes_runner.py --scope-file <scope.json> --no-commit`.
