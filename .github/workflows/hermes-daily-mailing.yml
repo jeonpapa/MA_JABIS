@@ -1,0 +1,49 @@
+name: Hermes Daily Mailing (scope-triggered)
+
+on:
+  repository_dispatch:
+    types: [scope-changed]
+  workflow_dispatch:
+    inputs:
+      scope_ids:
+        description: "공백 구분 scope id (수동 드라이런)"
+        required: false
+        default: ""
+
+concurrency:
+  group: hermes-${{ github.event.client_payload.scope_ids && join(github.event.client_payload.scope_ids, '-') || github.event.inputs.scope_ids }}
+  cancel-in-progress: true
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Write Gmail token
+        run: |
+          mkdir -p /tmp/secrets
+          printf '%s' "${{ secrets.GOOGLE_TOKEN_JSON }}" > /tmp/secrets/google_token.json
+      - name: Write env
+        run: |
+          mkdir -p config
+          {
+            echo "NAVER_API_CLIENT_ID=${{ secrets.NAVER_API_CLIENT_ID }}"
+            echo "NAVER_API_CLIENT_SECRET=${{ secrets.NAVER_API_CLIENT_SECRET }}"
+          } > config/.env
+      - name: Run hermes runner
+        env:
+          DAILY_MAILING_RUNS_TOKEN: ${{ secrets.DAILY_MAILING_RUNS_TOKEN }}
+          GOOGLE_TOKEN_PATH: /tmp/secrets/google_token.json
+          SCOPE_IDS: ${{ join(github.event.client_payload.scope_ids, ' ') }}
+          MANUAL_IDS: ${{ github.event.inputs.scope_ids }}
+        run: |
+          IDS="${SCOPE_IDS:-$MANUAL_IDS}"
+          if [ -z "$IDS" ]; then echo "no scope ids"; exit 0; fi
+          python scripts/hermes_runner.py --scope-ids $IDS --out-dir runs/drafts
