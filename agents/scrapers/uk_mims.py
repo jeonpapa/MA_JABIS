@@ -20,6 +20,7 @@ Scrapling `StealthySession(solve_cloudflare=True)`(camoufox 스텔스)로 Cloudf
 import asyncio
 import json
 import logging
+import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -32,6 +33,13 @@ logger = logging.getLogger(__name__)
 MIMS_BASE  = "https://www.mims.co.uk"
 LOGIN_URL  = f"{MIMS_BASE}/login"
 SEARCH_URL = f"{MIMS_BASE}/search/drugs"
+
+# Cloudflare 는 fingerprint(camoufox 로 통과) 와 **별개로 IP 평판**을 검사한다. fly 등
+# 데이터센터 IP 는 CF 가 계속 재도전시켜 solve 실패 → residential proxy 필요.
+# config/.env `MIMS_UK_PROXY` (예: "http://user:pass@host:port") 설정 시 그 IP 로 우회.
+# (런타임에 읽음 — 모듈 import 시점에 .env 가 아직 로드 안 됐을 수 있음)
+# 전체 UK 스크레이프 최대 대기(초) — CF solve 가 안 되는 환경에서 무한 대기 방지.
+UK_SCRAPE_HARD_TIMEOUT = 180
 
 
 class UkMimsScraper(BaseScraper):
@@ -76,8 +84,17 @@ class UkMimsScraper(BaseScraper):
                 pass
             page.wait_for_timeout(5000)
 
+        proxy = os.environ.get("MIMS_UK_PROXY", "").strip() or None
+        sess_kw = dict(headless=self.headless, solve_cloudflare=True)
+        if proxy:
+            sess_kw["proxy"] = proxy
+            sess_kw["block_webrtc"] = True   # 프록시 뒤 로컬 IP 누출 방지
+            logger.info("[UK] MIMS_UK_PROXY 사용 (CF IP 우회)")
+        else:
+            logger.warning("[UK] MIMS_UK_PROXY 미설정 — 데이터센터 IP 는 Cloudflare 차단 가능")
+
         results: list[dict] = []
-        with StealthySession(headless=self.headless, solve_cloudflare=True) as s:
+        with StealthySession(**sess_kw) as s:
             lp = s.fetch(LOGIN_URL, page_action=login_action,
                          network_idle=False, timeout=120000)
             if "log in or register" in (lp.html_content or "").lower():
@@ -205,7 +222,14 @@ class UkMimsScraper(BaseScraper):
         logger.info("[UK] MIMS(Scrapling) 검색 시작: '%s'", query)
         searched_at = datetime.now().isoformat()
         try:
-            raw = await asyncio.to_thread(self._scrape_sync, query)
+            raw = await asyncio.wait_for(
+                asyncio.to_thread(self._scrape_sync, query),
+                timeout=UK_SCRAPE_HARD_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("[UK] MIMS 스크레이프 타임아웃(%ds) — CF 미해결(프록시 필요?)로 스킵",
+                           UK_SCRAPE_HARD_TIMEOUT)
+            return []
         except Exception as e:
             logger.error("[UK] MIMS 스크레이프 실패: %s", e, exc_info=True)
             return []
