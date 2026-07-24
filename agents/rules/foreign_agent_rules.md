@@ -56,13 +56,24 @@ form_type 주입은 **스크레이퍼 + 에이전트 이중 보장**으로 캐�
 | 국가 | 소스 | 로그인 | 제형 커버리지 |
 |------|------|--------|---------------|
 | JP | MHLW 薬価基準 Excel | 불필요 | 内用薬/注射薬/外用薬 별 워크북 분리 → oral/injection 각각 |
-| IT | AIFA Class A (retail) + Class H (hospital) CSV | 불필요 | Class A=prezzo al pubblico(oral), Class H=ex-factory(injection) |
+| IT | **2채널 병행**: ① AIFA Class A/H CSV ② TrovaNorme(TNF) 결정문 | 불필요 | Class A=prezzo al pubblico(oral), Class H=ex-factory(injection). TNF=결정문 원문 ex-factory |
 | FR | base-donnees-publique.medicaments.gouv.fr (BDPM) | 불필요 | CIS_bdpm.txt + CIS_CIP_bdpm.txt. 주사제는 CIP 공시가 자주 없음 (None 허용) |
 | CH | Swissmedic Compendium | 불필요 | Filmtabl/Gran(oral) + Inf Konz(injection) 혼재 |
 | UK | MIMS | 필요 | 경구제 중심, injection 없으면 결과 1건 |
 | DE | Rote Liste | 필요 | Pharmazie 리스트, 제형 기본 injection |
 | CA | Ontario EAP HTML 테이블 | 불필요 | Tab(oral) + Inj Sol(injection) 혼재. 단일 연방 DB 없음 — 온타리오주 대표 |
 | US | Micromedex (Red Book) | 필요 | **WAC package price 우선** (ex-manufacturer). AWP 는 유통 마크업 포함이라 factory_ratio 0.74 와 중복 → fallback 만. `price_basis` 컬럼으로 식별 |
+
+## IT TrovaNorme(TNF) 결정문 채널 (2026-07-24, `it_aifa_tnf.py`)
+
+기존 CSV 채널과 **병행**. `ForeignPriceAgent.search_one_country` 가 IT 일 때 `ItAifaTnfScraper` 를
+추가 실행해 raw_results 에 병합(둘 다 `SOURCE_TYPE="aifa_exfactory"` → ratio 1.0). 실패해도 CSV 유지.
+
+- **전량 공개 HTTP JSON API** (브라우저·로그인 불필요). AIFA cert 체인 불완전 → `requests(verify=False)`.
+- 파이프라인: ① `determina/tnf/parametrata?determinaTNFSource=true&parola={약제}` (자유텍스트. **축약 `dF`/`p` 는 서버가 무시** — 반드시 `parola`) → ② `determina/tnf/pubblicate/{id}` (datiFarmaco{성분·ATC·브랜드} + allegati + tipiAtto `A_H`=급여분류 결정) → ③ `determina/tnf/pubblicate/allegato/{allegatoId}` (**Accept 헤더를 json 이 아닌 pdf/`*` 로** — json 이면 500) → ④ confezione 블록 파싱.
+- **가격 = Prezzo ex-factory (IVA esclusa)** per pack. pack_count 는 confezione 설명("90 (3 x 30) compresse"→90, "1 flaconcino"→1) 에서 추출해 item 에 명시.
+- 결정문 선택: 가격결정문(tipiAtto `A_H` 또는 titolo 에 rimborsabilità/prezzo/classificazione/rinegoziazione) 중 datiFarmaco 가 검색어와 매칭되는 **최신** 1건.
+- **한계**: TNF 는 2025-01 이후 결정문만 보유 → 오래전 등재약(예: Januvia)은 최근 결정문이 없어 TNF 0건(기존 CSV 채널이 커버). 검증: welireg(belzutifan, CSV 미등재)=TNF만 1건 oral pack90, keytruda=CSV+TNF 공존.
 
 ## 새 국가 추가 시 필수 작업
 1. `agents/scrapers/{cc}_{source}.py` 생성 (BaseScraper 상속)

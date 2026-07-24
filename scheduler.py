@@ -917,6 +917,11 @@ def main():
         id="domestic_price_pipeline",
         name="국내 약가 모니터링 파이프라인",
         replace_existing=True,
+        # 월 1회 발화라 발화 시점에 스케줄러가 다운돼 있으면 놓친 실행이 폐기됨
+        # (7/1·6/1 미실행 원인). 재시작이 잦으므로 grace 24h + coalesce 로
+        # 창 안에서 재기동 시 놓친 월간 잡을 1회 실행. catch_up 은 멱등이라 안전.
+        misfire_grace_time=86400,
+        coalesce=True,
     )
 
     # Git 자정 자동 백업 스케줄 추가
@@ -971,19 +976,13 @@ def main():
         replace_existing=True,
     )
 
-    # ForeignPrice 백필 — 매주 월요일 03:00 Seoul (모든 indications_master product)
-    scheduler.add_job(
-        foreign_price_backfill_job,
-        trigger=CronTrigger(
-            day_of_week="mon",
-            hour=3,
-            minute=0,
-            timezone="Asia/Seoul",
-        ),
-        id="foreign_price_backfill",
-        name="ForeignPrice 주간 백필 (8개국)",
-        replace_existing=True,
-    )
+    # ForeignPrice 주간 백필 — **비활성화** (2026-07-24).
+    # 이유: 전체 indications_master 세트를 매주 재스크레이프해 append 하면서, 사용자가
+    # 검색하지 않은 MSD 자산 세트(januvia/lenvima 등)가 검색 히스토리에 고정 노출되고
+    # append-only 로 행이 무한 누적되는 문제(sitagliptin 511행). 해외약가는 이제
+    # **사용자 '실시간 검색 실행' 만** 캐시를 채우고, search_all 직후 compact_foreign_prices
+    # 가 약제당 최신 1세션만 유지한다. 수동 실행은 `python scheduler.py --price-backfill-now`.
+    # (foreign_price_backfill_job 함수 + CLI 플래그는 수동용으로 보존)
 
     # Competitor News — 매주 월요일 03:30 Seoul (Tier 1 전문지 6개월 크롤 + 1년 보존)
     scheduler.add_job(

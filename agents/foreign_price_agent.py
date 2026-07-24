@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 # 구현된 스크레이퍼 등록 (국가 추가 시 여기에 import + 등록)
 from agents.scrapers.jp_mhlw import JpMhlwScraper
 from agents.scrapers.it_aifa import ItAifaScraper
+from agents.scrapers.it_aifa_tnf import ItAifaTnfScraper
 from agents.scrapers.fr_bdpm import FrBdpmScraper
 from agents.scrapers.ch_compendium import ChCompendiumScraper
 from agents.scrapers.uk_mims import UkMimsScraper
@@ -123,6 +124,23 @@ class ForeignPriceAgent:
         # SOURCE_TYPE: CH=compendium(0.65), FR=vidal(0.65), 그 외=None(기본 ratio)
         source_type = getattr(scraper, "SOURCE_TYPE", None)
         raw_results = await scraper.run(query)
+
+        # IT: TrovaNorme 결정문 채널을 기존 CSV 채널과 **병행** (둘 다 aifa_exfactory).
+        # 결정문(determina)에서 성분·제형·ex-factory 가격을 직접 확인 — CSV 미등재/신규
+        # 협상 약제를 보완. 실패해도 CSV 결과는 유지.
+        if country == "IT":
+            raw_results = list(raw_results or [])
+            try:
+                tnf = ItAifaTnfScraper(
+                    cache_dir=self.foreign_data_dir / "it", msd_only=False,
+                )
+                tnf_rows = await tnf.run(query)
+                if tnf_rows:
+                    raw_results.extend(tnf_rows)
+                    logger.info("[IT] TrovaNorme 채널 +%d건 (총 %d건)",
+                                len(tnf_rows), len(raw_results))
+            except Exception as e:
+                logger.warning("[IT] TrovaNorme 채널 실패(CSV 결과 유지): %s", e)
 
         if not raw_results:
             logger.info("[%s] 검색 결과 없음", country)
@@ -355,6 +373,18 @@ class ForeignPriceAgent:
             self._normalize_doses_across_countries(query, results)
         except Exception as e:
             logger.warning("[DoseNorm] %s 정규화 후처리 실패(원본가 유지): %s", query, e)
+
+        # 압축: 약제당 국가별 '최신 1세션'만 유지 (append 누적 방지).
+        # dose-norm UPDATE 이후에 실행해야 최신 세션의 보정값이 보존된다.
+        try:
+            removed = self.db.compact_foreign_prices(query)
+            if removed:
+                logger.info(
+                    "[Compact] %s: 과거 누적 %d행 정리 (약제당 국가별 최신 1세션 유지)",
+                    query, removed,
+                )
+        except Exception as e:
+            logger.warning("[Compact] %s 압축 실패(누적 유지): %s", query, e)
 
         return results
 

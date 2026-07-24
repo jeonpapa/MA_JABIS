@@ -227,7 +227,12 @@ daily_cost_krw = daily_dose_mg × (adjusted_price_krw / unit_mg)
 
 ## 6. DB 스키마 (`foreign_drug_prices`)
 
-`agents/db/schema.py`. append-only. 최신행이 노출 기준.
+`agents/db/schema.py`. append-only INSERT. 조회는 국가(또는 국가×제형)별 `MAX(searched_at)` 최신행만 노출.
+
+**캐시 보존 정책 (2026-07-24)**: 해외약가 캐시는 **사용자가 실시간 검색한 약제만** 담는다.
+- 자동 백필(전체 자산 세트 주간 재스크레이프)은 **비활성화** — 검색 안 한 약제가 히스토리에 고정 노출되고 무한 누적되는 문제 방지.
+- `search_all` 말미에 `DrugPriceDB.compact_foreign_prices(query)` 호출 → **약제당 국가별 최신 1세션만 유지**하고 과거 누적 행 삭제. keep 기준은 `COALESCE(MAX(가격보유 searched_at), MAX(전체 searched_at))` 라 실패 재검색(null)이 과거 확보 실가격을 지우지 않음(cache-db-first).
+- 라이브 스크레이프는 UI '실시간 검색 실행'(`POST /api/foreign/search {use_cache:false}`)에서만. 페이지 로드/탭 전환은 `GET /api/foreign/cached`(읽기 전용, A8만 즉석 재계산).
 
 주요 컬럼: `searched_at, query_name, country, product_name, ingredient, dosage_strength, dosage_form, package_unit, local_price, currency, exchange_rate, exchange_rate_from/to, factory_price_krw, vat_rate(=0.10), distribution_margin(=0.0869), adjusted_price_krw(per-unit KRW), pack_count, per_unit_local, total_pkg_mg, daily_dose_mg, daily_cost_krw, daily_cost_note, source_url, source_label, raw_data, form_type`
 

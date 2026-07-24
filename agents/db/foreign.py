@@ -64,6 +64,48 @@ class _ForeignMixin:
             cur = conn.execute(sql, rec)
         return cur.lastrowid
 
+    def compact_foreign_prices(self, query_name: str) -> int:
+        """동일 약제(alias 포함)에 대해 **국가별 '최신 1세션'만 남기고** 과거 누적 행 삭제.
+
+        append-only 모델이라 재검색·백필마다 행이 쌓이므로, 검색 직후 호출해
+        국가당 최신 세션만 유지한다 (한 번의 스크레이프는 국가별로 동일 searched_at 공유).
+
+        keep 기준: **가격 보유 세션 우선** — MAX(searched_at WHERE local_price NOT NULL),
+        없으면 MAX(searched_at). 실패 재검색(local_price=None)이 과거 확보 실가격을
+        지우지 않도록 보존한다 (cache-db-first 원칙, get_foreign_prices 노출 로직과 일치).
+
+        반환: 삭제된 행 수.
+        """
+        names = aliases(query_name)
+        placeholders = ",".join(["?"] * len(names))
+        keep_sql = f"""
+            SELECT country,
+                   COALESCE(
+                       MAX(CASE WHEN local_price IS NOT NULL THEN searched_at END),
+                       MAX(searched_at)
+                   ) AS keep_ts
+            FROM foreign_drug_prices
+            WHERE LOWER(query_name) IN ({placeholders})
+            GROUP BY country
+        """
+        with self._connect() as conn:
+            keep = {
+                r["country"]: r["keep_ts"]
+                for r in conn.execute(keep_sql, tuple(names)).fetchall()
+                if r["country"] and r["keep_ts"]
+            }
+            deleted = 0
+            for country, keep_ts in keep.items():
+                cur = conn.execute(
+                    f"""DELETE FROM foreign_drug_prices
+                        WHERE LOWER(query_name) IN ({placeholders})
+                          AND country = ?
+                          AND searched_at <> ?""",
+                    (*names, country, keep_ts),
+                )
+                deleted += cur.rowcount
+        return deleted
+
     def update_foreign_dose_norm(self, row_id: int, fields: dict) -> None:
         """검색 후처리(제형 매칭 + 제형 내 표시단위 보정) 결과를 기존 행에 반영.
 
