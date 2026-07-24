@@ -1,4 +1,5 @@
 import importlib.util
+import json
 from pathlib import Path
 
 _spec = importlib.util.spec_from_file_location(
@@ -58,3 +59,19 @@ def test_put_run_bundle_puts_and_updates_index(monkeypatch):
     put_urls = [u for (m, u, _) in puts if m == "PUT"]
     assert any(u.endswith("/runs/run_20260724.json") for u in put_urls)
     assert any(u.endswith("/runs/runs_index.json") for u in put_urls)
+
+
+def test_run_pipeline_parses_stdout_and_reads_html(monkeypatch, tmp_path):
+    html = tmp_path / "d.html"; html.write_text("<b>x</b>", encoding="utf-8")
+    jsonf = tmp_path / "d.json"; jsonf.write_text('{"run_id":"20260724","selected_count":3}', encoding="utf-8")
+    summary = {"json": str(jsonf), "html": str(html), "review_board": None,
+               "status": "ok", "selected_count": 3}
+    class _P:
+        returncode = 0
+        stdout = json.dumps(summary)
+        stderr = ""
+    monkeypatch.setattr(hermes_runner.subprocess, "run", lambda *a, **k: _P())
+    out = hermes_runner.run_pipeline("scope.json", str(tmp_path), "env", "db.sqlite")
+    assert out["payload"]["run_id"] == "20260724"
+    assert out["html_body"] == "<b>x</b>"
+    assert out["summary"]["status"] == "ok"

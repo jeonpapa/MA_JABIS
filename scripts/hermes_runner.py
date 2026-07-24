@@ -105,3 +105,25 @@ def put_run_bundle(name: str, bundle: dict, token: str) -> None:
     _gh_put("runs_index.json",
             json.dumps(index, ensure_ascii=False, indent=2).encode("utf-8"),
             token, "daily-mailing: runs_index update")
+
+
+def run_pipeline(scope_path: str, out_dir: str, env_path: str, db_path: str) -> dict:
+    """generate_daily_mailing_draft.py 를 subprocess 로 실행하고 산출물을 로드."""
+    cmd = [
+        sys.executable, str(REPO_ROOT / "scripts" / "generate_daily_mailing_draft.py"),
+        "--dashboard-scope", scope_path,
+        "--out-dir", out_dir,
+        "--env", env_path,
+        "--db", db_path,
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError(f"pipeline failed rc={proc.returncode}: {proc.stderr[-500:]}")
+    summary = json.loads(proc.stdout)
+    payload = json.loads(Path(summary["json"]).read_text(encoding="utf-8"))
+    html_body = Path(summary["html"]).read_text(encoding="utf-8") if summary.get("html") else ""
+    articles = []
+    if summary.get("review_board"):
+        rb = json.loads(Path(summary["review_board"]).read_text(encoding="utf-8"))
+        articles = rb.get("articles", [])
+    return {"summary": summary, "payload": payload, "html_body": html_body, "articles": articles}
