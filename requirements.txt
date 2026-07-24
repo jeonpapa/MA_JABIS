@@ -15,12 +15,10 @@ bcrypt>=4.1.0
 openai>=1.40.0
 anthropic>=0.40.0
 beautifulsoup4>=4.12.0
-lxml>=6.1.1
+lxml>=5.2.0
 python-dotenv>=1.0.0
-# UK MIMS 스크래퍼 — Cloudflare 봇차단 우회(StealthySession/camoufox). 브라우저는
-# Dockerfile 의 `scrapling install` 로 설치. lxml>=6.1.1 요구(python-hwpx<6 핀과
-# 메타데이터 경고 나지만 런타임 호환 확인됨).
-scrapling[fetchers]>=0.4.11
+# NOTE: UK MIMS Cloudflare 우회용 scrapling[fetchers] 는 **core 가 아닌** Dockerfile 의
+# 별도 non-fatal 단계에서 설치(scrapling 이 lxml>=6 을 끌어와도 core 배포를 막지 않도록 분리).
 python-dateutil>=2.9.0
 markdown>=3.6
 pdfplumber>=0.11.0

@@ -16,14 +16,20 @@ RUN npm run build   # → /build/out
 FROM python:3.12-slim
 WORKDIR /app
 
-# Playwright chromium (HIRA/KEB/대부분 스크레이퍼) + Scrapling camoufox (UK MIMS Cloudflare 우회)
-# camoufox 는 Firefox 기반 → firefox 시스템 의존성 설치 후 `scrapling install` 로 브라우저 fetch.
+# 핵심 의존성 + Playwright chromium (HIRA/KEB/대부분 스크레이퍼). 이 단계 실패는 배포 중단.
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt \
     && playwright install chromium --with-deps \
-    && playwright install firefox --with-deps \
-    && scrapling install \
-    && rm -rf /root/.cache/pip /root/.cache/ms-playwright-download
+    && rm -rf /root/.cache/pip
+
+# UK MIMS Cloudflare 우회용 Scrapling+camoufox — **완전 non-fatal**: pip/브라우저 설치가
+# 실패해도 배포는 계속(IT/국내/캐시 등 나머지 수정 반영). 없으면 UK 만 런타임 비활성(그레이스풀
+# — uk_mims.py 가 import 실패 시 [] 반환). scrapling 이 lxml>=6 을 끌어와도 core 와 분리됨.
+RUN ( pip install --no-cache-dir "scrapling[fetchers]>=0.4.11" \
+      && playwright install firefox --with-deps \
+      && scrapling install ) \
+    || echo "WARN: scrapling/camoufox 설치 실패 — UK MIMS(Scrapling) 런타임 비활성, 나머지 정상 배포"
+RUN rm -rf /root/.cache/pip
 
 COPY . .
 COPY --from=frontend /build/out ./frontend/out
