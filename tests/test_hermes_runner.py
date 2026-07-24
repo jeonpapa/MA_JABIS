@@ -21,3 +21,21 @@ def test_normal_edit_does_not_deliver():
 def test_default_mode_is_gmail_draft():
     d = decide_delivery({}, has_test_request=True)
     assert d["mode"] == "gmail_draft"
+
+
+def test_load_scope_local_reads_json(tmp_path):
+    p = tmp_path / "42.json"
+    p.write_text('{"subscription_id": 42, "delivery_mode": "gmail_draft"}', encoding="utf-8")
+    scope = hermes_runner.load_scope_local(str(p))
+    assert scope["subscription_id"] == 42
+
+
+def test_fetch_scope_uses_raw_url(monkeypatch):
+    calls = {}
+    def fake_get(url, token):
+        calls["url"] = url
+        return b'{"subscription_id": 7}'
+    monkeypatch.setattr(hermes_runner, "_http_get_bytes", fake_get)
+    scope = hermes_runner.fetch_scope("7", token="tok")
+    assert scope["subscription_id"] == 7
+    assert calls["url"].endswith("/scopes/7.json")

@@ -28,3 +28,20 @@ def decide_delivery(scope: dict, has_test_request: bool) -> dict:
     if has_test_request:
         return {"deliver": True, "mode": mode, "subject_prefix": "[TEST] ", "is_test": True}
     return {"deliver": False, "mode": mode, "subject_prefix": "", "is_test": False}
+
+
+def _http_get_bytes(url: str, token: str | None) -> bytes:
+    req = urllib.request.Request(url, method="GET")
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return resp.read()
+
+
+def load_scope_local(path: str) -> dict:
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def fetch_scope(scope_id: str, token: str | None) -> dict:
+    url = f"{SCOPES_RAW_BASE}/{scope_id}.json"
+    return json.loads(_http_get_bytes(url, token).decode("utf-8"))
