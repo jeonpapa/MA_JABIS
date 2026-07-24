@@ -48,6 +48,14 @@ from playwright.async_api import Page
 
 from .base import BaseScraper
 
+# AIFA(www.aifa.gov.it) 는 중간 CA 를 응답에 포함하지 않아, CA 번들이 없는 환경
+# (프로덕션 Debian 등)에서 CERTIFICATE_VERIFY_FAILED 로 죽는다. 공개 gov 문서이므로
+# verify=False 로 접근 (TNF 채널과 동일 정책). SSL 경고는 억제.
+try:
+    requests.packages.urllib3.disable_warnings()
+except Exception:
+    pass
+
 logger = logging.getLogger(__name__)
 
 AIFA_PAGE_URL = "https://www.aifa.gov.it/en/liste-farmaci-a-h"
@@ -96,7 +104,7 @@ class ItAifaScraper(BaseScraper):
             ),
             "Accept-Language": "en-US,en;q=0.9",
         }
-        resp = requests.get(AIFA_PAGE_URL, headers=headers, timeout=30)
+        resp = requests.get(AIFA_PAGE_URL, headers=headers, timeout=30, verify=False)
         resp.raise_for_status()
         content = resp.text
 
@@ -146,7 +154,7 @@ class ItAifaScraper(BaseScraper):
             "Referer": AIFA_PAGE_URL,
             "Accept": "text/csv,application/octet-stream,*/*",
         }
-        resp = requests.get(url, headers=headers, timeout=60, stream=True)
+        resp = requests.get(url, headers=headers, timeout=60, stream=True, verify=False)
         resp.raise_for_status()
         with open(save_path, "wb") as f:
             for chunk in resp.iter_content(chunk_size=65536):

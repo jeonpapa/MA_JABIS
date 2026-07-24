@@ -123,7 +123,16 @@ class ForeignPriceAgent:
         scraper = self._build_scraper(country)
         # SOURCE_TYPE: CH=compendium(0.65), FR=vidal(0.65), 그 외=None(기본 ratio)
         source_type = getattr(scraper, "SOURCE_TYPE", None)
-        raw_results = await scraper.run(query)
+        try:
+            raw_results = await scraper.run(query)
+        except Exception as e:
+            # IT 는 2채널(CSV+TNF)이라 CSV 실패가 TNF 를 막으면 안 됨 (예: AIFA SSL 오류).
+            # 다른 국가는 단일 채널이므로 기존대로 전파(search_all 이 국가별로 catch).
+            if country == "IT":
+                logger.warning("[IT] CSV 채널 실패(TNF 로 계속): %s", e)
+                raw_results = []
+            else:
+                raise
 
         # IT: TrovaNorme 결정문 채널을 기존 CSV 채널과 **병행** (둘 다 aifa_exfactory).
         # 결정문(determina)에서 성분·제형·ex-factory 가격을 직접 확인 — CSV 미등재/신규
