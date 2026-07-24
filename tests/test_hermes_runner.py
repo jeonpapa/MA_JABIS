@@ -42,23 +42,26 @@ def test_fetch_scope_uses_raw_url(monkeypatch):
     assert calls["url"].endswith("/scopes/7.json")
 
 
-def test_put_run_bundle_puts_and_updates_index(monkeypatch):
-    puts = []
+def test_put_run_bundle_writes_stem_keyed_index(monkeypatch):
+    puts = {}
     def fake_req(method, url, token, body=None):
-        puts.append((method, url, body))
         if method == "GET":
             raise hermes_runner.urllib.error.HTTPError(url, 404, "nf", {}, None)
+        puts[url] = body
         return {}
     monkeypatch.setattr(hermes_runner, "_gh_request", fake_req)
-    monkeypatch.setattr(hermes_runner, "_http_get_bytes", lambda url, token: (_ for _ in ()).throw(Exception("no index")))
     hermes_runner.put_run_bundle(
-        "run_20260724.json",
-        {"payload": {"run_id": "20260724", "subscription_id": 7}, "articles": []},
+        "run_20260724_sub7.json",
+        {"payload": {"run_id": "20260724", "subscription_id": 7}, "articles": [], "is_test": True},
         token="tok",
     )
-    put_urls = [u for (m, u, _) in puts if m == "PUT"]
-    assert any(u.endswith("/runs/run_20260724.json") for u in put_urls)
-    assert any(u.endswith("/runs/runs_index.json") for u in put_urls)
+    idx_url = next(u for u in puts if u.endswith("/runs/runs_index.json"))
+    import base64 as _b64, json as _json
+    index = _json.loads(_b64.b64decode(puts[idx_url]["content"]).decode("utf-8"))
+    assert isinstance(index, dict)
+    assert "run_20260724_sub7" in index            # stem 키 (소비자가 f'{stem}.json' 로 복원)
+    assert index["run_20260724_sub7"]["subscription_id"] == 7
+    assert index["run_20260724_sub7"]["is_test"] is True
 
 
 def test_run_pipeline_parses_stdout_and_reads_html(monkeypatch, tmp_path):
@@ -78,18 +81,33 @@ def test_run_pipeline_parses_stdout_and_reads_html(monkeypatch, tmp_path):
 
 
 def test_process_scope_delivers_on_test_request(monkeypatch):
-    scope = {"subscription_id": 7, "delivery_mode": "gmail_draft",
+    scope = {"subscription_id": 7, "name": "S", "delivery_mode": "gmail_draft",
              "emails": ["a@x.com"], "test_request": {"requested_at": "t"}}
     monkeypatch.setattr(hermes_runner, "run_pipeline", lambda *a, **k: {
-        "summary": {"status": "ok"},
-        "payload": {"run_id": "R1", "subscription_id": 7, "generated_at": "g"},
+        "summary": {}, "payload": {"run_id": "R1", "status": "quality_gated_draft"},
         "html_body": "<b>x</b>", "articles": [],
     })
     delivered = {}
     monkeypatch.setattr(hermes_runner, "_deliver", lambda scope, html, subject, decision: delivered.update(subject=subject) or {"ok": True})
     committed = {}
-    monkeypatch.setattr(hermes_runner, "put_run_bundle", lambda name, bundle, token: committed.update(name=name, is_test=bundle.get("is_test")))
+    monkeypatch.setattr(hermes_runner, "put_run_bundle", lambda name, bundle, token: committed.update(name=name, sub=bundle["payload"].get("subscription_id"), is_test=bundle.get("is_test")))
     out = hermes_runner.process_scope(scope, "scope.json", "/tmp/out", "env", "db", token="tok", commit=True)
     assert out["delivered"] is True
     assert delivered["subject"].startswith("[TEST] ")
-    assert committed["is_test"] is True
+    assert committed["name"] == "run_R1_sub7.json"
+    assert committed["sub"] == 7 and committed["is_test"] is True
+
+
+def test_process_scope_holds_send_on_insufficient_quality(monkeypatch):
+    scope = {"subscription_id": 9, "delivery_mode": "gmail_send",
+             "emails": ["a@x.com"], "test_request": {"requested_at": "t"}}
+    monkeypatch.setattr(hermes_runner, "run_pipeline", lambda *a, **k: {
+        "summary": {}, "payload": {"run_id": "R2", "status": "draft_only_insufficient_quality"},
+        "html_body": "<b>x</b>", "articles": [],
+    })
+    called = {"deliver": False}
+    monkeypatch.setattr(hermes_runner, "_deliver", lambda *a, **k: called.update(deliver=True) or {"ok": True})
+    monkeypatch.setattr(hermes_runner, "put_run_bundle", lambda name, bundle, token: None)
+    out = hermes_runner.process_scope(scope, "s.json", "/tmp/out", "env", "db", token="tok", commit=True)
+    assert called["deliver"] is False   # 품질 미달 → 발송 보류
+    assert out["held"] is True and out["delivered"] is False

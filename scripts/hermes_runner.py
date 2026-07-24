@@ -13,10 +13,11 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
-from datetime import datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 RUNS_API_BASE = "https://api.github.com/repos/jeonpapa/AccessRoutineAnalystic/contents/daily_mailing/runs"
 SCOPES_RAW_BASE = "https://raw.githubusercontent.com/jeonpapa/AccessRoutineAnalystic/main/daily_mailing/scopes"
 BRANCH = "main"
@@ -79,29 +80,40 @@ def _gh_put(name: str, content: bytes, token: str, message: str) -> None:
     _gh_request("PUT", f"{RUNS_API_BASE}/{name}", token, body)
 
 
+def _load_runs_index(token: str) -> dict:
+    """runs_index.json 을 Contents API 로 로드 (raw 는 CDN 캐시로 stale). dict 반환."""
+    try:
+        res = _gh_request("GET", f"{RUNS_API_BASE}/runs_index.json?ref={BRANCH}", token)
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return {}
+        raise
+    content = base64.b64decode(res.get("content") or "")
+    try:
+        idx = json.loads(content.decode("utf-8"))
+    except Exception:
+        return {}
+    if isinstance(idx, dict):
+        return idx
+    if isinstance(idx, list):  # 구형(리스트) → stem 키 dict 승격
+        return {str(k): {} for k in idx if isinstance(k, str)}
+    return {}
+
+
 def put_run_bundle(name: str, bundle: dict, token: str) -> None:
-    """run 번들 파일 + runs_index.json 갱신 (append/replace, 멱등)."""
+    """run 번들 파일 + runs_index.json(dict, stem 키) 갱신.
+    소비자 daily_mailing_sync._iter_bundles_url (list(index.keys())→f'{stem}.json') 와 호환."""
     payload = bundle.get("payload") or {}
     content = json.dumps(bundle, ensure_ascii=False, indent=2).encode("utf-8")
     _gh_put(name, content, token, f"daily-mailing: run bundle {name}")
-    try:
-        idx_raw = _http_get_bytes(
-            f"https://raw.githubusercontent.com/jeonpapa/AccessRoutineAnalystic/{BRANCH}/daily_mailing/runs/runs_index.json",
-            token,
-        )
-        index = json.loads(idx_raw.decode("utf-8"))
-        if not isinstance(index, list):
-            index = []
-    except Exception:
-        index = []
-    index = [e for e in index if e.get("name") != name]
-    index.append({
-        "name": name,
+    stem = name[:-5] if name.endswith(".json") else name
+    index = _load_runs_index(token)
+    index[stem] = {
         "run_id": payload.get("run_id"),
         "subscription_id": payload.get("subscription_id"),
         "generated_at": payload.get("generated_at"),
         "is_test": bool(bundle.get("is_test")),
-    })
+    }
     _gh_put("runs_index.json",
             json.dumps(index, ensure_ascii=False, indent=2).encode("utf-8"),
             token, "daily-mailing: runs_index update")
@@ -152,17 +164,23 @@ def process_scope(scope: dict, scope_path: str, out_dir: str, env_path: str,
     decision = decide_delivery(scope, has_test)
     result = run_pipeline(scope_path, out_dir, env_path, db_path)
     payload = result["payload"]
+    payload["subscription_id"] = scope.get("subscription_id")   # FIX C3: 소비자 test_request 소비 계약
     payload["is_test"] = decision["is_test"]
     payload["delivery_mode"] = decision["mode"]
 
+    # FIX I1: 품질 미달(blocking)이면 발송 보류 (초안·번들은 유지). 기본 게이트는 gmail_draft.
+    quality_hold = payload.get("status") == "draft_only_insufficient_quality"
+
     delivered = False
     delivery_result = None
-    if decision["deliver"]:
+    if decision["deliver"] and not quality_hold:
         subject = decision["subject_prefix"] + f"[MA Daily] {scope.get('name') or scope.get('subscription_id')}"
         delivery_result = _deliver(scope, result["html_body"], subject, decision)
         delivered = bool(delivery_result.get("ok"))
         payload["delivery_status"] = "sent" if decision["mode"] == "gmail_send" and delivered else (
             "draft_created" if delivered else "delivery_failed")
+    elif decision["deliver"] and quality_hold:
+        payload["delivery_status"] = "held_insufficient_quality"
 
     bundle = {"payload": payload, "articles": result["articles"], "is_test": decision["is_test"]}
     committed = False
@@ -170,8 +188,10 @@ def process_scope(scope: dict, scope_path: str, out_dir: str, env_path: str,
         name = f"run_{payload.get('run_id')}_sub{payload.get('subscription_id')}.json"
         put_run_bundle(name, bundle, token)
         committed = True
-    return {"subscription_id": scope.get("subscription_id"), "status": result["summary"].get("status"),
-            "delivered": delivered, "delivery_result": delivery_result, "committed": committed}
+    return {"subscription_id": scope.get("subscription_id"),
+            "status": payload.get("status"),   # FIX I2: 파이프라인 stdout 엔 status 없음 → payload 에서
+            "delivered": delivered, "held": bool(decision["deliver"] and quality_hold),
+            "delivery_result": delivery_result, "committed": committed}
 
 
 def main() -> int:

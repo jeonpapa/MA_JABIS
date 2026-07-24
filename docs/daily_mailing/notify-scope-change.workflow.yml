@@ -13,12 +13,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
       - name: Collect changed scope ids
         id: ids
         run: |
-          CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'daily_mailing/scopes/*.json' \
-            | grep -v 'scopes_index.json' | sed -E 's#.*/##; s/\.json$//' | tr '\n' ' ')
+          BEFORE="${{ github.event.before }}"
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            DIFF_CMD="git show --name-only --diff-filter=d --pretty=format: HEAD"
+          else
+            DIFF_CMD="git diff --name-only --diff-filter=d $BEFORE ${{ github.event.after }}"
+          fi
+          CHANGED=$($DIFF_CMD -- 'daily_mailing/scopes/*.json' \
+            | grep -v 'scopes_index.json' | sed -E 's#.*/##; s/\.json$//' | sort -u | tr '\n' ' ')
           echo "ids=$CHANGED" >> "$GITHUB_OUTPUT"
       - name: Dispatch to MA_AI_Dossier
         if: steps.ids.outputs.ids != ''
