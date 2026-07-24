@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 from pathlib import Path
+from urllib.parse import urlparse
 
 from playwright.async_api import async_playwright
 
@@ -30,6 +32,27 @@ _DATE_RE = re.compile(r"(\d{4})[.\-](\d{1,2})[.\-](\d{1,2})")
 _LIST_KEYWORD = "약제급여목록"  # 약가 상한금액표 게시물만 (타 공지 제외)
 
 
+def _playwright_proxy():
+    """`HIRA_PROXY`(http://user:pass@host:port) → Playwright context proxy dict. 없으면 None.
+
+    HIRA(www.hira.or.kr) 는 fly 등 **비한국/데이터센터 IP 를 400 Bad Request 로 차단**한다.
+    한국 residential proxy(예: dataimpulse `__cr.kr`) 를 `config/.env HIRA_PROXY` 로 주면
+    그 KR IP 로 우회해 프로덕션에서도 수집 가능. 미설정 시 None(직접 접근 — 한국 IP 환경용).
+    """
+    raw = os.environ.get("HIRA_PROXY", "").strip()
+    if not raw:
+        return None
+    u = urlparse(raw)
+    if not u.hostname or not u.port:
+        return None
+    proxy = {"server": f"{u.scheme or 'http'}://{u.hostname}:{u.port}"}
+    if u.username:
+        proxy["username"] = u.username
+    if u.password:
+        proxy["password"] = u.password
+    return proxy
+
+
 async def catch_up(config: dict, base_dir: Path, max_pages: int = 2) -> dict:
     """누락 월 자동 적재. 반환: {latest_db_before, ingested:[{apply_date,rows}], errors:[...]}"""
     bf = BackfillAgent(config, base_dir)
@@ -40,9 +63,16 @@ async def catch_up(config: dict, base_dir: Path, max_pages: int = 2) -> dict:
     ingested: list[dict] = []
     errors: list[str] = []
 
+    proxy = _playwright_proxy()
+    if proxy:
+        logger.info("[catchup] HIRA_PROXY 사용 (KR IP 우회) — %s", proxy.get("server"))
+    else:
+        logger.info("[catchup] HIRA_PROXY 미설정 — 직접 접근(한국 IP 환경 전용, fly 는 400 차단)")
+
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=True)
-        context = await browser.new_context(accept_downloads=True, user_agent=_UA)
+        context = await browser.new_context(
+            accept_downloads=True, user_agent=_UA, proxy=proxy)
         page = await context.new_page()
         try:
             # ── 최근 게시물 수집 (page 1~max_pages) ──
