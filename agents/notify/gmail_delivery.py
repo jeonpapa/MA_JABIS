@@ -102,3 +102,37 @@ def create_gmail_draft(
         "recipients": [r.strip() for r in recipients if r and r.strip()],
         "subject": subject,
     }
+
+
+def send_gmail_message(
+    *,
+    recipients: Iterable[str],
+    subject: str,
+    body_html: str,
+    body_text: str | None = None,
+    sender: str | None = None,
+    token_path: str | Path = TOKEN_PATH,
+    service: GmailServiceProtocol | None = None,
+) -> dict:
+    """Send an email via Gmail API (live send). Caller must gate this explicitly."""
+    if service is None:
+        if not gmail_configured(token_path):
+            return {"ok": False, "mode": "gmail_send", "sent": False,
+                    "message": "Gmail OAuth token missing gmail.send scope"}
+        service = _build_service(token_path)
+    assert service is not None
+    msg = build_email_message(
+        recipients=recipients, subject=subject, body_html=body_html,
+        body_text=body_text, sender=sender,
+    )
+    raw = encode_raw_message(msg)
+    sent = service.users().messages().send(userId="me", body={"raw": raw}).execute()
+    return {
+        "ok": True,
+        "mode": "gmail_send",
+        "sent": True,
+        "gmail_message_id": sent.get("id"),
+        "thread_id": sent.get("threadId"),
+        "recipients": [r.strip() for r in recipients if r and r.strip()],
+        "subject": subject,
+    }
