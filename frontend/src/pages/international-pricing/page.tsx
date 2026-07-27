@@ -56,6 +56,7 @@ export default function InternationalPricingPage() {
   const [searchDropdown, setSearchDropdown] = useState(false);
   const [liveSearching, setLiveSearching] = useState(false);
   const [liveError, setLiveError] = useState<string | null>(null);
+  const [researchingCountry, setResearchingCountry] = useState<string | null>(null); // 국가별 재검색 진행 중인 국가코드
   const [deleting, setDeleting] = useState<string | null>(null); // 삭제 진행 중 queryName
   const [showCalcLogic, setShowCalcLogic] = useState(false);     // 조정가 산출 로직 패널
   const [showReport, setShowReport] = useState(false);           // 리포트 다운로드 모달
@@ -139,6 +140,23 @@ export default function InternationalPricingPage() {
       history.reload();
     } finally {
       setLiveSearching(false);
+    }
+  };
+
+  // 국가별 재검색 — 특정 국가만 라이브 스크레이프(전체 캐시 유지). 서버 압축이 그 국가 최신 세션만 교체.
+  const researchCountry = async (countryKey: string) => {
+    if (!selected || researchingCountry || liveSearching) return;
+    setResearchingCountry(countryKey);
+    setLiveError(null);
+    try {
+      await searchForeignLive(selected.query, [countryKey]);
+      pricing.reload();
+      history.reload();
+    } catch (e) {
+      setLiveError(`${countryLabel(countryKey)} 재검색 실패: ${e instanceof Error ? e.message : String(e)}`);
+      pricing.reload(); // 부분 저장 가능성 → 재조회
+    } finally {
+      setResearchingCountry(null);
     }
   };
 
@@ -488,6 +506,13 @@ export default function InternationalPricingPage() {
                             <div key={country.key} className={`p-5 ${idx % 4 !== 3 ? 'border-r' : ''} ${idx >= 4 ? 'border-t' : ''} ${divider}`}>
                               <div className="flex items-center gap-2 mb-3"><span className="text-xl">{country.flag}</span><div className="flex-1 min-w-0"><p className={`text-xs font-semibold ${textMain}`}>{country.label}</p><p className={`text-xs ${textMuted}`}>{country.currency}</p></div>
                                 {cell?.reimbursed && <span className="text-xs px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200 font-semibold whitespace-nowrap" title={`급여 ${cell.reimbursedLabel}`}>급여{cell.reimbursedLabel === '조건부' ? '(조건부)' : ''}</span>}
+                                <button
+                                  onClick={() => researchCountry(country.key)}
+                                  disabled={researchingCountry !== null || liveSearching}
+                                  title={`${country.label}만 재검색`}
+                                  className={`w-6 h-6 flex items-center justify-center rounded-lg shrink-0 transition-colors ${researchingCountry !== null || liveSearching ? 'text-gray-400 cursor-not-allowed' : `${textMuted} ${isDark ? 'hover:bg-[#1E2530] hover:text-teal-400' : 'hover:bg-gray-100 hover:text-teal-600'} cursor-pointer`}`}>
+                                  <i className={`text-sm ${researchingCountry === country.key ? 'ri-loader-4-line animate-spin' : 'ri-refresh-line'}`}></i>
+                                </button>
                               </div>
                               {cell ? (
                                 <>
