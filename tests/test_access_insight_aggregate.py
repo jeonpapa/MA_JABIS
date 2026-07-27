@@ -186,19 +186,20 @@ def test_drug_momentum_basic(db):
     assert m["brand_kr"] == "테스트약"
     assert m["expected_session"]["session_id"] == 1
     assert m["expected_session"]["session_date"] == "2026-06-15"
-    # 윈도우 밖 신호(2026-01-01) 는 제외 → 5건만 카운트.
-    assert m["signal_count"] == 5
+    # 윈도우 밖 신호(2026-01-01) 제외 + IR_RELEASE 2건은 신호 팩터 제외 → 3건만 카운트.
+    assert m["signal_count"] == 3
+    assert m["excluded_factor"] == 2   # IR_RELEASE 2건은 momentum 집계에서 제외(행은 보존)
     assert m["by_type"] == {
         "GOV_STATEMENT": 1,
         "PATIENT_PETITION": 1,
         "KOL_OPINION": 1,
-        "IR_RELEASE": 2,
+        "IR_RELEASE": 0,   # 팩터 제외 → 집계 카운트 0
         "RESULT_REPORT": 0,
         "PRE_AGENDA_LEAK": 0,
-        "UNCLASSIFIED": 0,  # B7 저신뢰 미분류 버킷 (항상 0 이라도 노출)
+        "UNCLASSIFIED": 0,  # B7 저신뢰 미분류 버킷 (팩터 제외 대상)
     }
-    # 4종의 서로 다른 signal_type 이 등장 (GOV/PATIENT/KOL/IR).
-    assert m["engage_diversity"] == 4
+    # 3종의 서로 다른 signal_type (GOV/PATIENT/KOL) — IR_RELEASE 는 팩터 제외.
+    assert m["engage_diversity"] == 3
     assert m["weighted_sum"] > 0
     assert m["momentum_score"] > 0
 
@@ -219,8 +220,8 @@ def test_recency_weighting_favors_closer_signals(db):
 
 def test_trend_up_when_recent_denser(db):
     m = drug_momentum(1, db_path=db, window_days=90)
-    # recent_30d(<=30일전): 06-14,06-10,06-05,05-20 = 4건. prior_30d(31~60일전): 0건.
-    assert m["trend"]["recent_30d"] == 4
+    # recent_30d(<=30일전): 06-14,06-10,06-05 = 3건 (05-20 IR_RELEASE 는 팩터 제외). prior_30d: 0건.
+    assert m["trend"]["recent_30d"] == 3
     assert m["trend"]["prior_30d"] == 0
     assert m["trend"]["direction"] == "up"
 

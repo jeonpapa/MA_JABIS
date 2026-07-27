@@ -43,6 +43,12 @@ SIGNAL_TYPES: tuple[str, ...] = (
     "UNCLASSIFIED",
 )
 
+# momentum 신호 팩터에서 **제외**하는 signal_type — 급여 등재 momentum 과 무관한 노이즈.
+#   IR_RELEASE(IR 공시: 실적·IPO·해외승인 등 기업/제품 뉴스), UNCLASSIFIED(저신뢰 미분류).
+#   행은 보존(journey 에 그대로 노출)하되 weighted_sum·momentum·signal_count·engage_diversity·
+#   trend 집계에서만 뺀다. (passing 제외와 동일 패턴)
+_FACTOR_EXCLUDED_TYPES: frozenset[str] = frozenset({"IR_RELEASE", "UNCLASSIFIED"})
+
 # momentum_score 정규화 기준 — window_days 를 30일(1개월) 단위 평균 강도로 스케일해
 # leaderboard 호출마다 window_days 파라미터가 달라져도 상대비교가 유지되게 한다.
 # 공식: momentum_score = weighted_sum / (window_days / 30)
@@ -465,6 +471,8 @@ def drug_momentum(
     - trend: 기준일 기준 최근 30일 vs 그 이전 30일 신호 수 비교
     - excluded_passing: A1 prominence gate 로 집계에서 제외된 스침(passing) 신호 수
       (행은 보존 — journey 에서 flag 로 노출)
+    - excluded_factor: 신호 팩터 제외(IR_RELEASE·UNCLASSIFIED) 로 집계에서 뺀 신호 수
+      (행은 보존 — journey 에 노출, momentum 에만 미반영)
     """
     path = str(db_path or DEFAULT_DB_PATH)
     conn = _connect(path)
@@ -482,6 +490,7 @@ def drug_momentum(
         weighted_sum = 0.0
         signal_count = 0
         excluded_passing = 0
+        excluded_factor = 0
         recent_30d = 0
         prior_30d = 0
 
@@ -501,8 +510,12 @@ def drug_momentum(
                 if r["prominence"] == "passing":
                     excluded_passing += 1
                     continue
-                signal_count += 1
                 stype = r["signal_type"] or ""
+                # IR 공시·미분류는 신호 팩터에서 제외 (행 보존, momentum 집계에서만 뺌).
+                if stype in _FACTOR_EXCLUDED_TYPES:
+                    excluded_factor += 1
+                    continue
+                signal_count += 1
                 if stype in by_type:
                     by_type[stype] += 1
                 weight = r["weight"] if r["weight"] is not None else 1.0
@@ -552,6 +565,7 @@ def drug_momentum(
             "window_days": window_days,
             "signal_count": signal_count,
             "excluded_passing": excluded_passing,
+            "excluded_factor": excluded_factor,
             "weighted_sum": weighted_sum,
             "momentum_score": momentum_score,
             "by_type": by_type,
