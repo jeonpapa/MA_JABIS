@@ -22,9 +22,10 @@ import json
 import logging
 import os
 import re
+import uuid
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 from .base import BaseScraper
 
@@ -58,6 +59,29 @@ class UkMimsScraper(BaseScraper):
     # Scrapling 동기 스크레이프 (asyncio.to_thread 로 실행 — StealthySession 은 동기)
     # ──────────────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _make_sticky(proxy_url):
+        """로테이팅 residential proxy 를 **세션 sticky** 로 — username 에 `__sessid.<rand>` 주입.
+
+        MIMS 는 세션쿠키를 로그인한 IP 에 묶으므로, 로그인 POST 와 이후 검색/페이지 fetch 가
+        **같은 exit IP** 여야 한다. dataimpulse 등은 기본 요청마다 IP 로테이션 → 세션 붕괴
+        ("로그인벽 잔존"). 스크레이프마다 새 랜덤 sessid 를 붙여 그 세션 동안만 IP 고정
+        (검색 간에는 다른 IP — 한 IP 과사용 방지). 이미 sessid 있으면 그대로 둔다.
+        """
+        if not proxy_url:
+            return proxy_url
+        u = urlparse(proxy_url)
+        user = u.username or ""
+        host = u.hostname or ""
+        if not user or "sessid" in user.lower():
+            return proxy_url
+        # dataimpulse sticky 포맷: username__sessid.<id> (실측 확인)
+        if "dataimpulse" in host:
+            user = f"{user}__sessid.{uuid.uuid4().hex[:12]}"
+            auth = f"{user}:{u.password}@" if u.password else f"{user}@"
+            return f"{u.scheme or 'http'}://{auth}{host}:{u.port}"
+        return proxy_url
+
     def _scrape_sync(self, query: str) -> list[dict]:
         user = (self.credentials or {}).get("username")
         pw   = (self.credentials or {}).get("password")
@@ -84,7 +108,7 @@ class UkMimsScraper(BaseScraper):
                 pass
             page.wait_for_timeout(5000)
 
-        proxy = os.environ.get("MIMS_UK_PROXY", "").strip() or None
+        proxy = self._make_sticky(os.environ.get("MIMS_UK_PROXY", "").strip() or None)
         sess_kw = dict(headless=self.headless, solve_cloudflare=True)
         if proxy:
             sess_kw["proxy"] = proxy
