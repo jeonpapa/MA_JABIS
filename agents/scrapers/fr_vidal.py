@@ -212,8 +212,11 @@ class FrVidalScraper(BaseScraper):
             r'href=["\'](?:https://www\.vidal\.fr)?(/medicaments/[^"\']+\.html)["\']',
             html, re.IGNORECASE
         )
-        for href in direct_links:
-            if "/substances/" in href:
+        # bare 약제 상세 URL (href/data-cbo 아닌 JS/data 문자열로 있는 경우) — 약제 상세는
+        # '-<숫자ID>.html' 로 끝난다(분류/nav 페이지 제외). INN 검색 시 이쪽에만 잡힘.
+        bare_links = re.findall(r'/medicaments/[a-z0-9\-]+-\d+\.html', html, re.IGNORECASE)
+        for href in [*direct_links, *bare_links]:
+            if "/substances/" in href or "/classification/" in href:
                 continue
             url = VIDAL_BASE + href if not href.startswith("http") else href
             if url in seen_urls:
@@ -288,9 +291,17 @@ class FrVidalScraper(BaseScraper):
         login_required = "connectez-vous" in text.lower() or "se connecter" in text.lower()
 
         # ── 가격 추출 ────────────────────────────────────────────────────────
-        # 로그인 후: "Prix : X.XXX,XX €" 또는 "X.XXX,XX €" 형태
+        # 우선순위 1: **UCD 병원가** "... par UCD : N euros" (HT, ex-VAT). 병원용 주사제
+        #   (keytruda 등)는 BDPM 공시가 없고 이 UCD 가격이 정답 — 공개, 3자리 소수 표기
+        #   (예 "2000,740 euros" = €2000.74). SOURCE_TYPE=vidal(ratio 0.65) 와 정합.
+        # 우선순위 2~: 일반 "X.XXX,XX €" / "Prix : ...".
         price = None
         price_patterns = [
+            # UCD 병원가 — "par UCD ... N,NNN euros". 사이 UCD 13자리 코드는 comma/euros 가
+            # 없어 자동 배제됨(euros 접미사 앵커). 예 "2000,740 euros" → 2000.74.
+            r"par\s*UCD.{0,150}?(\d{1,5}(?:[\s\.]\d{3})*,\d+)\s*euros",
+            r"responsabilit.{0,180}?(\d{1,5}(?:[\s\.]\d{3})*,\d+)\s*euros",
+            r"(\d{1,5}(?:[\s\.]\d{3})*,\d+)\s*euros",
             r"[Pp]rix\s*(?:HT|TTC)?\s*[:\s]+(\d{1,5}(?:\.\d{3})*,\d{2})\s*€",
             r"(\d{1,5}(?:\.\d{3})*,\d{2})\s*€(?:\s*(?:TTC|HT))?",
             r"€\s*(\d{1,5}(?:\.\d{3})*,\d{2})",
