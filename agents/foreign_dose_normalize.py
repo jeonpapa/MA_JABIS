@@ -250,14 +250,52 @@ def _flabel(mg: float, route: str) -> str:
     return f"{_fmt_strength(mg)}mg {'주사' if route == 'injection' else '경구'}"
 
 
+_MG_PER_ML = re.compile(r"(\d+(?:\.\d+)?)\s*mg\s*/\s*(\d+(?:\.\d+)?)?\s*m[lL]", re.IGNORECASE)
+
+
+def _vial_total_mg(ds: str | None) -> float | None:
+    """주사 per-vial 총량. 'N mg/M ml'(M>1)→N(예 100mg/4ml→100). **농도단독**('N mg/ml',
+    'N mg/1 ml')→None(총량 불명 — 농도를 강도로 오인 방지). 'N mg' 단독→N."""
+    if not ds:
+        return None
+    m = _MG_PER_ML.search(ds)
+    if m:
+        vol = m.group(2)
+        if vol and float(vol) > 1.0:
+            return float(m.group(1))
+        return None
+    return extract_strength_mg(ds)
+
+
+def _concentration_mg_per_ml(ds: str | None) -> float | None:
+    """주사 농도(mg/ml). 'N mg/M ml'→N/M, 'N mg/ml'→N. 없으면 None.
+    농도단독 행과 총량 표기 행을 **같은 제형으로 묶는 결정론적 키** (예 100mg/4ml=25, 25mg/ml=25)."""
+    if not ds:
+        return None
+    m = _MG_PER_ML.search(ds)
+    if not m:
+        return None
+    vol = float(m.group(2)) if m.group(2) else 1.0
+    if vol <= 0:
+        return None
+    return float(m.group(1)) / vol
+
+
 def _strength_of(item: dict) -> float | None:
-    """행의 per-unit 활성성분 mg — 에이전트가 form-aware 로 채운 unit_strength_mg 우선."""
+    """행의 per-unit(정/바이알) 활성성분 mg. 에이전트 form-aware unit_strength_mg 우선.
+
+    미설정 시: **injection 은 per-vial 총량만** (`_vial_total_mg`) — 농도단독("25 mg/ml")은
+    None 반환해 naive 농도추출(25 를 강도로 오인)을 막고, process_formulations 가 농도 일치로
+    canonical(100mg) 에 결정론적 매핑한다. oral 은 기존 extract_strength_mg.
+    """
     v = item.get("unit_strength_mg")
     if v:
         try:
             return float(v)
         except (ValueError, TypeError):
             pass
+    if route_of(item.get("form_type")) == "injection":
+        return _vial_total_mg(item.get("dosage_strength"))
     return extract_strength_mg(item.get("dosage_strength"))
 
 
@@ -406,13 +444,46 @@ def process_formulations(drug: str, items: list[dict]) -> list[dict]:
         canonical[(it["_route"], round(it["_strength"], 2))] = it["_strength"]
 
     updates: list[dict] = []
+
+    # 주사 canonical 의 농도(mg/ml) → 총량 매핑. 농도표기('25 mg/ml') / 단독강도('25 mg')
+    # 행을 총량 제형(100mg)에 결정론적으로 묶는 키. (예 keytruda: 100mg/4ml=conc25 → {25:100})
+    canon_conc: dict[float, float] = {}
+    for it in base_rows:
+        if it.get("_route") == "injection":
+            c = _concentration_mg_per_ml(it.get("dosage_strength"))
+            if c:
+                canon_conc.setdefault(round(c, 3), it["_strength"])
+
+    def _conc_remap(s, r, ds):
+        """injection 행을 **농도 일치**로 canonical 총량에 매핑. 조건: s 가 실제 canonical
+        총량이 아니어야(정당 강도 보호), 그리고 ds 의 명시농도 또는 s 자체가 canonical 농도와 일치.
+        예 keytruda DE '25 mg'(=농도 25) → 100mg. 25mg 바이알이 실제 canonical 이면 remap 안 함."""
+        if r != "injection" or not canon_conc:
+            return None
+        for (cr, cs), _ in canonical.items():   # s 가 이미 canonical 총량이면 remap 금지
+            if cr == r and cs and s and abs(s - cs) / cs <= 0.01:
+                return None
+        cand = _concentration_mg_per_ml(ds)
+        for cv in [x for x in (cand, s) if x]:
+            for cc, total in canon_conc.items():
+                if cc and abs(cv - cc) / cc <= 0.02:
+                    return total
+        return None
+
     pending = []
     for it in targets:
         s, r = it["_strength"], it["_route"]
         if s is None:
-            pending.append(it)
+            # 강도 미상(농도단독 '25 mg/ml' 등): 농도 remap 시도 → 실패 시 pending(LLM)
+            total = _conc_remap(s, r, it.get("dosage_strength"))
+            if total is not None:
+                it["_strength"] = total
+                _emit(it, total, r, "us_canonical" if us_based else "foreign_ref",
+                      us_based, updates)
+            else:
+                pending.append(it)
             continue
-        # canonical 매칭 (정확 → ±1%)
+        # canonical 총량 매칭 (정확 → ±1%)
         matched = canonical.get((r, round(s, 2)))
         is_canon = matched is not None
         if matched is None:
@@ -420,6 +491,11 @@ def process_formulations(drug: str, items: list[dict]) -> list[dict]:
                 if cr == r and cs and abs(s - cs) / cs <= 0.01:
                     matched, is_canon = cval, True
                     break
+        # 농도 fallback: 강도가 canonical 농도와 일치(총량 아님) → 그 총량 (keytruda DE '25 mg')
+        if matched is None:
+            total = _conc_remap(s, r, it.get("dosage_strength"))
+            if total is not None:
+                matched, is_canon = total, True
         if matched is None:
             matched, is_canon = s, False   # foreign_only
         src = ("us_canonical" if us_based else "foreign_ref") if is_canon else "foreign_only"
