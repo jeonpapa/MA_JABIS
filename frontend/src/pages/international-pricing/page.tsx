@@ -379,7 +379,7 @@ export default function InternationalPricingPage() {
               </div>
             </div>
 
-            {pricing.loading ? <TabLoading label="A8 국가 캐시 가격 로딩 중…" />
+            {pricing.loading && !pricing.data ? <TabLoading label="A8 국가 캐시 가격 로딩 중…" />
               : pricing.error ? <TabError message={pricing.error} onRetry={pricing.reload} />
                 : (
                   <div className="space-y-4">
