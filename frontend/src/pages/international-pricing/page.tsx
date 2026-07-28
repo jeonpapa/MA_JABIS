@@ -503,7 +503,7 @@ export default function InternationalPricingPage() {
                           const cell = activeA8[country.key];
                           const cov = pricing.data?.coverageNotes[country.key];
                           return (
-                            <div key={country.key} className={`p-5 ${idx % 4 !== 3 ? 'border-r' : ''} ${idx >= 4 ? 'border-t' : ''} ${divider}`}>
+                            <div key={country.key} className={`relative p-5 ${idx % 4 !== 3 ? 'border-r' : ''} ${idx >= 4 ? 'border-t' : ''} ${divider} ${researchingCountry === country.key ? 'ring-2 ring-inset ring-teal-400/60' : ''}`}>
                               <div className="flex items-center gap-2 mb-3"><span className="text-xl">{country.flag}</span><div className="flex-1 min-w-0"><p className={`text-xs font-semibold ${textMain}`}>{country.label}</p><p className={`text-xs ${textMuted}`}>{country.currency}</p></div>
                                 {cell?.reimbursed && <span className="text-xs px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200 font-semibold whitespace-nowrap" title={`급여 ${cell.reimbursedLabel}`}>급여{cell.reimbursedLabel === '조건부' ? '(조건부)' : ''}</span>}
                                 <button
@@ -514,7 +514,13 @@ export default function InternationalPricingPage() {
                                   <i className={`text-sm ${researchingCountry === country.key ? 'ri-loader-4-line animate-spin' : 'ri-refresh-line'}`}></i>
                                 </button>
                               </div>
-                              {cell ? (
+                              {researchingCountry === country.key ? (
+                                <div className="flex flex-col items-center justify-center gap-1.5 py-4">
+                                  <i className="ri-loader-4-line animate-spin text-xl text-teal-500"></i>
+                                  <span className="text-xs font-bold text-teal-500">검색 중…</span>
+                                  <span className={`text-[10px] ${textMuted}`}>실시간 수집 (수십 초 소요)</span>
+                                </div>
+                              ) : cell ? (
                                 <>
                                   {cell.price != null ? (
                                     <p className={`text-lg font-bold mb-1 ${accentColor}`} title={cell.productName}>{getCurrencySymbol(cell.currency)}{cell.price.toLocaleString()}</p>
