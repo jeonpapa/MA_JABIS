@@ -24,6 +24,7 @@ from agents.scrapers.jp_mhlw import JpMhlwScraper
 from agents.scrapers.it_aifa import ItAifaScraper
 from agents.scrapers.it_aifa_tnf import ItAifaTnfScraper
 from agents.scrapers.fr_bdpm import FrBdpmScraper
+from agents.scrapers.fr_vidal import FrVidalScraper
 from agents.scrapers.ch_compendium import ChCompendiumScraper
 from agents.scrapers.uk_mims import UkMimsScraper
 from agents.scrapers.de_rote_liste import DeRoteListeScraper
@@ -150,6 +151,23 @@ class ForeignPriceAgent:
                                 len(tnf_rows), len(raw_results))
             except Exception as e:
                 logger.warning("[IT] TrovaNorme 채널 실패(CSV 결과 유지): %s", e)
+
+        # FR: Vidal 채널을 기존 BDPM 과 **병행** (둘 다 source_type=vidal, ratio 0.65).
+        # 병원용 주사제(keytruda 등)는 BDPM 공시가가 없고 Vidal UCD(HT) 에만 공개 →
+        # 큐레이션 URL 맵으로 안정 조회. 실패해도 BDPM 결과는 유지.
+        if country == "FR":
+            raw_results = list(raw_results or [])
+            try:
+                vidal = FrVidalScraper(
+                    cache_dir=self.foreign_data_dir / "fr", msd_only=False,
+                )
+                vidal_rows = await vidal.run(query)
+                if vidal_rows:
+                    raw_results.extend(vidal_rows)
+                    logger.info("[FR] Vidal 채널 +%d건 (총 %d건)",
+                                len(vidal_rows), len(raw_results))
+            except Exception as e:
+                logger.warning("[FR] Vidal 채널 실패(BDPM 결과 유지): %s", e)
 
         if not raw_results:
             logger.info("[%s] 검색 결과 없음", country)

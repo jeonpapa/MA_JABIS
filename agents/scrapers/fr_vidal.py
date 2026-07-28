@@ -40,6 +40,15 @@ logger = logging.getLogger(__name__)
 VIDAL_BASE   = "https://www.vidal.fr"
 OAUTH2_BASE  = "https://oauth2.vidal.fr"
 
+# ── 큐레이션 약제 URL 맵 (brand/INN lower → Vidal 상세 URL) ──────────────────
+# Vidal 검색→약제URL 해소가 JS/안티스크래핑으로 불안정해, 추적 대상 약제는 검증된
+# 상세 URL 을 직접 매핑한다(health.kr DRUG_CD_MAP 패턴). 등록 약제는 검색 없이 안정 조회,
+# 미등록은 search fallback(best-effort). 신규 약제 추가 시 여기에 등록.
+VIDAL_URL_MAP: dict[str, str] = {
+    "keytruda":      VIDAL_BASE + "/medicaments/keytruda-25-mg-ml-sol-diluer-p-perf-173141.html",
+    "pembrolizumab": VIDAL_BASE + "/medicaments/keytruda-25-mg-ml-sol-diluer-p-perf-173141.html",
+}
+
 # 로그인 POST 액션 URL (페이지에서 실제 확인됨)
 LOGIN_PATH   = "/login/"
 LOGIN_PARAMS = {
@@ -164,7 +173,12 @@ class FrVidalScraper(BaseScraper):
         """
         Vidal 검색 → 약제 상세 URL 목록 반환.
         반환: [{"url": str, "text": str}]
+        큐레이션 맵(VIDAL_URL_MAP)에 등록된 약제는 검색 생략하고 매핑 URL 직접 사용.
         """
+        mapped = VIDAL_URL_MAP.get((query or "").strip().lower())
+        if mapped:
+            logger.info("[FR] Vidal URL 맵 적중: %s", query)
+            return [{"url": mapped, "text": query}]
         try:
             resp = self._session.get(
                 VIDAL_BASE + "/recherche.html",
