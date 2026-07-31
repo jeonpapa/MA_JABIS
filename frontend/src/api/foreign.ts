@@ -55,6 +55,25 @@ export async function downloadForeignReport(
 
 // ── UI 타입 ──────────────────────────────────────────────────────────────────
 
+/** 검색 전 약제 정체성 후보 — GET /api/foreign/resolve (alias맵→MFDS 폴백) */
+export interface Candidate {
+  slug: string;
+  brand: string;
+  inn: string;
+  display: string;
+  matched_as: 'brand' | 'ingredient';
+  source: 'alias' | 'mfds';
+}
+
+/** 자유 텍스트 → 확정 약제 후보 (타입어헤드용). 빈 입력이면 호출 없이 [] */
+export async function resolveIdentity(q: string): Promise<Candidate[]> {
+  const t = q.trim();
+  if (!t) return [];
+  const res = await api.get<{ candidates?: Candidate[] }>(
+    `/api/foreign/resolve?q=${encodeURIComponent(t)}`);
+  return res?.candidates ?? [];
+}
+
 export interface ForeignDrugListItem {
   id: string;              // query_name (= product slug: keytruda, welireg …)
   queryName: string;
@@ -781,11 +800,13 @@ export async function searchForeignLive(
   query: string,
   countries?: string[],
   onProgress?: (elapsedSec: number) => void,
+  identity?: { slug: string; brand: string; inn: string },
 ): Promise<LiveSearchOutcome | null> {
   const started = await api.post<{ job_id?: string; status?: string }>('/api/foreign/search', {
     query,
     countries: countries ?? undefined,
     use_cache: false,
+    identity: identity ?? undefined,
   });
   const jobId = started?.job_id;
   if (!jobId) return null; // 구버전 백엔드(동기 완료) 호환
