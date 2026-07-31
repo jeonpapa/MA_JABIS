@@ -7,12 +7,14 @@ import {
   deleteForeignDrug,
   fetchForeignDrugList,
   fetchPricingTab,
+  resolveIdentity,
   searchForeignLive,
   downloadForeignReport,
   PRICING_COUNTRY_CODE,
 } from '@/api/foreign';
 import type {
   A8Pricing,
+  Candidate,
   ForeignDrugListItem,
   PricingTabData,
 } from '@/api/foreign';
@@ -48,11 +50,14 @@ interface Selection {
   query: string;       // 백엔드 query_name / product slug (keytruda, welireg …)
   canonical: string;   // INN — 이력에 없는 ad-hoc 검색이면 ''
   countryCount?: number;
+  /** 타입어헤드로 확정된 약제 정체성 — 검색 시 백엔드로 전달 (스크레이퍼 term 라우팅) */
+  identity?: { slug: string; brand: string; inn: string };
 }
 
 export default function InternationalPricingPage() {
   const [isDark, setIsDark] = useState(false);
   const [newSearchQuery, setNewSearchQuery] = useState('');
+  const [identityCandidates, setIdentityCandidates] = useState<Candidate[]>([]);
   const [selected, setSelected] = useState<Selection | null>(null);
   const [searchDropdown, setSearchDropdown] = useState(false);
   const [liveSearching, setLiveSearching] = useState(false);
@@ -85,6 +90,20 @@ export default function InternationalPricingPage() {
       || d.aliases.some(a => a.toLowerCase().includes(q)));
   }, [newSearchQuery, historyItems]);
 
+  // 검색어 → 약제 정체성 해석 (300ms debounce, GET /api/foreign/resolve)
+  useEffect(() => {
+    const q = newSearchQuery.trim();
+    if (!q) { setIdentityCandidates([]); return; }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const cands = await resolveIdentity(q);
+        if (!cancelled) setIdentityCandidates(cands);
+      } catch { if (!cancelled) setIdentityCandidates([]); }
+    }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [newSearchQuery]);
+
   const handleSelect = (sel: Selection) => {
     setSelected(sel);
     setNewSearchQuery('');
@@ -94,10 +113,19 @@ export default function InternationalPricingPage() {
   };
   const handleSelectHistory = (d: ForeignDrugListItem) =>
     handleSelect({ query: d.queryName, canonical: d.canonical, countryCount: d.countryCount });
+  // 타입어헤드 후보 확정 — identity 를 selection 에 실어 검색 시 백엔드로 전달
+  const handleSelectIdentity = (c: Candidate) => {
+    handleSelect({
+      query: c.slug,
+      canonical: c.inn || '',
+      identity: { slug: c.slug, brand: c.brand, inn: c.inn },
+    });
+  };
   const handleNewSearch = () => {
     const q = newSearchQuery.trim();
     if (!q) return;
-    if (searchResults.length > 0) handleSelectHistory(searchResults[0]);
+    if (identityCandidates.length > 0) handleSelectIdentity(identityCandidates[0]);
+    else if (searchResults.length > 0) handleSelectHistory(searchResults[0]);
     else handleSelect({ query: q.toLowerCase(), canonical: '' }); // 캐시 조회만 — 비어있으면 빈 상태 + 라이브 버튼
   };
 
@@ -131,7 +159,7 @@ export default function InternationalPricingPage() {
     setLiveSearching(true);
     setLiveError(null);
     try {
-      await searchForeignLive(selected.query);
+      await searchForeignLive(selected.query, undefined, undefined, selected.identity);
       pricing.reload();
       history.reload();
     } catch (e) {
@@ -200,7 +228,7 @@ export default function InternationalPricingPage() {
     let failed: string | undefined;
     let result: import('@/api/foreign').CountryResult | null = null;
     try {
-      const outcome = await searchForeignLive(selected.query, [backendCode], sec => setResearchElapsed(sec));
+      const outcome = await searchForeignLive(selected.query, [backendCode], sec => setResearchElapsed(sec), selected.identity);
       result = outcome?.countryResults?.[backendCode] ?? null;
     } catch (e) {
       failed = e instanceof Error ? e.message : String(e);
@@ -389,6 +417,24 @@ export default function InternationalPricingPage() {
               </div>
               {searchDropdown && newSearchQuery && (
                 <div className={`absolute top-full left-0 right-0 mt-1 rounded-xl overflow-hidden z-50 ${dropdownBg}`}>
+                  {/* 해석된 약제 정체성 후보 — 클릭 시 {brand, INN} 확정 후 검색에 전달 */}
+                  {identityCandidates.length > 0 && (
+                    <div className={`border-b ${divider}`}>
+                      {identityCandidates.map(c => (
+                        <button key={c.slug} onClick={() => handleSelectIdentity(c)}
+                          className={`w-full flex items-center gap-2 px-4 py-2.5 text-left hover:${isDark ? 'bg-[#1E2530]' : 'bg-gray-50'} transition-colors`}>
+                          <i className="ri-checkbox-circle-line text-teal-500"></i>
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-sm font-semibold ${textMain}`}>{c.display || c.brand}</p>
+                            <p className={`text-xs ${textSub}`}>
+                              {c.inn ? `성분 ${c.inn} · ` : ''}{c.matched_as === 'ingredient' ? '성분명 입력' : '브랜드명 입력'}
+                              {c.source === 'mfds' ? ' · MFDS' : ''}
+                            </p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   {searchResults.map(d => (
                     <button key={d.id} onClick={() => handleSelectHistory(d)}
                       className={`w-full flex items-center gap-3 px-4 py-3 transition-colors cursor-pointer text-left border-b last:border-0 ${divider} ${dropdownHover}`}>
