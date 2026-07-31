@@ -9,6 +9,7 @@ import {
   fetchPricingTab,
   searchForeignLive,
   downloadForeignReport,
+  PRICING_COUNTRY_CODE,
 } from '@/api/foreign';
 import type {
   A8Pricing,
@@ -188,6 +189,9 @@ export default function InternationalPricingPage() {
 
   const researchCountry = async (countryKey: string) => {
     if (!selected || researchingCountry || liveSearching) return;
+    // 카드 키(usa/france/…) → 백엔드 국가코드(US/FR/…). 미변환 시 백엔드가
+    // AVAILABLE_COUNTRIES 에 없다고 판단해 422 "현재 구현된 국가가 없습니다" 반환.
+    const backendCode = PRICING_COUNTRY_CODE[countryKey] ?? countryKey;
     setResearchingCountry(countryKey);
     setResearchElapsed(0);
     setLiveError(null);
@@ -196,8 +200,8 @@ export default function InternationalPricingPage() {
     let failed: string | undefined;
     let result: import('@/api/foreign').CountryResult | null = null;
     try {
-      const outcome = await searchForeignLive(selected.query, [countryKey], sec => setResearchElapsed(sec));
-      result = outcome?.countryResults?.[countryKey] ?? null;
+      const outcome = await searchForeignLive(selected.query, [backendCode], sec => setResearchElapsed(sec));
+      result = outcome?.countryResults?.[backendCode] ?? null;
     } catch (e) {
       failed = e instanceof Error ? e.message : String(e);
     }
