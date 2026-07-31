@@ -763,18 +763,32 @@ export async function fetchApprovalTab(productSlug: string): Promise<ApprovalTab
  * 긴 동기 요청이 아니라 짧은 폴링 GET 이라 "Failed to fetch"(프록시/워커 타임아웃)를 회피.
  * onProgress(선택)로 경과 초 등을 UI 에 전달할 수 있다.
  */
+/** 국가별 라이브 검색 결과 — has_price 로 성공/무결과를 구분, reason 은 무결과 사유 한 줄. */
+export interface CountryResult {
+  has_price: boolean;
+  count: number;
+  priced_count: number;
+  reason?: string;
+}
+
+/** 라이브 검색 완료 결과. 폴링이 done 으로 끝나면 반환(구버전/동기 완료 시 null). */
+export interface LiveSearchOutcome {
+  countryResults: Record<string, CountryResult>;
+  coverageNotes: Record<string, unknown>;
+}
+
 export async function searchForeignLive(
   query: string,
   countries?: string[],
   onProgress?: (elapsedSec: number) => void,
-): Promise<void> {
+): Promise<LiveSearchOutcome | null> {
   const started = await api.post<{ job_id?: string; status?: string }>('/api/foreign/search', {
     query,
     countries: countries ?? undefined,
     use_cache: false,
   });
   const jobId = started?.job_id;
-  if (!jobId) return; // 구버전 백엔드(동기 완료) 호환
+  if (!jobId) return null; // 구버전 백엔드(동기 완료) 호환
 
   const startMs = Date.now();
   const deadlineMs = startMs + 8 * 60 * 1000; // 최대 8분
@@ -783,7 +797,12 @@ export async function searchForeignLive(
   while (Date.now() < deadlineMs) {
     await new Promise((r) => setTimeout(r, intervalMs));
     onProgress?.(Math.round((Date.now() - startMs) / 1000));
-    let s: { status?: string; error?: string | null };
+    let s: {
+      status?: string;
+      error?: string | null;
+      country_results?: Record<string, CountryResult>;
+      coverage_notes?: Record<string, unknown>;
+    };
     try {
       s = await api.get(`/api/foreign/search/status/${encodeURIComponent(jobId)}`);
       netFails = 0;
@@ -792,7 +811,12 @@ export async function searchForeignLive(
       if (++netFails >= 5) throw e;
       continue;
     }
-    if (s?.status === 'done') return;
+    if (s?.status === 'done') {
+      return {
+        countryResults: s.country_results ?? {},
+        coverageNotes: s.coverage_notes ?? {},
+      };
+    }
     if (s?.status === 'error') throw new Error(s.error || '스크레이핑에 실패했습니다.');
     if (s?.status === 'unknown') throw new Error(s.error || '작업을 찾을 수 없습니다(서버 재시작?).');
     // 'running' → 계속 폴링

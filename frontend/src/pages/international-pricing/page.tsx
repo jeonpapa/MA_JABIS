@@ -146,28 +146,63 @@ export default function InternationalPricingPage() {
   // 국가별 재검색 — 특정 국가만 라이브 스크레이프(전체 캐시 유지). 서버 압축이 그 국가 최신 세션만 교체.
   // 검색중 표시는 검색 + 리로드가 모두 끝날 때까지 유지한다. reload 는 fire-and-forget 이라
   // finally 에서 바로 해제하면 리로드 도중(옛 데이터) 카드가 깜빡여 '새로고침'처럼 보임 →
-  // pricing.loading 이 true→false 로 떨어지는 순간(신규 데이터 도착) 해제한다.
+  // pricing.loading 이 true→false 로 떨어지는 순간(신규 데이터 도착) 검색중 해제 + 결과배지 확정.
+  const [researchElapsed, setResearchElapsed] = useState(0);
+  // 국가별 마지막 재검색 결과(다음 행동까지 지속): updated=가격확인, no_result=무결과(사유), failed=실패
+  const [researchResult, setResearchResult] = useState<
+    Record<string, { kind: 'updated' | 'no_result' | 'failed'; reason?: string; at: string }>
+  >({});
   const awaitingReloadRef = useRef(false);
   const prevPricingLoadingRef = useRef(pricing.loading);
+  // 검색 종료 시점에 확정할 결과(리로드 후 신규 데이터로 최종 판정)
+  const pendingResearchRef = useRef<
+    { cc: string; failed?: string; result?: import('@/api/foreign').CountryResult | null } | null
+  >(null);
   useEffect(() => {
     const wasLoading = prevPricingLoadingRef.current;
     prevPricingLoadingRef.current = pricing.loading;
     if (awaitingReloadRef.current && wasLoading && !pricing.loading) {
       awaitingReloadRef.current = false;
+      const pend = pendingResearchRef.current;
+      pendingResearchRef.current = null;
       setResearchingCountry(null);
+      if (pend) {
+        const now = new Date();
+        const at = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        const cell = pricing.data?.a8Pricing?.[pend.cc];
+        let badge: { kind: 'updated' | 'no_result' | 'failed'; reason?: string; at: string };
+        if (pend.failed) {
+          badge = { kind: 'failed', reason: pend.failed, at };
+        } else if (pend.result?.has_price || cell?.price != null) {
+          badge = { kind: 'updated', at };
+        } else {
+          const reason = pend.result?.reason
+            || pricing.data?.coverageNotes?.[pend.cc]?.policy
+            || '공개 소스에서 가격을 찾지 못함';
+          badge = { kind: 'no_result', reason, at };
+        }
+        setResearchResult(prev => ({ ...prev, [pend.cc]: badge }));
+      }
     }
-  }, [pricing.loading]);
+  }, [pricing.loading, pricing.data]);
 
   const researchCountry = async (countryKey: string) => {
     if (!selected || researchingCountry || liveSearching) return;
     setResearchingCountry(countryKey);
+    setResearchElapsed(0);
     setLiveError(null);
+    // 이전 결과배지 제거(이번 검색 결과로 대체)
+    setResearchResult(prev => { const n = { ...prev }; delete n[countryKey]; return n; });
+    let failed: string | undefined;
+    let result: import('@/api/foreign').CountryResult | null = null;
     try {
-      await searchForeignLive(selected.query, [countryKey]);
+      const outcome = await searchForeignLive(selected.query, [countryKey], sec => setResearchElapsed(sec));
+      result = outcome?.countryResults?.[countryKey] ?? null;
     } catch (e) {
-      setLiveError(`${countryLabel(countryKey)} 재검색 실패: ${e instanceof Error ? e.message : String(e)}`);
+      failed = e instanceof Error ? e.message : String(e);
     }
-    // 검색 종료(성공/부분저장/실패 무관) → 캐시 재조회. 리로드 완료 시 effect 가 검색중 해제.
+    // 검색 종료(성공/무결과/실패 무관) → 캐시 재조회. 리로드 완료 시 effect 가 검색중 해제 + 배지 확정.
+    pendingResearchRef.current = { cc: countryKey, failed, result };
     awaitingReloadRef.current = true;
     history.reload();
     pricing.reload();
@@ -530,7 +565,7 @@ export default function InternationalPricingPage() {
                               {researchingCountry === country.key ? (
                                 <div className="flex flex-col items-center justify-center gap-1.5 py-4">
                                   <i className="ri-loader-4-line animate-spin text-xl text-teal-500"></i>
-                                  <span className="text-xs font-bold text-teal-500">검색 중…</span>
+                                  <span className="text-xs font-bold text-teal-500">검색 중… {researchElapsed}초</span>
                                   <span className={`text-[10px] ${textMuted}`}>실시간 수집 (수십 초 소요)</span>
                                 </div>
                               ) : cell ? (
@@ -561,6 +596,29 @@ export default function InternationalPricingPage() {
                                   {cov?.policy && <p className={`text-xs mt-1 leading-relaxed ${textMuted}`}>{cov.policy}</p>}
                                 </>
                               )}
+                              {/* 재검색 결과 배지 — 다음 행동까지 지속(무결과/실패/갱신 구분) */}
+                              {researchingCountry !== country.key && researchResult[country.key] && (() => {
+                                const r = researchResult[country.key];
+                                if (r.kind === 'updated') return (
+                                  <p className="text-[11px] mt-2 flex items-center gap-1 text-emerald-600" title={`재검색 완료 ${r.at}`}>
+                                    <i className="ri-checkbox-circle-fill"></i> 방금 갱신 · {r.at}
+                                  </p>
+                                );
+                                if (r.kind === 'no_result') return (
+                                  <p className={`text-[11px] mt-2 flex items-start gap-1 ${textMuted}`} title={r.reason}>
+                                    <i className="ri-information-line mt-0.5 shrink-0"></i>
+                                    <span className="leading-snug">결과 없음 · {r.at}<br />{r.reason}</span>
+                                  </p>
+                                );
+                                return (
+                                  <button onClick={() => researchCountry(country.key)} disabled={researchingCountry !== null || liveSearching}
+                                    className="text-[11px] mt-2 flex items-start gap-1 text-rose-500 hover:underline disabled:no-underline disabled:opacity-60 text-left"
+                                    title={r.reason}>
+                                    <i className="ri-error-warning-fill mt-0.5 shrink-0"></i>
+                                    <span className="leading-snug">검색 실패 · {r.at} — 다시 시도<br /><span className={textMuted}>{r.reason}</span></span>
+                                  </button>
+                                );
+                              })()}
                             </div>
                           );
                         })}

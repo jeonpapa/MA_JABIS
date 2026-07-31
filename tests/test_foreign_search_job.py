@@ -40,6 +40,21 @@ def test_live_search_runs_as_background_job(monkeypatch):
     assert final["status"] == "done"
 
 
+def test_done_job_reports_country_results(monkeypatch):
+    # 가격 있는 국가(JP)와 빈 결과 국가(FR)를 함께 반환 → has_price 구분 + 무결과 사유 확인
+    async def _stub(query, countries=None):
+        return {"JP": [{"local_price": 100}], "FR": []}
+    monkeypatch.setattr(s.foreign_agent, "search_all", _stub)
+    c = s.app.test_client()
+    r = c.post("/api/foreign/search", json={"query": "Keytruda", "countries": ["JP", "FR"], "use_cache": False})
+    final = _poll(c, r.get_json()["job_id"])
+    assert final["status"] == "done"
+    cr = final.get("country_results") or {}
+    assert cr.get("JP", {}).get("has_price") is True
+    assert cr.get("FR", {}).get("has_price") is False
+    assert cr.get("FR", {}).get("reason")  # 무결과 사유 문자열 존재
+
+
 def test_dedupe_running_job(monkeypatch):
     c = _client_with_stub(monkeypatch, delay=0.6)
     r1 = c.post("/api/foreign/search", json={"query": "Opdivo", "countries": ["JP"], "use_cache": False})

@@ -1653,7 +1653,7 @@ def foreign_search():
         _foreign_jobs[job_id] = {
             "status": "running", "query": query, "norm": norm,
             "countries": supported, "error": None, "coverage_notes": {},
-            "_ts": _time.time(),
+            "country_results": {}, "_ts": _time.time(),
         }
 
     def _run(job_id: str, query: str, supported: list):
@@ -1663,10 +1663,12 @@ def foreign_search():
                 foreign_agent.search_all(query, countries=supported)
             )
             notes = _compute_coverage_notes(query, supported, results)
+            country_results = _compute_country_results(query, supported, results)
             with _foreign_jobs_lock:
                 job = _foreign_jobs.get(job_id)
                 if job is not None:
-                    job.update(status="done", coverage_notes=notes, _ts=_time.time())
+                    job.update(status="done", coverage_notes=notes,
+                               country_results=country_results, _ts=_time.time())
             logger.info("해외 약가 라이브 검색 완료: %s", query)
         except Exception as e:
             logger.error("해외 약가 검색 오류: %s", e, exc_info=True)
@@ -1695,6 +1697,7 @@ def foreign_search_status(job_id):
             "query": job["query"],
             "error": job.get("error"),
             "coverage_notes": job.get("coverage_notes") or {},
+            "country_results": job.get("country_results") or {},
         })
 
 
@@ -1715,6 +1718,31 @@ def _compute_coverage_notes(query: str, countries: list, results) -> dict:
                 if policy:
                     notes[cc] = policy
     return notes
+
+
+def _compute_country_results(query: str, countries: list, results) -> dict:
+    """국가별 명시적 검색 결과 — 프론트가 성공/무결과/실패를 구분하게 한다.
+
+    각 국가: {has_price: bool, count: int, priced_count: int, reason?: str}
+    reason 은 가격 미발견 시 사용자용 한 줄 설명(정책 메타 있으면 그것, 없으면 generic).
+    """
+    from agents.scrapers.country_coverage import describe_empty_result
+    slug = (query or "").strip().lower()
+    out: dict = {}
+    rows_by_cc = results if isinstance(results, dict) else {}
+    for cc in countries:
+        rows = rows_by_cc.get(cc, []) or []
+        priced = [r for r in rows
+                  if isinstance(r, dict) and r.get("local_price") is not None]
+        entry: dict = {
+            "has_price": bool(priced),
+            "count": len(rows),
+            "priced_count": len(priced),
+        }
+        if not priced:
+            entry["reason"] = describe_empty_result(cc, slug)
+        out[cc] = entry
+    return out
 
 
 @app.get("/api/foreign/cached")
