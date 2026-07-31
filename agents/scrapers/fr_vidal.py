@@ -255,7 +255,11 @@ class FrVidalScraper(BaseScraper):
             return None
 
         html = resp.text
-        text = re.sub(r"<[^>]+>", " ", html)
+        # script/style 블록 먼저 제거 — 태그만 벗기면 JS 코드가 본문 텍스트로 남아
+        # 성분명 등 정규식에 오매칭됨(예: ingredient 에 querySelector 코드 유입).
+        no_code = re.sub(r"<(script|style)\b[^>]*>.*?</\1>", " ", html,
+                         flags=re.IGNORECASE | re.DOTALL)
+        text = re.sub(r"<[^>]+>", " ", no_code)
         text = re.sub(r"\s+", " ", text)
 
         # ── 제품명 ─────────────────────────────────────────────────────────
@@ -273,7 +277,12 @@ class FrVidalScraper(BaseScraper):
         for pat in ing_patterns:
             m = re.search(pat, text, re.IGNORECASE)
             if m:
-                ingredient = m.group(0 if "pembrolizumab" in pat.lower() else 1).strip()
+                cand = m.group(0 if "pembrolizumab" in pat.lower() else 1).strip()
+                # JS/코드 오매칭 배제 — 성분명(DCI)은 문자·공백·하이픈·쉼표만.
+                # 인라인 속성 JS 가 태그제거 후 텍스트로 남아 캡처되는 경우 방어.
+                if re.search(r"""[\"'(){}<>;=./]|querySelector|textContent""", cand):
+                    continue
+                ingredient = cand
                 break
 
         # ── 규격 ────────────────────────────────────────────────────────────
