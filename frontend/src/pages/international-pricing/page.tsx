@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bar, BarChart, Cell, LabelList, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
@@ -144,20 +144,33 @@ export default function InternationalPricingPage() {
   };
 
   // 국가별 재검색 — 특정 국가만 라이브 스크레이프(전체 캐시 유지). 서버 압축이 그 국가 최신 세션만 교체.
+  // 검색중 표시는 검색 + 리로드가 모두 끝날 때까지 유지한다. reload 는 fire-and-forget 이라
+  // finally 에서 바로 해제하면 리로드 도중(옛 데이터) 카드가 깜빡여 '새로고침'처럼 보임 →
+  // pricing.loading 이 true→false 로 떨어지는 순간(신규 데이터 도착) 해제한다.
+  const awaitingReloadRef = useRef(false);
+  const prevPricingLoadingRef = useRef(pricing.loading);
+  useEffect(() => {
+    const wasLoading = prevPricingLoadingRef.current;
+    prevPricingLoadingRef.current = pricing.loading;
+    if (awaitingReloadRef.current && wasLoading && !pricing.loading) {
+      awaitingReloadRef.current = false;
+      setResearchingCountry(null);
+    }
+  }, [pricing.loading]);
+
   const researchCountry = async (countryKey: string) => {
     if (!selected || researchingCountry || liveSearching) return;
     setResearchingCountry(countryKey);
     setLiveError(null);
     try {
       await searchForeignLive(selected.query, [countryKey]);
-      pricing.reload();
-      history.reload();
     } catch (e) {
       setLiveError(`${countryLabel(countryKey)} 재검색 실패: ${e instanceof Error ? e.message : String(e)}`);
-      pricing.reload(); // 부분 저장 가능성 → 재조회
-    } finally {
-      setResearchingCountry(null);
     }
+    // 검색 종료(성공/부분저장/실패 무관) → 캐시 재조회. 리로드 완료 시 effect 가 검색중 해제.
+    awaitingReloadRef.current = true;
+    history.reload();
+    pricing.reload();
   };
 
   // ── 스타일 토큰 (readdy 디자인 유지) ──
