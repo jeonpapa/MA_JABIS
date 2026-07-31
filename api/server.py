@@ -1633,6 +1633,7 @@ def foreign_search():
     query = body.get("query", "").strip()
     countries = body.get("countries") or AVAILABLE_COUNTRIES
     use_cache = body.get("use_cache", False)
+    identity = body.get("identity") or None
 
     if not query:
         return jsonify({"error": "검색어(query)를 입력하세요."}), 400
@@ -1670,15 +1671,15 @@ def foreign_search():
         job_id = _uuid.uuid4().hex
         _foreign_jobs[job_id] = {
             "status": "running", "query": query, "norm": norm,
-            "countries": supported, "error": None, "coverage_notes": {},
-            "country_results": {}, "_ts": _time.time(),
+            "countries": supported, "identity": identity, "error": None,
+            "coverage_notes": {}, "country_results": {}, "_ts": _time.time(),
         }
 
-    def _run(job_id: str, query: str, supported: list):
+    def _run(job_id: str, query: str, supported: list, identity=None):
         loop = asyncio.new_event_loop()
         try:
             results = loop.run_until_complete(
-                foreign_agent.search_all(query, countries=supported)
+                foreign_agent.search_all(query, countries=supported, identity=identity)
             )
             notes = _compute_coverage_notes(query, supported, results)
             country_results = _compute_country_results(query, supported, results)
@@ -1697,7 +1698,7 @@ def foreign_search():
         finally:
             loop.close()
 
-    _threading.Thread(target=_run, args=(job_id, query, supported), daemon=True).start()
+    _threading.Thread(target=_run, args=(job_id, query, supported, identity), daemon=True).start()
     return jsonify({"job_id": job_id, "status": "running", "mode": "live", "query": query}), 202
 
 

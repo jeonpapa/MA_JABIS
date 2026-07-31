@@ -11,7 +11,7 @@ import api.server as s
 
 
 def _client_with_stub(monkeypatch, delay: float = 0.2, raise_exc: bool = False):
-    async def _stub(query, countries=None):
+    async def _stub(query, countries=None, identity=None):
         await asyncio.sleep(delay)
         if raise_exc:
             raise RuntimeError("boom")
@@ -42,7 +42,7 @@ def test_live_search_runs_as_background_job(monkeypatch):
 
 def test_done_job_reports_country_results(monkeypatch):
     # 가격 있는 국가(JP)와 빈 결과 국가(FR)를 함께 반환 → has_price 구분 + 무결과 사유 확인
-    async def _stub(query, countries=None):
+    async def _stub(query, countries=None, identity=None):
         return {"JP": [{"local_price": 100}], "FR": []}
     monkeypatch.setattr(s.foreign_agent, "search_all", _stub)
     c = s.app.test_client()
@@ -96,3 +96,18 @@ def test_resolve_blank_returns_empty():
     c = s.app.test_client()
     r = c.get("/api/foreign/resolve?q=")
     assert r.status_code == 200 and r.get_json()["candidates"] == []
+
+
+def test_search_forwards_identity(monkeypatch):
+    seen = {}
+    async def _stub(query, countries=None, identity=None):
+        seen["identity"] = identity
+        return {c: [] for c in (countries or [])}
+    monkeypatch.setattr(s.foreign_agent, "search_all", _stub)
+    c = s.app.test_client()
+    r = c.post("/api/foreign/search", json={
+        "query": "keytruda", "countries": ["US"], "use_cache": False,
+        "identity": {"slug": "keytruda", "brand": "keytruda", "inn": "pembrolizumab"},
+    })
+    _poll(c, r.get_json()["job_id"])
+    assert seen["identity"] and seen["identity"]["inn"] == "pembrolizumab"
