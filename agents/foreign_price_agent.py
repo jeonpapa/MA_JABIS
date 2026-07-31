@@ -109,7 +109,8 @@ class ForeignPriceAgent:
             raise ValueError(f"지원하지 않는 국가: {country} (구현된 국가: {AVAILABLE_COUNTRIES})")
 
     async def search_one_country(
-        self, query: str, country: str, reference_date: date = None
+        self, query: str, country: str, reference_date: date = None,
+        identity: dict = None
     ) -> list[dict]:
         """
         단일 국가의 약가를 조회하고 DB에 저장한다.
@@ -124,8 +125,13 @@ class ForeignPriceAgent:
         scraper = self._build_scraper(country)
         # SOURCE_TYPE: CH=compendium(0.65), FR=vidal(0.65), 그 외=None(기본 ratio)
         source_type = getattr(scraper, "SOURCE_TYPE", None)
+        # identity 있으면 brand 로 검색(대부분 소스가 브랜드 인덱스), 저장/집계는 slug 로 통일.
+        ident = identity or {}
+        search_term = ident.get("brand") or query
+        canonical_name = ident.get("slug") or query
+        fallback_inn = ident.get("inn")
         try:
-            raw_results = await scraper.run(query)
+            raw_results = await scraper.run(search_term)
         except Exception as e:
             # IT 는 2채널(CSV+TNF)이라 CSV 실패가 TNF 를 막으면 안 됨 (예: AIFA SSL 오류).
             # 다른 국가는 단일 채널이므로 기존대로 전파(search_all 이 국가별로 catch).
@@ -134,6 +140,14 @@ class ForeignPriceAgent:
                 raw_results = []
             else:
                 raise
+        # brand 0건 & 스크레이퍼 opt-in & INN 존재 → INN 으로 1회 재시도
+        if (not raw_results and getattr(scraper, "FALLBACK_TO_INN", False)
+                and fallback_inn and fallback_inn.lower() != str(search_term).lower()):
+            logger.info("[%s] brand 0건 → INN 폴백 검색: %s", country, fallback_inn)
+            try:
+                raw_results = await scraper.run(fallback_inn)
+            except Exception as e:
+                logger.warning("[%s] INN 폴백 실패: %s", country, e)
 
         # IT: TrovaNorme 결정문 채널을 기존 CSV 채널과 **병행** (둘 다 aifa_exfactory).
         # 결정문(determina)에서 성분·제형·ex-factory 가격을 직접 확인 — CSV 미등재/신규
@@ -144,7 +158,7 @@ class ForeignPriceAgent:
                 tnf = ItAifaTnfScraper(
                     cache_dir=self.foreign_data_dir / "it", msd_only=False,
                 )
-                tnf_rows = await tnf.run(query)
+                tnf_rows = await tnf.run(search_term)
                 if tnf_rows:
                     raw_results.extend(tnf_rows)
                     logger.info("[IT] TrovaNorme 채널 +%d건 (총 %d건)",
@@ -161,7 +175,7 @@ class ForeignPriceAgent:
                 vidal = FrVidalScraper(
                     cache_dir=self.foreign_data_dir / "fr", msd_only=False,
                 )
-                vidal_rows = await vidal.run(query)
+                vidal_rows = await vidal.run(search_term)
                 if vidal_rows:
                     raw_results.extend(vidal_rows)
                     logger.info("[FR] Vidal 채널 +%d건 (총 %d건)",
@@ -172,6 +186,10 @@ class ForeignPriceAgent:
         if not raw_results:
             logger.info("[%s] 검색 결과 없음", country)
             return []
+
+        # 브랜드/성분 어느 입력이든 같은 캐시 레코드로 집계 → query_name = canonical slug
+        for item in raw_results:
+            item["query_name"] = canonical_name
 
         # 방어적 fallback: 신규/기존 스크레이퍼가 form_type 을 빠뜨려도
         # 파이프라인 단에서 반드시 채워넣는다 (최소단위 원칙 파이프라인 보장).
@@ -189,12 +207,12 @@ class ForeignPriceAgent:
 
         # dosing 조회 (pack_count fallback + daily_cost 계산용)
         ingredients = [r.get("ingredient", "") for r in raw_results]
-        dosing_map = self._load_dosing_map(query, ingredients)
+        dosing_map = self._load_dosing_map(canonical_name, ingredients)
 
         # 3) 조정가 계산 + DB 저장
         saved = []
         for item in raw_results:
-            dosing = self._match_dosing(query, item.get("ingredient", ""), dosing_map)
+            dosing = self._match_dosing(canonical_name, item.get("ingredient", ""), dosing_map)
             pack_count = self._resolve_pack_count(country, item, dosing)
 
             if rate_info and item.get("local_price") is not None:
@@ -373,7 +391,8 @@ class ForeignPriceAgent:
                 )
 
     async def search_all(
-        self, query: str, countries: list[str] = None, reference_date: date = None
+        self, query: str, countries: list[str] = None,
+        reference_date: date = None, identity: dict = None
     ) -> dict:
         """
         여러 국가의 약가를 순차 조회.
@@ -385,7 +404,7 @@ class ForeignPriceAgent:
         for country in targets:
             try:
                 results[country] = await self.search_one_country(
-                    query, country, reference_date
+                    query, country, reference_date, identity=identity
                 )
             except Exception as e:
                 logger.error("[%s] 조회 실패: %s", country, e)

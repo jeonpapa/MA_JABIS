@@ -36,6 +36,9 @@ class BaseScraper(ABC):
     CURRENCY: str = ""
     SOURCE_LABEL: str = ""
     REQUIRES_LOGIN: bool = False
+    # brand 검색이 0건일 때 identity.inn 으로 1회 재시도할지 (기본 off).
+    # 소스의 검색 모드가 제품명 위주여서 INN 입력을 놓치는 경우만 opt-in.
+    FALLBACK_TO_INN = False
 
     def __init__(self, credentials: dict = None, headless: bool = True):
         """

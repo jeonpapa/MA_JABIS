@@ -77,6 +77,7 @@ class UsMicromedexScraper(BaseScraper):
     SOURCE_LABEL   = "Micromedex Red Book (WAC)"
     SOURCE_TYPE    = "redbook_wac"     # WAC 기준 (AWP 는 유통마크업 포함 — 재정영향분석과 불일치)
     REQUIRES_LOGIN = True
+    FALLBACK_TO_INN = True   # RED BOOK 제품명 모드 → INN 입력 시 brand 로 재시도
 
     PLAYWRIGHT_ARGS = [
         "--no-sandbox",
