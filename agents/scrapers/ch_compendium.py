@@ -28,6 +28,7 @@ import requests
 from playwright.async_api import Page
 
 from .base import BaseScraper
+from ._proxy import proxy_from_env, requests_proxies
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,31 @@ class ChCompendiumScraper(BaseScraper):
         self.msd_only = msd_only
         self._session = requests.Session()
         self._session.headers.update(REQUESTS_HEADERS)
+        self._apply_proxy()
+
+    def _apply_proxy(self) -> None:
+        """compendium.ch 는 fly 데이터센터 IP 를 간헐 차단(Cloudflare) → residential proxy.
+
+        CH_COMPENDIUM_PROXY(없으면 FOREIGN_PROXY). 호출 시마다 새 sticky sessid →
+        재시도에서 다른 exit IP 로 차단 IP 회피. 미설정 시 proxies 비움(직접 접근).
+        """
+        self._session.proxies = requests_proxies(
+            proxy_from_env("CH_COMPENDIUM_PROXY", "FOREIGN_PROXY")
+        ) or {}
+
+    def _get(self, url: str, tries: int = 3, **kw):
+        """차단/스로틀 대비 재시도 GET — 실패마다 새 exit IP(프록시 재적용)."""
+        last_exc = None
+        for attempt in range(tries):
+            try:
+                resp = self._session.get(url, timeout=20, **kw)
+                resp.raise_for_status()
+                return resp
+            except Exception as e:
+                last_exc = e
+                logger.warning("[CH] 요청 실패(%d/%d) %s: %s", attempt + 1, tries, url, e)
+                self._apply_proxy()  # 새 sticky IP 로 교체 후 재시도
+        raise last_exc if last_exc else RuntimeError(f"[CH] 요청 실패: {url}")
 
     # ────────────────────────────────────────────────────────────────────────
     # 1) 자동완성 API → MNR 목록
@@ -71,12 +97,7 @@ class ChCompendiumScraper(BaseScraper):
         GET /search/autocomplete?q={query}&type=brand
         반환: [{"mnr": "1346803", "description": "KEYTRUDA Inf Konz 100 mg/4ml", ...}, ...]
         """
-        resp = self._session.get(
-            AUTOCOMPLETE_URL,
-            params={"q": query, "type": "brand"},
-            timeout=20,
-        )
-        resp.raise_for_status()
+        resp = self._get(AUTOCOMPLETE_URL, params={"q": query, "type": "brand"})
         data = resp.json()
 
         products = []
@@ -101,11 +122,9 @@ class ChCompendiumScraper(BaseScraper):
         """GET /product/{mnr}/{slug} → HTML."""
         url = PRODUCT_URL_TMPL.format(mnr=mnr, slug=slug)
         try:
-            resp = self._session.get(url, timeout=20)
-            if resp.status_code == 200:
-                logger.info("[CH] 제품 페이지 로드: %s", url)
-                return resp.text
-            logger.warning("[CH] 제품 페이지 오류 %d: %s", resp.status_code, url)
+            resp = self._get(url)
+            logger.info("[CH] 제품 페이지 로드: %s", url)
+            return resp.text
         except Exception as e:
             logger.warning("[CH] 제품 페이지 요청 실패: %s", e)
         return None

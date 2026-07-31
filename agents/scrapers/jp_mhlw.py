@@ -27,6 +27,7 @@ import pandas as pd
 from playwright.async_api import Page
 
 from .base import BaseScraper
+from ._proxy import playwright_proxy, proxy_from_env, requests_proxies
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +124,10 @@ class JpMhlwScraper(BaseScraper):
         self.msd_only = msd_only
         self._df_cache: pd.DataFrame = None   # 전체 병합 DataFrame 캐시
 
+    def _browser_proxy(self):
+        """mhlw.go.jp 페이지 로드용 residential proxy(JP_MHLW_PROXY, 없으면 FOREIGN_PROXY)."""
+        return playwright_proxy(proxy_from_env("JP_MHLW_PROXY", "FOREIGN_PROXY"))
+
     # ────────────────────────────────────────────────────────────────────────
     # 1) 페이지에서 _01/_02/_03 엑셀 링크 동적 탐색
     # ────────────────────────────────────────────────────────────────────────
@@ -170,11 +175,23 @@ class JpMhlwScraper(BaseScraper):
         fname = url.split("/")[-1] or f"mhlw_{category}.xlsx"
         save_path = self.cache_dir / fname
 
-        resp = requests.get(url, timeout=60, stream=True)
-        resp.raise_for_status()
-        with open(save_path, "wb") as f:
-            for chunk in resp.iter_content(chunk_size=65536):
-                f.write(chunk)
+        # fly 데이터센터 IP 는 mhlw 다운로드가 간헐 차단/스로틀됨 → residential proxy + 재시도.
+        # 재시도마다 새 exit IP(sticky sessid 재생성)로 차단 IP 회피.
+        last_exc = None
+        for attempt in range(3):
+            proxies = requests_proxies(proxy_from_env("JP_MHLW_PROXY", "FOREIGN_PROXY"))
+            try:
+                resp = requests.get(url, timeout=60, stream=True, proxies=proxies)
+                resp.raise_for_status()
+                with open(save_path, "wb") as f:
+                    for chunk in resp.iter_content(chunk_size=65536):
+                        f.write(chunk)
+                break
+            except Exception as e:
+                last_exc = e
+                logger.warning("[JP] 다운로드 실패(%d/3) %s: %s", attempt + 1, url, e)
+        else:
+            raise last_exc if last_exc else RuntimeError(f"[JP] 다운로드 실패: {url}")
 
         logger.info("[JP] 저장 완료: %s (%s bytes)", save_path.name, save_path.stat().st_size)
         return save_path

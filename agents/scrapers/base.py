@@ -100,6 +100,13 @@ class BaseScraper(ABC):
         )
         return result["form_type"]
 
+    def _browser_proxy(self):
+        """Playwright context 에 적용할 proxy dict(또는 None).
+
+        기본 None(직접 접근). residential proxy 가 필요한 스크레이퍼(JP 등)만 오버라이드.
+        """
+        return None
+
     # ──────────────────────────────────────────────────────────────────────
     # 공통 실행 메서드 (서브클래스에서 오버라이드 불필요)
     # ──────────────────────────────────────────────────────────────────────
@@ -114,7 +121,7 @@ class BaseScraper(ABC):
 
         async with async_playwright() as pw:
             browser = await pw.chromium.launch(headless=self.headless)
-            context = await browser.new_context(
+            ctx_kw = dict(
                 user_agent=(
                     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -122,6 +129,12 @@ class BaseScraper(ABC):
                 ),
                 accept_downloads=True,
             )
+            # 서브클래스가 residential proxy 를 요구하면 context 에 주입(기본 None).
+            bproxy = self._browser_proxy()
+            if bproxy:
+                ctx_kw["proxy"] = bproxy
+                logger.info("[%s] 브라우저 proxy 사용 (데이터센터 IP 우회)", self.COUNTRY)
+            context = await browser.new_context(**ctx_kw)
             page = await context.new_page()
 
             try:
