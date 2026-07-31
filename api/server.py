@@ -1600,6 +1600,24 @@ def _prune_foreign_jobs():
         _foreign_jobs.pop(jid, None)
 
 
+@app.get("/api/foreign/resolve")
+def foreign_resolve():
+    """자유 텍스트 → 확정 약제 후보(brand+INN). 타입어헤드용.
+    GET /api/foreign/resolve?q=keytru
+    → { query, candidates: [{slug, brand, inn, display, matched_as, source}, ...] }
+    """
+    from agents.drug_identity import resolve_identity
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify({"query": q, "candidates": []})
+    try:
+        cands = resolve_identity(q)
+    except Exception as e:
+        logger.warning("resolve 실패(빈 후보 반환): %s", e)
+        cands = []
+    return jsonify({"query": q, "candidates": cands})
+
+
 @app.post("/api/foreign/search")
 def foreign_search():
     """

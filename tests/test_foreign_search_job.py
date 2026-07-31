@@ -81,3 +81,18 @@ def test_cache_mode_remains_synchronous(monkeypatch):
     c = _client_with_stub(monkeypatch)
     r = c.post("/api/foreign/search", json={"query": "Keytruda", "use_cache": True})
     assert r.status_code == 200 and r.get_json()["mode"] == "cache"
+
+
+def test_resolve_endpoint_returns_candidates():
+    c = s.app.test_client()
+    r = c.get("/api/foreign/resolve?q=keytruda")
+    assert r.status_code == 200
+    body = r.get_json()
+    cands = body.get("candidates") or []
+    assert any(x["slug"] == "keytruda" and x["inn"] == "pembrolizumab" for x in cands)
+
+
+def test_resolve_blank_returns_empty():
+    c = s.app.test_client()
+    r = c.get("/api/foreign/resolve?q=")
+    assert r.status_code == 200 and r.get_json()["candidates"] == []
