@@ -43,6 +43,20 @@ def test_sync_skips_unsafe_and_reports(tmp_path: Path):
     assert (dst_root / "analysis" / "evt1.json").exists()
 
 
+def test_sync_fails_closed_without_auth_in_production(monkeypatch, tmp_path: Path):
+    from agents.ingest import policy_analysis_sync as sync
+    monkeypatch.delenv("POLICY_ANALYSIS_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("POLICY_ANALYSIS_URL", raising=False)
+    monkeypatch.setenv("POLICY_ANALYSIS_REQUIRE_AUTH", "1")  # 프로덕션 강제 시뮬
+    dst_root = tmp_path / "policy_intelligence"
+    r = sync.sync_analysis(root=dst_root)  # source_dir=None, 토큰 없음
+    assert r["copied"] == 0
+    assert "auth" in (r.get("error") or "").lower()
+    # partial 파일 미생성 (사설 데이터 노출/부분복사 금지)
+    assert list((dst_root / "analysis").glob("*.json")) == []
+
+
 def test_build_request_attaches_auth_header_when_token():
     from agents.ingest import policy_analysis_sync as sync
     req = sync._build_request("https://api.github.com/x", token="SECRET_T")

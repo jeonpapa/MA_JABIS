@@ -30,6 +30,17 @@ def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _require_auth() -> bool:
+    """프로덕션(fly `/app/data`) 또는 명시 플래그 시 사설 소스 인증을 강제.
+
+    인증 없이 공개 raw 폴백으로 사설 사이드카를 조용히 fetch(또는 오도)하는 것을 막는다.
+    로컬/테스트는 source_dir 또는 POLICY_ANALYSIS_URL 명시로 우회.
+    """
+    if os.environ.get("POLICY_ANALYSIS_REQUIRE_AUTH"):
+        return True
+    return Path("/app/data").exists()
+
+
 def _build_request(url: str, token: str | None = None) -> urllib.request.Request:
     """토큰이 있으면 GitHub API 인증 헤더 부착(비공개 repo). 없으면 공개 raw 요청."""
     req = urllib.request.Request(url)
@@ -79,8 +90,15 @@ def sync_analysis(source_dir: str | Path | None = None, root: str | Path | None 
     if source_dir is not None:
         files = _iter_source_files_local(Path(source_dir))
     else:
-        base = os.environ.get("POLICY_ANALYSIS_URL") or GITHUB_RAW_BASE
+        override_url = os.environ.get("POLICY_ANALYSIS_URL")
+        base = override_url or GITHUB_RAW_BASE
         token = os.environ.get("POLICY_ANALYSIS_TOKEN") or os.environ.get("GITHUB_TOKEN")
+        # 프로덕션 fail-closed: 토큰 없이 사설 소스 fetch 시도 금지 (부분 복사 전 즉시 반환).
+        if not token and not override_url and _require_auth():
+            return {"copied": 0, "skipped": 0, "rejected": 0,
+                    "error": "auth required: POLICY_ANALYSIS_TOKEN/GITHUB_TOKEN missing "
+                             "(fail-closed in production)",
+                    "dest": str(dest)}
         try:
             files = _iter_source_files_url(base, token=token)
         except Exception as exc:
