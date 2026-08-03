@@ -4329,6 +4329,27 @@ def _mail_sub_row_to_dict(r) -> dict:
 _MAIL_SUB_COLS = "id, name, keywords_json, media_json, schedule, time, week_day, emails_json, active, created_at, updated_at, last_sent_at, companies_json, brands_json, policy_topics_json, disease_areas_json, custom_sources_json, test_request_json"
 
 
+# Daily Mailing 고정 소스셋 (LOCKED) — 프론트 MEDIA_CATEGORIES 와 일치.
+# 사용자는 소스를 선택하지 않는다; 모든 구독이 이 canonical 집합을 사용.
+DEFAULT_MAIL_SOURCES = [
+    "medi", "doctorsnews", "medigate", "yakup", "kpanews", "hitnews",
+    "chosun", "joongang", "donga", "hani", "kyunghyang",
+    "hankyung", "maeil", "edaily", "mt", "fnews",
+    "ytn", "kbs", "mbc", "naver", "daum",
+]
+
+
+def _with_default_sources(fields: dict) -> dict:
+    """media/custom_sources 가 비어있으면 고정 소스셋으로 채운다 (create 시).
+    값이 이미 있으면(구버전 payload) 그대로 유지 — 하위호환."""
+    import json as _json
+    if not fields.get("media_json"):
+        fields["media_json"] = _json.dumps(DEFAULT_MAIL_SOURCES, ensure_ascii=False)
+    if "custom_sources_json" not in fields:
+        fields["custom_sources_json"] = _json.dumps([], ensure_ascii=False)
+    return fields
+
+
 def _coerce_mail_sub_input(body: dict) -> dict | tuple[dict, str]:
     import json as _json
     out: dict = {}
@@ -5040,7 +5061,7 @@ def mail_sub_list():
 def mail_sub_create():
     owner = request.user["sub"]  # type: ignore[attr-defined]
     body = request.get_json(silent=True) or {}
-    required = ("name", "keywords", "media", "schedule", "time", "emails")
+    required = ("name", "keywords", "schedule", "time", "emails")
     for k in required:
         if k not in body:
             return jsonify({"error": f"{k} required", "code": "INVALID"}), 400
@@ -5049,6 +5070,7 @@ def mail_sub_create():
         _, msg = result
         return jsonify({"error": msg, "code": "INVALID"}), 400
     fields = result
+    fields = _with_default_sources(fields)
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).isoformat()
     fields["owner_email"] = owner
