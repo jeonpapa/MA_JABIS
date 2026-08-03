@@ -86,7 +86,6 @@ export default function DailyMailingPage() {
   const [isDark, setIsDark] = useState(false);
   const [selectedKeywords, setSelectedKeywords] = useState<string[]>(['약가 인하', '급여 등재']);
   const [customKeyword, setCustomKeyword] = useState('');
-  const [selectedMedia, setSelectedMedia] = useState<string[]>(['medi', 'yakup', 'hankyung']);
   const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
   const [customBrand, setCustomBrand] = useState('');
   const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
@@ -95,10 +94,6 @@ export default function DailyMailingPage() {
   const [customPolicyTopic, setCustomPolicyTopic] = useState('');
   const [selectedDiseaseAreas, setSelectedDiseaseAreas] = useState<string[]>([]);
   const [customDiseaseArea, setCustomDiseaseArea] = useState('');
-  const [customSources, setCustomSources] = useState<{ url: string; name?: string }[]>([]);
-  const [customSourceUrl, setCustomSourceUrl] = useState('');
-  const [customSourceName, setCustomSourceName] = useState('');
-  const [customSourceError, setCustomSourceError] = useState<string | null>(null);
   const [schedule, setSchedule] = useState<'Daily' | 'Weekly'>('Daily');
   const [scheduleTime, setScheduleTime] = useState('08:00');
   const [weekDay, setWeekDay] = useState('Monday');
@@ -149,13 +144,6 @@ export default function DailyMailingPage() {
     if (trimmed && !selectedKeywords.includes(trimmed)) { setSelectedKeywords(prev => [...prev, trimmed]); setCustomKeyword(''); }
   };
   const removeKeyword = (kw: string) => { setSelectedKeywords(prev => prev.filter(k => k !== kw)); };
-  const toggleMedia = (id: string) => { setSelectedMedia(prev => prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]); };
-  const toggleCategoryMedia = (items: { id: string }[]) => {
-    const ids = items.map(i => i.id);
-    const allSelected = ids.every(id => selectedMedia.includes(id));
-    if (allSelected) { setSelectedMedia(prev => prev.filter(m => !ids.includes(m))); }
-    else { setSelectedMedia(prev => [...new Set([...prev, ...ids])]); }
-  };
   const toggleBrand = (v: string) => { setSelectedBrands(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]); };
   const removeBrand = (v: string) => { setSelectedBrands(prev => prev.filter(x => x !== v)); };
   const addCustomBrand = () => {
@@ -180,24 +168,6 @@ export default function DailyMailingPage() {
     const trimmed = customDiseaseArea.trim();
     if (trimmed && !selectedDiseaseAreas.includes(trimmed)) { setSelectedDiseaseAreas(prev => [...prev, trimmed]); setCustomDiseaseArea(''); }
   };
-  const addCustomSource = () => {
-    const trimmed = customSourceUrl.trim();
-    if (!trimmed) return;
-    if (!/^https?:\/\//i.test(trimmed)) {
-      setCustomSourceError('http(s):// 로 시작하는 URL을 입력하세요');
-      return;
-    }
-    if (customSources.some(s => s.url === trimmed)) {
-      setCustomSourceError('이미 추가된 URL입니다');
-      return;
-    }
-    setCustomSourceError(null);
-    const name = customSourceName.trim();
-    setCustomSources(prev => [...prev, name ? { url: trimmed, name } : { url: trimmed }]);
-    setCustomSourceUrl('');
-    setCustomSourceName('');
-  };
-  const removeCustomSource = (url: string) => { setCustomSources(prev => prev.filter(s => s.url !== url)); };
   const sourceDomain = (url: string) => {
     try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; }
   };
@@ -212,12 +182,10 @@ export default function DailyMailingPage() {
     setSettingName('');
     setSelectedKeywords(['약가 인하', '급여 등재']);
     setCustomKeyword('');
-    setSelectedMedia(['medi', 'yakup', 'hankyung']);
     setSelectedBrands([]); setCustomBrand('');
     setSelectedCompanies([]); setCustomCompany('');
     setSelectedPolicyTopics([]); setCustomPolicyTopic('');
     setSelectedDiseaseAreas([]); setCustomDiseaseArea('');
-    setCustomSources([]); setCustomSourceUrl(''); setCustomSourceName(''); setCustomSourceError(null);
     setSchedule('Daily'); setScheduleTime('08:00'); setWeekDay('Monday');
     setEmailInput(''); setEmailList(['marketaccess@msd.com']);
   };
@@ -227,19 +195,16 @@ export default function DailyMailingPage() {
     setEditingId(setting.id);
     setSettingName(setting.name);
     setSelectedKeywords(setting.keywords ?? []);
-    setSelectedMedia(setting.media ?? []);
     setSelectedBrands(setting.brands ?? []);
     setSelectedCompanies(setting.companies ?? []);
     setSelectedPolicyTopics(setting.policy_topics ?? []);
     setSelectedDiseaseAreas(setting.disease_areas ?? []);
-    setCustomSources(setting.custom_sources ?? []);
     setSchedule(setting.schedule);
     setScheduleTime(setting.time);
     setWeekDay(setting.weekDay ?? 'Monday');
     setEmailList(setting.emails ?? []);
     setCustomKeyword(''); setCustomBrand(''); setCustomCompany('');
     setCustomPolicyTopic(''); setCustomDiseaseArea('');
-    setCustomSourceUrl(''); setCustomSourceName(''); setCustomSourceError(null);
     setEmailInput('');
     setActiveTab('new');
   };
@@ -309,7 +274,7 @@ export default function DailyMailingPage() {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (scopeTermCount === 0 || selectedMedia.length === 0 || emailList.length === 0) return;
+    if (scopeTermCount === 0 || emailList.length === 0) return;
     setSubmitting(true);
     const isEdit = editingId != null;
     try {
@@ -318,7 +283,6 @@ export default function DailyMailingPage() {
       const payload = {
         name: settingName.trim() || '새 메일링 설정',
         keywords: dedupedKeywords,
-        media: selectedMedia,
         schedule,
         time: scheduleTime,
         weekDay: schedule === 'Weekly' ? weekDay : null,
@@ -327,7 +291,6 @@ export default function DailyMailingPage() {
         companies: selectedCompanies,
         policyTopics: selectedPolicyTopics,
         diseaseAreas: selectedDiseaseAreas,
-        customSources,
       };
       if (isEdit) {
         await updateMailSubscription(editingId, payload);
@@ -370,9 +333,6 @@ export default function DailyMailingPage() {
   const tabInactive = isDark ? 'text-[#8B9BB4] hover:text-white' : 'text-gray-500 hover:text-gray-900';
   const tagSelected = isDark ? 'bg-[#00E5CC]/15 border-[#00E5CC]/40 text-[#00E5CC]' : 'bg-teal-50 border-teal-300 text-teal-700';
   const tagDefault = isDark ? 'bg-[#0D1117] border-[#1E2530] text-[#8B9BB4] hover:text-white hover:border-[#2A3545]' : 'bg-gray-50 border-gray-200 text-gray-500 hover:text-gray-900 hover:border-gray-300';
-  const mediaCardBg = isDark ? 'bg-[#0D1117] border-[#1E2530]' : 'bg-gray-50 border-gray-200';
-  const mediaCheckSelected = isDark ? 'bg-[#00E5CC] border-[#00E5CC]' : 'bg-teal-600 border-teal-600';
-  const mediaCheckDefault = isDark ? 'border-[#2A3545] group-hover:border-[#00E5CC]/50' : 'border-gray-300 group-hover:border-teal-400';
   const emailTagBg = isDark ? 'bg-[#0D1117] border-[#1E2530]' : 'bg-gray-50 border-gray-200';
   const savedCardBg = isDark ? 'bg-[#161B27] border-[#1E2530]' : 'bg-white border-gray-200';
   const scheduleDaily = isDark ? 'bg-[#00E5CC]/10 text-[#00E5CC]' : 'bg-teal-50 text-teal-700';
@@ -446,8 +406,8 @@ export default function DailyMailingPage() {
           <div className="flex items-center gap-2">
             <div className={`flex items-center gap-1 rounded-lg p-1 ${tabBg}`}>
               {[
-                { key: 'new', label: '새 설정', icon: 'ri-add-circle-line' },
-                { key: 'saved', label: '저장된 설정', icon: 'ri-list-settings-line' },
+                { key: 'new', label: '구독 설정', icon: 'ri-add-circle-line' },
+                { key: 'saved', label: '등록 서비스 관리', icon: 'ri-list-settings-line' },
               ].map(tab => (
                 <button key={tab.key} onClick={() => setActiveTab(tab.key as 'new' | 'saved')}
                   className={`flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-medium cursor-pointer whitespace-nowrap transition-all ${activeTab === tab.key ? tabActive : tabInactive}`}>
@@ -589,80 +549,19 @@ export default function DailyMailingPage() {
               })}
             </div>
 
-            {/* Media Selection */}
+            {/* 발송 소스 (고정) — 시스템이 관리, 선택 불가 */}
             <div className={`${cardBg} rounded-2xl border ${cardBorder} p-6`}>
-              <h3 className={`font-bold text-sm mb-1 flex items-center gap-2 ${textMain}`}>
-                <span className={`w-5 h-5 flex items-center justify-center ${accentColor}`}><i className="ri-newspaper-line text-sm"></i></span>
-                모니터링 미디어 — 어디서 찾을지
+              <h3 className={`text-sm font-semibold ${textMain} mb-1 flex items-center gap-1.5`}>
+                <i className="ri-lock-line text-xs"></i> 발송 소스 (고정)
               </h3>
-              <p className={`${textSub} text-xs mb-4`}>위 스콥을 검색할 매체를 선택하세요 (스콥과 별개의 "검색 위치" 설정)</p>
-              <div className="grid grid-cols-2 gap-4">
-                {MEDIA_CATEGORIES.map(cat => {
-                  const allSelected = cat.items.every(i => selectedMedia.includes(i.id));
-                  const someSelected = cat.items.some(i => selectedMedia.includes(i.id));
-                  return (
-                    <div key={cat.category} className={`rounded-xl border p-4 ${mediaCardBg}`}>
-                      <div className="flex items-center justify-between mb-3">
-                        <span className={`text-xs font-bold ${textMain}`}>{cat.category}</span>
-                        <button type="button" onClick={() => toggleCategoryMedia(cat.items)}
-                          className={`text-xs px-2.5 py-1 rounded-full cursor-pointer whitespace-nowrap transition-all ${allSelected ? tagSelected : someSelected ? (isDark ? 'bg-[#F59E0B]/15 text-[#F59E0B] border border-[#F59E0B]/30' : 'bg-amber-50 text-amber-700 border border-amber-300') : (isDark ? 'bg-[#161B27] text-[#8B9BB4] border border-[#1E2530] hover:text-white' : 'bg-white text-gray-500 border border-gray-200 hover:text-gray-900')}`}>
-                          {allSelected ? '전체 해제' : '전체 선택'}
-                        </button>
-                      </div>
-                      <div className="space-y-2">
-                        {cat.items.map(item => (
-                          <label key={item.id} className="flex items-center gap-2.5 cursor-pointer group">
-                            <div onClick={() => toggleMedia(item.id)}
-                              className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border transition-all cursor-pointer ${selectedMedia.includes(item.id) ? mediaCheckSelected : mediaCheckDefault}`}>
-                              {selectedMedia.includes(item.id) && <i className="ri-check-line text-white text-xs"></i>}
-                            </div>
-                            <span onClick={() => toggleMedia(item.id)} className={`text-xs transition-colors ${selectedMedia.includes(item.id) ? textMain : textSub} group-hover:${textMain}`}>{item.label}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="mt-3 flex items-center gap-2">
-                <span className={`${textSub} text-xs`}>선택된 미디어:</span>
-                <span className={`text-xs font-bold ${accentColor}`}>{selectedMedia.length}개</span>
-              </div>
-
-              <div className={`mt-5 pt-5 border-t ${divider}`}>
-                <h4 className={`font-bold text-xs mb-1 flex items-center gap-2 ${textMain}`}>
-                  <span className={`w-4 h-4 flex items-center justify-center ${accentColor}`}><i className="ri-global-line text-xs"></i></span>
-                  사이트 URL 직접 추가
-                </h4>
-                <p className={`${textSub} text-xs mb-3`}>추가한 사이트는 헤르메스가 키워드로 검색합니다(미등록 매체).</p>
-                {customSources.length > 0 && (
-                  <div className={`flex flex-wrap gap-2 mb-3 p-3 rounded-xl border ${divider}`}>
-                    {customSources.map(s => (
-                      <span key={s.url} className={`flex items-center gap-1.5 border text-xs px-3 py-1.5 rounded-full ${tagSelected}`}>
-                        <i className="ri-links-line text-xs"></i>
-                        {sourceDomain(s.url)}{s.name ? ` (${s.name})` : ''}
-                        <button type="button" onClick={() => removeCustomSource(s.url)} className="w-3.5 h-3.5 flex items-center justify-center hover:opacity-70 cursor-pointer transition-colors"><i className="ri-close-line text-xs"></i></button>
-                      </span>
-                    ))}
-                  </div>
-                )}
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <input type="text" placeholder="https://example.com/news" value={customSourceUrl}
-                    onChange={e => { setCustomSourceUrl(e.target.value); setCustomSourceError(null); }}
-                    onKeyDown={onEnterCommit(addCustomSource)}
-                    className={`flex-1 rounded-xl px-4 py-2.5 text-sm focus:outline-none transition-colors ${inputBg} ${inputFocus} ${inputText}`} />
-                  <input type="text" placeholder="이름(선택)" value={customSourceName}
-                    onChange={e => setCustomSourceName(e.target.value)}
-                    onKeyDown={onEnterCommit(addCustomSource)}
-                    className={`sm:w-40 rounded-xl px-4 py-2.5 text-sm focus:outline-none transition-colors ${inputBg} ${inputFocus} ${inputText}`} />
-                  <button type="button" onClick={addCustomSource}
-                    className={`flex items-center justify-center gap-2 text-sm font-medium px-4 py-2.5 rounded-xl cursor-pointer whitespace-nowrap transition-colors border ${accentBg} ${accentBorder} ${accentColor} hover:opacity-80`}>
-                    <span className="w-4 h-4 flex items-center justify-center"><i className="ri-add-line text-sm"></i></span>추가
-                  </button>
-                </div>
-                {customSourceError && (
-                  <p className="text-red-500 text-xs mt-2 flex items-center gap-1"><i className="ri-error-warning-line text-xs"></i>{customSourceError}</p>
-                )}
+              <p className={`${textSub} text-xs mb-3`}>시스템이 관리하는 고정 소스입니다 — 선택할 수 없습니다.</p>
+              <div className="flex flex-wrap gap-1.5">
+                {MEDIA_CATEGORIES.flatMap(cat => cat.items).map(item => (
+                  <span key={item.id}
+                    className={`text-xs px-2.5 py-1 rounded-full border ${isDark ? 'bg-[#161B27] text-[#8B9BB4] border-[#1E2530]' : 'bg-gray-50 text-gray-500 border-gray-200'} inline-flex items-center gap-1`}>
+                    <i className="ri-lock-line text-[10px] opacity-60"></i>{item.label}
+                  </span>
+                ))}
               </div>
             </div>
 
@@ -737,7 +636,6 @@ export default function DailyMailingPage() {
             <div className={`flex items-center justify-between rounded-2xl border p-5 ${sumBg}`}>
               <div className={`flex items-center gap-4 text-xs ${textSub}`}>
                 <span className="flex items-center gap-1.5"><span className={`w-3.5 h-3.5 flex items-center justify-center ${accentColor}`}><i className="ri-crosshair-2-line text-xs"></i></span>스콥 용어 {scopeTermCount}개</span>
-                <span className="flex items-center gap-1.5"><span className={`w-3.5 h-3.5 flex items-center justify-center ${accentColor}`}><i className="ri-newspaper-line text-xs"></i></span>미디어 {selectedMedia.length}개</span>
                 <span className="flex items-center gap-1.5"><span className={`w-3.5 h-3.5 flex items-center justify-center ${accentColor}`}><i className="ri-mail-line text-xs"></i></span>수신자 {emailList.length}명</span>
                 <span className="flex items-center gap-1.5"><span className={`w-3.5 h-3.5 flex items-center justify-center ${accentColor}`}><i className="ri-time-line text-xs"></i></span>{schedule} {scheduleTime}</span>
               </div>
@@ -748,7 +646,7 @@ export default function DailyMailingPage() {
                     취소
                   </button>
                 )}
-                <button type="submit" disabled={submitting || scopeTermCount === 0 || selectedMedia.length === 0 || emailList.length === 0}
+                <button type="submit" disabled={submitting || scopeTermCount === 0 || emailList.length === 0}
                   className="flex items-center gap-2 bg-teal-600 text-white text-sm font-bold px-6 py-2.5 rounded-xl cursor-pointer whitespace-nowrap hover:bg-teal-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
                   <span className="w-4 h-4 flex items-center justify-center"><i className={submitting ? 'ri-loader-4-line animate-spin text-sm' : 'ri-save-line text-sm'}></i></span>{submitting ? '저장 중…' : editingId != null ? '수정 저장' : '설정 저장'}
                 </button>
