@@ -23,7 +23,7 @@ export interface MailSubscription {
 export interface MailSubscriptionInput {
   name: string;
   keywords: string[];
-  media: string[];
+  media?: string[];
   schedule: 'Daily' | 'Weekly';
   time: string;
   weekDay?: string | null;
