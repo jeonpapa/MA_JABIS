@@ -136,3 +136,40 @@ def send_gmail_message(
         "recipients": [r.strip() for r in recipients if r and r.strip()],
         "subject": subject,
     }
+
+
+def resolve_token_path() -> Path:
+    """Gmail 토큰 파일 위치: GOOGLE_TOKEN_PATH > 프로덕션 볼륨(/app/data/secrets) > repo data/secrets."""
+    configured = os.environ.get("GOOGLE_TOKEN_PATH")
+    if configured:
+        return Path(configured)
+    if Path("/app/data").exists():
+        return Path("/app/data/secrets/google_token.json")
+    return Path(__file__).resolve().parents[2] / "data" / "secrets" / "google_token.json"
+
+
+def materialize_token_from_env(token_path: str | Path | None = None, *,
+                               env_var: str = "GOOGLE_TOKEN_JSON") -> Path | None:
+    """fly secret GOOGLE_TOKEN_JSON(base64 또는 raw JSON) → 토큰 파일(0600). 없으면 기존 파일 또는 None.
+
+    잘못된 JSON 은 ValueError — 호출부(헬스체크/발송)가 실패로 표시한다.
+    """
+    path = Path(token_path) if token_path else resolve_token_path()
+    raw = os.environ.get(env_var, "").strip()
+    if not raw:
+        return path if path.exists() else None
+    text = raw
+    if not raw.startswith("{"):
+        try:
+            text = base64.b64decode(raw, validate=True).decode("utf-8")
+        except Exception as exc:
+            raise ValueError(f"{env_var} base64 디코드 실패") from exc
+    try:
+        json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{env_var} 가 유효한 JSON 이 아님") from exc
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists() or path.read_text(encoding="utf-8") != text:
+        path.write_text(text, encoding="utf-8")
+    os.chmod(path, 0o600)
+    return path
