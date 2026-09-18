@@ -1,8 +1,10 @@
 """
 MA AI 대쉬보드 스케줄러
-- 매월 1일 09:00 에 국내 약가 에이전트를 자동 실행한다.
+- 매월 1~7일 09:00 에 국내 약가 catch-up 을 자동 실행한다 (첫 주 매일 재시도 —
+  당월이 이미 적재돼 있으면 브라우저/프록시 기동 없이 즉시 종료).
 - 실행 후 대쉬보드를 자동으로 갱신한다.
 - 수동 실행: python scheduler.py --run-now
+- 로컬 전용 잡(git 백업·Rule Compliance 메모리 감사)은 프로덕션(FLY_APP_NAME)에서 INFO 로 skip.
 """
 
 import argparse
@@ -10,6 +12,7 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -22,6 +25,7 @@ from agents.dashboard_agent import DashboardAgent
 from agents.ingest.policy_analysis_sync import sync_analysis as _sync_policy_analysis
 from agents.ingest.daily_mailing_sync import sync_daily_mailing_runs as _sync_daily_mailing_runs
 from agents.ingest.daily_mailing_scope_export import export_scopes as _export_daily_mailing_scopes
+from agents.runtime_env import is_production
 
 # ── 로깅 설정 ──────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).parent
@@ -54,8 +58,9 @@ def load_config() -> dict:
 async def run_pipeline():
     """전체 파이프라인: 국내 약가 월별 catch-up(누락 자동복구) → 대쉬보드.
 
-    매월 1일 09:00 실행. 기존 단발(download_latest)에서 **catch_up** 으로 전환 —
-    스케줄러 미가동/실패로 빠진 달이 있어도 DB 최신일보다 새로운 모든 월을 한 번에 적재.
+    매월 1~7일 09:00 실행 (첫 주 매일 재시도). 기존 단발(download_latest)에서 **catch_up** 으로
+    전환 — 스케줄러 미가동/실패로 빠진 달이 있어도 DB 최신일보다 새로운 모든 월을 한 번에 적재.
+    당월이 이미 적재돼 있으면 catch_up 이 브라우저/프록시 기동 없이 skip 한다.
     """
     logger.info("━━━ 파이프라인 시작 ━━━")
     config = load_config()
@@ -66,8 +71,14 @@ async def run_pipeline():
         result = await catch_up(config, BASE_DIR)
         logger.info("국내 약가 catch-up: 신규 적재 %s · 오류 %s",
                     result.get("ingested"), result.get("errors"))
-        if result.get("errors"):
-            logger.warning("catch-up 일부 오류 — 다음 실행 시 재시도(멱등)")
+        if result.get("skipped"):
+            logger.info("국내 약가 catch-up skip (%s) — 당월 이미 적재", result["skipped"])
+        elif result.get("errors") and not result.get("ingested"):
+            # 게시판 로딩 실패 등 전체 실패 — silent no-op 이 아니라 ERROR 로 남긴다
+            logger.error("국내 약가 catch-up 실패 — 적재 0건, 오류 %s (1~7일 일일 재시도)",
+                         result["errors"])
+        elif result.get("errors"):
+            logger.warning("catch-up 일부 오류 — 다음 실행 시 재시도(멱등): %s", result["errors"])
     except Exception as e:
         logger.error("국내 약가 catch-up 실패: %s", e, exc_info=True)
         # 적재 실패해도 대쉬보드는 기존 데이터로 갱신
@@ -120,7 +131,12 @@ def rule_compliance_audit_job():
 
     사용자와 합의한 메모리 항목(feedback/project/reference)이 실제 런타임에서 지켜지는지
     자동 감사. 증거 기반 PASS/FAIL/SKIP 보고서를 `quality_guard/compliance_YYYY-MM-DD.md` 로 저장.
+    로컬 전용 — Claude 메모리 파일은 개발 Mac 에만 있으므로 프로덕션에서는 INFO 로 skip.
     """
+    if is_production():
+        logger.info("Rule Compliance 감사 skip — 로컬 전용 잡 (Claude 메모리 디렉터리는 개발 Mac 에만 존재)")
+        return
+
     from agents.rule_compliance import RuleComplianceAgent
 
     logger.info("━━━ Rule Compliance 감사 시작 ━━━")
@@ -619,7 +635,11 @@ def hira_schedule_fetcher_job():
 
 
 def git_backup_job():
-    """Git 자정 자동 백업"""
+    """Git 자정 자동 백업 — 로컬 전용 (프로덕션 컨테이너는 git 없음 → 매일 ERROR 방지)"""
+    if is_production() or shutil.which("git") is None:
+        logger.info("Git 자동 백업 skip — 로컬 전용 잡 (프로덕션 컨테이너 또는 git 미설치)")
+        return
+
     logger.info("━━━ 자정 Git 자동 백업 시작 ━━━")
     try:
         subprocess.run(["git", "add", "."], cwd=BASE_DIR, check=True)
@@ -766,9 +786,9 @@ def main():
         return
 
     if args.domestic_catchup_now:
-        logger.info("국내 약가 catch-up 즉시 실행 (누락 월 적재)")
+        logger.info("국내 약가 catch-up 즉시 실행 (누락 월 적재, 당월 적재 여부 무관 force)")
         from agents.domestic_catchup import run_sync
-        out = run_sync(load_config(), BASE_DIR, max_pages=3)
+        out = run_sync(load_config(), BASE_DIR, max_pages=3, force=True)
         logger.info("catch-up 결과: 신규 적재 %s · 오류 %s",
                     out.get("ingested"), out.get("errors"))
         return
@@ -903,7 +923,9 @@ def main():
         )
         return
 
-    # 스케줄러 설정: 매월 1일 09:00
+    # 스케줄러 설정: 매월 1~7일 09:00 (config day="1-7" cron 범위 — 첫 주 매일 재시도.
+    # 9/1 HIRA 다운로드 실패 시 다음 달까지 재시도가 없던 문제. catch_up 이 당월 적재
+    # 확인 시 브라우저/프록시 없이 즉시 종료하므로 2~7일 실행은 사실상 무비용)
     sched_cfg = config["domestic_agent"]["schedule"]
     scheduler = BlockingScheduler(timezone="Asia/Seoul")
     scheduler.add_job(
@@ -917,9 +939,9 @@ def main():
         id="domestic_price_pipeline",
         name="국내 약가 모니터링 파이프라인",
         replace_existing=True,
-        # 월 1회 발화라 발화 시점에 스케줄러가 다운돼 있으면 놓친 실행이 폐기됨
+        # 발화 시점에 스케줄러가 다운돼 있으면 놓친 실행이 폐기됨
         # (7/1·6/1 미실행 원인). 재시작이 잦으므로 grace 24h + coalesce 로
-        # 창 안에서 재기동 시 놓친 월간 잡을 1회 실행. catch_up 은 멱등이라 안전.
+        # 창 안에서 재기동 시 놓친 잡을 1회 실행. catch_up 은 멱등이라 안전.
         misfire_grace_time=86400,
         coalesce=True,
     )
@@ -1168,16 +1190,21 @@ def main():
         replace_existing=True,
     )
 
-    logger.info(
-        "스케줄러 시작 — 파이프라인(매월 %d일 %02d:%02d) / "
-        "Git 백업(매일 00:00) / QualityGuard 리뷰(매일 06:00)",
-        sched_cfg["day"], sched_cfg["hour"], sched_cfg["minute"],
-    )
+    logger.info("%s", _schedule_banner(sched_cfg))
 
     try:
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):
         logger.info("스케줄러 종료")
+
+
+def _schedule_banner(sched_cfg: dict) -> str:
+    """스케줄러 시작 로그 — day 는 int(1) 또는 cron 범위 문자열("1-7") 모두 허용."""
+    return (
+        f"스케줄러 시작 — 파이프라인(매월 {sched_cfg['day']}일 "
+        f"{int(sched_cfg['hour']):02d}:{int(sched_cfg['minute']):02d}) / "
+        "Git 백업(매일 00:00) / QualityGuard 리뷰(매일 06:00)"
+    )
 
 
 if __name__ == "__main__":

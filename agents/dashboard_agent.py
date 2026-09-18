@@ -395,6 +395,9 @@ class DashboardAgent:
             agent_status_html=agent_status_html,
         )
 
+        # 출력 디렉터리 보장 — 프로덕션 볼륨(/app/data) 에는 dashboard_v1_archive 가 없어
+        # 2026-09-01 write_text FileNotFoundError 로 파이프라인 전체가 깨졌다
+        self.output_html_path.parent.mkdir(parents=True, exist_ok=True)
         self.output_html_path.write_text(html, encoding="utf-8")
         logger.info("대쉬보드 HTML 생성 완료: %s", self.output_html_path)
         return self.output_html_path

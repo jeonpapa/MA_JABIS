@@ -26,6 +26,27 @@ HIRA_BOARD_URL = "https://www.hira.or.kr/bbsDummyKR.do?pgmid=HIRAA030014050000"
 PAGE_SIZE = 10   # HIRA 기본 페이지당 게시물 수
 DELAY_SEC = 2    # 요청 사이 대기 시간 (서버 부하 방지)
 
+# 상세 페이지 navigation — domcontentloaded (HIRA 는 백그라운드 요청이 잦아 networkidle 이
+# 느린 residential proxy(HIRA_PROXY) 에서 타임아웃) + a.btn_file 명시 대기(attach) 조합.
+DETAIL_GOTO_TIMEOUT_MS = 60000
+DETAIL_ATTACH_TIMEOUT_MS = 15000
+
+# 첨부 다운로드 onclick 판별 — 현행 HIRA `downLoadBbs(...)`, 구형 egov `fn_egov_downFile(...)` 등
+_DOWNLOAD_ONCLICK_RE = re.compile(r"down\s*_?load|downfile|filedown", re.IGNORECASE)
+# SNS 공유 링크 — 폴백이 절대 고르면 안 됨. 2026-09-01 프로덕션: a.btn_file 미렌더 상태에서
+# 폴백이 숨은 `<a href="#none" onclick="Navi.naverBlog(); return false;">` 를 골라 click 30s 타임아웃.
+_SHARE_LINK_RE = re.compile(r"navi\.|naverblog|facebook|twitter|kakao|share", re.IGNORECASE)
+
+
+def _is_download_onclick(onclick: str | None) -> bool:
+    """onclick 이 파일 다운로드 호출처럼 보이는지 (downLoad/download/downFile — 대소문자 무시)."""
+    return bool(onclick) and _DOWNLOAD_ONCLICK_RE.search(onclick) is not None
+
+
+def _is_share_link(onclick: str | None, href: str | None = None) -> bool:
+    """SNS 공유 링크 여부 (Navi.* / naverBlog / facebook / twitter / kakao / share)."""
+    return _SHARE_LINK_RE.search(f"{onclick or ''} {href or ''}") is not None
+
 
 class BackfillAgent:
     def __init__(self, config: dict, base_dir: Path):
@@ -156,17 +177,47 @@ class BackfillAgent:
     # 2. 단일 게시물에서 Excel 다운로드
     # ──────────────────────────────────────────────────────────────────────
 
+    @staticmethod
+    async def _legacy_download_anchors(page) -> list:
+        """구형 페이지 폴백 — onclick 이 있는 앵커 중 **가시 + 다운로드 호출 + SNS/utilshare-list 밖** 만.
+
+        (구) `a[href='#none']` + `filter(has_not=.utilshare-list)` 는 '자손에 utilshare-list 가
+        없는 앵커' 라 공유 목록 **안의** 링크를 걸러내지 못했고 가시성도 보지 않았다.
+        """
+        anchors = page.locator("a[onclick]")
+        out = []
+        for i in range(await anchors.count()):
+            a = anchors.nth(i)
+            onclick = await a.get_attribute("onclick") or ""
+            href = await a.get_attribute("href") or ""
+            if not _is_download_onclick(onclick) or _is_share_link(onclick, href):
+                continue
+            if await a.evaluate("el => !!el.closest('.utilshare-list')"):
+                continue
+            if not await a.is_visible():
+                continue
+            out.append(a)
+        return out
+
     async def download_post_excel(
-        self, page, post: dict
+        self, page, post: dict, *, attach_timeout_ms: int = DETAIL_ATTACH_TIMEOUT_MS,
     ) -> tuple:
-        """게시물 상세 페이지에서 Excel 첨부파일을 다운로드. (path, apply_date) 반환"""
+        """게시물 상세 페이지에서 Excel 첨부파일을 다운로드. (path, apply_date) 반환.
+
+        - goto 는 domcontentloaded + `a.btn_file` 이 붙을 때까지 명시 대기(attach_timeout_ms).
+          2026-09-01 프로덕션(느린 HIRA_PROXY): 렌더 전 count()==0 → 폴백이 숨은 SNS 공유
+          링크를 클릭해 30s 타임아웃 → 9월 데이터 미적재.
+        - 폴백(구형 페이지 호환)은 가시 + 다운로드 onclick + SNS 아님 인 앵커만. 유효 링크가
+          없으면 **클릭하지 않고** (None, apply_date) 반환 (호출부가 '첨부 없음' 으로 처리).
+        """
         base_url = "https://www.hira.or.kr"
         detail_url = f"{base_url}{post['href']}" if post["href"].startswith("/") else post["href"]
         if "hira.or.kr" not in detail_url:
             detail_url = f"{base_url}/bbsDummyKR.do{post['href']}"
 
         try:
-            await page.goto(detail_url, wait_until="networkidle", timeout=20000)
+            await page.goto(detail_url, wait_until="domcontentloaded",
+                            timeout=DETAIL_GOTO_TIMEOUT_MS)
 
             # 기준일 추출 — 페이지 본문 전체 텍스트에서 날짜 패턴 탐색
             page_text = await page.inner_text("body")
@@ -177,34 +228,41 @@ class BackfillAgent:
             )
 
             # ── 파일 다운로드 링크: a.btn_file (SNS 공유 버튼 제외한 정확한 선택자)
+            #    느린 프록시에서 늦게 붙을 수 있으므로 bounded 대기 후 count
             file_links = page.locator("a.btn_file")
+            try:
+                await file_links.first.wait_for(state="attached", timeout=attach_timeout_ms)
+            except Exception:
+                logger.info("게시물 %d: a.btn_file %dms 내 미출현 → 구형 페이지 폴백 탐색",
+                            post["post_number"], attach_timeout_ms)
             btn_count = await file_links.count()
 
-            if btn_count == 0:
-                # 구형 페이지 대비 폴백: utilshare-list 외부의 a[href='#none']
-                file_links = page.locator("a[href='#none']").filter(
-                    has_not=page.locator(".utilshare-list")
-                )
-                btn_count = await file_links.count()
+            if btn_count > 0:
+                candidates = [file_links.nth(i) for i in range(btn_count)]
+            else:
+                candidates = await self._legacy_download_anchors(page)
 
-            if btn_count == 0:
-                logger.warning("게시물 %d: 첨부파일 없음", post["post_number"])
+            if not candidates:
+                logger.warning(
+                    "게시물 %d: 유효한 첨부 다운로드 링크 없음 (미렌더 또는 SNS 공유 링크만 존재) "
+                    "→ 클릭 생략", post["post_number"],
+                )
                 return None, apply_date
 
             # 여러 파일이 있으면 각각 시도해 Excel 파일 선택
-            excel_link = file_links.first  # 기본값
-            for i in range(btn_count):
-                onclick = await file_links.nth(i).get_attribute("onclick") or ""
+            excel_link = candidates[0]  # 기본값
+            for cand in candidates:
+                onclick = await cand.get_attribute("onclick") or ""
                 # onclick 파라미터에 xlsx/xls 힌트가 있으면 우선 선택
                 if "xls" in onclick.lower():
-                    excel_link = file_links.nth(i)
+                    excel_link = cand
                     break
 
             # 다운로드
             ALLOWED_EXTENSIONS = {".xls", ".xlsx", ".zip"}
 
             async with page.expect_download(timeout=60000) as dl_info:
-                await excel_link.click()
+                await excel_link.click(timeout=20000)
             download = await dl_info.value
             suggested = download.suggested_filename
             ext = Path(suggested).suffix.lower()

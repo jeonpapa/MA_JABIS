@@ -4,7 +4,7 @@
     "download_dir": "data/domestic/downloads",
     "processed_dir": "data/domestic/processed",
     "schedule": {
-      "day": 1,
+      "day": "1-7",
       "hour": 9,
       "minute": 0
     },

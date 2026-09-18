@@ -19,6 +19,8 @@ from agents.ingest.daily_mailing_scope_export import build_active_scopes, export
 from agents.ingest.daily_mailing_sync import sync_daily_mailing_runs
 
 _TOKEN_ENVS = ("DAILY_MAILING_SCOPES_TOKEN", "DAILY_MAILING_RUNS_TOKEN", "GITHUB_TOKEN")
+# 원격 발행 게이트 env — 프로덕션(FLY_APP_NAME) 또는 명시 opt-in 에서만 PUT/DELETE
+_GATE_ENVS = ("FLY_APP_NAME", "DAILY_MAILING_SCOPES_PUBLISH")
 
 
 def _make_db(tmp_path: Path) -> Path:
@@ -57,8 +59,15 @@ def _make_db(tmp_path: Path) -> Path:
 
 
 def _no_tokens(monkeypatch):
-    for env in _TOKEN_ENVS:
+    """개발 Mac 기본 환경 — 토큰 없음 + 프로덕션 아님 + opt-in 없음."""
+    for env in _TOKEN_ENVS + _GATE_ENVS:
         monkeypatch.delenv(env, raising=False)
+
+
+def _opt_in_publish(monkeypatch):
+    """토큰 + 명시 opt-in(DAILY_MAILING_SCOPES_PUBLISH=1) — 로컬에서 원격 발행 테스트용."""
+    monkeypatch.setenv("DAILY_MAILING_SCOPES_TOKEN", "fake-token")
+    monkeypatch.setenv("DAILY_MAILING_SCOPES_PUBLISH", "1")
 
 
 def test_export_local_only_active_only(tmp_path, monkeypatch):
@@ -190,7 +199,7 @@ def _patch_remote(monkeypatch, remote: _FakeRemote):
 
 def test_publish_idempotent_skip_and_prune(tmp_path, monkeypatch):
     _no_tokens(monkeypatch)
-    monkeypatch.setenv("DAILY_MAILING_SCOPES_TOKEN", "fake-token")
+    _opt_in_publish(monkeypatch)
     db = _make_db(tmp_path)
     root = tmp_path / "scopes"
     remote = _FakeRemote()
@@ -223,7 +232,7 @@ def test_publish_idempotent_skip_and_prune(tmp_path, monkeypatch):
 def test_remote_prune_skipped_on_partial_local_write(tmp_path, monkeypatch):
     """부분 로컬 write 실패 시 원격 DELETE prune 을 건너뛰어 active 원격본/인덱스를 보호."""
     _no_tokens(monkeypatch)
-    monkeypatch.setenv("DAILY_MAILING_SCOPES_TOKEN", "fake-token")
+    _opt_in_publish(monkeypatch)
     db = _make_db(tmp_path)
     root = tmp_path / "scopes"
     remote = _FakeRemote()
@@ -252,7 +261,7 @@ def test_remote_prune_skipped_on_partial_local_write(tmp_path, monkeypatch):
 def test_remote_prune_never_targets_index(tmp_path, monkeypatch):
     """keep 은 active 정본 파일명 + index 로 구성 — 인덱스는 어떤 경우에도 DELETE 대상 아님."""
     _no_tokens(monkeypatch)
-    monkeypatch.setenv("DAILY_MAILING_SCOPES_TOKEN", "fake-token")
+    _opt_in_publish(monkeypatch)
     db = _make_db(tmp_path)
     remote = _FakeRemote()
     remote.files["scopes_index.json"] = b"old-index"
@@ -266,7 +275,7 @@ def test_remote_prune_never_targets_index(tmp_path, monkeypatch):
 
 def test_publish_network_error_collected_not_raised(tmp_path, monkeypatch):
     _no_tokens(monkeypatch)
-    monkeypatch.setenv("DAILY_MAILING_SCOPES_TOKEN", "fake-token")
+    _opt_in_publish(monkeypatch)
     db = _make_db(tmp_path)
 
     def boom(*a, **k):
@@ -277,3 +286,60 @@ def test_publish_network_error_collected_not_raised(tmp_path, monkeypatch):
     res = export_scopes(db, publish=True, scope_root=tmp_path / "scopes")
     assert res["local"] == 2 and res["published"] == 0
     assert len(res["errors"]) >= 3  # 파일별 publish 실패 + prune listing 실패
+
+
+# ── 원격 발행 게이트 (2026-09-18 사고: 개발 Mac 빈 DB 가 프로덕션 스콥 6개를 15분마다 삭제) ──
+
+def _deactivate_all(db: Path) -> None:
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE mail_subscription SET active=0")
+        conn.commit()
+
+
+def test_publish_gated_off_outside_production(tmp_path, monkeypatch):
+    """토큰이 있어도 프로덕션(FLY_APP_NAME)/opt-in 아니면 원격 PUT·DELETE 0 — 로컬 스냅샷만."""
+    _no_tokens(monkeypatch)
+    monkeypatch.setenv("DAILY_MAILING_SCOPES_TOKEN", "fake-token")  # 토큰만 있고 게이트 닫힘
+    db = _make_db(tmp_path)
+    _deactivate_all(db)  # 사고 재현: 로컬 active 0건
+    root = tmp_path / "scopes"
+    remote = _FakeRemote()
+    remote.files.update({f"{i}.json": b"{}" for i in range(1, 7)})  # 프로덕션이 발행한 6개
+    remote.files["scopes_index.json"] = b"[]"
+    _patch_remote(monkeypatch, remote)
+
+    res = export_scopes(db, publish=True, scope_root=root)
+
+    assert res["channel"] == "local-only"
+    assert res["published"] == 0 and res["pruned"] == 0
+    assert remote.puts == [] and remote.deletes == []
+    assert len(remote.files) == 7  # 원격 무손상
+    assert set(res) >= {"active", "local", "published", "pruned", "errors", "channel", "local_pruned"}
+    assert res["active"] == 0 and (root / "scopes_index.json").is_file()  # 로컬 스냅샷은 갱신
+
+
+def test_publish_allowed_in_production_env(tmp_path, monkeypatch):
+    """프로덕션(FLY_APP_NAME) + 토큰 → 원격 발행 + stale prune 정상."""
+    _no_tokens(monkeypatch)
+    monkeypatch.setenv("DAILY_MAILING_SCOPES_TOKEN", "fake-token")
+    monkeypatch.setenv("FLY_APP_NAME", "ma-ai-dossier")
+    db = _make_db(tmp_path)
+    remote = _FakeRemote()
+    remote.files["stale_old_sub.json"] = b"{}"
+    _patch_remote(monkeypatch, remote)
+
+    res = export_scopes(db, publish=True, scope_root=tmp_path / "scopes")
+
+    assert res["channel"] == "github"
+    assert res["published"] == 3 and res["pruned"] == 1
+    assert remote.deletes == ["stale_old_sub.json"]
+
+
+def test_publish_allowed_with_explicit_opt_in(tmp_path, monkeypatch):
+    _no_tokens(monkeypatch)
+    _opt_in_publish(monkeypatch)
+    db = _make_db(tmp_path)
+    remote = _FakeRemote()
+    _patch_remote(monkeypatch, remote)
+    res = export_scopes(db, publish=True, scope_root=tmp_path / "scopes")
+    assert res["channel"] == "github" and res["published"] == 3

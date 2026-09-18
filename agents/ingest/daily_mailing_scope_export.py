@@ -9,6 +9,10 @@ inbound `agents/ingest/daily_mailing_sync.py`(runs/ 소비)의 대칭 모듈 —
 - 원격(publish=True + 토큰): GitHub contents API 로 PUT. **멱등** — 원격 내용과
   동일하면 PUT 생략(커밋 churn 방지). active 셋에 없는 원격 scope 파일은 DELETE(prune,
   구독 삭제/비활성 반영). 토큰 없으면 local-only 로 degrade (경고 로그, 예외 없음).
+- **원격 발행 게이트**: PUT/DELETE 는 프로덕션(FLY_APP_NAME) 또는 명시 opt-in
+  `DAILY_MAILING_SCOPES_PUBLISH=1` 에서만. 2026-09-18 개발 Mac 인스턴스(빈 로컬 DB,
+  active 0건)가 15분마다 프로덕션이 발행한 스콥 6개를 prune 한 사고 — 원격 채널의
+  정본은 프로덕션 DB 하나뿐이어야 한다. 그 외는 local-only (원격 무접촉).
 - 토큰: DAILY_MAILING_SCOPES_TOKEN(쓰기 권한 필요) > DAILY_MAILING_RUNS_TOKEN > GITHUB_TOKEN.
 - 네트워크 오류는 절대 raise 하지 않고 summary["errors"] 에 수집.
 """
@@ -32,12 +36,14 @@ from agents.daily_mailing.subscription_bridge import (
     write_scope_snapshot,
     _default_scope_root,
 )
+from agents.runtime_env import is_production
 
 logger = logging.getLogger(__name__)
 
 GITHUB_API_BASE = "https://api.github.com/repos/jeonpapa/AccessRoutineAnalystic/contents/daily_mailing/scopes"
 BRANCH = "main"
 INDEX_NAME = "scopes_index.json"
+PUBLISH_OPT_IN_ENV = "DAILY_MAILING_SCOPES_PUBLISH"  # 비프로덕션에서 원격 발행 명시 opt-in
 
 
 def _token() -> str | None:
@@ -46,6 +52,17 @@ def _token() -> str | None:
         or os.environ.get("DAILY_MAILING_RUNS_TOKEN")
         or os.environ.get("GITHUB_TOKEN")
     )
+
+
+def _remote_publish_allowed() -> bool:
+    """원격 PUT/DELETE(prune) 허용 여부 — 프로덕션(FLY_APP_NAME) 또는 `DAILY_MAILING_SCOPES_PUBLISH=1`.
+
+    개발 Mac 의 로컬 DB 는 프로덕션 구독의 부분집합/공집합이라, 여기서 prune 하면 프로덕션이
+    발행한 스콥을 지운다 (2026-09-18 사고). 토큰 유무와 무관하게 이 게이트가 먼저다.
+    """
+    if is_production():
+        return True
+    return os.environ.get(PUBLISH_OPT_IN_ENV, "").strip().lower() in ("1", "true", "yes")
 
 
 # ── GitHub contents API 레이어 (테스트에서 monkeypatch) ─────────────────────
@@ -231,11 +248,19 @@ def export_scopes(db_path: str | Path | None = None, *, publish: bool = True,
         except Exception as exc:
             summary["errors"].append({"name": "<local-prune>", "error": str(exc)})
 
-    # 2) 원격 발행 (publish + 토큰) — 멱등 PUT + stale prune.
-    token = _token() if publish else None
+    # 2) 원격 발행 (publish + 게이트 + 토큰) — 멱등 PUT + stale prune.
     if not publish:
         summary["channel"] = "local-only"
         return summary
+    if not _remote_publish_allowed():
+        # 비프로덕션 인스턴스는 원격 채널을 절대 건드리지 않는다 (PUT 0 · DELETE 0)
+        summary["channel"] = "local-only"
+        logger.info(
+            "daily mailing scope export: 프로덕션(FLY_APP_NAME) 아님 & %s 미설정 — "
+            "원격 발행/prune skip, 로컬 스냅샷만 갱신 (%d개)", PUBLISH_OPT_IN_ENV, summary["local"],
+        )
+        return summary
+    token = _token()
     if not token:
         summary["channel"] = "local-only"
         logger.warning(
