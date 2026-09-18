@@ -200,3 +200,29 @@ def test_writer_down_holds_run():
     assert "llm_unavailable" in result.quality_report["blocking_reasons"]
     assert result.stats["writer_llm_errors"] == 1
     assert result.items == []
+
+
+def test_empty_summary_item_is_dropped_not_held():
+    no_desc = dict(PADCEV, description="")
+    naver = FakeNaver({"파드셉": [no_desc]})
+    result = generate_run(_scope(), deps=_deps(naver, body_status="failed"), name="파드셉", now=NOW)
+    assert result.items == []
+    assert result.status == "no_news"
+    assert result.stats["dropped_empty_summary"] == 1
+    assert "empty_summary" not in result.quality_report["blocking_reasons"]
+
+
+def test_writer_empty_bullets_without_snippet_is_dropped():
+    class EmptyWriterLLM(FakeLLM):
+        def complete_json(self, *, system, user, model):
+            data = super().complete_json(system=system, user=user, model=model)
+            if system != RELEVANCE_SYSTEM:
+                data["summary_bullets"] = []
+            return data
+
+    no_desc = dict(PADCEV, description="")
+    naver = FakeNaver({"파드셉": [no_desc]})
+    result = generate_run(_scope(), deps=_deps(naver, EmptyWriterLLM()), name="파드셉", now=NOW)
+    assert result.items == []
+    assert result.status == "no_news"
+    assert result.stats["dropped_empty_summary"] == 1

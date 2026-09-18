@@ -183,6 +183,10 @@ def _write(j: _Judged, terms: list[str], *, deps: EngineDeps, config: EngineConf
                   section=section)
     snippet = (item.description,) if item.description else ()
     if body.status != "ok":
+        if not snippet:
+            # 요약 근거가 전혀 없는 기사는 run 전체를 보류시키지 않도록 제외한다
+            stats["dropped_empty_summary"] = stats.get("dropped_empty_summary", 0) + 1
+            return None
         return BriefItem(summary_bullets=snippet, body_status="snippet", **common)
     try:
         draft = write_brief(title=item.title, body=body.text, scope_terms=terms,
@@ -192,11 +196,15 @@ def _write(j: _Judged, terms: list[str], *, deps: EngineDeps, config: EngineConf
         stats["writer_llm_errors"] = stats.get("writer_llm_errors", 0) + 1
         logger.warning("[daily_mailing] 브리핑 작성 실패 (%s): %s", item.title[:40], exc)
         return None
+    bullets = draft.summary_bullets or snippet
+    if not bullets:
+        stats["dropped_empty_summary"] = stats.get("dropped_empty_summary", 0) + 1
+        return None
     verified = bool(draft.ma_implication) and verify_quote(draft.evidence_quote, body.text)
     if draft.ma_implication and not verified:
         stats["quote_rejected"] = stats.get("quote_rejected", 0) + 1
     return BriefItem(
-        summary_bullets=draft.summary_bullets or snippet,
+        summary_bullets=bullets,
         ma_implication=draft.ma_implication if verified else "",
         evidence_quote=draft.evidence_quote if verified else "",
         quote_verified=verified,
