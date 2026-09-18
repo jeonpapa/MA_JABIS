@@ -46,5 +46,14 @@
   "logging": {
     "dir": "logs",
     "level": "INFO"
+  },
+  "daily_mailing": {
+    "relevance_model": "gpt-4o-mini",
+    "writer_model": "gpt-4o",
+    "max_candidates": 15,
+    "max_naver_queries": 40,
+    "brief_limit": 5,
+    "top_ma_news_limit": 2,
+    "naver_display": 20
   }
 }
