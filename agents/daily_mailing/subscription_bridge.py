@@ -1,8 +1,8 @@
 """mail_subscription 행 → dashboard_scope JSON 브릿지.
 
-대쉬보드 UI 에서 정한 모니터링 스콥을 daily-monitoring 레포의 dashboard_scope 계약으로
-변환한다. 외부 헤르메스(GPT-5.5) 에이전트가 이 JSON 을 읽어 검토·작성·매일 발송한다.
-(대쉬보드는 발송하지 않는다. 정책 인텔리전스 헤르메스 모델과 동일한 '입력 스냅샷' 역할.)
+대쉬보드 UI 에서 정한 모니터링 스콥을 dashboard_scope 계약으로 변환한다. 프로덕션
+디스패처(`agents/daily_mailing/dispatch.py`)가 이 스콥으로 브리핑을 생성·발송한다
+(2026-09-18 — 헤르메스 git 버스 retire). 스냅샷 파일 export 는 롤백용으로만 보존.
 """
 from __future__ import annotations
 
@@ -38,6 +38,27 @@ def ensure_test_request_column(conn) -> None:
         conn.commit()
 
 
+DELIVERY_MODES = ("approval", "auto")
+
+
+def ensure_delivery_columns(conn) -> None:
+    """mail_subscription.delivery_mode('approval'|'auto') / include_top_ma_news 멱등 ALTER.
+
+    신규·기존 구독 모두 승인 모드로 시작한다 (설계 §3 — 품질 확인 후 구독별 자동 전환).
+    """
+    try:
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(mail_subscription)").fetchall()}
+    except Exception:
+        return
+    if not existing:
+        return
+    if "delivery_mode" not in existing:
+        conn.execute("ALTER TABLE mail_subscription ADD COLUMN delivery_mode TEXT NOT NULL DEFAULT 'approval'")
+    if "include_top_ma_news" not in existing:
+        conn.execute("ALTER TABLE mail_subscription ADD COLUMN include_top_ma_news INTEGER NOT NULL DEFAULT 1")
+    conn.commit()
+
+
 def subscription_to_scope(sub: dict) -> dict:
     """mail_subscription dict(_mail_sub_row_to_dict 산출) → dashboard_scope dict.
 
@@ -60,12 +81,12 @@ def subscription_to_scope(sub: dict) -> dict:
         "custom_sources": list(sub.get("custom_sources") or []),
         "personas": list(sub.get("personas") or DEFAULT_PERSONAS),
         "lookback_hours": int(sub.get("lookback_hours") or 24),
-        "delivery_mode": sub.get("delivery_mode") or "gmail_draft",
+        "delivery_mode": sub.get("delivery_mode") or "approval",
         "schedule": sub.get("schedule"),
         "time": sub.get("time"),
         "week_day": sub.get("week_day"),
         "active": bool(sub.get("active", True)),
-        "include_top_ma_signals": True,
+        "include_top_ma_signals": bool(sub.get("include_top_ma_news", True)),
         "include_user_keyword_watchlist": True,
     }
     test_request = sub.get("test_request")
