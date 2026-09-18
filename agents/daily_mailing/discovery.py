@@ -6,7 +6,9 @@ from email.utils import parsedate_to_datetime
 import html
 import json
 import os
+import time
 from typing import Callable, Iterable
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
 from urllib.request import Request, urlopen
 
@@ -132,29 +134,63 @@ def _clean_html_text(text: str) -> str:
 
 
 class NaverNewsClient:
+    """Naver 뉴스 검색 API 클라이언트.
+
+    호출 간 최소 간격(min_interval)을 두고, 429(Too Many Requests)는 지수 백오프로
+    max_retries 회까지 재시도한다 (2026-09-18: 스콥 키워드 대량 호출 시 429 로 실행 중단 재현).
+    """
+
     def __init__(
         self,
         client_id: str | None = None,
         client_secret: str | None = None,
         opener: Callable = urlopen,
+        *,
+        min_interval: float = 0.15,
+        max_retries: int = 3,
+        backoff_base: float = 1.0,
+        sleep: Callable[[float], None] = time.sleep,
+        clock: Callable[[], float] = time.monotonic,
     ):
         self.client_id = client_id or os.environ.get("NAVER_API_CLIENT_ID")
         self.client_secret = client_secret or os.environ.get("NAVER_API_CLIENT_SECRET")
         self.opener = opener
+        self.min_interval = min_interval
+        self.max_retries = max_retries
+        self.backoff_base = backoff_base
+        self._sleep = sleep
+        self._clock = clock
+        self._last_call: float | None = None
         if not self.client_id or not self.client_secret:
             raise RuntimeError("NAVER_API_CLIENT_ID and NAVER_API_CLIENT_SECRET are required")
 
+    def _throttle(self) -> None:
+        if self._last_call is not None:
+            wait = self.min_interval - (self._clock() - self._last_call)
+            if wait > 0:
+                self._sleep(wait)
+        self._last_call = self._clock()
+
     def search(self, query: str, display: int = 20, sort: str = "date") -> list[dict]:
         params = urlencode({"query": query, "display": display, "sort": sort})
-        req = Request(
-            f"https://openapi.naver.com/v1/search/news.json?{params}",
-            headers={
-                "X-Naver-Client-Id": str(self.client_id),
-                "X-Naver-Client-Secret": str(self.client_secret),
-            },
-        )
-        with self.opener(req, timeout=15) as response:
-            return json.loads(response.read().decode("utf-8")).get("items", [])
+        attempt = 0
+        while True:
+            self._throttle()
+            req = Request(
+                f"https://openapi.naver.com/v1/search/news.json?{params}",
+                headers={
+                    "X-Naver-Client-Id": str(self.client_id),
+                    "X-Naver-Client-Secret": str(self.client_secret),
+                },
+            )
+            try:
+                with self.opener(req, timeout=15) as response:
+                    return json.loads(response.read().decode("utf-8")).get("items", [])
+            except HTTPError as exc:
+                if exc.code != 429 or attempt >= self.max_retries:
+                    raise
+                attempt += 1
+                self._sleep(self.backoff_base * (2 ** (attempt - 1)))
 
 
 def _iso_pub_date(pub_date: str) -> str:
@@ -175,14 +211,33 @@ def discover_naver_news(
     display: int = 20,
     media: Iterable[str] | None = None,
     media_strategy: str = "boost",
+    max_queries: int | None = None,
+    stats: dict | None = None,
 ) -> list[NewsDiscoveryItem]:
     client = client or NaverNewsClient()
     registry = registry or SourceRegistry.from_file(registry_path)
     items: list[NewsDiscoveryItem] = []
     seen: set[str] = set()
     media_scope = normalize_media_scope(media)
+    queries = 0
     for keyword in keywords:
-        for raw in client.search(keyword, display=display, sort="date"):
+        if max_queries is not None and queries >= max_queries:
+            if stats is not None:
+                stats["query_cap_reached"] = True
+            break
+        queries += 1
+        try:
+            raw_items = client.search(keyword, display=display, sort="date")
+        except (HTTPError, URLError) as exc:
+            code = getattr(exc, "code", None)
+            if stats is not None:
+                stats.setdefault("errors", []).append(f"{keyword}: {code or type(exc).__name__}")
+            if code == 429:
+                if stats is not None:
+                    stats["rate_limited"] = True
+                break
+            continue
+        for raw in raw_items:
             publisher_url = canonicalize_url(raw.get("originallink") or raw.get("link") or "")
             if not publisher_url or publisher_url in seen:
                 continue
@@ -207,6 +262,8 @@ def discover_naver_news(
                 novelty=source.novelty or 0 if source else 0,
                 volume=source.volume or 0 if source else 0,
             ))
+    if stats is not None:
+        stats["queries"] = queries
     return items
 
 
@@ -317,6 +374,8 @@ def select_daily_items(
     limit: int = 5,
     media: Iterable[str] | None = None,
     personas: Iterable[DailyMailingPersona] | None = None,
+    *,
+    force_msd_representative: bool = True,
 ) -> list[NewsDiscoveryItem]:
     """Rank items for a monitoring-first daily newsletter.
 
@@ -345,7 +404,7 @@ def select_daily_items(
         if len(selected) >= limit:
             break
 
-    if any(is_msd_representative_item(item) for item in selected):
+    if not force_msd_representative or any(is_msd_representative_item(item) for item in selected):
         return selected
     representative = next((item for item in ranked if is_msd_representative_item(item)), None)
     if representative is None:
