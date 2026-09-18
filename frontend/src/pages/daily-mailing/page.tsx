@@ -97,6 +97,8 @@ export default function DailyMailingPage() {
   const [schedule, setSchedule] = useState<'Daily' | 'Weekly'>('Daily');
   const [scheduleTime, setScheduleTime] = useState('08:00');
   const [weekDay, setWeekDay] = useState('Monday');
+  const [deliveryMode, setDeliveryMode] = useState<'approval' | 'auto'>('approval');
+  const [includeTopMaNews, setIncludeTopMaNews] = useState(true);
   const [emailInput, setEmailInput] = useState('');
   const [emailList, setEmailList] = useState<string[]>(['marketaccess@msd.com']);
   const [settingName, setSettingName] = useState('');
@@ -186,7 +188,7 @@ export default function DailyMailingPage() {
     setSelectedCompanies([]); setCustomCompany('');
     setSelectedPolicyTopics([]); setCustomPolicyTopic('');
     setSelectedDiseaseAreas([]); setCustomDiseaseArea('');
-    setSchedule('Daily'); setScheduleTime('08:00'); setWeekDay('Monday');
+    setSchedule('Daily'); setScheduleTime('08:00'); setWeekDay('Monday'); setDeliveryMode('approval'); setIncludeTopMaNews(true);
     setEmailInput(''); setEmailList(['marketaccess@msd.com']);
   };
 
@@ -202,6 +204,7 @@ export default function DailyMailingPage() {
     setSchedule(setting.schedule);
     setScheduleTime(setting.time);
     setWeekDay(setting.weekDay ?? 'Monday');
+    setDeliveryMode(setting.deliveryMode ?? 'approval'); setIncludeTopMaNews(setting.includeTopMaNews ?? true);
     setEmailList(setting.emails ?? []);
     setCustomKeyword(''); setCustomBrand(''); setCustomCompany('');
     setCustomPolicyTopic(''); setCustomDiseaseArea('');
@@ -245,7 +248,7 @@ export default function DailyMailingPage() {
       } else if (r.ok && r.mode === 'dry-run') {
         alert(`[Dry-run] SMTP 미설정. ${r.message ?? ''}`);
       } else if (r.ok && r.mode === 'none') {
-        alert(r.message ?? '아직 헤르메스 발송 이력이 없습니다 — 실제 메일은 헤르메스가 작성·발송합니다.');
+        alert(r.message ?? '아직 생성된 브리핑이 없습니다.');
       } else {
         alert(`최근 발송 브리프 로드 실패: ${r.message ?? ''}`);
       }
@@ -258,7 +261,7 @@ export default function DailyMailingPage() {
   };
 
   const handleRequestTestMail = async (id: number) => {
-    if (!window.confirm('헤르메스에 테스트 메일을 요청할까요? 검토 후 [TEST] 메일이 발송됩니다.')) return;
+    if (!window.confirm('테스트 메일을 지금 생성해 내 로그인 이메일로 보낼까요? (1~3분 소요, 제목 [TEST])')) return;
     setTestRequestId(id);
     setTestRequestNote(null);
     try {
@@ -291,21 +294,21 @@ export default function DailyMailingPage() {
         companies: selectedCompanies,
         policyTopics: selectedPolicyTopics,
         diseaseAreas: selectedDiseaseAreas,
+        deliveryMode, includeTopMaNews,
       };
-      if (isEdit) {
-        await updateMailSubscription(editingId, payload);
-      } else {
-        await createMailSubscription({ ...payload, active: true });
-      }
+      const saved = isEdit
+        ? await updateMailSubscription(editingId, payload)
+        : await createMailSubscription({ ...payload, active: true });
+      const warningText = saved.warnings.length > 0 ? ` ⚠️ ${saved.warnings.join(' / ')}` : '';
       setSubmitStatus('success');
-      setSubmitMessage(isEdit
-        ? '설정이 수정되었습니다. 헤르메스 에이전트가 다음 발송부터 수정된 스콥을 사용합니다.'
-        : '모니터링 스콥이 저장되었습니다. 헤르메스 에이전트가 매일 이 스콥으로 검토·작성·발송합니다.');
+      setSubmitMessage((isEdit
+        ? '설정이 수정되었습니다. 다음 발송부터 수정된 스콥이 적용됩니다.'
+        : '모니터링 스콥이 저장되었습니다. 발송 시각이 되면 서버가 이 스콥으로 브리핑을 생성합니다.') + warningText);
       setEditingId(null);
       resetForm();
       await reload();
       setActiveTab('saved');
-      setTimeout(() => { setSubmitStatus('idle'); setSubmitMessage(null); }, 3000);
+      setTimeout(() => { setSubmitStatus('idle'); setSubmitMessage(null); }, warningText ? 10000 : 3000);
     } catch (err) {
       setSubmitStatus('error');
       setSubmitMessage(err instanceof Error ? err.message : '저장 중 오류가 발생했습니다. 다시 시도해주세요.');
@@ -431,7 +434,7 @@ export default function DailyMailingPage() {
         {submitStatus === 'success' && (
           <div className="mb-5 flex items-center gap-3 bg-teal-50 border border-teal-200 rounded-xl px-5 py-3">
             <span className="w-5 h-5 flex items-center justify-center text-teal-600"><i className="ri-checkbox-circle-line text-lg"></i></span>
-            <p className="text-teal-700 text-sm font-medium">{submitMessage ?? '모니터링 스콥이 저장되었습니다. 헤르메스 에이전트가 매일 이 스콥으로 검토·작성·발송합니다.'}</p>
+            <p className="text-teal-700 text-sm font-medium">{submitMessage ?? '모니터링 스콥이 저장되었습니다. 발송 시각이 되면 서버가 이 스콥으로 브리핑을 생성합니다.'}</p>
           </div>
         )}
         {submitStatus === 'error' && (
@@ -473,7 +476,7 @@ export default function DailyMailingPage() {
                   모니터링 스콥 — 무엇을 찾을지
                 </h2>
                 <p className={`${textSub} text-xs mt-1.5 leading-relaxed`}>
-                  헤르메스가 검색·검토할 대상입니다. 브랜드 / 회사 / 정책·제도 / 질환 영역 / 자유 키워드 중 <span className={`font-semibold ${accentColor}`}>한 그룹 이상</span>에 항목이 있으면 저장할 수 있습니다.
+                  서버가 검색·검토할 대상입니다. 브랜드 / 회사 / 정책·제도 / 질환 영역 / 자유 키워드 중 <span className={`font-semibold ${accentColor}`}>한 그룹 이상</span>에 항목이 있으면 저장할 수 있습니다.
                   같은 용어는 한 그룹에만 저장됩니다 (구조화 그룹 우선).
                 </p>
               </div>
@@ -599,7 +602,25 @@ export default function DailyMailingPage() {
               </div>
               <div className={`mt-4 flex items-center gap-2 rounded-xl px-4 py-3 border ${previewBg}`}>
                 <span className={`w-4 h-4 flex items-center justify-center ${accentColor}`}><i className="ri-information-line text-sm"></i></span>
-                <p className={`${textSub} text-xs`}>{schedule === 'Daily' ? `매일 ${scheduleTime}에 헤르메스가 이 스콥으로 메일을 작성·발송합니다` : `매주 ${weekDay} ${scheduleTime}에 헤르메스가 이 스콥으로 메일을 작성·발송합니다`}</p>
+                <p className={`${textSub} text-xs`}>{(schedule === 'Daily' ? `매일 ${scheduleTime}` : `매주 ${weekDay} ${scheduleTime}`)
+                  + (deliveryMode === 'approval'
+                    ? '에 서버가 브리핑을 생성합니다. 관리자가 승인하면 발송됩니다.'
+                    : '에 서버가 브리핑을 생성해 품질 게이트 통과 시 바로 발송합니다.')}</p>
+              </div>
+              <div className="mt-4 flex flex-wrap items-center gap-6">
+                <div className="flex items-center gap-2">
+                  <span className={`${textSub} text-xs`}>발송 방식</span>
+                  <div className={`flex items-center gap-1 rounded-xl p-1 ${tabBg}`}>
+                    {([['approval', '승인 후 발송'], ['auto', '자동 발송']] as const).map(([mode, label]) => (
+                      <button type="button" key={mode} onClick={() => setDeliveryMode(mode)}
+                        className={`px-4 py-1.5 rounded-lg text-xs font-semibold cursor-pointer whitespace-nowrap transition-all ${deliveryMode === mode ? tabActive : tabInactive}`}>{label}</button>
+                    ))}
+                  </div>
+                </div>
+                <label className={`flex items-center gap-2 text-xs cursor-pointer ${textSub}`}>
+                  <input type="checkbox" checked={includeTopMaNews} onChange={e => setIncludeTopMaNews(e.target.checked)} />
+                  하단에 '오늘의 주요 MA 뉴스' 포함
+                </label>
               </div>
             </div>
 
@@ -803,7 +824,7 @@ export default function DailyMailingPage() {
                 <h3 className={`font-bold text-sm ${textMain}`}>최근 발송 브리프 — {previewModal.subscriptionName}</h3>
               </div>
               <p className={`${textSub} text-xs mb-4`}>
-                아래는 이 스콥으로 헤르메스가 실제 작성한 최신 브리프입니다. 대쉬보드는 메일을 직접 발송하지 않습니다.
+                아래는 이 구독으로 서버가 생성한 최신 브리핑입니다.
               </p>
               <div className={`rounded-xl border px-4 py-3 mb-4 ${previewBg}`}>
                 <p className={`${textMuted} text-[10px] mb-1`}>제목</p>
