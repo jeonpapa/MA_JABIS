@@ -74,8 +74,7 @@ def _tuple(data: dict[str, Any], key: str) -> tuple[str, ...]:
     return tuple(str(x).strip() for x in raw if str(x).strip())
 
 
-def load_dashboard_scope(path: str | Path) -> DashboardScope:
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
+def scope_from_dict(data: dict[str, Any]) -> DashboardScope:
     aliases_raw = data.get("aliases") or {}
     aliases: dict[str, tuple[str, ...]] = {}
     for key, val in aliases_raw.items():
@@ -97,3 +96,7 @@ def load_dashboard_scope(path: str | Path) -> DashboardScope:
         include_top_ma_signals=bool(data.get("include_top_ma_signals", True)),
         include_user_keyword_watchlist=bool(data.get("include_user_keyword_watchlist", True)),
     )
+
+
+def load_dashboard_scope(path: str | Path) -> DashboardScope:
+    return scope_from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
