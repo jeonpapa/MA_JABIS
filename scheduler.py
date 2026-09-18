@@ -23,7 +23,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from agents.domestic_price_agent import DomesticPriceAgent
 from agents.dashboard_agent import DashboardAgent
 from agents.ingest.policy_analysis_sync import sync_analysis as _sync_policy_analysis
-from agents.ingest.daily_mailing_sync import sync_daily_mailing_runs as _sync_daily_mailing_runs
+from agents.ingest.daily_mailing_sync import sync_daily_mailing_runs as _sync_daily_mailing_runs  # noqa: F401  (헤르메스 버스 retire — 롤백용 보존)
 from agents.ingest.daily_mailing_scope_export import export_scopes as _export_daily_mailing_scopes
 from agents.runtime_env import is_production
 
@@ -499,6 +499,42 @@ def daily_mailing_scope_export_job():
         logger.warning("daily mailing scope export 실패: %s", e)
 
 
+def daily_mailing_dispatch_job():
+    """10분 주기 — 발송 시각이 된 구독 브리핑 생성 → 승인 대기/자동 발송 + 실패 재시도 (설계 §6)."""
+    try:
+        from agents.daily_mailing.dispatch import DispatchDeps, dispatch_due_subscriptions
+        res = dispatch_due_subscriptions(DispatchDeps.production())
+        if res.get("generated") or res.get("errors") or res.get("expired") or res.get("retried"):
+            logger.info("daily mailing dispatch: %s", res)
+    except Exception as e:
+        logger.error("daily mailing dispatch 실패: %s", e, exc_info=True)
+
+
+def daily_mailing_top_news_job():
+    """매일 06:40 — '오늘의 주요 MA 뉴스' 산출·캐시 (06:30 뉴스 수집 직후, 구독 공통)."""
+    try:
+        from datetime import datetime
+        from agents.daily_mailing.dispatch import DispatchDeps
+        from agents.daily_mailing.schedule import KST
+        items = DispatchDeps.production().load_top_ma_news(datetime.now(KST).date().isoformat())
+        logger.info("daily mailing 주요 MA 뉴스: %d건", len(items))
+    except Exception as e:
+        logger.error("daily mailing 주요 MA 뉴스 실패: %s", e, exc_info=True)
+
+
+def daily_mailing_health_job():
+    """매일 09:30 — 오늘 예정 구독의 미생성·보류·발송실패·Gmail 토큰 상태 점검."""
+    try:
+        from agents.daily_mailing.dispatch import DispatchDeps, health_check
+        res = health_check(DispatchDeps.production())
+        if res["ok"]:
+            logger.info("daily mailing health OK (%s)", res["run_date"])
+        else:
+            logger.error("daily mailing health 문제 %d건: %s", len(res["problems"]), res["problems"])
+    except Exception as e:
+        logger.error("daily mailing health 실패: %s", e, exc_info=True)
+
+
 def nhis_negotiation_sync_job():
     """매주 월요일 02:30 Seoul — 건강보험공단 약가협상 공개자료(신규·확대) 크롤 →
     nhis_negotiations 멱등 아카이브 + amjilsim_drugs 매칭 교체(NHIS 공식 우선).
@@ -730,6 +766,10 @@ def main():
         action="store_true",
         help="Daily Mailing 스콥 export 즉시 실행 (active 구독 → 로컬 + 비공개 repo scopes/)",
     )
+    parser.add_argument("--mailing-dispatch-now", action="store_true",
+                        help="Daily Mailing 발송 판정 1회 즉시 실행")
+    parser.add_argument("--mailing-health-now", action="store_true",
+                        help="Daily Mailing 헬스체크 1회 즉시 실행")
     parser.add_argument(
         "--nhis-sync-now",
         action="store_true",
@@ -835,14 +875,7 @@ def main():
             _sync_policy_analysis()
         except Exception as _e:
             logger.warning("policy analysis 부팅 sync 실패: %s", _e)
-        try:
-            _sync_daily_mailing_runs()
-        except Exception as _e:
-            logger.warning("daily mailing runs 부팅 sync 실패: %s", _e)
-        try:
-            daily_mailing_scope_export_job()  # 부팅 1회 — 스콥 outbound 발행 (runs sync 대칭)
-        except Exception as _e:
-            logger.warning("daily mailing scope 부팅 export 실패: %s", _e)
+        # Daily Mailing 헤르메스 버스 retire (2026-09-18) — 부팅 sync/export 제거
         return
 
     if args.hira_fetch_now:
@@ -853,6 +886,16 @@ def main():
     if args.scope_export_now:
         logger.info("Daily Mailing 스콥 export 즉시 실행")
         daily_mailing_scope_export_job()
+        return
+
+    if args.mailing_dispatch_now:
+        logger.info("Daily Mailing 발송 판정 즉시 실행")
+        daily_mailing_dispatch_job()
+        return
+
+    if args.mailing_health_now:
+        logger.info("Daily Mailing 헬스체크 즉시 실행")
+        daily_mailing_health_job()
         return
 
     if args.nhis_sync_now:
@@ -1110,29 +1153,29 @@ def main():
         replace_existing=True,
     )
 
-    # 매일 07:30 — Daily Mailing run 번들 git sync (헤르메스 발송 후 산출물 → 칸반)
-    def _daily_mailing_runs_sync_job():
-        try:
-            res = _sync_daily_mailing_runs()
-            logger.info("daily mailing runs sync: %s", res)
-        except Exception as e:
-            logger.warning("daily mailing runs sync 실패: %s", e)
-
+    # ── Daily Mailing (2026-09-18 프로덕션 생성·발송) ──
+    # 헤르메스 git 버스(runs_sync 07:30 · scope_export 15분)는 retire — 함수/CLI 는 롤백용 보존, 잡 미등록.
     scheduler.add_job(
-        _daily_mailing_runs_sync_job,
-        trigger=CronTrigger(hour=7, minute=30, timezone="Asia/Seoul"),
-        id="daily_mailing_runs_sync",
-        name="Daily Mailing run 번들 매일 07:30 git sync (칸반 반영)",
+        daily_mailing_dispatch_job,
+        trigger=IntervalTrigger(minutes=10, timezone="Asia/Seoul"),
+        id="daily_mailing_dispatch",
+        name="Daily Mailing 10분 주기 발송 판정 (생성→승인대기/자동발송·재시도)",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        daily_mailing_top_news_job,
+        trigger=CronTrigger(hour=6, minute=40, timezone="Asia/Seoul"),
+        id="daily_mailing_top_news",
+        name="Daily Mailing 주요 MA 뉴스 매일 06:40",
         replace_existing=True,
     )
-
-    # 15분 주기 — Daily Mailing 스콥 OUTBOUND export (대쉬보드 → 비공개 repo scopes/,
-    # inbound runs_sync 대칭). 부팅 1회 실행은 start_production 의 --amjilsim-daily-crawl-now 경로.
     scheduler.add_job(
-        daily_mailing_scope_export_job,
-        trigger=IntervalTrigger(minutes=15, timezone="Asia/Seoul"),
-        id="daily_mailing_scope_export",
-        name="Daily Mailing 스콥 15분 주기 outbound export (repo scopes/ 발행 백스톱)",
+        daily_mailing_health_job,
+        trigger=CronTrigger(hour=9, minute=30, timezone="Asia/Seoul"),
+        id="daily_mailing_health",
+        name="Daily Mailing 헬스체크 매일 09:30",
         replace_existing=True,
     )
 
