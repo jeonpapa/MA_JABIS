@@ -79,15 +79,16 @@
 
 - **판정(10분 주기)**: `active=1` 이고 `schedule` 조건(Daily / Weekly+week_day)을 만족하며, 현재 KST ≥ `time` 이고, 오늘(KST) 정규 run 이 없는 구독. 재시작으로 시각을 놓쳐도 당일 안에 따라잡는다.
 - **멱등**: 정규 run 은 `(subscription_id, run_date, is_test=0)` 기준으로 하루 1개. 발송 성공 시 `sent_at`, `gmail_message_id`, `mail_subscription.last_sent_at` 을 갱신한다.
-- **상태**: `delivery_status ∈ {pending_approval, sending, sent, held, send_failed, no_news_sent, error, expired}`, `approval_status ∈ {not_required, pending, approved, rejected}`. `send_failed` 는 다음 주기에서 최대 3회 재시도한 뒤 `held` 로 바꾼다.
+- **상태**: `delivery_status ∈ {pending_approval, ready_to_send, sending, sent, held, send_failed, no_news_sent, error, expired}` (`ready_to_send`→`sending` 은 조건부 UPDATE 로 발송 선점 — web 승인과 scheduler 재시도의 이중 발송 방지), `approval_status ∈ {not_required, pending, approved, rejected}`. `send_failed` 는 다음 주기에서 최대 3회 재시도한 뒤 `held` 로 바꾼다.
 - **승인 모드 시점**: run 은 구독 `time` 에 생성되고, 발송은 관리자가 승인한 시점에 한다. 당일(KST 23:59)까지 승인되지 않은 run 은 `expired` 로 닫는다(다음 날 run 과 섞이지 않게).
-- **API**: `POST /api/admin/daily-mailing/runs/<id>/approve` (발송 트리거), `.../reject`, `POST /api/mail-subscriptions/<id>/test-send` (기존 test-request 대체). 모두 관리자 인증.
+- **API**: `POST /api/admin/daily-mailing/runs/<id>/approve` (발송 트리거), `.../reject`, `GET .../runs/<id>/preview`, `GET /api/admin/daily-mailing/health` — 관리자 인증. 테스트 메일은 기존 경로 `POST /api/mail-subscriptions/<id>/test-request` 의 동작을 바꾼다(UI 버튼이 이미 연결됨): 서버가 백그라운드로 즉시 생성 → **요청자(로그인 이메일)에게만** `[TEST]` 발송, 202 응답. `test-send`('최근 발송 보기')는 DB 의 `email_html` 을 반환하도록 유지·수정.
+- **생성 오류**: 구독 생성 중 예외는 그날의 정규 run 자리를 `error` run 으로 채운다(같은 날 10분마다 재생성·LLM 재호출 폭주 방지). 헬스체크가 표시하고, 관리자는 테스트 메일로 재확인한다.
 - **UI**: 칸반 카드에 [승인]/[반려] 버튼과 메일 미리보기. 구독 폼에 `발송 모드(승인/자동)`, `주요 MA 뉴스 포함` 토글.
 - **Gmail**: `gmail_delivery.send_gmail_message` 재사용. 토큰은 `GOOGLE_TOKEN_JSON`(base64) secret 에서 기동 시 파일로 복원한다. `google-api-python-client`, `google-auth` 를 requirements 에 추가한다. OAuth 앱은 **'프로덕션' 게시 상태**여야 한다('테스트' 상태이면 토큰이 7일 만에 만료).
 
 ## 7. 스콥 입력 검증
 
-- keywords 와 brands 가 모두 비면 저장을 거부한다(400).
+- 스콥 항목(keywords·brands·companies·policy_topics·disease_areas)이 모두 비면 저장을 거부한다(400). 기존 UI 저장 조건(`scopeTermCount === 0` 차단)과 같은 기준.
 - 구독 이름에 등록 약제명(브랜드 사전)이 있는데 keywords·brands 에 없으면 경고를 반환하고, UI 에 표시한다. 저장은 허용한다.
 
 ## 8. 오류 처리·감시
