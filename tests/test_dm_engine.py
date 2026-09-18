@@ -226,3 +226,24 @@ def test_writer_empty_bullets_without_snippet_is_dropped():
     assert result.items == []
     assert result.status == "no_news"
     assert result.stats["dropped_empty_summary"] == 1
+
+
+def test_top_ma_news_archive_uses_gov_policy_kind_only(tmp_path):
+    import sqlite3
+
+    db = tmp_path / "news.db"
+    with sqlite3.connect(db) as c:
+        c.execute("CREATE TABLE competitor_news (id INTEGER PRIMARY KEY, kind TEXT, title TEXT, url TEXT, "
+                  "naver_link TEXT, description TEXT, pub_date TEXT, source_name TEXT)")
+        c.executemany(
+            "INSERT INTO competitor_news (kind, title, url, naver_link, description, pub_date, source_name) "
+            "VALUES (?,?,?,?,?,?,?)",
+            [("gov_policy", "약평위 정책 기사", "https://www.yakup.com/g1", "", "", "2026-09-18", "약업신문"),
+             ("competitor", "약평위 경쟁사 기사", "https://www.yakup.com/c1", "", "", "2026-09-18", "약업신문")],
+        )
+    deps = _deps(FakeNaver({}))
+    deps.archive_db_path = str(db)
+    top = generate_top_ma_news(deps=deps, now=NOW)
+    assert [i.title for i in top] == ["약평위 정책 기사"]          # §5.1: gov_policy 아카이브만
+    run = generate_run(_scope(keywords=("약평위",), brands=()), deps=deps, name="n", now=NOW)
+    assert sorted(i.title for i in run.items) == ["약평위 경쟁사 기사", "약평위 정책 기사"]  # 구독 run 은 전체 kind

@@ -25,18 +25,30 @@ def load_archive_candidates(
     days: int = 1,
     registry: SourceRegistry | None = None,
     limit: int = 200,
+    kinds: tuple[str, ...] | None = None,
 ) -> list[NewsDiscoveryItem]:
+    """kinds 가 주어지면 `competitor_news.kind IN (...)` 로 제한한다 (예: 주요 MA 뉴스는 ('gov_policy',)).
+    kind 컬럼이 없는 DB 에 kinds 를 주면 sqlite 오류 → [] (호출측은 Naver 후보만으로 진행)."""
     terms = [t.strip() for t in scope_terms if t and t.strip()]
     path = Path(db_path)
     if not terms or not path.exists():
         return []
     since = (today - timedelta(days=days)).isoformat()
+    kind_list = [str(k) for k in (kinds or ()) if str(k)]
+    where = "pub_date >= ?"
+    params: list = [since]
+    if kinds is not None:
+        if not kind_list:
+            return []
+        where += f" AND kind IN ({','.join('?' * len(kind_list))})"
+        params.extend(kind_list)
+    params.append(_SCAN_LIMIT)
     try:
         with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as conn:
             rows = conn.execute(
                 "SELECT title, url, naver_link, description, pub_date, source_name "
-                "FROM competitor_news WHERE pub_date >= ? ORDER BY pub_date DESC, id DESC LIMIT ?",
-                (since, _SCAN_LIMIT),
+                f"FROM competitor_news WHERE {where} ORDER BY pub_date DESC, id DESC LIMIT ?",
+                params,
             ).fetchall()
     except sqlite3.Error:
         return []

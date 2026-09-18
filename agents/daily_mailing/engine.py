@@ -40,6 +40,7 @@ KST = timezone(timedelta(hours=9))
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_REGISTRY_PATH = REPO_ROOT / "config" / "source_registry.yaml"
 TOP_MA_NEWS_PERSONAS = ("ma_lead", "policy_watch")
+TOP_MA_NEWS_ARCHIVE_KINDS = ("gov_policy",)   # 설계 §5.1: 주요 MA 뉴스 아카이브 후보는 정책뉴스만
 
 
 @dataclass(frozen=True)
@@ -128,7 +129,8 @@ def _merge_unique(*groups: Iterable[NewsDiscoveryItem]) -> list[NewsDiscoveryIte
 
 
 def _collect_candidates(terms: list[str], *, media, lookback_hours: int, deps: EngineDeps,
-                        config: EngineConfig, now: datetime, stats: dict) -> tuple[list[NewsDiscoveryItem], int]:
+                        config: EngineConfig, now: datetime, stats: dict,
+                        archive_kinds: tuple[str, ...] | None = None) -> tuple[list[NewsDiscoveryItem], int]:
     naver_stats: dict = {}
     discovered = discover_naver_news(terms, client=deps.naver, registry=deps.registry,
                                      display=config.naver_display, media=media,
@@ -137,7 +139,7 @@ def _collect_candidates(terms: list[str], *, media, lookback_hours: int, deps: E
     archive: list[NewsDiscoveryItem] = []
     if deps.archive_db_path:
         archive = load_archive_candidates(terms, db_path=deps.archive_db_path, today=now.date(),
-                                          registry=deps.registry)
+                                          registry=deps.registry, kinds=archive_kinds)
     merged = _merge_unique(recent, archive)
     stats["naver"] = naver_stats
     stats["discovered"] = len(discovered)
@@ -240,14 +242,18 @@ def top_ma_news_terms() -> list[str]:
 
 def generate_top_ma_news(*, deps: EngineDeps, config: EngineConfig | None = None,
                          now: datetime | None = None) -> list[BriefItem]:
-    """구독 공통 '오늘의 주요 MA 뉴스' 1~2건 (설계 §5.1). 페르소나(ma_lead·policy_watch) 기본 키워드 사용."""
+    """구독 공통 '오늘의 주요 MA 뉴스' 1~2건 (설계 §5.1).
+
+    페르소나(ma_lead·policy_watch) 기본 키워드 + 당일 gov_policy 아카이브만 후보로 쓴다.
+    """
     config = config or EngineConfig()
     now = _now_kst(now)
     terms = top_ma_news_terms()
     personas = resolve_personas(list(TOP_MA_NEWS_PERSONAS))
     stats: dict = {}
     candidates, _ = _collect_candidates(terms, media=(), lookback_hours=24, deps=deps,
-                                        config=config, now=now, stats=stats)
+                                        config=config, now=now, stats=stats,
+                                        archive_kinds=TOP_MA_NEWS_ARCHIVE_KINDS)
     ranked = rank_items(candidates, terms, personas=personas)[: config.max_candidates]
     judged = _judge(ranked, terms, deps=deps, config=config, stats=stats)
     out: list[BriefItem] = []
