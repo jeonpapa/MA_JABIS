@@ -277,11 +277,15 @@ def generate_run(scope: DashboardScope, *, deps: EngineDeps, config: EngineConfi
         judged = _judge(ranked, terms, deps=deps, config=config, stats=stats)
         if ranked and not judged:
             hold.append("llm_unavailable")
-        for j in _select(judged, terms, media=scope.media, personas=personas, limit=config.brief_limit):
+        selected = _select(judged, terms, media=scope.media, personas=personas, limit=config.brief_limit)
+        for j in selected:
             written = _write(j, terms, deps=deps, config=config, section="scope", stats=stats)
             if written is not None:
                 scope_items.append(written)
                 brief_by_key[_key(j.item)] = written
+        # 설계 §8: 작성 LLM 이 선정 기사 전부에서 실패하면 run 보류 (자동 모드에서도 미발송)
+        if selected and not scope_items and stats.get("writer_llm_errors"):
+            hold.append("llm_unavailable")
 
     top: list[BriefItem] = []
     if scope.include_top_ma_signals and top_ma_news:

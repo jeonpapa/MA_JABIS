@@ -191,3 +191,12 @@ def test_engine_config_from_settings_file():
     assert config.relevance_model == "gpt-4o-mini"
     assert config.writer_model == "gpt-4o"
     assert EngineConfig.from_settings({"daily_mailing": {"brief_limit": 3, "unknown": 1}}).brief_limit == 3
+
+
+def test_writer_down_holds_run():
+    naver = FakeNaver({"파드셉": [PADCEV]})
+    result = generate_run(_scope(), deps=_deps(naver, FakeLLM(fail_writer=True)), name="파드셉", now=NOW)
+    assert result.status == "held"
+    assert "llm_unavailable" in result.quality_report["blocking_reasons"]
+    assert result.stats["writer_llm_errors"] == 1
+    assert result.items == []
