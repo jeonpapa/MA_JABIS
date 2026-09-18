@@ -166,9 +166,13 @@ def _persist(result, deps: DispatchDeps, *, delivery_status: str, approval_statu
 
 
 def _mark_last_sent(subscription_id: int, sent_at: str, db_path: str | Path) -> None:
-    with sqlite3.connect(str(db_path)) as conn:
-        conn.execute("UPDATE mail_subscription SET last_sent_at=? WHERE id=?", (sent_at, subscription_id))
-        conn.commit()
+    """발송 성공 후 표시용 bookkeeping — 실패해도 이미 발송된 run 상태(sent)를 되돌리지 않는다."""
+    try:
+        with sqlite3.connect(str(db_path)) as conn:
+            conn.execute("UPDATE mail_subscription SET last_sent_at=? WHERE id=?", (sent_at, subscription_id))
+            conn.commit()
+    except sqlite3.Error as exc:
+        logger.warning("[daily_mailing] 구독 %s last_sent_at 갱신 실패 (발송은 완료): %s", subscription_id, exc)
 
 
 def send_run(run_id: str, *, deps: DispatchDeps, from_statuses: tuple[str, ...],
