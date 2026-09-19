@@ -286,3 +286,30 @@ def test_relevance_circuit_breaker_stops_after_three_consecutive_failures():
     assert result.stats["relevance_llm_errors"] == 3
     assert result.status == "held"
     assert "llm_unavailable" in result.quality_report["blocking_reasons"]
+
+
+def test_partial_writer_failure_plus_dropped_item_is_not_held():
+    class WriterFailsForTitle(FakeLLM):
+        def __init__(self, fail_title):
+            super().__init__()
+            self.fail_title = fail_title
+
+        def complete_json(self, *, system, user, model):
+            data = json.loads(user)
+            if system != RELEVANCE_SYSTEM and data["title"] == self.fail_title:
+                raise LLMError("down")
+            return super().complete_json(system=system, user=user, model=model)
+
+    no_desc = dict(_raw("파드셉 본문없음", "https://www.yakup.com/p2"), description="")
+    naver = FakeNaver({"파드셉": [PADCEV, no_desc]})
+    registry = SourceRegistry([SourceInfo(name="약업신문", domains=("yakup.com",), source_tier="media_tier_A")])
+    deps = EngineDeps(
+        naver=naver, llm=WriterFailsForTitle("파드셉 요로상피암 급여 확대"), registry=registry,
+        fetch_body=lambda p, n: ArticleBody("failed", "", p) if p.endswith("/p2") else ArticleBody("ok", BODY, p),
+    )
+    result = generate_run(_scope(), deps=deps, name="파드셉", now=NOW)
+    assert result.stats["writer_llm_errors"] == 1
+    assert result.stats["dropped_empty_summary"] == 1
+    assert result.items == []
+    assert result.status == "no_news"
+    assert "llm_unavailable" not in result.quality_report["blocking_reasons"]

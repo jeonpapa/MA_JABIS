@@ -319,8 +319,9 @@ def generate_run(scope: DashboardScope, *, deps: EngineDeps, config: EngineConfi
             if written is not None:
                 scope_items.append(written)
                 brief_by_key[_key(j.item)] = written
-        # 설계 §8: 작성 LLM 이 선정 기사 전부에서 실패하면 run 보류 (자동 모드에서도 미발송)
-        if selected and not scope_items and stats.get("writer_llm_errors"):
+        # 설계 §8: 선정 기사 '전부'가 작성 LLM 에서 실패했을 때만 run 보류 (자동 모드에서도 미발송).
+        # 일부가 요약 근거 부재로 제외(dropped_empty_summary)된 경우는 LLM 장애가 아니므로 보류하지 않는다.
+        if selected and not scope_items and stats.get("writer_llm_errors", 0) == len(selected):
             hold.append("llm_unavailable")
 
     top: list[BriefItem] = []
