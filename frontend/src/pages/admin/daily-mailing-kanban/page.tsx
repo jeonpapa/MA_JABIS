@@ -289,7 +289,7 @@ function DraftBriefPanel({ run }: { run: KanbanRun }) {
       <div className="flex items-center gap-2 mb-1">
         <span className="w-5 h-5 flex items-center justify-center"><i className="ri-newspaper-line text-[#00E5CC]"></i></span>
         <h2 className="text-white font-bold text-base">오늘의 브리프</h2>
-        <span className="text-[10px] px-2 py-0.5 rounded bg-[#00E5CC]/10 text-[#00E5CC]">{items.length}건 · 헤르메스 초안</span>
+        <span className="text-[10px] px-2 py-0.5 rounded bg-[#00E5CC]/10 text-[#00E5CC]">{items.length}건 · 오늘의 브리핑 초안</span>
       </div>
       <p className="text-[#8B9BB4] text-xs mb-4">최신 run 에서 선택·작성된 브리프 항목 (draft_items)</p>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

@@ -105,6 +105,37 @@ def test_admin_preview_approve_reject_and_health(monkeypatch, tmp_path):
     assert health["ok"] is True and health["gmail_ready"] is True
 
 
+_SUB_DDL = """CREATE TABLE mail_subscription (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, owner_email TEXT NOT NULL, name TEXT NOT NULL,
+    keywords_json TEXT NOT NULL, media_json TEXT NOT NULL, schedule TEXT NOT NULL, time TEXT NOT NULL,
+    week_day TEXT, emails_json TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1,
+    companies_json TEXT NOT NULL DEFAULT '[]', brands_json TEXT NOT NULL DEFAULT '[]',
+    policy_topics_json TEXT NOT NULL DEFAULT '[]', disease_areas_json TEXT NOT NULL DEFAULT '[]',
+    custom_sources_json TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    last_sent_at TEXT, test_request_json TEXT,
+    delivery_mode TEXT NOT NULL DEFAULT 'approval', include_top_ma_news INTEGER NOT NULL DEFAULT 1)"""
+
+
+def test_subscription_crud_no_longer_exports_hermes_scope(monkeypatch, tmp_path):
+    """헤르메스 git 버스 retire — 구독 생성/수정/삭제가 스콥 스냅샷 export 를 더 이상 호출하지 않는다."""
+    import sqlite3
+    db = tmp_path / "s.db"
+    with sqlite3.connect(db) as conn:
+        conn.execute(_SUB_DDL)
+    monkeypatch.setattr(s.db, "_connect", lambda: sqlite3.connect(db))
+    calls: list = []
+    monkeypatch.setattr(s, "_mail_scope_export", lambda publish: calls.append(publish))
+    c = s.app.test_client()
+    r = c.post("/api/mail-subscriptions", headers=_user(),
+               json={"name": "파드셉", "keywords": ["파드셉"], "schedule": "Daily", "time": "08:00",
+                     "emails": ["r@msd.com"]})
+    assert r.status_code == 201, r.get_json()
+    sid = r.get_json()["item"]["id"]
+    assert c.patch(f"/api/mail-subscriptions/{sid}", headers=_user(), json={"time": "09:00"}).status_code == 200
+    assert c.delete(f"/api/mail-subscriptions/{sid}", headers=_user()).status_code == 200
+    assert calls == []
+
+
 def test_test_request_runs_in_background(monkeypatch):
     calls = []
     monkeypatch.setattr(s, "_mail_sub_exists", lambda item_id, owner: True)

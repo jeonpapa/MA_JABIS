@@ -4297,6 +4297,9 @@ except Exception as _e:  # pragma: no cover
 def _mail_scope_export(publish: bool) -> None:
     """구독 변경/테스트요청 직후 스콥 export (best-effort — 저장 응답을 절대 막지 않음).
 
+    2026-09-18 헤르메스 git 버스 retire — 구독 CRUD/테스트요청 훅에서 더 이상 호출하지 않는다
+    (프로덕션 서버가 DB 스콥으로 직접 생성·발송). 정의는 롤백용으로만 보존.
+
     publish=False: 빠른 로컬 스냅샷만 (create/update/delete 훅).
     publish=True: 비공개 repo scopes/ 채널 발행 시도 (test-request '지금 보내기' 의도).
     권위 발행은 scheduler 의 daily_mailing_scope_export_job(15분 주기)이 담당.
@@ -5146,7 +5149,6 @@ def mail_sub_create():
             row = conn.execute(
                 f"SELECT {_MAIL_SUB_COLS} FROM mail_subscription WHERE id=?", (cur.lastrowid,),
             ).fetchone()
-        _mail_scope_export(publish=False)  # 로컬 스콥 스냅샷 즉시 갱신 (repo 발행은 스케줄러)
         return jsonify({"item": _mail_sub_row_to_dict(row), "warnings": warnings}), 201
     except Exception as e:
         logger.error("mail_sub_create 실패: %s", e, exc_info=True)
@@ -5193,7 +5195,6 @@ def mail_sub_update(item_id: int):
             row = conn.execute(
                 f"SELECT {_MAIL_SUB_COLS} FROM mail_subscription WHERE id=?", (item_id,),
             ).fetchone()
-        _mail_scope_export(publish=False)  # 로컬 스콥 스냅샷 즉시 갱신 (repo 발행은 스케줄러)
         return jsonify({"item": _mail_sub_row_to_dict(row), "warnings": warnings})
     except Exception as e:
         logger.error("mail_sub_update 실패: %s", e, exc_info=True)
@@ -5213,7 +5214,6 @@ def mail_sub_delete(item_id: int):
             if res.rowcount == 0:
                 return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
             conn.commit()
-        _mail_scope_export(publish=False)  # 로컬 스냅샷 갱신 (삭제분 원격 prune 은 스케줄러 발행이 수행)
         return jsonify({"ok": True})
     except Exception as e:
         logger.error("mail_sub_delete 실패: %s", e, exc_info=True)
