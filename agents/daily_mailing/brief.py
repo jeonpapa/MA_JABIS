@@ -143,6 +143,8 @@ def _published_label(value: str) -> str:
         dt = datetime.fromisoformat(value)
     except Exception:
         return (value or "")[:16]
+    if (dt.hour, dt.minute, dt.second) == (0, 0, 0):
+        return f"{dt.month}/{dt.day}"   # 아카이브 합성 시각(날짜만 있는 pub_date) → 시각 표시 생략
     return f"{dt.month}/{dt.day} {dt:%H:%M}"
 
 

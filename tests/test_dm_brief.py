@@ -109,3 +109,15 @@ def test_render_omits_links_for_non_http_urls():
     assert 'href="https://n.news.naver.com/1"' in html2 and "javascript:" not in html2 and "원문 보기" in html2
     ok = render_brief_html(name="n", run_date=date(2026, 9, 18), scope_terms=["x"], items=[_item()])
     assert 'href="https://www.yakup.com/1"' in ok and "원문 보기" in ok
+
+
+def test_published_label_date_only_for_midnight_archive_timestamp():
+    from agents.daily_mailing.brief import _published_label
+
+    assert _published_label("2026-09-18T00:00:00+09:00") == "9/18"      # 아카이브 합성 시각 → 날짜만
+    assert _published_label("2026-09-18T06:10:00+09:00") == "9/18 06:10"
+    assert _published_label("") == ""
+    assert _published_label("garbage") == "garbage"
+    md = render_brief_markdown(name="n", run_date=date(2026, 9, 18), scope_terms=["x"],
+                               items=[_item(published_at="2026-09-18T00:00:00+09:00")])
+    assert "약업신문 9/18\n" in md and "00:00" not in md
