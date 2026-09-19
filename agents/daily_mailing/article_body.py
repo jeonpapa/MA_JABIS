@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
+import socket
 from dataclasses import dataclass
 from typing import Callable
 from urllib.parse import urlparse
@@ -118,21 +119,36 @@ def check_url_allowed(url: str) -> str:
     if scheme not in ALLOWED_SCHEMES:
         return f"scheme not allowed: {scheme or '(none)'}"
     try:
-        host = (parsed.hostname or "").lower()
+        host = (parsed.hostname or "").lower().rstrip(".")   # 'foo.localhost.' 같은 FQDN 끝 점 제거
     except ValueError as exc:
         return f"invalid host: {exc}"
     if not host:
         return "missing host"
     if host == "localhost" or host.endswith(".localhost"):
         return "host not allowed: localhost"
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        return ""   # 일반 호스트명
-    if (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved
-            or ip.is_multicast or ip.is_unspecified):
-        return f"host not allowed: {host}"
+    ip = _parse_ip_literal(host)
+    if ip is None:
+        return ""   # 일반 호스트명 (DNS 조회는 하지 않는다)
+    if not ip.is_global or ip.is_multicast:   # is_global 은 멀티캐스트(224/4)를 걸러 주지 않는다
+        return f"host not allowed: {host} ({ip})"
     return ""
+
+
+def _parse_ip_literal(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    """IP 리터럴이면 주소를, 아니면 None. 축약형(127.1 · 2130706433 · 0x7f000001 · 0177.0.0.1 · 10.1)은
+    inet_aton 이 DNS 없이 정규화한다 — 점 4개 표기만 검사하면 루프백/사설망 우회가 가능하다."""
+    try:
+        return ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    try:
+        packed = socket.inet_aton(host)
+    except OSError:
+        return None
+    try:
+        return ipaddress.ip_address(socket.inet_ntoa(packed))
+    except ValueError:
+        return None
 
 
 _http_get = requests.get   # 테스트에서 교체 가능한 HTTP GET 진입점

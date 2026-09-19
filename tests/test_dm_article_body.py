@@ -245,3 +245,31 @@ def test_short_article_returned_only_when_density_yields_nothing():
 def test_specific_selector_short_is_authoritative_over_generic_article():
     html = f"<html><body><div id='dic_area'>{SHORT_ARTICLE}</div><article>{LONG}</article></body></html>"
     assert extract_body_text(html) == SHORT_ARTICLE
+
+
+# ---- SSRF 축약형 호스트 (item B) ----
+from agents.daily_mailing.article_body import check_url_allowed
+
+
+@pytest.mark.parametrize("url", [
+    "http://127.1/",
+    "http://2130706433/",
+    "http://0x7f000001/",
+    "http://0177.0.0.1/",
+    "http://10.1/",
+    "http://100.64.0.1/",
+    "http://foo.localhost./",
+    "http://localhost./",
+    "http://224.0.0.1/",
+])
+def test_check_url_allowed_rejects_shorthand_and_trailing_dot(url):
+    assert check_url_allowed(url) != ""
+
+
+@pytest.mark.parametrize("url", [
+    "https://www.yakup.com/x",
+    "https://n.news.naver.com/mnews/article/001/1",
+    "http://8.8.8.8/x",
+])
+def test_check_url_allowed_accepts_public_hosts(url):
+    assert check_url_allowed(url) == ""
