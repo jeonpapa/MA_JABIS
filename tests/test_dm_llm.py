@@ -86,14 +86,14 @@ def _fake_openai(content=None, exc=None):
 
 def test_openai_wrapper_returns_dict_and_retries_once():
     client, calls = _fake_openai(content='{"ok": 1}', exc=RuntimeError("timeout"))
-    llm = OpenAIJsonLLM(client=client, max_retries=1)
+    llm = OpenAIJsonLLM(client=client, max_retries=1, sleep=lambda s: None)
     assert llm.complete_json(system="s", user="u", model="m") == {"ok": 1}
     assert calls["n"] == 2
 
 
 def test_openai_wrapper_raises_llm_error_after_retries():
     client, _ = _fake_openai(content="not json")
-    llm = OpenAIJsonLLM(client=client, max_retries=1)
+    llm = OpenAIJsonLLM(client=client, max_retries=1, sleep=lambda s: None)
     with pytest.raises(LLMError):
         llm.complete_json(system="s", user="u", model="m")
 
@@ -130,3 +130,38 @@ def test_openai_wrapper_does_not_retry_non_transient_errors():
     with pytest.raises(LLMError):
         llm.complete_json(system="s", user="u", model="m")
     assert calls["n"] == 1
+
+
+def test_openai_wrapper_sleeps_before_retrying_transient_error():
+    client, calls = _fake_openai(content='{"ok": 1}', exc=RuntimeError("timeout"))
+    sleeps = []
+    llm = OpenAIJsonLLM(client=client, max_retries=1, retry_backoff_seconds=2.0, sleep=sleeps.append)
+    assert llm.complete_json(system="s", user="u", model="m") == {"ok": 1}
+    assert calls["n"] == 2
+    assert sleeps == [2.0]
+
+
+def test_openai_wrapper_default_backoff_is_two_seconds_and_not_after_last_attempt():
+    client, calls = _fake_openai(content="not json")
+    sleeps = []
+    llm = OpenAIJsonLLM(client=client, max_retries=2, sleep=sleeps.append)
+    with pytest.raises(LLMError):
+        llm.complete_json(system="s", user="u", model="m")
+    assert calls["n"] == 3
+    assert sleeps == [2.0, 2.0]          # 마지막 시도 뒤에는 대기하지 않는다
+
+
+def test_openai_wrapper_no_sleep_for_non_retryable_error():
+    import httpx
+    import openai
+
+    def create(**kwargs):
+        raise openai.AuthenticationError(
+            "bad key", response=httpx.Response(401, request=httpx.Request("POST", "https://x")), body=None)
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    sleeps = []
+    llm = OpenAIJsonLLM(client=client, max_retries=3, sleep=sleeps.append)
+    with pytest.raises(LLMError):
+        llm.complete_json(system="s", user="u", model="m")
+    assert sleeps == []

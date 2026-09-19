@@ -10,8 +10,9 @@ import json
 import logging
 import os
 import re
+import time
 from dataclasses import dataclass
-from typing import Any, Iterable, Protocol
+from typing import Any, Callable, Iterable, Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -65,11 +66,13 @@ class OpenAIJsonLLM:
     """OpenAI chat.completions JSON 모드 래퍼.
 
     시간·비용 상한: 요청 timeout 기본 30s, SDK 자체 재시도는 0 (재시도는 이 래퍼가 max_retries 로 소유).
-    일시 오류(타임아웃·5xx·JSON 파싱)만 재시도하고, 인증·권한·요청형식 오류는 즉시 LLMError.
+    일시 오류(타임아웃·5xx·JSON 파싱)만 retry_backoff_seconds 대기 후 재시도하고,
+    인증·권한·요청형식 오류는 즉시 LLMError.
     """
 
     def __init__(self, api_key: str | None = None, *, timeout: float = 30.0,
-                 max_retries: int = 1, client: Any | None = None):
+                 max_retries: int = 1, retry_backoff_seconds: float = 2.0,
+                 sleep: Callable[[float], None] = time.sleep, client: Any | None = None):
         if client is None:
             from openai import OpenAI
 
@@ -79,6 +82,8 @@ class OpenAIJsonLLM:
             client = OpenAI(api_key=key, timeout=timeout, max_retries=0)
         self._client = client
         self._max_retries = max_retries
+        self._retry_backoff_seconds = retry_backoff_seconds
+        self._sleep = sleep
 
     def complete_json(self, *, system: str, user: str, model: str) -> dict:
         last: Exception | None = None
@@ -102,6 +107,8 @@ class OpenAIJsonLLM:
                     raise LLMError(f"LLM 호출 실패 (재시도 불가): {exc}") from exc
                 logger.warning("[daily_mailing.llm] 호출 실패 (%d/%d): %s",
                                attempt + 1, self._max_retries + 1, exc)
+                if attempt < self._max_retries and self._retry_backoff_seconds > 0:
+                    self._sleep(self._retry_backoff_seconds)   # 일시 오류만 대기 후 재시도
         raise LLMError(f"LLM 호출 실패: {last}")
 
 
