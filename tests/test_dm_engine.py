@@ -259,3 +259,10 @@ def test_quote_rejected_flags_article_card():
     ok = generate_run(_scope(), deps=_deps(FakeNaver({"파드셉": [PADCEV]})), name="파드셉", now=NOW)
     assert "quote_unverified" not in ok.articles[0]["quality_flags"]
     assert ok.articles[0]["verification_method"] == "llm_relevance+quote_check"
+
+
+def test_generate_run_completes_with_unparseable_url_candidate():
+    naver = FakeNaver({"파드셉": [PADCEV, _raw("파드셉 이상 URL", "http://[bad/1")]})
+    result = generate_run(_scope(), deps=_deps(naver), name="파드셉", now=NOW)
+    assert result.status == "ready"
+    assert "파드셉 요로상피암 급여 확대" in [i.title for i in result.items]

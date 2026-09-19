@@ -63,3 +63,16 @@ def test_missing_db_or_table_or_terms_returns_empty(tmp_path):
     sqlite3.connect(empty).close()
     assert load_archive_candidates(["x"], db_path=empty, today=date(2026, 9, 18)) == []
     assert load_archive_candidates([], db_path=_db(tmp_path), today=date(2026, 9, 18)) == []
+
+
+def test_unparseable_archive_url_does_not_raise(tmp_path):
+    path = tmp_path / "bad.db"
+    with sqlite3.connect(path) as c:
+        c.execute("CREATE TABLE competitor_news (id INTEGER PRIMARY KEY, title TEXT, url TEXT, naver_link TEXT, description TEXT, pub_date TEXT, source_name TEXT)")
+        c.executemany("INSERT INTO competitor_news (title, url, naver_link, description, pub_date, source_name) VALUES (?,?,?,?,?,?)", [
+            ("파드셉 이상 URL", "http://[bad/1", "", "", "2026-09-18", "약업신문"),
+            ("파드셉 정상", "https://www.yakup.com/ok", "", "", "2026-09-18", "약업신문"),
+        ])
+    registry = SourceRegistry([SourceInfo(name="약업신문", domains=("yakup.com",), source_tier="media_tier_A")])
+    items = load_archive_candidates(["파드셉"], db_path=path, today=date(2026, 9, 18), registry=registry)
+    assert "파드셉 정상" in [i.title for i in items]

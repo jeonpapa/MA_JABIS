@@ -155,3 +155,20 @@ def test_discover_skips_timeout_and_json_errors_and_continues():
     assert stats["errors"] == ["a: TimeoutError", "b: JSONDecodeError"]
     assert stats["queries"] == 3
     assert "rate_limited" not in stats
+
+
+def test_canonicalize_url_is_total_for_unparseable_urls():
+    from agents.daily_mailing.discovery import canonicalize_url
+
+    assert canonicalize_url("http://[bad/1") == "http://[bad/1"
+    assert canonicalize_url("  http://[bad/1  ") == "http://[bad/1"
+    assert canonicalize_url("https://www.yakup.com/1?utm_source=x") == "https://www.yakup.com/1"
+
+
+def test_discover_survives_unparseable_originallink():
+    client = ScriptedClient({"a": [_raw("good1", "https://www.yakup.com/g1"),
+                                   _raw("bad", "http://[bad/1"),
+                                   _raw("good2", "https://www.yakup.com/g2")]})
+    items = discover_naver_news(["a"], client=client, registry=_registry())
+    titles = [i.title for i in items]
+    assert "good1" in titles and "good2" in titles

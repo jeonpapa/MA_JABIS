@@ -113,7 +113,12 @@ class NewsDiscoveryItem:
 
 
 def canonicalize_url(url: str) -> str:
-    parsed = urlparse(url.strip())
+    """URL 정규화 — 전역 함수(total): 파싱 불가(예: 'http://[bad/1')면 strip 한 원문을 돌려준다."""
+    stripped = (url or "").strip()
+    try:
+        parsed = urlparse(stripped)
+    except ValueError:
+        return stripped
     query = [
         (k, v)
         for k, v in parse_qsl(parsed.query, keep_blank_values=True)
@@ -131,6 +136,20 @@ def canonicalize_url(url: str) -> str:
 
 def _clean_html_text(text: str) -> str:
     return html.unescape(text or "").replace("<b>", "").replace("</b>", "").strip()
+
+
+def match_source_safe(registry: SourceRegistry, *urls: str) -> SourceInfo | None:
+    """registry.match_url 은 urlparse 를 쓰므로 파싱 불가 URL 에서 ValueError — 후보 1건 때문에 수집을 중단하지 않는다."""
+    for url in urls:
+        if not url:
+            continue
+        try:
+            source = registry.match_url(url)
+        except ValueError:
+            continue
+        if source is not None:
+            return source
+    return None
 
 
 class NaverNewsClient:
@@ -243,7 +262,7 @@ def discover_naver_news(
             if not publisher_url or publisher_url in seen:
                 continue
             seen.add(publisher_url)
-            source = registry.match_url(publisher_url) or registry.match_url(raw.get("link", ""))
+            source = match_source_safe(registry, publisher_url, raw.get("link", ""))
             if source and "calibration_reference" in source.use_for:
                 continue
             if media_strategy == "strict" and not source_allowed_by_media(source, media_scope):

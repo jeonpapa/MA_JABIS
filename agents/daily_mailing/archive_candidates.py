@@ -11,7 +11,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Iterable
 
-from .discovery import NewsDiscoveryItem, canonicalize_url
+from .discovery import NewsDiscoveryItem, canonicalize_url, match_source_safe
 from .source_registry import SourceRegistry
 
 _SCAN_LIMIT = 2000
@@ -63,7 +63,7 @@ def load_archive_candidates(
         if canonical in seen:
             continue
         seen.add(canonical)
-        source = registry.match_url(canonical) if registry else None
+        source = match_source_safe(registry, canonical) if registry else None
         out.append(NewsDiscoveryItem(
             title=str(title or ""),
             publisher_url=canonical,
