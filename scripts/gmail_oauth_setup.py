@@ -12,10 +12,35 @@ from __future__ import annotations
 import argparse
 import base64
 import os
+import subprocess
 from pathlib import Path
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _is_git_ignored(path: str | Path) -> bool:
+    """`git check-ignore -q <path>` (cwd=REPO_ROOT) 가 0 이면 True. git 부재/오류는 False(=보수적으로 거부)."""
+    try:
+        result = subprocess.run(["git", "check-ignore", "-q", str(path)], cwd=REPO_ROOT,
+                                capture_output=True, check=False)
+    except OSError:
+        return False
+    return result.returncode == 0
+
+
+def refuse_if_committable(out: str | Path) -> None:
+    """토큰 출력 경로가 레포 안인데 .gitignore 에 걸리지 않으면 중단 — 토큰은 절대 커밋 대상이면 안 된다."""
+    resolved = Path(out).resolve()
+    try:
+        resolved.relative_to(REPO_ROOT)
+    except ValueError:
+        return  # 레포 밖 — git 커밋 위험 없음
+    if not _is_git_ignored(resolved):
+        raise SystemExit(
+            f"중단: {resolved} 는 git 에 커밋될 수 있는 경로입니다 (.gitignore 미적용). "
+            "data/secrets/ 를 .gitignore 에 추가하거나 --out 을 레포 밖 경로로 지정하세요."
+        )
 
 
 def main() -> int:
@@ -24,10 +49,12 @@ def main() -> int:
     parser.add_argument("--out", default=str(REPO_ROOT / "data" / "secrets" / "google_token.json"))
     args = parser.parse_args()
 
+    out = Path(args.out)
+    refuse_if_committable(out)  # OAuth 흐름·파일 쓰기 전에 검사
+
     from google_auth_oauthlib.flow import InstalledAppFlow
 
     creds = InstalledAppFlow.from_client_secrets_file(args.client_secret, SCOPES).run_local_server(port=0)
-    out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(creds.to_json(), encoding="utf-8")
     os.chmod(out, 0o600)

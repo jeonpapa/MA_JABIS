@@ -55,3 +55,6 @@ venv/
 
 # Daily Mailing scope 스냅샷(헤르메스 채널로 동기화, 사생활)
 data/daily_mailing/
+
+# Gmail OAuth 토큰 등 로컬 시크릿 (scripts/gmail_oauth_setup.py 산출물) — 절대 커밋 금지
+data/secrets/
