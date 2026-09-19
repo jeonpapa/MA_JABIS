@@ -6,15 +6,20 @@
 """
 from __future__ import annotations
 
+import ipaddress
 import re
 from dataclasses import dataclass
 from typing import Callable
+from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup
 
 MIN_BODY_CHARS = 200
 MAX_BODY_CHARS = 8000
+MAX_BODY_BYTES = 3_000_000          # 원문 응답 읽기 상한 (스트리밍, 초과분은 버림)
+ALLOWED_SCHEMES = ("http", "https")
+_CHUNK_BYTES = 65536
 BODY_SELECTORS = (
     "#dic_area",                   # 네이버 뉴스
     "#article-view-content-div",   # NDSoft CMS (다수 의약 전문지)
@@ -78,12 +83,86 @@ def extract_body_text(html: str) -> str:
     return ""
 
 
+def check_url_allowed(url: str) -> str:
+    """원문 fetch 허용 검사. 허용이면 '' , 아니면 사유. DNS 조회는 하지 않는다 (IP 리터럴만 검사).
+
+    - http/https 만
+    - localhost, 사설·루프백·링크로컬·예약·멀티캐스트·미지정 IP 리터럴 차단 (SSRF 방지)
+    """
+    try:
+        parsed = urlparse((url or "").strip())
+    except ValueError as exc:
+        return f"invalid url: {exc}"
+    scheme = (parsed.scheme or "").lower()
+    if scheme not in ALLOWED_SCHEMES:
+        return f"scheme not allowed: {scheme or '(none)'}"
+    try:
+        host = (parsed.hostname or "").lower()
+    except ValueError as exc:
+        return f"invalid host: {exc}"
+    if not host:
+        return "missing host"
+    if host == "localhost" or host.endswith(".localhost"):
+        return "host not allowed: localhost"
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return ""   # 일반 호스트명
+    if (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved
+            or ip.is_multicast or ip.is_unspecified):
+        return f"host not allowed: {host}"
+    return ""
+
+
+_http_get = requests.get   # 테스트에서 교체 가능한 HTTP GET 진입점
+
+
+def _detect_encoding(data: bytes) -> str:
+    """헤더에 charset 이 없거나 iso-8859-1(requests 기본값)일 때 본문 바이트로 추정 (apparent_encoding 과 동일 기전).
+    스트리밍으로 읽었으므로 Response.apparent_encoding 대신 우리가 읽은 바이트에 직접 적용한다."""
+    detector = getattr(requests.compat, "chardet", None)
+    if detector is not None:
+        try:
+            guess = (detector.detect(data) or {}).get("encoding")
+            if guess:
+                return str(guess)
+        except Exception:
+            pass
+    return "utf-8"
+
+
 def _default_fetch(url: str, timeout: float) -> str:
-    resp = requests.get(url, headers={"User-Agent": _UA}, timeout=timeout)
-    resp.raise_for_status()
-    if not resp.encoding or resp.encoding.lower() == "iso-8859-1":
-        resp.encoding = resp.apparent_encoding
-    return resp.text
+    reason = check_url_allowed(url)
+    if reason:
+        raise ValueError(f"unsafe url: {reason}")
+    resp = _http_get(url, headers={"User-Agent": _UA}, timeout=timeout, stream=True)
+    try:
+        resp.raise_for_status()
+        length = str(resp.headers.get("Content-Length") or "").strip()
+        if length.isdigit() and int(length) > MAX_BODY_BYTES:
+            raise ValueError(f"content too large: {length} bytes > {MAX_BODY_BYTES}")
+        content_type = str(resp.headers.get("Content-Type") or "").lower()
+        if content_type and "html" not in content_type:
+            raise ValueError(f"unsupported content-type: {content_type}")
+        chunks: list[bytes] = []
+        total = 0
+        for chunk in resp.iter_content(chunk_size=_CHUNK_BYTES):
+            if not chunk:
+                continue
+            chunks.append(chunk)
+            total += len(chunk)
+            if total >= MAX_BODY_BYTES:
+                break
+        data = b"".join(chunks)[:MAX_BODY_BYTES]
+    finally:
+        resp.close()
+    encoding = resp.encoding
+    if not encoding or str(encoding).lower() == "iso-8859-1":
+        encoding = _detect_encoding(data)
+    try:
+        return data.decode(encoding, errors="replace")
+    except LookupError:
+        return data.decode("utf-8", errors="replace")
 
 
 def candidate_urls(publisher_url: str, naver_url: str = "") -> list[str]:
@@ -107,6 +186,10 @@ def fetch_article_body(
     last_error = ""
     best_text, best_url = "", ""
     for url in candidate_urls(publisher_url, naver_url):
+        reason = check_url_allowed(url)
+        if reason:   # 주입된 fetch 라도 비허용 URL 은 호출하지 않는다
+            last_error = f"unsafe url: {reason}"[:200]
+            continue
         try:
             text = extract_body_text(fetch(url, timeout))
         except Exception as exc:  # 네트워크/파싱 실패는 다음 URL 로
