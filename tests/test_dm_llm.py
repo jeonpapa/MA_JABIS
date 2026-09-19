@@ -96,3 +96,37 @@ def test_openai_wrapper_raises_llm_error_after_retries():
     llm = OpenAIJsonLLM(client=client, max_retries=1)
     with pytest.raises(LLMError):
         llm.complete_json(system="s", user="u", model="m")
+
+
+def test_openai_client_constructed_with_bounded_timeout_and_no_sdk_retries(monkeypatch):
+    captured = {}
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr("openai.OpenAI", FakeOpenAI)
+    OpenAIJsonLLM(api_key="k")
+    assert captured == {"api_key": "k", "timeout": 30.0, "max_retries": 0}
+    captured.clear()
+    OpenAIJsonLLM(api_key="k", timeout=12.5)
+    assert captured["timeout"] == 12.5 and captured["max_retries"] == 0
+
+
+def test_openai_wrapper_does_not_retry_non_transient_errors():
+    import httpx
+    import openai
+
+    auth_error = openai.AuthenticationError(
+        "bad key", response=httpx.Response(401, request=httpx.Request("POST", "https://x")), body=None)
+    calls = {"n": 0}
+
+    def create(**kwargs):
+        calls["n"] += 1
+        raise auth_error
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    llm = OpenAIJsonLLM(client=client, max_retries=3)
+    with pytest.raises(LLMError):
+        llm.complete_json(system="s", user="u", model="m")
+    assert calls["n"] == 1

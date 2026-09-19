@@ -41,6 +41,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_REGISTRY_PATH = REPO_ROOT / "config" / "source_registry.yaml"
 TOP_MA_NEWS_PERSONAS = ("ma_lead", "policy_watch")
 TOP_MA_NEWS_ARCHIVE_KINDS = ("gov_policy",)   # 설계 §5.1: 주요 MA 뉴스 아카이브 후보는 정책뉴스만
+RELEVANCE_CIRCUIT_THRESHOLD = 3               # 관련성 LLM 연속 실패 허용 횟수 (초과 시 판정 중단)
 
 
 @dataclass(frozen=True)
@@ -150,9 +151,17 @@ def _collect_candidates(terms: list[str], *, media, lookback_hours: int, deps: E
 
 def _judge(candidates: list[NewsDiscoveryItem], terms: list[str], *, deps: EngineDeps,
            config: EngineConfig, stats: dict) -> list[_Judged]:
+    """본문 확보 + LLM 관련성 판정. 연속 RELEVANCE_CIRCUIT_THRESHOLD 회 실패 시 남은 후보 판정을 중단한다
+    (LLM 장애 중 후보 15건 × 재시도만큼 시간·비용을 태우지 않도록)."""
     judged: list[_Judged] = []
     errors = 0
-    for item in candidates:
+    consecutive = 0
+    for index, item in enumerate(candidates):
+        if consecutive >= RELEVANCE_CIRCUIT_THRESHOLD:
+            stats["relevance_circuit_open"] = True
+            logger.error("[daily_mailing] 관련성 LLM 연속 %d회 실패 — 남은 후보 %d건 판정 중단",
+                         consecutive, len(candidates) - index)
+            break
         body = deps.fetch_body(item.publisher_url, item.naver_url)
         text = body.text or item.description
         try:
@@ -160,8 +169,10 @@ def _judge(candidates: list[NewsDiscoveryItem], terms: list[str], *, deps: Engin
                                       llm=deps.llm, model=config.relevance_model)
         except LLMError as exc:
             errors += 1
+            consecutive += 1
             logger.warning("[daily_mailing] 관련성 판정 실패 (%s): %s", item.title[:40], exc)
             continue
+        consecutive = 0
         judged.append(_Judged(item=item, body=body, verdict=verdict))
     stats["relevance_llm_errors"] = errors
     return judged

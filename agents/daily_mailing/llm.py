@@ -46,10 +46,29 @@ class JsonLLM(Protocol):
     def complete_json(self, *, system: str, user: str, model: str) -> dict: ...
 
 
-class OpenAIJsonLLM:
-    """OpenAI chat.completions JSON 모드 래퍼. 실패 시 max_retries 회 재시도 후 LLMError."""
+NON_RETRYABLE_ERROR_NAMES = ("AuthenticationError", "PermissionDeniedError", "BadRequestError", "NotFoundError")
 
-    def __init__(self, api_key: str | None = None, *, timeout: float = 60.0,
+
+def _non_retryable_errors() -> tuple[type[BaseException], ...]:
+    """인증·권한·요청형식·모델없음 오류는 재시도해도 결과가 같으므로 즉시 실패시킨다.
+
+    openai 를 지연 임포트하고, 임포트 실패 시 빈 튜플(모든 오류를 일시 오류로 취급)."""
+    try:
+        import openai
+    except Exception:
+        return ()
+    return tuple(t for t in (getattr(openai, name, None) for name in NON_RETRYABLE_ERROR_NAMES)
+                 if isinstance(t, type) and issubclass(t, BaseException))
+
+
+class OpenAIJsonLLM:
+    """OpenAI chat.completions JSON 모드 래퍼.
+
+    시간·비용 상한: 요청 timeout 기본 30s, SDK 자체 재시도는 0 (재시도는 이 래퍼가 max_retries 로 소유).
+    일시 오류(타임아웃·5xx·JSON 파싱)만 재시도하고, 인증·권한·요청형식 오류는 즉시 LLMError.
+    """
+
+    def __init__(self, api_key: str | None = None, *, timeout: float = 30.0,
                  max_retries: int = 1, client: Any | None = None):
         if client is None:
             from openai import OpenAI
@@ -57,7 +76,7 @@ class OpenAIJsonLLM:
             key = api_key or os.environ.get("OPENAI_API_KEY")
             if not key:
                 raise LLMError("OPENAI_API_KEY is required")
-            client = OpenAI(api_key=key, timeout=timeout)
+            client = OpenAI(api_key=key, timeout=timeout, max_retries=0)
         self._client = client
         self._max_retries = max_retries
 
@@ -78,6 +97,9 @@ class OpenAIJsonLLM:
                 return data
             except Exception as exc:
                 last = exc
+                if isinstance(exc, _non_retryable_errors()):
+                    logger.warning("[daily_mailing.llm] 재시도 불가 오류: %s", exc)
+                    raise LLMError(f"LLM 호출 실패 (재시도 불가): {exc}") from exc
                 logger.warning("[daily_mailing.llm] 호출 실패 (%d/%d): %s",
                                attempt + 1, self._max_retries + 1, exc)
         raise LLMError(f"LLM 호출 실패: {last}")

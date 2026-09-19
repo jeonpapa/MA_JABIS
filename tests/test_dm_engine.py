@@ -266,3 +266,23 @@ def test_generate_run_completes_with_unparseable_url_candidate():
     result = generate_run(_scope(), deps=_deps(naver), name="파드셉", now=NOW)
     assert result.status == "ready"
     assert "파드셉 요로상피암 급여 확대" in [i.title for i in result.items]
+
+
+def test_relevance_circuit_breaker_stops_after_three_consecutive_failures():
+    class AlwaysDownLLM:
+        def __init__(self):
+            self.relevance_calls = 0
+
+        def complete_json(self, *, system, user, model):
+            if system == RELEVANCE_SYSTEM:
+                self.relevance_calls += 1
+            raise LLMError("down")
+
+    naver = FakeNaver({"파드셉": [_raw(f"파드셉 기사 {i}", f"https://www.yakup.com/p{i}") for i in range(10)]})
+    llm = AlwaysDownLLM()
+    result = generate_run(_scope(), deps=_deps(naver, llm), name="파드셉", now=NOW)
+    assert llm.relevance_calls == 3
+    assert result.stats["relevance_circuit_open"] is True
+    assert result.stats["relevance_llm_errors"] == 3
+    assert result.status == "held"
+    assert "llm_unavailable" in result.quality_report["blocking_reasons"]
