@@ -6,13 +6,18 @@ Naver 호출 상한/429 상황에서도 후보 풀을 유지한다. pub_date 는
 """
 from __future__ import annotations
 
+import contextlib
+import logging
 import sqlite3
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Iterable
+from urllib.parse import quote
 
 from .discovery import NewsDiscoveryItem, canonicalize_url, match_source_safe
 from .source_registry import SourceRegistry
+
+logger = logging.getLogger(__name__)
 
 _SCAN_LIMIT = 2000
 
@@ -43,14 +48,17 @@ def load_archive_candidates(
         where += f" AND kind IN ({','.join('?' * len(kind_list))})"
         params.extend(kind_list)
     params.append(_SCAN_LIMIT)
+    # 경로의 '?'·공백 등이 URI 쿼리로 오인되지 않도록 percent-encoding; sqlite3 의 with 는 close 가 아니라 commit 이므로 closing 으로 감싼다
+    uri = f"file:{quote(str(path.resolve()))}?mode=ro"
     try:
-        with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as conn:
+        with contextlib.closing(sqlite3.connect(uri, uri=True)) as conn:
             rows = conn.execute(
                 "SELECT title, url, naver_link, description, pub_date, source_name "
                 f"FROM competitor_news WHERE {where} ORDER BY pub_date DESC, id DESC LIMIT ?",
                 params,
             ).fetchall()
-    except sqlite3.Error:
+    except sqlite3.Error as exc:
+        logger.warning("[daily_mailing] 아카이브 조회 실패 (%s): %s — Naver 후보만으로 진행", path, exc)
         return []
     out: list[NewsDiscoveryItem] = []
     seen: set[str] = set()

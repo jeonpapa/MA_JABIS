@@ -76,3 +76,24 @@ def test_unparseable_archive_url_does_not_raise(tmp_path):
     registry = SourceRegistry([SourceInfo(name="약업신문", domains=("yakup.com",), source_tier="media_tier_A")])
     items = load_archive_candidates(["파드셉"], db_path=path, today=date(2026, 9, 18), registry=registry)
     assert "파드셉 정상" in [i.title for i in items]
+
+
+def test_special_char_db_path_reads_rows_without_creating_files(tmp_path):
+    path = tmp_path / "news a?b.db"
+    with sqlite3.connect(path) as c:
+        c.execute("CREATE TABLE competitor_news (id INTEGER PRIMARY KEY, title TEXT, url TEXT, naver_link TEXT, description TEXT, pub_date TEXT, source_name TEXT)")
+        c.execute("INSERT INTO competitor_news (title, url, naver_link, description, pub_date, source_name) VALUES ('파드셉 기사', 'https://www.yakup.com/9', '', '', '2026-09-18', '약업신문')")
+    before = sorted(p.name for p in tmp_path.iterdir())
+    items = load_archive_candidates(["파드셉"], db_path=path, today=date(2026, 9, 18))
+    assert [i.title for i in items] == ["파드셉 기사"]
+    assert sorted(p.name for p in tmp_path.iterdir()) == before
+
+
+def test_sqlite_error_is_logged_when_swallowed(tmp_path, caplog):
+    import logging
+
+    empty = tmp_path / "e.db"
+    sqlite3.connect(empty).close()
+    with caplog.at_level(logging.WARNING, logger="agents.daily_mailing.archive_candidates"):
+        assert load_archive_candidates(["x"], db_path=empty, today=date(2026, 9, 18)) == []
+    assert "아카이브 조회 실패" in caplog.text
