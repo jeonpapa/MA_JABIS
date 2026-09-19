@@ -132,3 +132,26 @@ def test_select_can_disable_forced_msd_representative():
     assert any("MSD" in i.title for i in forced)  # legacy behaviour unchanged
     plain = select_daily_items([padcev, msd], ["파드셉"], limit=1, force_msd_representative=False)
     assert [i.title for i in plain] == ["파드셉 요로상피암 급여 확대"]
+
+
+def test_discover_skips_timeout_and_json_errors_and_continues():
+    class FlakyClient:
+        def __init__(self):
+            self.queries = []
+
+        def search(self, query, display=20, sort="date"):
+            self.queries.append(query)
+            if query == "a":
+                raise TimeoutError("timed out")
+            if query == "b":
+                raise json.JSONDecodeError("Expecting value", "", 0)   # ValueError 하위
+            return [_raw("c1", "https://www.yakup.com/c1")]
+
+    client = FlakyClient()
+    stats = {}
+    items = discover_naver_news(["a", "b", "c"], client=client, registry=_registry(), stats=stats)
+    assert client.queries == ["a", "b", "c"]
+    assert [i.title for i in items] == ["c1"]
+    assert stats["errors"] == ["a: TimeoutError", "b: JSONDecodeError"]
+    assert stats["queries"] == 3
+    assert "rate_limited" not in stats

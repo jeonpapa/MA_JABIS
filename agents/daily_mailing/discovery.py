@@ -228,7 +228,8 @@ def discover_naver_news(
         queries += 1
         try:
             raw_items = client.search(keyword, display=display, sort="date")
-        except (HTTPError, URLError) as exc:
+        except (HTTPError, URLError, TimeoutError, ValueError) as exc:
+            # ValueError 는 json.JSONDecodeError(응답 본문 손상) 포함. 429 외에는 다음 키워드로 계속.
             code = getattr(exc, "code", None)
             if stats is not None:
                 stats.setdefault("errors", []).append(f"{keyword}: {code or type(exc).__name__}")
