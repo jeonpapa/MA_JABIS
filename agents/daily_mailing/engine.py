@@ -181,8 +181,9 @@ def _judge(candidates: list[NewsDiscoveryItem], terms: list[str], *, deps: Engin
 def _select(judged: list[_Judged], terms: list[str], *, media, personas, limit: int) -> list[_Judged]:
     relevant = [j for j in judged if j.verdict.relevant]
     by_key = {_key(j.item): j for j in relevant}
-    items = [replace(j.item, matched_keywords=j.verdict.matched_scope_terms) for j in relevant]
-    chosen = select_daily_items(items, terms, limit=limit, media=media, personas=personas,
+    # rank_items 가 점수용 substring 매칭을 다시 계산해 matched_keywords 를 덮어쓰므로, LLM 매칭을 여기서
+    # 주입해도 선정 결과는 같다. LLM 의 matched_scope_terms 는 _Judged.verdict 로 카드·BriefItem 에 전달된다.
+    chosen = select_daily_items([j.item for j in relevant], terms, limit=limit, media=media, personas=personas,
                                 force_msd_representative=False)
     return [by_key[_key(i)] for i in chosen if _key(i) in by_key]
 
