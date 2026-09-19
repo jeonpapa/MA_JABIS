@@ -172,3 +172,30 @@ def test_discover_survives_unparseable_originallink():
     items = discover_naver_news(["a"], client=client, registry=_registry())
     titles = [i.title for i in items]
     assert "good1" in titles and "good2" in titles
+
+
+def test_discover_skips_connection_level_errors_and_continues():
+    import http.client
+    import ssl
+
+    class Client:
+        def __init__(self):
+            self.queries = []
+
+        def search(self, query, display=20, sort="date"):
+            self.queries.append(query)
+            if query == "a":
+                raise http.client.RemoteDisconnected("Remote end closed connection")
+            if query == "b":
+                raise http.client.IncompleteRead(b"")
+            if query == "c":
+                raise ssl.SSLError("handshake failed")
+            return [_raw("d1", "https://www.yakup.com/d1")]
+
+    client = Client()
+    stats = {}
+    items = discover_naver_news(["a", "b", "c", "d"], client=client, registry=_registry(), stats=stats)
+    assert client.queries == ["a", "b", "c", "d"]
+    assert [i.title for i in items] == ["d1"]
+    assert stats["errors"] == ["a: RemoteDisconnected", "b: IncompleteRead", "c: SSLError"]
+    assert "rate_limited" not in stats

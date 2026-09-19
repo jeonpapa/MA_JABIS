@@ -4,11 +4,12 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 import html
+import http.client
 import json
 import os
 import time
 from typing import Callable, Iterable
-from urllib.error import HTTPError, URLError
+from urllib.error import HTTPError
 from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
 from urllib.request import Request, urlopen
 
@@ -247,8 +248,10 @@ def discover_naver_news(
         queries += 1
         try:
             raw_items = client.search(keyword, display=display, sort="date")
-        except (HTTPError, URLError, TimeoutError, ValueError) as exc:
-            # ValueError 는 json.JSONDecodeError(응답 본문 손상) 포함. 429 외에는 다음 키워드로 계속.
+        except (HTTPError, OSError, http.client.HTTPException, ValueError) as exc:
+            # OSError = URLError·TimeoutError·ssl.SSLError·ConnectionResetError,
+            # HTTPException = RemoteDisconnected·IncompleteRead, ValueError = json.JSONDecodeError.
+            # 429(HTTPError.code) 만 수집 중단, 나머지는 기록 후 다음 키워드로 계속.
             code = getattr(exc, "code", None)
             if stats is not None:
                 stats.setdefault("errors", []).append(f"{keyword}: {code or type(exc).__name__}")
