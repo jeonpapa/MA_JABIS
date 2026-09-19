@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from agents.daily_mailing import dispatch as dispatch_mod
 from agents.daily_mailing.dispatch import (
     ApprovalError,
     DispatchDeps,
@@ -169,6 +170,33 @@ def test_approve_and_reject(tmp_path):
     assert (rejected["delivery_status"], rejected["approval_status"]) == ("held", "rejected")
     with pytest.raises(LookupError):
         approve_run("nope", approver="a", deps=deps)
+
+
+def test_concurrent_approve_second_request_loses_claim(tmp_path, monkeypatch):
+    """동시 승인: 두 요청 모두 상태 검사는 통과하지만 선점은 한 번만 — 진 쪽은 ApprovalError, 발송은 정확히 1회.
+
+    요청 B 의 선점 직전에 요청 A 가 끼어들어 선점·승인·발송을 끝내는 인터리빙을 재현한다.
+    """
+    db = _db(tmp_path, {"id": 19})
+    rec = Recorder()
+    deps = _deps(db, rec)
+    dispatch_due_subscriptions(deps)
+    run_id = find_regular_run(19, "2026-09-18", db_path=db)["run_id"]
+    real_claim = dispatch_mod.claim_for_sending
+    interleaved = {"done": False}
+
+    def racing_claim(rid, **kw):
+        if not interleaved["done"]:
+            interleaved["done"] = True
+            approve_run(rid, approver="first@msd.com", deps=deps)   # 요청 A 가 먼저 끝난다
+        return real_claim(rid, **kw)                                 # 요청 B 의 선점 → 실패
+
+    monkeypatch.setattr(dispatch_mod, "claim_for_sending", racing_claim)
+    with pytest.raises(ApprovalError, match="이미 발송을 진행"):
+        approve_run(run_id, approver="second@msd.com", deps=deps)
+    run = get_run(run_id, db_path=db)
+    assert (run["delivery_status"], run["approved_by"]) == ("sent", "first@msd.com")   # 진 요청은 승인자도 덮어쓰지 않음
+    assert len(rec.sent) == 1
 
 
 def test_stale_pending_expires_next_day(tmp_path):

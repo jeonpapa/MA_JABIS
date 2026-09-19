@@ -209,12 +209,22 @@ def _mark_last_sent(subscription_id: int, sent_at: str, db_path: str | Path) -> 
         logger.warning("[daily_mailing] 구독 %s last_sent_at 갱신 실패 (발송은 완료): %s", subscription_id, exc)
 
 
-def send_run(run_id: str, *, deps: DispatchDeps, from_statuses: tuple[str, ...],
-             recipients_override: list[str] | None = None) -> dict | None:
+def _send_claimed(run_id: str, *, deps: DispatchDeps, from_statuses: tuple[str, ...],
+                  recipients_override: list[str] | None = None,
+                  on_claim: dict[str, Any] | None = None) -> tuple[dict | None, bool]:
+    """선점(claim) → 발송 → 상태 갱신. (run, claimed) 를 돌려준다.
+
+    claimed=False 면 다른 요청(web 승인 / scheduler 재시도)이 이미 선점한 것 — 호출부가 판단한다.
+    on_claim 은 선점에 **성공한 요청만** 기록하는 필드(예: 승인자) — 진 요청이 덮어쓰지 못한다.
+    """
     run = get_run(run_id, db_path=deps.db_path)
-    if run is None or not claim_for_sending(run_id, from_statuses=from_statuses,
-                                            claimed_at=_now(deps).isoformat(), db_path=deps.db_path):
-        return run
+    if run is None:
+        return None, False
+    if not claim_for_sending(run_id, from_statuses=from_statuses,
+                             claimed_at=_now(deps).isoformat(), db_path=deps.db_path):
+        return run, False
+    if on_claim:
+        update_run(run_id, db_path=deps.db_path, **on_claim)
     recipients = recipients_override or _json_list(run.get("recipients_json"))
     attempts = int(run.get("send_attempts") or 0) + 1
     try:
@@ -234,7 +244,14 @@ def send_run(run_id: str, *, deps: DispatchDeps, from_statuses: tuple[str, ...],
         update_run(run_id, db_path=deps.db_path,
                    delivery_status="send_failed" if attempts < MAX_SEND_ATTEMPTS else "held",
                    send_attempts=attempts, delivery_error=str(res.get("message") or "send failed")[:500])
-    return get_run(run_id, db_path=deps.db_path)
+    return get_run(run_id, db_path=deps.db_path), True
+
+
+def send_run(run_id: str, *, deps: DispatchDeps, from_statuses: tuple[str, ...],
+             recipients_override: list[str] | None = None) -> dict | None:
+    """scheduler 경로 — 선점에 졌으면 조용히 현재 상태만 돌려준다 (다른 쪽이 발송 중)."""
+    return _send_claimed(run_id, deps=deps, from_statuses=from_statuses,
+                         recipients_override=recipients_override)[0]
 
 
 def _route_new_run(result, sub: dict, deps: DispatchDeps) -> dict | None:
@@ -307,9 +324,13 @@ def approve_run(run_id: str, *, approver: str, deps: DispatchDeps) -> dict:
     if run.get("run_date") and run["run_date"] < now.date().isoformat():
         update_run(run_id, db_path=deps.db_path, delivery_status="expired")
         raise ApprovalError("당일 승인 기한이 지나 만료되었습니다")
-    update_run(run_id, db_path=deps.db_path, approval_status="approved",
-               approved_by=approver, approved_at=now.isoformat())
-    return send_run(run_id, deps=deps, from_statuses=("pending_approval",)) or {}
+    # 승인자 기록은 선점에 성공한 요청만 — 동시 승인에서 진 요청이 stale 200 을 받거나 승인자를 덮어쓰지 않는다
+    sent, claimed = _send_claimed(run_id, deps=deps, from_statuses=("pending_approval",),
+                                  on_claim={"approval_status": "approved", "approved_by": approver,
+                                            "approved_at": now.isoformat()})
+    if not claimed:
+        raise ApprovalError("다른 요청이 이미 발송을 진행 중입니다")
+    return sent or {}
 
 
 def reject_run(run_id: str, *, approver: str, deps: DispatchDeps) -> dict:
