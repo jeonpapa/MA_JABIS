@@ -52,10 +52,32 @@ def _pending_run(db):
 
 def _patch_deps(monkeypatch, db, sent):
     from datetime import datetime, timedelta, timezone
+    from agents.daily_mailing import storage
     now = datetime(2026, 9, 18, 9, 0, tzinfo=timezone(timedelta(hours=9)))
     deps = dispatch.DispatchDeps(db_path=db, send=lambda **kw: (sent.append(kw), {"ok": True, "sent": True, "gmail_message_id": "m"})[1],
                                  now=lambda: now, gmail_ready=lambda: True)
     monkeypatch.setattr(dispatch.DispatchDeps, "production", classmethod(lambda cls, db_path=None: deps))
+    monkeypatch.setattr(storage, "DEFAULT_DB_PATH", db)   # 미리보기는 storage 기본 DB 경로를 쓴다
+
+
+def _raise(exc):
+    raise exc
+
+
+def test_preview_uses_storage_db_path_not_production_deps(monkeypatch, tmp_path):
+    db = tmp_path / "d.db"
+    _pending_run(db)
+    from agents.daily_mailing import run_store, storage
+    monkeypatch.setattr(storage, "DEFAULT_DB_PATH", db)
+    monkeypatch.setattr(dispatch.DispatchDeps, "production",
+                        classmethod(lambda cls, db_path=None: _raise(AssertionError("preview must not build production deps"))))
+    c = s.app.test_client()
+    r = c.get("/api/admin/daily-mailing/runs/dm_19_x/preview", headers=_admin())
+    assert r.status_code == 200 and r.get_json()["html"] == "<p>brief</p>"
+    assert c.get("/api/admin/daily-mailing/runs/nope/preview", headers=_admin()).status_code == 404
+    monkeypatch.setattr(run_store, "get_run", lambda *a, **k: _raise(RuntimeError("db down")))
+    r = c.get("/api/admin/daily-mailing/runs/dm_19_x/preview", headers=_admin())
+    assert r.status_code == 500 and "db down" in r.get_json()["error"]
 
 
 def test_admin_preview_approve_reject_and_health(monkeypatch, tmp_path):

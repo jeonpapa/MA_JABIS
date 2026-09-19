@@ -5342,13 +5342,18 @@ def daily_mailing_run_reject(run_id: str):
 @app.get("/api/admin/daily-mailing/runs/<run_id>/preview")
 @require_auth(role="admin")
 def daily_mailing_run_preview(run_id: str):
-    from agents.daily_mailing import dispatch as _dm_dispatch
-    from agents.daily_mailing.run_store import get_run
-    run = get_run(run_id, db_path=_dm_dispatch.DispatchDeps.production().db_path)
-    if run is None or not run.get("email_html"):
-        return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
-    return jsonify({"subject": run.get("email_subject") or "", "html": run["email_html"],
-                    "delivery_status": run.get("delivery_status")})
+    """메일 미리보기 — DB 의 email_html 만 읽는다 (칸반과 같은 storage 기본 DB, 엔진/Gmail 의존성 생성 없음)."""
+    try:
+        from agents.daily_mailing import run_store as _dm_run_store
+        from agents.daily_mailing import storage as _dm_storage
+        run = _dm_run_store.get_run(run_id, db_path=_dm_storage.DEFAULT_DB_PATH)
+        if run is None or not run.get("email_html"):
+            return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+        return jsonify({"subject": run.get("email_subject") or "", "html": run["email_html"],
+                        "delivery_status": run.get("delivery_status")})
+    except Exception as e:
+        logger.error("daily_mailing preview 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
 
 
 @app.get("/api/admin/daily-mailing/health")
