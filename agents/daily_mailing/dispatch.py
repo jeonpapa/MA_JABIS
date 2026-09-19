@@ -34,6 +34,7 @@ from .subscription_bridge import ensure_delivery_columns, subscription_to_scope
 logger = logging.getLogger(__name__)
 
 MAX_SEND_ATTEMPTS = 3
+RETRY_MIN_INTERVAL_MINUTES = 9   # 10분 tick 기준: 실패 직후 같은 tick 재시도 금지, 다음 tick 부터
 STALE_SENDING_MINUTES = 15
 STALE_SENDING_ERROR = "발송 중 프로세스 중단 — 실제 발송 여부 확인 필요"
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -246,10 +247,20 @@ def _route_new_run(result, sub: dict, deps: DispatchDeps) -> dict | None:
 
 
 def retry_failed_sends(deps: DispatchDeps) -> int:
-    runs = list_failed_sends(db_path=deps.db_path, max_attempts=MAX_SEND_ATTEMPTS)
-    for run in runs:
+    """send_failed 재시도 — 마지막 선점(claimed_at) 후 RETRY_MIN_INTERVAL_MINUTES 이상 지난 run 만.
+
+    실패 직후 같은 tick 에서 바로 재시도하지 않고 주기 간격을 둔다 (일시 장애 회복 여유).
+    claimed_at 이 없는(컬럼 도입 전) 행은 충분히 오래된 것으로 보고 재시도한다.
+    """
+    cutoff = _now(deps) - timedelta(minutes=RETRY_MIN_INTERVAL_MINUTES)
+    retried = 0
+    for run in list_failed_sends(db_path=deps.db_path, max_attempts=MAX_SEND_ATTEMPTS):
+        claimed = _parse_ts(run.get("claimed_at"))
+        if claimed is not None and claimed > cutoff:
+            continue  # 직전 tick 에서 막 실패 — 다음 주기로
         send_run(run["run_id"], deps=deps, from_statuses=("send_failed",))
-    return len(runs)
+        retried += 1
+    return retried
 
 
 def dispatch_due_subscriptions(deps: DispatchDeps) -> dict:

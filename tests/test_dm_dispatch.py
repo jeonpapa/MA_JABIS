@@ -133,15 +133,25 @@ def test_generate_error_records_error_run_once(tmp_path):
 
 
 def test_send_failure_retries_then_holds(tmp_path):
+    """재시도는 주기 간격을 둔다 — 같은 tick 안에서 실패 직후 재시도하지 않는다 (T → T+10 → T+20)."""
     db = _db(tmp_path, {"id": 19, "mode": "auto"})
     rec = Recorder(send_ok=False)
-    dispatch_due_subscriptions(_deps(db, rec))   # 생성 즉시 발송 attempt 1 + 같은 주기 끝 재시도 attempt 2
-    assert find_regular_run(19, "2026-09-18", db_path=db)["delivery_status"] == "send_failed"
-    dispatch_due_subscriptions(_deps(db, rec))   # 다음 주기 재시도 attempt 3 → held
-    dispatch_due_subscriptions(_deps(db, rec))   # held 는 더 이상 재시도하지 않음
+
+    def _state():
+        run = find_regular_run(19, "2026-09-18", db_path=db)
+        return run["delivery_status"], run["send_attempts"]
+
+    dispatch_due_subscriptions(_deps(db, rec))                                         # T: 생성 즉시 attempt 1
+    assert _state() == ("send_failed", 1)                                              # 같은 주기 재시도 없음
+    dispatch_due_subscriptions(_deps(db, rec, now=FRI_0810 + timedelta(minutes=10)))  # T+10: attempt 2
+    assert _state() == ("send_failed", 2)
+    dispatch_due_subscriptions(_deps(db, rec, now=FRI_0810 + timedelta(minutes=20)))  # T+20: attempt 3 → held
+    assert _state() == ("held", 3)
+    dispatch_due_subscriptions(_deps(db, rec, now=FRI_0810 + timedelta(minutes=30)))  # T+30: held 는 재시도 없음
+    assert _state() == ("held", 3)
     run = find_regular_run(19, "2026-09-18", db_path=db)
-    assert (run["delivery_status"], run["send_attempts"]) == ("held", 3)
     assert run["delivery_error"] == "token expired"
+    assert len(rec.sent) == 3
 
 
 def test_approve_and_reject(tmp_path):
