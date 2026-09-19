@@ -177,7 +177,7 @@ def _select(judged: list[_Judged], terms: list[str], *, media, personas, limit: 
 
 
 def _write(j: _Judged, terms: list[str], *, deps: EngineDeps, config: EngineConfig,
-           section: str, stats: dict) -> BriefItem | None:
+           section: str, stats: dict, rejected_keys: set[str] | None = None) -> BriefItem | None:
     item, body, verdict = j.item, j.body, j.verdict
     common = dict(title=item.title, publisher_url=item.publisher_url, naver_url=item.naver_url,
                   source_name=item.source_name, published_at=item.published_at,
@@ -204,7 +204,10 @@ def _write(j: _Judged, terms: list[str], *, deps: EngineDeps, config: EngineConf
         return None
     verified = bool(draft.ma_implication) and verify_quote(draft.evidence_quote, body.text)
     if draft.ma_implication and not verified:
+        # 설계 §5 ⑦: 인용 검증 실패 → 시사점 삭제 + 기사별 플래그 (리뷰보드 카드에 노출)
         stats["quote_rejected"] = stats.get("quote_rejected", 0) + 1
+        if rejected_keys is not None:
+            rejected_keys.add(_key(item))
     return BriefItem(
         summary_bullets=bullets,
         ma_implication=draft.ma_implication if verified else "",
@@ -215,7 +218,7 @@ def _write(j: _Judged, terms: list[str], *, deps: EngineDeps, config: EngineConf
     )
 
 
-def _card(j: _Judged, *, brief: BriefItem | None, personas) -> dict:
+def _card(j: _Judged, *, brief: BriefItem | None, personas, quote_rejected: bool = False) -> dict:
     card = build_article_card(replace(j.item, matched_keywords=j.verdict.matched_scope_terms),
                               selected_for_draft=brief is not None, personas=personas)
     note = f"관련성 {'통과' if j.verdict.relevant else '제외'}: {j.verdict.reason}"
@@ -225,6 +228,12 @@ def _card(j: _Judged, *, brief: BriefItem | None, personas) -> dict:
     card["matched_keywords"] = list(j.verdict.matched_scope_terms)
     card["verification_method"] = ("llm_relevance+quote_check" if brief is not None and brief.quote_verified
                                    else "llm_relevance")
+    if quote_rejected:
+        flags = list(card.get("quality_flags") or [])
+        if "quote_unverified" not in flags:
+            flags.append("quote_unverified")
+        card["quality_flags"] = flags
+        card["verification_method"] = "llm_relevance+quote_rejected"
     card["verification_caveat"] = f"본문 {j.body.status}" + (f" ({j.body.error})" if j.body.error else "")
     card["review_status"] = ("ready_for_writer" if brief is not None
                              else "needs_review" if j.verdict.relevant else "excluded")
@@ -279,6 +288,7 @@ def generate_run(scope: DashboardScope, *, deps: EngineDeps, config: EngineConfi
     judged: list[_Judged] = []
     scope_items: list[BriefItem] = []
     brief_by_key: dict[str, BriefItem] = {}
+    quote_rejected_keys: set[str] = set()
     discovered_count = 0
 
     if not terms:
@@ -293,7 +303,8 @@ def generate_run(scope: DashboardScope, *, deps: EngineDeps, config: EngineConfi
             hold.append("llm_unavailable")
         selected = _select(judged, terms, media=scope.media, personas=personas, limit=config.brief_limit)
         for j in selected:
-            written = _write(j, terms, deps=deps, config=config, section="scope", stats=stats)
+            written = _write(j, terms, deps=deps, config=config, section="scope", stats=stats,
+                             rejected_keys=quote_rejected_keys)
             if written is not None:
                 scope_items.append(written)
                 brief_by_key[_key(j.item)] = written
@@ -316,7 +327,8 @@ def generate_run(scope: DashboardScope, *, deps: EngineDeps, config: EngineConfi
     markdown = render_brief_markdown(name=display_name, run_date=run_date, scope_terms=terms,
                                      items=all_items, window_label=window_label)
     run_id = f"dm_{_safe_id(sid)}_{now:%Y%m%d_%H%M%S}" + ("_test" if is_test else "")
-    articles = [_card(j, brief=brief_by_key.get(_key(j.item)), personas=personas) for j in judged]
+    articles = [_card(j, brief=brief_by_key.get(_key(j.item)), personas=personas,
+                      quote_rejected=_key(j.item) in quote_rejected_keys) for j in judged]
     payload = {
         "run_id": run_id,
         "generated_at": now.isoformat(),

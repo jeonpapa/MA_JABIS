@@ -247,3 +247,15 @@ def test_top_ma_news_archive_uses_gov_policy_kind_only(tmp_path):
     assert [i.title for i in top] == ["약평위 정책 기사"]          # §5.1: gov_policy 아카이브만
     run = generate_run(_scope(keywords=("약평위",), brands=()), deps=deps, name="n", now=NOW)
     assert sorted(i.title for i in run.items) == ["약평위 경쟁사 기사", "약평위 정책 기사"]  # 구독 run 은 전체 kind
+
+
+def test_quote_rejected_flags_article_card():
+    naver = FakeNaver({"파드셉": [PADCEV]})
+    result = generate_run(_scope(), deps=_deps(naver, FakeLLM(quote_mode="fake")), name="파드셉", now=NOW)
+    card = result.articles[0]
+    assert card["selected_for_draft"] is True
+    assert "quote_unverified" in card["quality_flags"]
+    assert card["verification_method"] == "llm_relevance+quote_rejected"
+    ok = generate_run(_scope(), deps=_deps(FakeNaver({"파드셉": [PADCEV]})), name="파드셉", now=NOW)
+    assert "quote_unverified" not in ok.articles[0]["quality_flags"]
+    assert ok.articles[0]["verification_method"] == "llm_relevance+quote_check"
