@@ -116,6 +116,17 @@ def _safe_id(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_-]+", "_", value).strip("_") or "sub"
 
 
+def _jsonable(value):
+    """payload 에 넣을 stats 를 JSON 직렬화 가능한 순수 타입으로 정규화한다 (tuple/set → list, 기타 → str)."""
+    if isinstance(value, dict):
+        return {str(k): _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [_jsonable(v) for v in (sorted(value) if isinstance(value, (set, frozenset)) else value)]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
 def _merge_unique(*groups: Iterable[NewsDiscoveryItem]) -> list[NewsDiscoveryItem]:
     out: list[NewsDiscoveryItem] = []
     seen: set[str] = set()
@@ -302,6 +313,7 @@ def generate_run(scope: DashboardScope, *, deps: EngineDeps, config: EngineConfi
     personas = resolve_personas(list(scope.personas))
     stats: dict = {"scope_terms": list(terms)}
     hold: list[str] = []
+    run_warnings: list[str] = []   # 비차단 경고 — 부분 실행을 칸반·품질 리포트에 드러낸다
     judged: list[_Judged] = []
     scope_items: list[BriefItem] = []
     brief_by_key: dict[str, BriefItem] = {}
@@ -314,10 +326,17 @@ def generate_run(scope: DashboardScope, *, deps: EngineDeps, config: EngineConfi
         candidates, discovered_count = _collect_candidates(
             terms, media=scope.media, lookback_hours=scope.lookback_hours, deps=deps,
             config=config, now=now, stats=stats)
+        naver_stats = stats.get("naver") or {}
+        if naver_stats.get("rate_limited"):
+            run_warnings.append("naver_rate_limited")
+        if naver_stats.get("query_cap_reached"):
+            run_warnings.append("naver_query_cap_reached")
         ranked = rank_items(candidates, terms, media=scope.media, personas=personas)[: config.max_candidates]
         judged = _judge(ranked, terms, deps=deps, config=config, stats=stats)
         if ranked and not judged:
             hold.append("llm_unavailable")
+        elif judged and (stats.get("relevance_circuit_open") or stats.get("relevance_llm_errors", 0) > 0):
+            run_warnings.append("partial_relevance")   # 일부 후보만 판정됨 — 발송은 하되 표시
         selected = _select(judged, terms, media=scope.media, personas=personas, limit=config.brief_limit)
         for j in selected:
             written = _write(j, terms, deps=deps, config=config, section="scope", stats=stats,
@@ -337,7 +356,7 @@ def generate_run(scope: DashboardScope, *, deps: EngineDeps, config: EngineConfi
                if canonicalize_url(i.publisher_url) not in taken][: config.top_ma_news_limit]
 
     all_items = scope_items + top
-    quality = evaluate_brief_quality(all_items, hold_reasons=hold)
+    quality = evaluate_brief_quality(all_items, hold_reasons=hold, warnings=run_warnings)
     window_label = f"이전 {scope.lookback_hours}시간"
     subject = build_subject(display_name, run_date, is_test=is_test)
     html = render_brief_html(name=display_name, run_date=run_date, scope_terms=terms,
@@ -371,6 +390,7 @@ def generate_run(scope: DashboardScope, *, deps: EngineDeps, config: EngineConfi
         "email_html": html,
         "delivery_status": "draft_only",
         "approval_status": "not_requested",
+        "stats": _jsonable(stats),
     }
     return RunResult(run_id=run_id, subscription_id=sid, run_date=run_date.isoformat(), is_test=is_test,
                      status=quality.status, subject=subject, html=html, markdown=markdown,

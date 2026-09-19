@@ -323,3 +323,75 @@ def test_generate_top_ma_news_logs_stats_for_diagnosis(caplog):
     assert items == []
     assert "주요 MA 뉴스 stats" in caplog.text
     assert "'discovered': 0" in caplog.text
+
+
+# ---- 부분 실행 가시화 (item D) ----
+def test_partial_relevance_warning_when_some_judgments_failed():
+    class RelevanceFailsForTitle(FakeLLM):
+        def __init__(self, fail_title):
+            super().__init__()
+            self.fail_title = fail_title
+
+        def complete_json(self, *, system, user, model):
+            data = json.loads(user)
+            if system == RELEVANCE_SYSTEM and data["title"] == self.fail_title:
+                raise LLMError("down")
+            return super().complete_json(system=system, user=user, model=model)
+
+    other = _raw("파드셉 두번째 기사", "https://www.yakup.com/p2")
+    naver = FakeNaver({"파드셉": [PADCEV, other]})
+    result = generate_run(_scope(), deps=_deps(naver, RelevanceFailsForTitle("파드셉 두번째 기사")),
+                          name="파드셉", now=NOW)
+    assert result.status == "ready"
+    assert [i.title for i in result.items] == ["파드셉 요로상피암 급여 확대"]
+    assert result.stats["relevance_llm_errors"] == 1
+    assert "partial_relevance" in result.quality_report["warnings"]
+
+
+def test_partial_relevance_warning_when_circuit_opens_after_some_judged():
+    class FailAfterFirst(FakeLLM):
+        def __init__(self):
+            super().__init__()
+            self.n = 0
+
+        def complete_json(self, *, system, user, model):
+            if system == RELEVANCE_SYSTEM:
+                self.n += 1
+                if self.n > 1:
+                    raise LLMError("down")
+            return super().complete_json(system=system, user=user, model=model)
+
+    naver = FakeNaver({"파드셉": [PADCEV] + [_raw(f"파드셉 기사 {i}", f"https://www.yakup.com/p{i}") for i in range(5)]})
+    result = generate_run(_scope(), deps=_deps(naver, FailAfterFirst()), name="파드셉", now=NOW)
+    assert result.stats["relevance_circuit_open"] is True
+    assert result.status == "ready"
+    assert "partial_relevance" in result.quality_report["warnings"]
+
+
+def test_naver_rate_limited_and_query_cap_warnings():
+    from urllib.error import HTTPError
+
+    class RateLimitedNaver(FakeNaver):
+        def search(self, query, display=20, sort="date"):
+            self.queries.append(query)
+            if query == "파드셉":
+                raise HTTPError("https://openapi.naver.com", 429, "Too Many Requests", None, None)
+            return self.by_query.get(query, [])
+
+    result = generate_run(_scope(), deps=_deps(RateLimitedNaver({})), name="파드셉", now=NOW)
+    assert result.stats["naver"]["rate_limited"] is True
+    assert "naver_rate_limited" in result.quality_report["warnings"]
+    assert result.status == "no_news"
+    capped = generate_run(_scope(keywords=("a", "b", "c"), brands=()), deps=_deps(FakeNaver({})),
+                          config=EngineConfig(max_naver_queries=2), name="n", now=NOW)
+    assert "naver_query_cap_reached" in capped.quality_report["warnings"]
+    clean = generate_run(_scope(), deps=_deps(FakeNaver({"파드셉": [PADCEV]})), name="파드셉", now=NOW)
+    assert clean.quality_report["warnings"] == []
+
+
+def test_payload_stats_is_json_serialisable():
+    result = generate_run(_scope(), deps=_deps(FakeNaver({"파드셉": [PADCEV]})), name="파드셉", now=NOW)
+    decoded = json.loads(json.dumps(result.payload, ensure_ascii=False))
+    assert decoded["stats"]["naver"]["queries"] == 2
+    assert decoded["stats"]["scope_terms"] == ["약가 인하", "파드셉"]
+    assert decoded["stats"]["recent"] == 1

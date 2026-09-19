@@ -99,19 +99,21 @@ class BriefQualityReport:
         }
 
 
-def evaluate_brief_quality(items: Iterable[BriefItem], *, hold_reasons: Iterable[str] = ()) -> BriefQualityReport:
+def evaluate_brief_quality(items: Iterable[BriefItem], *, hold_reasons: Iterable[str] = (),
+                           warnings: Iterable[str] = ()) -> BriefQualityReport:
+    """hold_reasons 는 차단(held), warnings 는 비차단 경고(예: 엔진의 partial_relevance·naver_rate_limited)로 병합."""
     all_items = list(items)
     scope_items = [i for i in all_items if i.section == "scope"]
     top_items = [i for i in all_items if i.section == "top_ma_news"]
     blocking = [str(r) for r in hold_reasons if str(r)]
-    warnings: list[str] = []
+    warning_list: list[str] = [str(w) for w in warnings if str(w)]
     for item in all_items:
         if item.ma_implication and not item.quote_verified:
             blocking.append("unverified_implication_rendered")
         if not item.summary_bullets:
             blocking.append("empty_summary")
         if item.body_status != "ok":
-            warnings.append("body_not_extracted")
+            warning_list.append("body_not_extracted")
     for item in scope_items:
         if not item.matched_scope_terms:
             blocking.append("scope_item_without_match")
@@ -119,7 +121,7 @@ def evaluate_brief_quality(items: Iterable[BriefItem], *, hold_reasons: Iterable
     if len(implications) != len(set(implications)):
         blocking.append("duplicate_implication")
     blocking_t = tuple(sorted(set(blocking)))
-    warnings_t = tuple(sorted(set(warnings)))
+    warnings_t = tuple(sorted(set(warning_list)))
     if blocking_t:
         status = "held"
     elif not scope_items:

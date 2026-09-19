@@ -121,3 +121,12 @@ def test_published_label_date_only_for_midnight_archive_timestamp():
     md = render_brief_markdown(name="n", run_date=date(2026, 9, 18), scope_terms=["x"],
                                items=[_item(published_at="2026-09-18T00:00:00+09:00")])
     assert "약업신문 9/18\n" in md and "00:00" not in md
+
+
+def test_quality_accepts_external_warnings_without_blocking():
+    snippet = _item(body_status="snippet", ma_implication="", evidence_quote="", quote_verified=False)
+    r = evaluate_brief_quality([snippet], warnings=["partial_relevance", "", "partial_relevance"])
+    assert r.status == "ready" and r.sendable is True
+    assert r.warnings == ("body_not_extracted", "partial_relevance")
+    assert r.to_dict()["warnings"] == ["body_not_extracted", "partial_relevance"]
+    assert r.blocking_reasons == ()
