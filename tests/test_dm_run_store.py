@@ -80,3 +80,17 @@ def test_error_run_occupies_day(tmp_path):
     run = find_regular_run(21, "2026-09-18", db_path=db)
     assert run["run_id"] == run_id
     assert (run["status"], run["delivery_status"], run["delivery_error"]) == ("error", "error", "boom")
+
+
+def test_error_test_run_is_visible_but_does_not_occupy_regular_slot(tmp_path):
+    db = tmp_path / "d.db"
+    now = datetime(2026, 9, 18, 8, 0, tzinfo=KST)
+    test_id = record_error_run(subscription_id=21, run_date="2026-09-18", error="boom", now=now,
+                               is_test=True, db_path=db)
+    assert test_id.endswith("_test_error")
+    assert find_regular_run(21, "2026-09-18", db_path=db) is None
+    runs = list_runs_for_date("2026-09-18", db_path=db, include_tests=True)
+    assert [(r["run_id"], r["is_test"], r["status"], r["delivery_status"]) for r in runs] == [
+        (test_id, 1, "error", "error")]
+    regular_id = record_error_run(subscription_id=21, run_date="2026-09-18", error="boom", now=now, db_path=db)
+    assert find_regular_run(21, "2026-09-18", db_path=db)["run_id"] == regular_id   # 정규 슬롯은 별도

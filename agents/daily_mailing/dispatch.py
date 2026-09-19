@@ -350,9 +350,16 @@ def send_test(subscription_id: int, *, requester_email: str, deps: DispatchDeps)
     if sub is None:
         raise LookupError(subscription_id)
     now = _now(deps)
-    scope = scope_from_dict(subscription_to_scope(sub))
-    result = deps.generate(scope, name=sub["name"], now=now,
-                           top_ma_news=_top_news(deps, now.date().isoformat()), is_test=True)
+    try:
+        scope = scope_from_dict(subscription_to_scope(sub))
+        result = deps.generate(scope, name=sub["name"], now=now,
+                               top_ma_news=_top_news(deps, now.date().isoformat()), is_test=True)
+    except Exception as exc:
+        # 백그라운드 스레드에서 실행되므로 로그만으로는 묻힌다 — 테스트 오류 run 으로 칸반에 남기고 재전파
+        logger.exception("[daily_mailing] 구독 %s 테스트 브리핑 생성 실패", subscription_id)
+        record_error_run(subscription_id=subscription_id, run_date=now.date().isoformat(),
+                         error=f"{type(exc).__name__}: {exc}", now=now, is_test=True, db_path=deps.db_path)
+        raise
     _persist(result, deps, delivery_status="ready_to_send", approval_status="not_required")
     run = send_run(result.run_id, deps=deps, from_statuses=("ready_to_send",),
                    recipients_override=[requester_email])

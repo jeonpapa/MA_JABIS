@@ -245,6 +245,22 @@ def test_stale_sending_recovered_to_held_without_resend(tmp_path):
     assert (19, "held") in problems and all(p[0] != 20 for p in problems)
 
 
+def test_send_test_failure_is_recorded_as_test_error_run(tmp_path):
+    """테스트 메일 생성 실패는 보이지 않게 사라지면 안 된다 — is_test 오류 run 으로 남기되 정규 슬롯은 점유하지 않는다."""
+    db = _db(tmp_path, {"id": 19, "time": "09:00"})
+    rec = Recorder(raise_on_generate=True)
+    with pytest.raises(RuntimeError, match="engine down"):
+        send_test(19, requester_email="me@msd.com", deps=_deps(db, rec))
+    runs = list_runs_for_date("2026-09-18", db_path=db, include_tests=True)
+    assert [(r["is_test"], r["status"], r["delivery_status"]) for r in runs] == [(1, "error", "error")]
+    assert "engine down" in runs[0]["delivery_error"] and runs[0]["run_id"].endswith("_test_error")
+    assert find_regular_run(19, "2026-09-18", db_path=db) is None
+    assert rec.sent == []
+    ok = Recorder()   # 정규 발송은 영향 없음 — 시각 도래 후 정상 생성
+    dispatch_due_subscriptions(_deps(db, ok, now=datetime(2026, 9, 18, 9, 10, tzinfo=KST)))
+    assert find_regular_run(19, "2026-09-18", db_path=db)["delivery_status"] == "pending_approval"
+
+
 def test_health_check(tmp_path):
     db = _db(tmp_path, {"id": 19}, {"id": 20, "time": "23:00"})
     rec = Recorder(results={"19": "held"})

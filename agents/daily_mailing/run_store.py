@@ -91,14 +91,20 @@ def expire_pending_before(run_date: str, *, db_path: str | Path = DEFAULT_DB_PAT
 
 
 def record_error_run(*, subscription_id: int, run_date: str, error: str, now: datetime,
-                     db_path: str | Path = DEFAULT_DB_PATH) -> str:
-    """생성 예외를 그날의 정규 run 자리에 기록 (같은 날 재생성·LLM 재호출 폭주 방지, 설계 §6)."""
-    run_id = f"dm_{subscription_id}_{now:%Y%m%d_%H%M%S}_error"
+                     is_test: bool = False, db_path: str | Path = DEFAULT_DB_PATH) -> str:
+    """생성 예외를 run 으로 기록 (설계 §6).
+
+    정규(is_test=False): 그날의 정규 run 자리를 점유한다 (같은 날 재생성·LLM 재호출 폭주 방지).
+    테스트(is_test=True): 접미사 `_test_error` 로 남겨 실패를 칸반에 보이게 하되 정규 슬롯은 점유하지 않는다.
+    """
+    suffix = "_test_error" if is_test else "_error"
+    run_id = f"dm_{subscription_id}_{now:%Y%m%d_%H%M%S}{suffix}"
     created = datetime.now(timezone.utc)
     expires = (created + timedelta(days=RETENTION_DAYS)).isoformat()
     _write(db_path,
            "INSERT OR IGNORE INTO daily_mailing_run (run_id, generated_at, keywords_json, subscription_id, "
            "run_date, is_test, status, delivery_status, approval_status, delivery_error, expires_at, created_at) "
-           "VALUES (?, ?, '[]', ?, ?, 0, 'error', 'error', 'not_required', ?, ?, ?)",
-           (run_id, now.isoformat(), subscription_id, run_date, error[:500], expires, created.isoformat()))
+           "VALUES (?, ?, '[]', ?, ?, ?, 'error', 'error', 'not_required', ?, ?, ?)",
+           (run_id, now.isoformat(), subscription_id, run_date, 1 if is_test else 0, error[:500],
+            expires, created.isoformat()))
     return run_id
