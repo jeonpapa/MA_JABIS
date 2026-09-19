@@ -34,6 +34,10 @@ BODY_SELECTORS = (
     "#newsEndContents",
     "article",
 )
+GENERIC_ARTICLE_SELECTOR = "article"
+# id/class 특정 선택자는 짧아도 권위 있다(too_short). 범용 <article> 은 사이드레일 '추천 기사' 카드에도 쓰이므로
+# 충분히 길 때만 본문으로 인정한다 (2026-09-19 리뷰: 짧은 <article> 이 진짜 본문을 가린 회귀).
+SPECIFIC_BODY_SELECTORS = tuple(s for s in BODY_SELECTORS if s != GENERIC_ARTICLE_SELECTOR)
 STRIP_TAGS = ("script", "style", "noscript", "iframe", "header", "footer", "nav",
               "aside", "form", "figure", "figcaption", "button")
 _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -56,21 +60,37 @@ def extract_body_text(html: str) -> str:
     soup = BeautifulSoup(html or "", "lxml")
     for tag in soup(list(STRIP_TAGS)):
         tag.decompose()
-    # 1) 알려진 본문 선택자: 충분히 긴 첫 매칭을 쓰고, 전부 짧으면 가장 긴 매칭 텍스트를 쓴다(too_short 로 분류).
-    #    선택자가 (비어 있지 않게) 하나라도 맞으면 <p> 밀도 폴백을 쓰지 않는다 — 티저·관련기사 블록을 본문으로 오인 방지.
-    best_selected = ""
-    for selector in BODY_SELECTORS:
+    # 1) id/class 특정 선택자(권위): 충분히 긴 첫 매칭을 쓰고, 전부 짧으면 가장 긴 매칭 텍스트(too_short 로 분류).
+    #    이 경우 <p> 밀도 폴백은 쓰지 않는다 — 티저·관련기사 블록을 본문으로 오인 방지.
+    best_specific = ""
+    for selector in SPECIFIC_BODY_SELECTORS:
         node = soup.select_one(selector)
         if node is None:
             continue
         text = _normalize_ws(node.get_text(" "))
         if len(text) >= MIN_BODY_CHARS:
             return text[:MAX_BODY_CHARS]
-        if len(text) > len(best_selected):
-            best_selected = text
-    if best_selected:
-        return best_selected[:MAX_BODY_CHARS]
-    # 2) 폴백(선택자 매칭 없음): 직계 <p> 텍스트가 가장 긴 부모 블록
+        if len(text) > len(best_specific):
+            best_specific = text
+    if best_specific:
+        return best_specific[:MAX_BODY_CHARS]
+    # 2) 범용 <article>: 모든 매칭 중 가장 긴 텍스트. 충분히 길 때만 본문으로 인정한다.
+    article_text = ""
+    for node in soup.select(GENERIC_ARTICLE_SELECTOR):
+        text = _normalize_ws(node.get_text(" "))
+        if len(text) > len(article_text):
+            article_text = text
+    if len(article_text) >= MIN_BODY_CHARS:
+        return article_text[:MAX_BODY_CHARS]
+    # 3) 폴백: 직계 <p> 텍스트가 가장 긴 부모 블록 (알 수 없는 CMS)
+    densest = _densest_paragraph_block(soup)
+    if densest:
+        return densest[:MAX_BODY_CHARS]
+    # 4) 밀도 폴백도 비면 짧은 <article> 텍스트 (too_short)
+    return article_text[:MAX_BODY_CHARS]
+
+
+def _densest_paragraph_block(soup: BeautifulSoup) -> str:
     best = ""
     seen: set[int] = set()
     for p in soup.find_all("p"):
@@ -81,7 +101,7 @@ def extract_body_text(html: str) -> str:
         text = _normalize_ws(" ".join(c.get_text(" ") for c in parent.find_all("p", recursive=False)))
         if len(text) > len(best):
             best = text
-    return best[:MAX_BODY_CHARS]
+    return best
 
 
 def check_url_allowed(url: str) -> str:

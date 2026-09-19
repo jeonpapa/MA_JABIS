@@ -216,6 +216,32 @@ def test_matched_selector_short_text_beats_paragraph_density():
     assert body.status == "too_short" and body.text == SHORT_ARTICLE
 
 
-def test_among_matched_selectors_prefer_first_with_enough_text():
-    html = f"<html><body><div id='dic_area'>짧은 요약</div><article>{LONG}</article></body></html>"
+def test_among_specific_selectors_prefer_first_with_enough_text():
+    html = f"<html><body><div id='dic_area'>짧은 요약</div><div id='articleBody'>{LONG}</div></body></html>"
     assert extract_body_text(html).startswith("파드셉과 키트루다")
+
+
+# ---- 범용 <article> 은 충분히 길 때만 권위 (item A) ----
+def test_side_rail_article_does_not_beat_real_paragraph_body():
+    body_paras = "".join(f"<p>{LONG[:90]} 문단 {i}.</p>" for i in range(6))
+    html = ("<html><body><div class='side-rail'><article>추천 기사: 키트루다 급여 확대 카드</article></div>"
+            f"<div class='unknown-cms-body'>{body_paras}</div></body></html>")
+    text = extract_body_text(html)
+    assert text.startswith("파드셉과 키트루다")
+    assert "추천 기사" not in text
+    assert len(text) >= MIN_BODY_CHARS
+    assert fetch_article_body("https://www.yakup.com/1", "", fetch=lambda u, t: html).status == "ok"
+
+
+def test_longest_article_element_wins_when_long_enough():
+    html = f"<html><body><article>추천 카드</article><article>{LONG}</article></body></html>"
+    assert extract_body_text(html).startswith("파드셉과 키트루다")
+
+
+def test_short_article_returned_only_when_density_yields_nothing():
+    assert extract_body_text("<html><body><article>짧은 본문</article><span>x</span></body></html>") == "짧은 본문"
+
+
+def test_specific_selector_short_is_authoritative_over_generic_article():
+    html = f"<html><body><div id='dic_area'>{SHORT_ARTICLE}</div><article>{LONG}</article></body></html>"
+    assert extract_body_text(html) == SHORT_ARTICLE
