@@ -281,6 +281,11 @@ def generate_top_ma_news(*, deps: EngineDeps, config: EngineConfig | None = None
         written = _write(j, terms, deps=deps, config=config, section="top_ma_news", stats=stats)
         if written is not None:
             out.append(written)
+    stats["judged"] = len(judged)
+    stats["relevant"] = sum(1 for j in judged if j.verdict.relevant)
+    stats["written"] = len(out)
+    # 반환값은 BriefItem 목록뿐이라 빈 섹션의 원인(수집 0 / 판정 0 / LLM 오류)을 로그로만 진단할 수 있다
+    logger.info("[daily_mailing] 주요 MA 뉴스 stats: %s", stats)
     return out
 
 

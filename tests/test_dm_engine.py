@@ -313,3 +313,13 @@ def test_partial_writer_failure_plus_dropped_item_is_not_held():
     assert result.items == []
     assert result.status == "no_news"
     assert "llm_unavailable" not in result.quality_report["blocking_reasons"]
+
+
+def test_generate_top_ma_news_logs_stats_for_diagnosis(caplog):
+    import logging
+
+    with caplog.at_level(logging.INFO, logger="agents.daily_mailing.engine"):
+        items = generate_top_ma_news(deps=_deps(FakeNaver({})), now=NOW)
+    assert items == []
+    assert "주요 MA 뉴스 stats" in caplog.text
+    assert "'discovered': 0" in caplog.text
