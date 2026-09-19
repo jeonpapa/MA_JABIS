@@ -200,3 +200,22 @@ def test_unsafe_first_url_then_safe_second_succeeds(monkeypatch):
     body = fetch_article_body("http://127.0.0.1/x", "https://n.news.naver.com/a")
     assert body.status == "ok" and body.source_url == "https://n.news.naver.com/a"
     assert [c[0] for c in calls] == ["https://n.news.naver.com/a"]
+
+
+# ---- 선택자 우선 (item 7): 선택자가 맞으면 짧아도 그 본문을 쓴다 ----
+SHORT_ARTICLE = ("파드셉 병용요법의 요로상피암 1차 급여 확대 논의가 시작됐다. 심평원은 다음 달 암질심 안건 상정을 "
+                 "검토 중이며 관계자는 신중한 입장을 밝혔다.")
+
+
+def test_matched_selector_short_text_beats_paragraph_density():
+    assert len(SHORT_ARTICLE) < MIN_BODY_CHARS
+    teaser = "".join(f"<p>{LONG[:80]} {i}</p>" for i in range(5))
+    html = f"<html><body><div id='dic_area'>{SHORT_ARTICLE}</div><div class='teaser'>{teaser}</div></body></html>"
+    assert extract_body_text(html) == SHORT_ARTICLE
+    body = fetch_article_body("https://www.yakup.com/1", "", fetch=lambda u, t: html)
+    assert body.status == "too_short" and body.text == SHORT_ARTICLE
+
+
+def test_among_matched_selectors_prefer_first_with_enough_text():
+    html = f"<html><body><div id='dic_area'>짧은 요약</div><article>{LONG}</article></body></html>"
+    assert extract_body_text(html).startswith("파드셉과 키트루다")

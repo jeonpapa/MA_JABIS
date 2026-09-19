@@ -56,13 +56,21 @@ def extract_body_text(html: str) -> str:
     soup = BeautifulSoup(html or "", "lxml")
     for tag in soup(list(STRIP_TAGS)):
         tag.decompose()
+    # 1) 알려진 본문 선택자: 충분히 긴 첫 매칭을 쓰고, 전부 짧으면 가장 긴 매칭 텍스트를 쓴다(too_short 로 분류).
+    #    선택자가 (비어 있지 않게) 하나라도 맞으면 <p> 밀도 폴백을 쓰지 않는다 — 티저·관련기사 블록을 본문으로 오인 방지.
+    best_selected = ""
     for selector in BODY_SELECTORS:
         node = soup.select_one(selector)
-        if node is not None:
-            text = _normalize_ws(node.get_text(" "))
-            if len(text) >= MIN_BODY_CHARS:
-                return text[:MAX_BODY_CHARS]
-    # 폴백: 직계 <p> 텍스트가 가장 긴 부모 블록
+        if node is None:
+            continue
+        text = _normalize_ws(node.get_text(" "))
+        if len(text) >= MIN_BODY_CHARS:
+            return text[:MAX_BODY_CHARS]
+        if len(text) > len(best_selected):
+            best_selected = text
+    if best_selected:
+        return best_selected[:MAX_BODY_CHARS]
+    # 2) 폴백(선택자 매칭 없음): 직계 <p> 텍스트가 가장 긴 부모 블록
     best = ""
     seen: set[int] = set()
     for p in soup.find_all("p"):
@@ -73,14 +81,7 @@ def extract_body_text(html: str) -> str:
         text = _normalize_ws(" ".join(c.get_text(" ") for c in parent.find_all("p", recursive=False)))
         if len(text) > len(best):
             best = text
-    if best:
-        return best[:MAX_BODY_CHARS]
-    # 마지막 폴백: 선택자에 걸렸지만 짧은 본문
-    for selector in BODY_SELECTORS:
-        node = soup.select_one(selector)
-        if node is not None:
-            return _normalize_ws(node.get_text(" "))[:MAX_BODY_CHARS]
-    return ""
+    return best[:MAX_BODY_CHARS]
 
 
 def check_url_allowed(url: str) -> str:
