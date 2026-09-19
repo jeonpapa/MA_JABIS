@@ -11,8 +11,25 @@ from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from html import escape
 from typing import Iterable
+from urllib.parse import urlparse
 
 WEEKDAYS_KR = "월화수목금토일"
+LINK_SCHEMES = ("http", "https")
+
+
+def _safe_link(*urls: str) -> str:
+    """http(s) URL 만 링크로 렌더한다 (javascript:/data: 등 차단). 첫 허용 URL 을 돌려주고 없으면 ''."""
+    for url in urls:
+        value = (url or "").strip()
+        if not value:
+            continue
+        try:
+            scheme = urlparse(value).scheme.lower()
+        except ValueError:
+            continue
+        if scheme in LINK_SCHEMES:
+            return value
+    return ""
 
 
 @dataclass(frozen=True)
@@ -135,13 +152,15 @@ def _split(items: Iterable[BriefItem]) -> tuple[list[BriefItem], list[BriefItem]
 
 
 def _item_html(index: int, item: BriefItem) -> str:
-    url = escape(item.publisher_url or item.naver_url, quote=True)
+    link = _safe_link(item.publisher_url, item.naver_url)
+    url = escape(link, quote=True)
+    title = escape(item.title)
+    title_html = f'<a href="{url}" style="color:#0F172A;text-decoration:none;">{title}</a>' if link else title
     meta = " · ".join(x for x in (escape(item.source_name), escape(_published_label(item.published_at))) if x)
     bullets = "".join(f'<li style="margin:0 0 4px;">{escape(b)}</li>' for b in item.summary_bullets)
     parts = [
         '<div style="margin:0 0 20px;padding:0 0 16px;border-bottom:1px solid #E5E7EB;">',
-        f'<div style="font-size:16px;font-weight:700;line-height:1.45;margin:0 0 4px;">{index}. '
-        f'<a href="{url}" style="color:#0F172A;text-decoration:none;">{escape(item.title)}</a></div>',
+        f'<div style="font-size:16px;font-weight:700;line-height:1.45;margin:0 0 4px;">{index}. {title_html}</div>',
         f'<div style="font-size:12px;color:#64748B;margin:0 0 8px;">{meta}</div>',
         f'<ul style="margin:0 0 8px 18px;padding:0;font-size:14px;line-height:1.6;color:#1F2937;">{bullets}</ul>',
     ]
@@ -154,7 +173,8 @@ def _item_html(index: int, item: BriefItem) -> str:
         parts.append(f'<div style="font-size:12px;color:#6B7280;margin:0 0 6px;">근거: “{escape(item.evidence_quote)}”</div>')
     if item.body_status != "ok":
         parts.append('<div style="font-size:12px;color:#B45309;margin:0 0 6px;">본문 미확보 — 검색 요약 기반</div>')
-    parts.append(f'<div style="font-size:12px;"><a href="{url}" style="color:#2563EB;">원문 보기</a></div>')
+    if link:
+        parts.append(f'<div style="font-size:12px;"><a href="{url}" style="color:#2563EB;">원문 보기</a></div>')
     parts.append("</div>")
     return "".join(parts)
 
@@ -191,7 +211,9 @@ def render_brief_html(*, name: str, run_date: date, scope_terms: Iterable[str],
 
 
 def _item_md(index: int, item: BriefItem) -> list[str]:
-    head = f"{index}. [{item.title}]({item.publisher_url or item.naver_url}) — {item.source_name} {_published_label(item.published_at)}"
+    link = _safe_link(item.publisher_url, item.naver_url)
+    title = f"[{item.title}]({link})" if link else item.title
+    head = f"{index}. {title} — {item.source_name} {_published_label(item.published_at)}"
     lines = [head.rstrip()]
     lines += [f"   - {b}" for b in item.summary_bullets]
     if item.ma_implication and item.quote_verified:

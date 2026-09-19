@@ -92,3 +92,20 @@ def test_render_markdown():
     md = render_brief_markdown(name="파드셉", run_date=date(2026, 9, 18), scope_terms=["파드셉"], items=[_item()])
     assert md.startswith("# 파드셉 · 9/18(금)")
     assert "▶ MA 시사점: 요로상피암 1차 급여 경쟁 구도 변화" in md
+
+
+def test_render_omits_links_for_non_http_urls():
+    bad = _item(publisher_url="javascript:alert(1)", naver_url="")
+    html = render_brief_html(name="n", run_date=date(2026, 9, 18), scope_terms=["x"], items=[bad])
+    assert "javascript:" not in html
+    assert "원문 보기" not in html
+    assert "파드셉 급여 확대" in html
+    md = render_brief_markdown(name="n", run_date=date(2026, 9, 18), scope_terms=["x"], items=[bad])
+    assert "javascript:" not in md
+    assert "파드셉 급여 확대" in md
+    # publisher 가 비허용이어도 naver_url 이 http(s) 면 그쪽으로 링크
+    fallback = _item(publisher_url="javascript:alert(1)", naver_url="https://n.news.naver.com/1")
+    html2 = render_brief_html(name="n", run_date=date(2026, 9, 18), scope_terms=["x"], items=[fallback])
+    assert 'href="https://n.news.naver.com/1"' in html2 and "javascript:" not in html2 and "원문 보기" in html2
+    ok = render_brief_html(name="n", run_date=date(2026, 9, 18), scope_terms=["x"], items=[_item()])
+    assert 'href="https://www.yakup.com/1"' in ok and "원문 보기" in ok
