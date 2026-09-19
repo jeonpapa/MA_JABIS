@@ -57,6 +57,12 @@ def list_failed_sends(*, db_path: str | Path = DEFAULT_DB_PATH, max_attempts: in
                           "AND send_attempts < ? ORDER BY generated_at", (max_attempts,))
 
 
+def list_sending_runs(*, db_path: str | Path = DEFAULT_DB_PATH) -> list[dict]:
+    """발송 선점('sending') 상태인 run — 프로세스 중단 복구 판정용."""
+    return _rows(db_path, "SELECT * FROM daily_mailing_run WHERE delivery_status='sending' "
+                          "ORDER BY claimed_at, generated_at")
+
+
 def update_run(run_id: str, *, db_path: str | Path = DEFAULT_DB_PATH, **fields) -> None:
     unknown = set(fields) - UPDATABLE_FIELDS
     if unknown:
@@ -67,13 +73,16 @@ def update_run(run_id: str, *, db_path: str | Path = DEFAULT_DB_PATH, **fields) 
     _write(db_path, f"UPDATE daily_mailing_run SET {cols} WHERE run_id=?", (*fields.values(), run_id))
 
 
-def claim_for_sending(run_id: str, *, from_statuses: tuple[str, ...],
+def claim_for_sending(run_id: str, *, from_statuses: tuple[str, ...], claimed_at: str,
                       db_path: str | Path = DEFAULT_DB_PATH) -> bool:
-    """조건부 UPDATE 로 발송 선점 — web(승인)·scheduler(재시도)의 이중 발송 방지."""
+    """조건부 UPDATE 로 발송 선점 — web(승인)·scheduler(재시도)의 이중 발송 방지.
+
+    claimed_at 은 호출부가 넘기는 tz-aware ISO 문자열(KST) — 선점에 성공한 경우에만 기록된다.
+    """
     placeholders = ",".join("?" for _ in from_statuses)
-    return _write(db_path, "UPDATE daily_mailing_run SET delivery_status='sending' "
+    return _write(db_path, "UPDATE daily_mailing_run SET delivery_status='sending', claimed_at=? "
                            f"WHERE run_id=? AND delivery_status IN ({placeholders})",
-                  (run_id, *from_statuses)) == 1
+                  (claimed_at, run_id, *from_statuses)) == 1
 
 
 def expire_pending_before(run_date: str, *, db_path: str | Path = DEFAULT_DB_PATH) -> int:

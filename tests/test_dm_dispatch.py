@@ -16,7 +16,7 @@ from agents.daily_mailing.dispatch import (
     reject_run,
     send_test,
 )
-from agents.daily_mailing.run_store import find_regular_run, get_run, list_runs_for_date
+from agents.daily_mailing.run_store import claim_for_sending, find_regular_run, get_run, list_runs_for_date
 
 KST = timezone(timedelta(hours=9))
 FRI_0810 = datetime(2026, 9, 18, 8, 10, tzinfo=KST)
@@ -183,6 +183,28 @@ def test_send_test_goes_to_requester_only_and_does_not_block_regular(tmp_path):
     with sqlite3.connect(db) as c:
         assert c.execute("SELECT last_sent_at FROM mail_subscription WHERE id=19").fetchone()[0] is None
     assert [r["is_test"] for r in list_runs_for_date("2026-09-18", db_path=db, include_tests=True)] == [1]
+
+
+def test_stale_sending_recovered_to_held_without_resend(tmp_path):
+    db = _db(tmp_path, {"id": 19}, {"id": 20})
+    rec = Recorder()
+    deps = _deps(db, rec)
+    dispatch_due_subscriptions(deps)
+    r19 = find_regular_run(19, "2026-09-18", db_path=db)["run_id"]
+    r20 = find_regular_run(20, "2026-09-18", db_path=db)["run_id"]
+    # 19: 20분 전에 선점된 채 프로세스 중단 (stale) / 20: 5분 전 선점 (fresh, 진행 중)
+    assert claim_for_sending(r19, from_statuses=("pending_approval",),
+                             claimed_at=(FRI_0810 - timedelta(minutes=20)).isoformat(), db_path=db)
+    assert claim_for_sending(r20, from_statuses=("pending_approval",),
+                             claimed_at=(FRI_0810 - timedelta(minutes=5)).isoformat(), db_path=db)
+    summary = dispatch_due_subscriptions(deps)
+    assert summary["recovered"] == 1
+    stale = get_run(r19, db_path=db)
+    assert stale["delivery_status"] == "held" and "프로세스 중단" in stale["delivery_error"]
+    assert get_run(r20, db_path=db)["delivery_status"] == "sending"
+    assert rec.sent == []   # 이미 나갔을 수 있는 메일 — 자동 재발송 금지
+    problems = {(p["subscription_id"], p["problem"]) for p in health_check(deps)["problems"]}
+    assert (19, "held") in problems and all(p[0] != 20 for p in problems)
 
 
 def test_health_check(tmp_path):

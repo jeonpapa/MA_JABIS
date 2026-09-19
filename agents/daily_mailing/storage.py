@@ -216,6 +216,8 @@ def ensure_daily_mailing_tables(db_path: str | Path = DEFAULT_DB_PATH) -> None:
             "delivery_error": "ALTER TABLE daily_mailing_run ADD COLUMN delivery_error TEXT",
             "approved_by": "ALTER TABLE daily_mailing_run ADD COLUMN approved_by TEXT",
             "approved_at": "ALTER TABLE daily_mailing_run ADD COLUMN approved_at TEXT",
+            # 발송 선점 시각 — 프로세스 중단으로 'sending' 에 멈춘 run 복구 판정용
+            "claimed_at": "ALTER TABLE daily_mailing_run ADD COLUMN claimed_at TEXT",
         }.items():
             if col not in existing:
                 conn.execute(ddl)

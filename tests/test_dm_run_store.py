@@ -11,6 +11,7 @@ from agents.daily_mailing.run_store import (
     get_run,
     list_failed_sends,
     list_runs_for_date,
+    list_sending_runs,
     record_error_run,
     update_run,
 )
@@ -46,12 +47,18 @@ def test_update_allows_only_known_fields(tmp_path):
         update_run("a", db_path=db, email_html="x")
 
 
-def test_claim_is_exclusive(tmp_path):
+def test_claim_is_exclusive_and_records_claimed_at(tmp_path):
     db = tmp_path / "d.db"
     _persist(db, "a")
-    assert claim_for_sending("a", from_statuses=("pending_approval",), db_path=db) is True
-    assert claim_for_sending("a", from_statuses=("pending_approval",), db_path=db) is False
-    assert get_run("a", db_path=db)["delivery_status"] == "sending"
+    _persist(db, "b", sub=20)
+    assert claim_for_sending("a", from_statuses=("pending_approval",),
+                             claimed_at="2026-09-18T08:10:00+09:00", db_path=db) is True
+    assert claim_for_sending("a", from_statuses=("pending_approval",),
+                             claimed_at="2026-09-18T08:20:00+09:00", db_path=db) is False
+    run = get_run("a", db_path=db)
+    assert run["delivery_status"] == "sending"
+    assert run["claimed_at"] == "2026-09-18T08:10:00+09:00"   # 두 번째(실패한) 선점은 덮어쓰지 않음
+    assert [r["run_id"] for r in list_sending_runs(db_path=db)] == ["a"]
 
 
 def test_expire_and_failed_list(tmp_path):

@@ -40,6 +40,7 @@ def test_persist_stores_delivery_fields(tmp_path):
     assert row["email_html"] == "<p>x</p>"
     assert row["send_attempts"] == 0
     assert row["delivery_status"] == "pending_approval"
+    assert row["claimed_at"] is None   # 발송 선점 시각 컬럼 (선점 전 NULL)
 
 
 def test_duplicate_regular_run_rejected_but_tests_and_reimport_allowed(tmp_path):

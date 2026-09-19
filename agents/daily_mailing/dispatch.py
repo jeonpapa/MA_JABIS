@@ -11,7 +11,7 @@ import json
 import logging
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
@@ -23,6 +23,7 @@ from .run_store import (
     get_run,
     list_failed_sends,
     list_runs_for_date,
+    list_sending_runs,
     record_error_run,
     update_run,
 )
@@ -33,6 +34,8 @@ from .subscription_bridge import ensure_delivery_columns, subscription_to_scope
 logger = logging.getLogger(__name__)
 
 MAX_SEND_ATTEMPTS = 3
+STALE_SENDING_MINUTES = 15
+STALE_SENDING_ERROR = "발송 중 프로세스 중단 — 실제 발송 여부 확인 필요"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROBLEM_STATUSES = ("held", "send_failed", "error", "expired")
 
@@ -147,6 +150,36 @@ def _now(deps: DispatchDeps) -> datetime:
     return deps.now().astimezone(KST)
 
 
+def _parse_ts(value) -> datetime | None:
+    """DB 의 ISO 타임스탬프 → aware datetime (naive 는 KST 로 간주). 파싱 실패/NULL 은 None."""
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=KST)
+
+
+def recover_stale_sending(deps: DispatchDeps, *, older_than_minutes: int = STALE_SENDING_MINUTES) -> int:
+    """'sending' 으로 선점된 뒤 프로세스가 죽어 멈춘 run 을 held 로 닫는다 (설계 §8).
+
+    메일이 이미 나갔을 수 있으므로 **자동 재발송하지 않는다** — held 는 헬스체크 문제 상태라
+    관리자가 실제 발송 여부를 확인한다. claimed_at 이 없는(컬럼 도입 전) sending 행도 stale 로 본다.
+    """
+    cutoff = _now(deps) - timedelta(minutes=older_than_minutes)
+    recovered = 0
+    for run in list_sending_runs(db_path=deps.db_path):
+        claimed = _parse_ts(run.get("claimed_at"))
+        if claimed is not None and claimed > cutoff:
+            continue  # 진행 중 (fresh)
+        update_run(run["run_id"], db_path=deps.db_path, delivery_status="held", delivery_error=STALE_SENDING_ERROR)
+        logger.error("[daily_mailing] run %s 발송 선점 %s 이후 중단 — held 로 전환 (실제 발송 여부 확인 필요)",
+                     run["run_id"], run.get("claimed_at"))
+        recovered += 1
+    return recovered
+
+
 def _top_news(deps: DispatchDeps, run_date: str) -> list:
     if deps.load_top_ma_news is None:
         return []
@@ -178,7 +211,8 @@ def _mark_last_sent(subscription_id: int, sent_at: str, db_path: str | Path) -> 
 def send_run(run_id: str, *, deps: DispatchDeps, from_statuses: tuple[str, ...],
              recipients_override: list[str] | None = None) -> dict | None:
     run = get_run(run_id, db_path=deps.db_path)
-    if run is None or not claim_for_sending(run_id, from_statuses=from_statuses, db_path=deps.db_path):
+    if run is None or not claim_for_sending(run_id, from_statuses=from_statuses,
+                                            claimed_at=_now(deps).isoformat(), db_path=deps.db_path):
         return run
     recipients = recipients_override or _json_list(run.get("recipients_json"))
     attempts = int(run.get("send_attempts") or 0) + 1
@@ -219,11 +253,12 @@ def retry_failed_sends(deps: DispatchDeps) -> int:
 
 
 def dispatch_due_subscriptions(deps: DispatchDeps) -> dict:
-    """10분 주기: 만료 처리 → 발송 시각 도래 구독 생성·분기 → 실패 발송 재시도."""
+    """10분 주기: 중단된 sending 복구 → 만료 처리 → 발송 시각 도래 구독 생성·분기 → 실패 발송 재시도."""
     now = _now(deps)
     run_date = now.date().isoformat()
     ensure_daily_mailing_tables(deps.db_path)
     summary: dict[str, Any] = {"run_date": run_date,
+                               "recovered": recover_stale_sending(deps),
                                "expired": expire_pending_before(run_date, db_path=deps.db_path),
                                "generated": [], "skipped": 0, "errors": []}
     top: list | None = None
