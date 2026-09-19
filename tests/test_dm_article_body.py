@@ -273,3 +273,22 @@ def test_check_url_allowed_rejects_shorthand_and_trailing_dot(url):
 ])
 def test_check_url_allowed_accepts_public_hosts(url):
     assert check_url_allowed(url) == ""
+
+
+# ---- 리다이렉트 최종 URL 검사 (item C) ----
+def test_default_fetch_rejects_unsafe_redirect_target_before_reading_body(monkeypatch):
+    resp = FakeResponse(chunks=(HTML_OK.encode(),))
+    resp.url = "http://127.0.0.1/x"          # requests 가 따라간 최종 URL
+    _install_get(monkeypatch, resp)
+    with pytest.raises(ValueError, match="redirect"):
+        _default_fetch("https://www.yakup.com/1", 5.0)
+    assert resp.chunks_served == 0 and resp.closed is True
+    body = fetch_article_body("https://www.yakup.com/1", "")
+    assert body.status == "failed" and "redirect" in body.error
+
+
+def test_default_fetch_accepts_safe_redirect_target(monkeypatch):
+    resp = FakeResponse(chunks=(HTML_OK.encode(),))
+    resp.url = "https://www.yakup.com/1?redirected=1"
+    _install_get(monkeypatch, resp)
+    assert "요로상피암" in _default_fetch("https://www.yakup.com/1", 5.0)

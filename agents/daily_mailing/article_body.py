@@ -175,6 +175,10 @@ def _default_fetch(url: str, timeout: float) -> str:
     resp = _http_get(url, headers={"User-Agent": _UA}, timeout=timeout, stream=True)
     try:
         resp.raise_for_status()
+        final_url = str(getattr(resp, "url", "") or url)   # 리다이렉트를 따라간 최종 URL 도 같은 기준으로 검사
+        reason = check_url_allowed(final_url)
+        if reason:
+            raise ValueError(f"unsafe redirect target: {reason}")
         length = str(resp.headers.get("Content-Length") or "").strip()
         if length.isdigit() and int(length) > MAX_BODY_BYTES:
             raise ValueError(f"content too large: {length} bytes > {MAX_BODY_BYTES}")
