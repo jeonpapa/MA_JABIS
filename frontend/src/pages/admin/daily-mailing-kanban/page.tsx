@@ -65,6 +65,51 @@ function decisionTone(decision: string | null | undefined): string {
   return 'bg-[#1E2530] text-[#8B9BB4]';
 }
 
+// 기사 카드 quality_flags 코드 → 짧은 한글 라벨. 모르는 코드는 원문(snake_case) 그대로 둔다.
+// 출처: agents/daily_mailing/engine.py IMPLICATION_REJECTIONS + duplicate_story(클러스터 흡수) + writer.py 레지스트리 플래그
+const QUALITY_FLAG_LABELS: Record<string, string> = {
+  duplicate_story: '동일 보도',
+  quote_unverified: '인용 미검증',
+  implication_unsupported: '인용 미지원',
+  implication_style_rejected: '문체 반려',
+  implication_not_msd_specific: 'MSD 연결 없음',
+  implication_unverified_number: '수치 미검증',
+  implication_unknown_asset: '자산 불명',
+  official_cross_check_required: '공식 교차확인 필요',
+  unregistered_source_requires_review: '미등록 매체 검토',
+};
+
+function qualityFlagLabel(flag: string): string {
+  return QUALITY_FLAG_LABELS[flag] ?? flag;
+}
+
+// 시사점 제외 계열(인용·수치·자산·MSD 연결)은 기사가 아니라 시사점만 빠진 것 → 앰버, 동일 보도 → 회색, 그 외 → 적색(기존)
+function qualityFlagTone(flag: string): string {
+  if (flag === 'duplicate_story') return 'bg-[#1E2530] text-[#8B9BB4]';
+  if (flag === 'quote_unverified' || flag.startsWith('implication_')) return 'bg-[#F59E0B]/10 text-[#F59E0B]';
+  return 'bg-red-500/10 text-red-400';
+}
+
+// verification_method 는 '+' 로 이은 단계 토큰 (예: llm_relevance+quote_check+support_check). 모르는 토큰은 원문.
+const VERIFICATION_STEP_LABELS: Record<string, string> = {
+  llm_relevance: 'LLM 관련성',
+  quote_check: '인용 확인',
+  support_check: '뒷받침 확인',
+  quote_rejected: '인용 반려',
+  support_rejected: '뒷받침 반려',
+  style_rejected: '문체 반려',
+  msd_link_rejected: 'MSD 연결 반려',
+  number_rejected: '수치 반려',
+  asset_rejected: '자산 반려',
+  registry_only: '레지스트리만',
+};
+
+function verificationSteps(method: string | null | undefined): { code: string; label: string; rejected: boolean }[] {
+  if (typeof method !== 'string') return [];
+  return method.split('+').map(s => s.trim()).filter(Boolean)
+    .map(code => ({ code, label: VERIFICATION_STEP_LABELS[code] ?? code, rejected: code.endsWith('_rejected') }));
+}
+
 function boolBadge(label: string, value: boolean | null | undefined): JSX.Element {
   const on = value === true;
   return (
@@ -92,6 +137,7 @@ function ArticleCard({ article }: { article: KanbanArticle }) {
   const trackerTags = asStringArray(article.tracker_tags);
   const findings = normalizeReviewerFindings(article.reviewer_findings);
   const passCount = findings.filter(f => (f?.decision || '').toLowerCase() === 'pass').length;
+  const verifySteps = verificationSteps(article.verification_method);
   return (
     <div className="bg-[#0D1117] border border-[#1E2530] rounded-xl p-3 space-y-2">
       <p className="text-white text-xs font-semibold leading-snug line-clamp-3">{article.title}</p>
@@ -128,8 +174,8 @@ function ArticleCard({ article }: { article: KanbanArticle }) {
       {qualityFlags.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
           {qualityFlags.map(f => (
-            <span key={f} className="text-[10px] px-2 py-0.5 rounded bg-red-500/10 text-red-400">
-              <i className="ri-flag-2-line mr-0.5"></i>{f}
+            <span key={f} title={f} className={`text-[10px] px-2 py-0.5 rounded ${qualityFlagTone(f)}`}>
+              <i className="ri-flag-2-line mr-0.5"></i>{qualityFlagLabel(f)}
             </span>
           ))}
         </div>
@@ -144,9 +190,15 @@ function ArticleCard({ article }: { article: KanbanArticle }) {
           <i className="ri-error-warning-line mr-1"></i>{article.verification_caveat}
         </p>
       )}
-      {article.verification_method && (
-        <p className="text-[10px] text-[#4A5568] leading-snug">
-          <i className="ri-fingerprint-line mr-1"></i>검증 방식: {article.verification_method}
+      {verifySteps.length > 0 && (
+        <p className="text-[10px] text-[#4A5568] leading-snug" title={article.verification_method ?? undefined}>
+          <i className="ri-fingerprint-line mr-1"></i>검증 방식:{' '}
+          {verifySteps.map((s, si) => (
+            <span key={`${s.code}_${si}`}>
+              {si > 0 && <span className="mx-0.5">→</span>}
+              <span className={s.rejected ? 'text-[#F59E0B]' : ''}>{s.label}</span>
+            </span>
+          ))}
         </p>
       )}
       {article.next_action && (
