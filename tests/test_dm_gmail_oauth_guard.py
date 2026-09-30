@@ -45,3 +45,14 @@ def test_guard_allows_ignored_path_or_path_outside_repo(monkeypatch, tmp_path):
     setup.refuse_if_committable(setup.REPO_ROOT / "data" / "secrets" / "google_token.json")  # no raise
     monkeypatch.setattr(setup, "_is_git_ignored", lambda p: False)
     setup.refuse_if_committable(tmp_path / "outside.json")  # 레포 밖 — 가드 대상 아님
+
+
+def test_fly_secret_command_never_prints_token_contents(tmp_path):
+    """터미널·셸 히스토리에 토큰 base64 전문이 남지 않도록 파일을 읽는 명령 형태만 출력한다."""
+    setup = _load_script()
+    out = tmp_path / "google_token.json"
+    out.write_text('{"token": "ya29.SECRET", "scopes": ["https://www.googleapis.com/auth/gmail.send"]}')
+    cmd = setup.fly_secret_command(out)
+    assert cmd == f'flyctl secrets set GOOGLE_TOKEN_JSON="$(base64 < {out})" -a ma-ai-dossier'
+    assert "SECRET" not in cmd and "ya29" not in cmd
+    assert "b64encode" not in SCRIPT.read_text(encoding="utf-8")   # 스크립트 어디서도 토큰을 인코딩해 찍지 않는다
