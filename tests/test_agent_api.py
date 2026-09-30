@@ -354,3 +354,20 @@ def test_admin_ledger_shows_newest_task_when_over_page_limit(monkeypatch, tmp_pa
     # 디스패처용 목록은 우선순위 순 유지 (priority 1 인 old 가 먼저)
     agent = c.get("/api/agent/tasks?limit=5", headers=_h("agent")).get_json()["tasks"]
     assert [t["id"] for t in agent] == ids[:5]
+
+
+# ── /api/agent/tasks?kind= : 디스패처가 처리할 수 있는 종류만 받는다 ─────────────────────
+
+def test_agent_tasks_list_filters_by_kind(monkeypatch, tmp_path):
+    db = _patch_db(monkeypatch, tmp_path)
+    ops = store.create_task(kind="ops_incident", source="x", source_ref="o", title="사고", db_path=db)
+    req = store.create_task(kind="user_request", source="service_request", source_ref="r", title="요청", db_path=db)
+    c = s.app.test_client()
+    both = c.get("/api/agent/tasks", headers=_h("agent")).get_json()["tasks"]
+    assert {t["id"] for t in both} == {ops, req}
+    only = c.get("/api/agent/tasks?kind=ops_incident", headers=_h("agent")).get_json()["tasks"]
+    assert [t["id"] for t in only] == [ops]
+    multi = c.get("/api/agent/tasks?kind=ops_incident,user_request", headers=_h("agent")).get_json()["tasks"]
+    assert {t["id"] for t in multi} == {ops, req}
+    bad = c.get("/api/agent/tasks?kind=nope", headers=_h("agent"))
+    assert bad.status_code == 400 and bad.get_json()["code"] == "INVALID"

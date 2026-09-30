@@ -15,7 +15,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import scripts.agent_dispatcher as mod
-from scripts.agent_dispatcher import ApiClient, CLAIMABLE_STATUSES, Dispatcher, main, pick_runbook
+from scripts.agent_dispatcher import (ApiClient, CLAIMABLE_KINDS, CLAIMABLE_STATUSES, Dispatcher,
+                                      REQUEST_TIMEOUT_SECONDS, main, pick_runbook)
 
 
 class FakeClient:
@@ -27,8 +28,8 @@ class FakeClient:
         self.claim_ok = claim_ok
         self.calls = []
 
-    def list_tasks(self, status):
-        self.calls.append(("list", status))
+    def list_tasks(self, status, kind):
+        self.calls.append(("list", status, kind))
         return self.tasks
 
     def claim(self, task_id):
@@ -61,10 +62,15 @@ def test_claimable_statuses_include_new_signals():
     assert CLAIMABLE_STATUSES == "new,triaged"
 
 
+def test_claimable_kinds_only_ops_incident():
+    """P1 은 ops_incident 만 처리한다 — 다른 종류(user_request 등)가 --max-tasks 슬롯을 먹으면 안 된다."""
+    assert CLAIMABLE_KINDS == "ops_incident"
+
+
 def test_runs_runbook_and_closes():
     client = FakeClient([_task()])
     out = Dispatcher(client).run_once()
-    assert client.calls == [("list", "new,triaged"), ("claim", 1),
+    assert client.calls == [("list", "new,triaged", "ops_incident"), ("claim", 1),
                             ("runbook", 1, "daily_mailing_dispatch"),
                             ("resolve", 1, "closed", "복구 완료")]
     assert out["handled"] == 1 and out["candidates"] == 1
@@ -95,7 +101,7 @@ def test_lost_claim_is_skipped():
 def test_dry_run_does_not_mutate():
     client = FakeClient([_task()])
     out = Dispatcher(client, dry_run=True).run_once()
-    assert client.calls == [("list", "new,triaged")]
+    assert client.calls == [("list", "new,triaged", "ops_incident")]
     assert out["planned"] == [{"task_id": 1, "runbook": "daily_mailing_dispatch"}]
     assert out["handled"] == 0
 
@@ -159,13 +165,33 @@ def _opener(routes: dict):
 
 def test_api_client_logs_in_once_and_sends_bearer():
     op = _opener({("POST", "/api/auth/login"): {"token": "T", "user": {"role": "agent"}},
-                  ("GET", "/api/agent/tasks?status=new,triaged"): {"tasks": [{"id": 1}], "policy": {}}})
+                  ("GET", "/api/agent/tasks?status=new,triaged&kind=ops_incident"): {"tasks": [{"id": 1}],
+                                                                                    "policy": {}}})
     c = ApiClient("https://api.test/", "agent@msd.com", "pw", opener=op)
-    assert c.list_tasks("new,triaged") == [{"id": 1}]
+    assert c.list_tasks("new,triaged", "ops_incident") == [{"id": 1}]
     (login_key, login_auth, login_body), (list_key, list_auth, _) = op.seen
     assert login_key == ("POST", "/api/auth/login") and login_auth is None
     assert json.loads(login_body) == {"email": "agent@msd.com", "password": "pw"}
     assert list_auth == "Bearer T"
+
+
+def test_api_client_list_url_carries_kind_filter_and_long_timeout():
+    """목록 URL 에 kind=ops_incident 가 붙고, 동기 런북(Playwright 크롤 수 분)이 클라이언트 타임아웃에
+    걸려 서버만 계속 돌고 과제는 blocked 되는 일이 없도록 요청 타임아웃은 600초."""
+    seen_timeouts = []
+
+    def opener(req, timeout=None):
+        seen_timeouts.append(timeout)
+        path = req.full_url.replace("https://api.test", "")
+        if path == "/api/auth/login":
+            return _Resp({"token": "T"})
+        assert path == "/api/agent/tasks?status=new,triaged&kind=ops_incident", path
+        return _Resp({"tasks": [], "policy": {}})
+
+    c = ApiClient("https://api.test", "a", "b", opener=opener)
+    assert c.list_tasks("new,triaged", "ops_incident") == []
+    assert REQUEST_TIMEOUT_SECONDS == 600
+    assert seen_timeouts == [600, 600]
 
 
 def test_api_client_claim_maps_409_423_to_false_and_raises_others():

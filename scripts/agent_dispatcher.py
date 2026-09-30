@@ -10,8 +10,9 @@
 로그인은 매 실행마다 한다(7일 JWT 를 디스크에 보관하지 않는다).
 
 과제 상태: 프로덕션 신호(signals.py)는 과제를 new 로 만든다. 서버의 claim 이 ops_incident 를 자동
-분류(new→triaged)한 뒤 선점하므로 디스패처는 new·triaged 를 함께 조회한다. 런북 결과가 ok 면 closed,
-아니면 blocked(사람 확인). 런북 힌트가 없는 과제도 blocked 로 넘겨 사람이 보게 한다.
+분류(new→triaged)한 뒤 선점하므로 디스패처는 new·triaged 를 함께 조회한다(kind=ops_incident 만).
+런북 결과가 ok 면 closed, 아니면 blocked(사람 확인). 런북 힌트가 없는 과제도 blocked 로 넘겨 사람이
+보게 한다. 재시도는 사람이 화면에서 triaged 로 되돌리면 되고, 서버가 3회 한도를 넘기면 blocked 로 막는다.
 """
 from __future__ import annotations
 
@@ -32,7 +33,12 @@ if str(REPO_ROOT) not in sys.path:
 logger = logging.getLogger("agent_dispatcher")
 RUNBOOK_HINT = re.compile(r"런북:\s*([a-z_]+)")
 CLAIMABLE_STATUSES = "new,triaged"
+# P1 이 처리할 수 있는 종류만 받는다 — user_request 등이 --max-tasks 슬롯을 먹지 않게 (P2 에서 확장)
+CLAIMABLE_KINDS = "ops_incident"
 DEFAULT_MAX_TASKS = 3
+# 런북은 동기 실행이다(domestic_price_catchup 은 Playwright 크롤로 수 분). 짧은 타임아웃이면 서버는 계속
+# 도는데 클라이언트만 끊겨 과제가 blocked 로 남으므로 넉넉히 둔다.
+REQUEST_TIMEOUT_SECONDS = 600
 NO_RUNBOOK_RESOLUTION = "자동 복구 런북 없음 — 사람 확인 필요"
 
 
@@ -57,14 +63,14 @@ class ApiClient:
         req.add_header("Content-Type", "application/json")
         if self._token:
             req.add_header("Authorization", f"Bearer {self._token}")
-        with self._opener(req, timeout=120) as resp:
+        with self._opener(req, timeout=REQUEST_TIMEOUT_SECONDS) as resp:
             return json.loads(resp.read().decode("utf-8") or "{}")
 
     def _login(self, email: str, password: str) -> str:
         return self._request("POST", "/api/auth/login", {"email": email, "password": password})["token"]
 
-    def list_tasks(self, status: str) -> list[dict]:
-        return self._request("GET", f"/api/agent/tasks?status={status}")["tasks"]
+    def list_tasks(self, status: str, kind: str) -> list[dict]:
+        return self._request("GET", f"/api/agent/tasks?status={status}&kind={kind}")["tasks"]
 
     def claim(self, task_id: int) -> bool:
         try:
@@ -90,7 +96,7 @@ class Dispatcher:
         self.dry_run = dry_run
 
     def run_once(self) -> dict:
-        tasks = sorted(self.client.list_tasks(CLAIMABLE_STATUSES),
+        tasks = sorted(self.client.list_tasks(CLAIMABLE_STATUSES, CLAIMABLE_KINDS),
                        key=lambda t: (t.get("priority", 3), t["id"]))
         planned: list[dict] = []
         handled = 0

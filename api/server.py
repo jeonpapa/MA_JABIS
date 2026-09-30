@@ -5392,9 +5392,15 @@ def _agent_statuses_arg(default: tuple[str, ...]) -> tuple[str, ...]:
 @require_auth(role="agent")
 def agent_tasks_list():
     statuses = _agent_statuses_arg(_agent_store.OPEN_STATUSES)
+    # kind=a,b : 디스패처가 처리할 수 있는 종류만 받는다(P1 은 ops_incident). 없으면 전 종류.
+    kinds = tuple(k for k in (request.args.get("kind") or "").split(",") if k) or None
+    if kinds and any(k not in _agent_store.KINDS for k in kinds):
+        return jsonify({"error": f"알 수 없는 kind: {[k for k in kinds if k not in _agent_store.KINDS]}",
+                        "code": "INVALID"}), 400
     limit = max(1, min(request.args.get("limit", default=50, type=int) or 50, 200))
     try:
-        tasks = _agent_store.list_tasks(db_path=_AGENT_TASK_DB_PATH, statuses=statuses, limit=limit)
+        tasks = _agent_store.list_tasks(db_path=_AGENT_TASK_DB_PATH, statuses=statuses, kinds=kinds,
+                                        limit=limit)
         return jsonify({"tasks": tasks, "policy": _agent_policy.get_policy(db_path=_AGENT_TASK_DB_PATH)})
     except Exception as e:
         logger.error("agent_tasks_list 실패: %s", e, exc_info=True)
