@@ -82,7 +82,7 @@ def test_render_html_escapes_and_shows_sections():
                    quote_verified=False, section="top_ma_news")]
     html = render_brief_html(name="파드셉", run_date=date(2026, 9, 18), scope_terms=["파드셉"], items=items)
     assert "&lt;b&gt;파드셉&lt;/b&gt;" in html
-    assert "▶ MA 시사점" in html
+    assert "MA 시사점" in html and ">참고</span>" in html               # impact 없는 구 항목 → 참고 배지
     assert "근거: “1차 치료로 급여 확대”" in html
     assert "오늘의 주요 MA 뉴스" in html
     assert "특이사항 없음" not in html
@@ -94,13 +94,14 @@ def test_render_no_news_and_snippet_note():
     snippet = _item(body_status="snippet", ma_implication="", evidence_quote="", quote_verified=False)
     html2 = render_brief_html(name="n", run_date=date(2026, 9, 18), scope_terms=["x"], items=[snippet])
     assert "본문 미확보" in html2
-    assert "▶ MA 시사점" not in html2
+    assert "MA 시사점" not in html2
 
 
 def test_render_markdown():
     md = render_brief_markdown(name="파드셉", run_date=date(2026, 9, 18), scope_terms=["파드셉"], items=[_item()])
     assert md.startswith("# 파드셉 · 9/18(금)")
-    assert "▶ MA 시사점: 요로상피암 1차 급여 경쟁 구도 변화" in md
+    assert "▶ MA 시사점 [참고]: 요로상피암 1차 급여 경쟁 구도 변화" in md
+    assert "> 오늘의 한 줄: 참고 — 파드셉 급여 확대" in md
 
 
 def test_render_omits_links_for_non_http_urls():
@@ -261,3 +262,139 @@ def test_clean_snippet_inline_ellipsis_is_an_excerpt_joiner_not_a_sentence_end()
     # 꼬리가 잘리지 않은(말줄임 없는) 본문은 이음표만 정리하고 자르지 않는다
     assert clean_snippet("A 회사는 ... 출시했다. 이어 신청했다.") == "A 회사는 … 출시했다. 이어 신청했다."
 
+
+
+# ---- 카드 레이아웃 (2026-09-30 파일럿 리뷰: 요약기 → MA 분석가, 한 줄 다이제스트 + 영향 배지 카드) ----
+import os
+import shutil
+from dataclasses import replace
+
+from agents.daily_mailing.brief import IMPACT_LABELS, build_digest
+
+
+def _threat():
+    return _item(title="사용범위 넓어진 키트루다·테빔브라, RSA도 다시 계약", publisher_url="https://www.yakup.com/tv1",
+                 summary_bullets=("건보공단이 테빔브라 급여 범위를 비소세포폐암 1차 등으로 확대했다.",
+                                  "키트루다 위험분담계약(RSA)은 재계약됐다."),
+                 ma_implication=("같은 PD-1 계열 테빔브라(약가 1,206,000원/100mg)가 키트루다(2,100,556원/100mg)와 같은 급여 적응증을 "
+                                 "가져가면 키트루다 RSA 재계약 조건에 약가 인하 압박이 된다"),
+                 evidence_quote="테빔브라의 급여 범위를 비소세포폐암 1차 등 키트루다와 같은 적응증으로 확대", impact="threat",
+                 affected_asset="키트루다",
+                 also_reported_by=({"source_name": "데일리팜", "url": "https://www.dailypharm.com/1"},
+                                   {"source_name": "메디파나뉴스", "url": "https://www.medipana.com/1"},
+                                   {"source_name": "약사공론", "url": "https://www.kpanews.co.kr/1"},
+                                   {"source_name": "청년의사", "url": "https://www.docdocdoc.co.kr/1"},
+                                   {"source_name": "뉴스더보이스", "url": "javascript:alert(1)"}))
+
+
+def _neutral():
+    return _item(title="암질심 10월 안건 일정 공개", publisher_url="https://www.dailypharm.com/n1", source_name="데일리팜",
+                 summary_bullets=("심평원이 10월 암질심 안건 일정을 공개했다.",),
+                 ma_implication="10월 암질심 일정은 키트루다 병용 급여 확대 안건의 심의 시점에 닿는다",
+                 evidence_quote="10월 암질심 안건 일정을 공개", impact="neutral", affected_asset="키트루다")
+
+
+def _opportunity():
+    return _item(title="웰리렉 VHL 급여 적정성 인정", publisher_url="https://www.medipana.com/o1", source_name="메디파나뉴스",
+                 ma_implication="웰리렉의 VHL 급여 적정성 인정은 등재 협상 단계 진입을 뜻한다", evidence_quote="급여 적정성 인정",
+                 impact="opportunity", affected_asset="웰리렉")
+
+
+def _snippet():
+    return _item(title="PNH 환우회, 급여기준 개선 요청", publisher_url="https://www.newsmp.com/s1", source_name="newsmp.com",
+                 summary_bullets=("환우회는 국회 토론회에서 … 위한 급여기준 개선을 요청했다고 밝혔다",),
+                 ma_implication="", evidence_quote="", quote_verified=False, body_status="snippet")
+
+
+def test_build_digest_prefers_threat_then_opportunity_then_neutral():
+    assert build_digest([_neutral(), _opportunity(), _threat()]) == "위협 · 키트루다 — 사용범위 넓어진 키트루다·테빔브라, RSA도 다시 계약"
+    assert build_digest([_neutral(), _opportunity()]) == "기회 · 웰리렉 — 웰리렉 VHL 급여 적정성 인정"
+    assert build_digest([_neutral()]) == "참고 · 키트루다 — 암질심 10월 안건 일정 공개"
+    legacy = _item(impact="")                                            # 구 run 의 시사점(impact 없음) → 참고
+    assert build_digest([legacy]) == "참고 — 파드셉 급여 확대"
+    assert build_digest([_snippet(), _snippet()]) == "특이사항 없음 — 스콥 기사 2건, 시사점 없음"
+    assert build_digest([]) == "특이사항 없음"
+    assert build_digest([replace(_neutral(), section="top_ma_news")]) == "특이사항 없음"   # 다이제스트는 스콥 기사만
+    unverified = _item(quote_verified=False, impact="threat")           # 렌더되지 않는 시사점은 다이제스트에도 없다
+    assert build_digest([unverified]) == "특이사항 없음 — 스콥 기사 1건, 시사점 없음"
+
+
+def test_render_html_digest_and_impact_badges():
+    html = render_brief_html(name="키트루다", run_date=date(2026, 9, 30), scope_terms=["키트루다"],
+                             items=[_threat(), _neutral(), _opportunity()])
+    assert "오늘의 한 줄" in html
+    assert "위협 · 키트루다 — 사용범위 넓어진 키트루다·테빔브라, RSA도 다시 계약" in html
+    assert ">위협 · 키트루다</span>" in html and "#B91C1C" in html.split(">위협 · 키트루다</span>")[0][-400:]
+    assert ">기회 · 웰리렉</span>" in html and "#15803D" in html.split(">기회 · 웰리렉</span>")[0][-400:]
+    assert ">참고 · 키트루다</span>" in html and "#374151" in html.split(">참고 · 키트루다</span>")[0][-400:]
+    assert "MA 시사점" in html
+    assert "근거: “테빔브라의 급여 범위를 비소세포폐암 1차 등 키트루다와 같은 적응증으로 확대”" in html
+    assert html.count("border-radius:10px") >= 3                        # 카드 3장
+
+
+def test_render_html_escapes_badge_asset_and_implication():
+    evil = _item(ma_implication="<img src=x> 시사점", affected_asset="<b>키트루다</b>", impact="threat")
+    html = render_brief_html(name="n", run_date=date(2026, 9, 30), scope_terms=["x"], items=[evil])
+    assert "<img" not in html and "&lt;img src=x&gt; 시사점" in html
+    assert "위협 · &lt;b&gt;키트루다&lt;/b&gt;" in html
+
+
+def test_render_also_reported_lists_at_most_three_names_plus_count():
+    html = render_brief_html(name="n", run_date=date(2026, 9, 30), scope_terms=["x"], items=[_threat()])
+    assert "외 5개 매체: " in html
+    assert "데일리팜" in html and "메디파나뉴스" in html and "약사공론" in html
+    assert "청년의사" not in html and "뉴스더보이스" not in html
+    assert "외 2곳" in html
+    assert 'href="https://www.dailypharm.com/1"' in html and 'href="https://www.docdocdoc.co.kr/1"' not in html
+    assert "javascript:" not in html
+    md = render_brief_markdown(name="n", run_date=date(2026, 9, 30), scope_terms=["x"], items=[_threat()])
+    assert "외 5개 매체: [데일리팜](https://www.dailypharm.com/1), [메디파나뉴스](https://www.medipana.com/1), [약사공론](https://www.kpanews.co.kr/1) 외 2곳" in md
+    three = _item(also_reported_by=tuple({"source_name": f"매체{i}", "url": f"https://x/{i}"} for i in range(3)))
+    html3 = render_brief_html(name="n", run_date=date(2026, 9, 30), scope_terms=["x"], items=[three])
+    assert "외 3개 매체: 매체0, 매체1, 매체2" in html3.replace('<a href="https://x/0" style="color:#64748B;">', "").replace("</a>", "") \
+        .replace('<a href="https://x/1" style="color:#64748B;">', "").replace('<a href="https://x/2" style="color:#64748B;">', "")
+    assert "외 0곳" not in html3 and " 외 " not in html3.split("외 3개 매체: ")[1].split("</div>")[0]
+
+
+def test_render_html_is_email_safe_dark_mode_and_phone_ready():
+    html = render_brief_html(name="n", run_date=date(2026, 9, 30), scope_terms=["x"], items=[_threat()])
+    assert '<meta name="viewport" content="width=device-width,initial-scale=1">' in html
+    assert '<meta name="color-scheme" content="light">' in html
+    assert "<body style=" in html and "background:#F3F4F6" in html.split("<body")[1].split(">")[0]
+    assert "color:#0F172A" in html.split("<body")[1].split(">")[0]
+    assert "max-width:640px" in html
+    assert "<style" not in html                                          # 인라인 스타일만
+    assert "원문 보기" in html
+
+
+def test_render_snippet_card_keeps_search_summary_and_note():
+    html = render_brief_html(name="n", run_date=date(2026, 9, 30), scope_terms=["x"], items=[_snippet()])
+    assert "검색 요약: 환우회는 국회 토론회에서 … 위한 급여기준 개선을 요청했다고 밝혔다" in html
+    assert "본문 미확보 — 검색 요약 기반" in html
+    assert "MA 시사점" not in html
+    assert "특이사항 없음 — 스콥 기사 1건, 시사점 없음" in html
+
+
+def test_render_markdown_in_step_with_digest_and_badge():
+    md = render_brief_markdown(name="키트루다", run_date=date(2026, 9, 30), scope_terms=["키트루다"], items=[_threat(), _snippet()])
+    assert md.splitlines()[0] == "# 키트루다 · 9/30(수)"
+    assert "오늘의 한 줄: 위협 · 키트루다 — 사용범위 넓어진 키트루다·테빔브라, RSA도 다시 계약" in md
+    assert "   - ▶ MA 시사점 [위협 · 키트루다]: 같은 PD-1 계열 테빔브라" in md
+    assert "   - 근거: “테빔브라의 급여 범위를" in md
+    assert "   - 검색 요약: 환우회는 국회 토론회에서" in md and "본문 미확보" in md
+
+
+def test_layout_preview_fixture_threat_neutral_snippet(tmp_path):
+    """오프라인 렌더 픽스처: 위협 카드 1 + 참고 카드 1 + 스니펫 카드 1 + 주요 MA 뉴스 1. DM_LAYOUT_PREVIEW_OUT 이 있으면 그 경로에도 저장."""
+    items = [_threat(), _neutral(), _snippet(), replace(_opportunity(), section="top_ma_news")]
+    html = render_brief_html(name="키트루다 (파일럿)", run_date=date(2026, 9, 30), scope_terms=["키트루다", "급여 확대"],
+                             items=items, window_label="이전 24시간")
+    out = tmp_path / "layout_preview.html"
+    out.write_text(html, encoding="utf-8")
+    for label in IMPACT_LABELS.values():
+        assert label in html
+    assert "오늘의 주요 MA 뉴스" in html
+    assert html.count("border-radius:10px") >= 4
+    target = os.environ.get("DM_LAYOUT_PREVIEW_OUT")
+    if target:
+        shutil.copyfile(out, target)

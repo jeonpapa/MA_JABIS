@@ -4,6 +4,10 @@
 - 스콥 기사 3~5건 + 하단 '오늘의 주요 MA 뉴스'(section='top_ma_news').
 - MA 시사점은 본문 인용이 검증된 경우(quote_verified)에만 렌더한다.
 - 스콥 기사 0건은 실패가 아니라 status='no_news' → '특이사항 없음' 메일.
+- 레이아웃 (2026-09-30 파일럿 리뷰, 요약기 → MA 분석가): 상단 '오늘의 한 줄'(코드로 조립 — 최고 영향 기사의 자산+제목,
+  LLM 호출 없음) → 기사별 카드(제목 링크 · 매체·시각 · 불릿 2~3 · 영향 배지[위협 red / 기회 green / 참고 grey] + 시사점 + 근거 한 줄).
+  '외 N개 매체' 는 이름 최대 3개 + '외 K곳' 한 줄. 전부 인라인 스타일(메일 클라이언트), 모든 보간 escape, http(s) 링크만,
+  body 배경·글자색 명시(다크모드), 640px 컨테이너(폰 폭).
 """
 from __future__ import annotations
 
@@ -227,31 +231,91 @@ def _split(items: Iterable[BriefItem]) -> tuple[list[BriefItem], list[BriefItem]
     return ([i for i in items if i.section == "scope"], [i for i in items if i.section == "top_ma_news"])
 
 
+IMPACT_RANK = {"threat": 3, "opportunity": 2, "neutral": 1}
+IMPACT_STYLES = {"threat": ("#FEE2E2", "#B91C1C"), "opportunity": ("#DCFCE7", "#15803D"), "neutral": ("#F3F4F6", "#374151")}
+ALSO_REPORTED_MAX_NAMES = 3
+FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic','Apple SD Gothic Neo',sans-serif"
+CARD_STYLE = "background:#FFFFFF;border:1px solid #E5E7EB;border-radius:10px;padding:14px 16px;margin:0 0 12px;"
+
+
+def _shows_implication(item: BriefItem) -> bool:
+    return bool(item.ma_implication) and item.quote_verified
+
+
+def _impact_key(item: BriefItem) -> str:
+    """렌더용 영향 키 — 구 run 의 시사점(impact 없음)은 '참고'."""
+    return item.impact if item.impact in IMPACT_RANK else "neutral"
+
+
+def badge_label(item: BriefItem) -> str:
+    label = IMPACT_LABELS[_impact_key(item)]
+    return f"{label} · {item.affected_asset}" if item.affected_asset else label
+
+
+def build_digest(items: Iterable[BriefItem]) -> str:
+    """'오늘의 한 줄' — LLM 없이 코드로: 렌더되는 시사점 중 최고 영향(위협 > 기회 > 참고, 동률은 앞 기사) 의 배지 + 제목.
+    스콥 기사만 본다. 시사점이 없으면 '특이사항 없음' (기사 수 표시), 기사도 없으면 '특이사항 없음'."""
+    scope_items = [i for i in items if i.section == "scope"]
+    tagged = [i for i in scope_items if _shows_implication(i)]
+    if tagged:
+        best = max(tagged, key=lambda i: IMPACT_RANK[_impact_key(i)])
+        return f"{badge_label(best)} — {best.title}"
+    if scope_items:
+        return f"특이사항 없음 — 스콥 기사 {len(scope_items)}건, 시사점 없음"
+    return "특이사항 없음"
+
+
 def _also_reported_label(item: BriefItem) -> str:
     return f"외 {len(item.also_reported_by)}개 매체: "
 
 
+def _also_reported_parts(item: BriefItem) -> tuple[list[dict], int]:
+    entries = list(item.also_reported_by)
+    shown = entries[:ALSO_REPORTED_MAX_NAMES]
+    return shown, len(entries) - len(shown)
+
+
 def _also_reported_html(item: BriefItem) -> str:
-    """'외 2개 매체: 데일리팜, 약업신문' — 매체명은 http(s) URL 이 있을 때만 링크."""
+    """'외 5개 매체: 데일리팜, 약업신문, 메디파나뉴스 외 2곳' — 이름 최대 3개(http(s) URL 이 있을 때만 링크) + 나머지는 수만."""
+    shown, rest = _also_reported_parts(item)
     names = []
-    for entry in item.also_reported_by:
+    for entry in shown:
         name = escape(str(entry.get("source_name") or entry.get("url") or ""))
         href = _safe_link(str(entry.get("url") or ""))
         names.append(f'<a href="{escape(href, quote=True)}" style="color:#64748B;">{name}</a>' if href else name)
-    return escape(_also_reported_label(item)) + ", ".join(names)
+    return escape(_also_reported_label(item)) + ", ".join(names) + (f" 외 {rest}곳" if rest > 0 else "")
 
 
 def _also_reported_md(item: BriefItem) -> str:
+    shown, rest = _also_reported_parts(item)
     names = []
-    for entry in item.also_reported_by:
+    for entry in shown:
         name = str(entry.get("source_name") or entry.get("url") or "")
         href = _safe_link(str(entry.get("url") or ""))
         names.append(f"[{name}]({href})" if href else name)
-    return _also_reported_label(item) + ", ".join(names)
+    return _also_reported_label(item) + ", ".join(names) + (f" 외 {rest}곳" if rest > 0 else "")
 
 
 def _snippet_line(item: BriefItem) -> str:
     return clean_snippet(" ".join(item.summary_bullets))
+
+
+def _badge_html(item: BriefItem) -> str:
+    bg, fg = IMPACT_STYLES[_impact_key(item)]
+    return (f'<span style="display:inline-block;padding:2px 9px;border-radius:999px;background:{bg};color:{fg};'
+            f'font-size:12px;font-weight:700;line-height:1.5;">{escape(badge_label(item))}</span>')
+
+
+def _implication_html(item: BriefItem) -> str:
+    _, fg = IMPACT_STYLES[_impact_key(item)]
+    return (
+        f'<div style="margin:10px 0 0;padding:10px 12px;border-radius:8px;background:#F8FAFC;border-left:3px solid {fg};">'
+        f'<div style="margin:0 0 6px;">{_badge_html(item)}'
+        '<span style="font-size:11px;color:#6B7280;margin-left:8px;">MA 시사점</span></div>'
+        f'<div style="font-size:14px;line-height:1.6;color:#0F172A;">{escape(item.ma_implication)}</div>'
+        f'<div style="font-size:12px;line-height:1.5;color:#6B7280;margin:6px 0 0;">근거: “{escape(item.evidence_quote)}”</div>'
+        '</div>'
+    )
 
 
 def _item_html(index: int, item: BriefItem) -> str:
@@ -262,59 +326,66 @@ def _item_html(index: int, item: BriefItem) -> str:
     meta = " · ".join(x for x in (escape(item.source_name), escape(_published_label(item.published_at))) if x)
     if item.body_status == "ok":
         bullets = "".join(f'<li style="margin:0 0 4px;">{escape(b)}</li>' for b in item.summary_bullets)
-        summary_html = f'<ul style="margin:0 0 8px 18px;padding:0;font-size:14px;line-height:1.6;color:#1F2937;">{bullets}</ul>'
+        summary_html = f'<ul style="margin:0;padding:0 0 0 18px;font-size:14px;line-height:1.6;color:#1F2937;">{bullets}</ul>'
     else:
         # 본문 미확보: 검색 스니펫 한 줄 (불릿 아님)
-        summary_html = ('<div style="font-size:14px;line-height:1.6;color:#1F2937;margin:0 0 8px;">'
+        summary_html = ('<div style="font-size:14px;line-height:1.6;color:#1F2937;">'
                         f'검색 요약: {escape(_snippet_line(item))}</div>')
     parts = [
-        '<div style="margin:0 0 20px;padding:0 0 16px;border-bottom:1px solid #E5E7EB;">',
-        f'<div style="font-size:16px;font-weight:700;line-height:1.45;margin:0 0 4px;">{index}. {title_html}</div>',
-        f'<div style="font-size:12px;color:#64748B;margin:0 0 8px;">{meta}</div>',
+        f'<div style="{CARD_STYLE}">',
+        f'<div style="font-size:16px;font-weight:700;line-height:1.45;color:#0F172A;margin:0 0 4px;">{index}. {title_html}</div>',
+        f'<div style="font-size:12px;color:#64748B;margin:0 0 10px;">{meta}</div>',
         summary_html,
     ]
-    if item.ma_implication and item.quote_verified:
-        parts.append(
-            '<div style="font-size:14px;line-height:1.6;color:#0F172A;background:#F0FDF4;'
-            'border-left:3px solid #16A34A;padding:8px 10px;margin:0 0 6px;">'
-            f'<b>▶ MA 시사점</b> {escape(item.ma_implication)}</div>'
-        )
-        parts.append(f'<div style="font-size:12px;color:#6B7280;margin:0 0 6px;">근거: “{escape(item.evidence_quote)}”</div>')
+    if _shows_implication(item):
+        parts.append(_implication_html(item))
     if item.body_status != "ok":
-        parts.append('<div style="font-size:12px;color:#B45309;margin:0 0 6px;">본문 미확보 — 검색 요약 기반</div>')
+        parts.append('<div style="font-size:12px;color:#B45309;margin:8px 0 0;">본문 미확보 — 검색 요약 기반</div>')
     if item.also_reported_by:
-        parts.append(f'<div style="font-size:12px;color:#64748B;margin:0 0 6px;">{_also_reported_html(item)}</div>')
+        parts.append(f'<div style="font-size:12px;color:#64748B;margin:8px 0 0;">{_also_reported_html(item)}</div>')
     if link:
-        parts.append(f'<div style="font-size:12px;"><a href="{url}" style="color:#2563EB;">원문 보기</a></div>')
+        parts.append(f'<div style="font-size:12px;margin:8px 0 0;"><a href="{url}" style="color:#2563EB;">원문 보기 →</a></div>')
     parts.append("</div>")
     return "".join(parts)
 
 
+def _digest_html(digest: str) -> str:
+    return (
+        '<div style="margin:0 0 16px;padding:12px 14px;border-radius:8px;background:#0F172A;color:#FFFFFF;">'
+        '<div style="font-size:11px;font-weight:700;letter-spacing:.04em;color:#93C5FD;">오늘의 한 줄</div>'
+        f'<div style="font-size:15px;font-weight:700;line-height:1.5;margin:4px 0 0;color:#FFFFFF;">{escape(digest)}</div>'
+        '</div>'
+    )
+
+
 def render_brief_html(*, name: str, run_date: date, scope_terms: Iterable[str],
                       items: Iterable[BriefItem], window_label: str = "이전 24시간") -> str:
+    items = list(items)
     scope_items, top_items = _split(items)
     if scope_items:
         body = "".join(_item_html(n, item) for n, item in enumerate(scope_items, 1))
     else:
-        body = ('<p style="font-size:14px;color:#374151;padding:14px;background:#F9FAFB;border-radius:8px;">'
-                f'{escape(window_label)} 동안 구독 스콥에 해당하는 기사가 없습니다 — <b>특이사항 없음</b></p>')
+        body = (f'<div style="{CARD_STYLE}font-size:14px;line-height:1.6;color:#374151;">'
+                f'{escape(window_label)} 동안 구독 스콥에 해당하는 기사가 없습니다 — <b>특이사항 없음</b></div>')
     top_html = ""
     if top_items:
         cards = "".join(_item_html(n, item) for n, item in enumerate(top_items, 1))
-        top_html = ('<h2 style="font-size:15px;color:#0F172A;margin:28px 0 12px;padding-top:12px;'
+        top_html = ('<h2 style="font-size:15px;color:#0F172A;margin:24px 0 12px;padding-top:16px;'
                     f'border-top:2px solid #0F172A;">오늘의 주요 MA 뉴스</h2>{cards}')
     terms = escape(", ".join(scope_terms))
     return (
         '<!doctype html><html lang="ko"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light">'
         f'<title>{escape(build_subject(name, run_date))}</title></head>'
-        '<body style="margin:0;padding:24px 12px;background:#FFFFFF;color:#0F172A;'
-        "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',sans-serif;\">"
-        '<div style="max-width:640px;margin:0 auto;">'
+        f'<body style="margin:0;padding:0;background:#F3F4F6;color:#0F172A;font-family:{FONT};">'
+        '<div style="max-width:640px;margin:0 auto;padding:20px 16px;">'
         '<div style="font-size:12px;color:#2563EB;font-weight:700;letter-spacing:.04em;">MA DAILY BRIEFING</div>'
-        f'<h1 style="font-size:20px;margin:4px 0 2px;">{escape(name)} · {escape(format_date_label(run_date))}</h1>'
-        f'<div style="font-size:12px;color:#64748B;margin:0 0 20px;">{escape(window_label)} · 스콥: {terms}</div>'
+        f'<h1 style="font-size:20px;line-height:1.35;margin:4px 0 2px;color:#0F172A;">{escape(name)} · {escape(format_date_label(run_date))}</h1>'
+        f'<div style="font-size:12px;color:#64748B;margin:0 0 16px;">{escape(window_label)} · 스콥: {terms}</div>'
+        f'{_digest_html(build_digest(items))}'
         f'{body}{top_html}'
-        '<div style="font-size:11px;color:#9CA3AF;margin-top:28px;line-height:1.6;">'
+        '<div style="font-size:11px;color:#9CA3AF;margin-top:24px;line-height:1.6;">'
         'MA AI Dossier · 구독 설정에 따라 자동 생성된 메일입니다. '
         '본문 인용으로 확인되지 않은 시사점은 표시하지 않습니다.</div>'
         '</div></body></html>'
@@ -331,8 +402,8 @@ def _item_md(index: int, item: BriefItem) -> list[str]:
         lines += [f"   - {b}" for b in item.summary_bullets]
     else:
         lines.append(f"   - 검색 요약: {_snippet_line(item)}")
-    if item.ma_implication and item.quote_verified:
-        lines.append(f"   - ▶ MA 시사점: {item.ma_implication}")
+    if _shows_implication(item):
+        lines.append(f"   - ▶ MA 시사점 [{badge_label(item)}]: {item.ma_implication}")
         lines.append(f"   - 근거: “{item.evidence_quote}”")
     if item.body_status != "ok":
         lines.append("   - (본문 미확보 — 검색 요약 기반)")
@@ -344,8 +415,10 @@ def _item_md(index: int, item: BriefItem) -> list[str]:
 
 def render_brief_markdown(*, name: str, run_date: date, scope_terms: Iterable[str],
                           items: Iterable[BriefItem], window_label: str = "이전 24시간") -> str:
+    items = list(items)
     scope_items, top_items = _split(items)
-    lines = [f"# {name} · {format_date_label(run_date)}", "", f"{window_label} · 스콥: {', '.join(scope_terms)}", ""]
+    lines = [f"# {name} · {format_date_label(run_date)}", "", f"{window_label} · 스콥: {', '.join(scope_terms)}", "",
+             f"> 오늘의 한 줄: {build_digest(items)}", ""]
     if not scope_items:
         lines += [f"{window_label} 동안 구독 스콥에 해당하는 기사가 없습니다 — 특이사항 없음", ""]
     for n, item in enumerate(scope_items, 1):
