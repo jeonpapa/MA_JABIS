@@ -227,3 +227,13 @@ def test_admin_ledger_includes_blocked_tasks(monkeypatch, tmp_path):
     assert [t["status"] for t in data["tasks"]] == ["blocked"]
     only_new = c.get("/api/admin/agent-tasks?status=new", headers=_h("admin", "admin@msd.com")).get_json()
     assert only_new["tasks"] == []
+
+
+def test_agent_service_account_can_be_created(tmp_path):
+    """VPS 디스패처용 role='agent' 계정 생성 — 없으면 P1 운영 자체가 시작되지 않는다."""
+    from agents.db.users import UsersDB
+
+    db = UsersDB(str(tmp_path / "users.db"))
+    user = db.create_user("agent@msd.com", "strong-passphrase", role="agent")
+    assert user["role"] == "agent"
+    assert db.verify_password("agent@msd.com", "strong-passphrase")["role"] == "agent"
