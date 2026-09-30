@@ -45,6 +45,7 @@ export const adminNavItems: NavItem[] = [
   { path: '/admin/daily-mailing-kanban', label: 'Daily Mailing 칸반', icon: 'ri-kanban-view' },
   { path: '/admin/home-brands', label: '홈 브랜드 관리', icon: 'ri-capsule-line' },
   { path: '/admin/service-requests', label: '서비스 보완 요청', icon: 'ri-customer-service-2-line' },
+  { path: '/admin/agent-tasks', label: '운영 원장', icon: 'ri-robot-line' },
 ];
 
 type SettingsTab = 'account' | 'users' | 'tabs';

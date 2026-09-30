@@ -21,6 +21,7 @@ import AdminReimbursementPipelinePage from '@/pages/admin/reimbursement-pipeline
 import AdminDailyMailingKanbanPage from '@/pages/admin/daily-mailing-kanban/page';
 import AdminHomeBrandsPage from '@/pages/admin/home-brands/page';
 import AdminServiceRequestsPage from '@/pages/admin/service-requests/page';
+import AdminAgentTasksPage from '@/pages/admin/agent-tasks/page';
 
 const routes: RouteObject[] = [
   { path: '/login', element: <LoginPage /> },
@@ -43,6 +44,7 @@ const routes: RouteObject[] = [
   { path: '/admin/daily-mailing-kanban', element: <AdminDailyMailingKanbanPage /> },
   { path: '/admin/home-brands', element: <AdminHomeBrandsPage /> },
   { path: '/admin/service-requests', element: <AdminServiceRequestsPage /> },
+  { path: '/admin/agent-tasks', element: <AdminAgentTasksPage /> },
   { path: '*', element: <NotFound /> },
 ];
 
