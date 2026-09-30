@@ -5,6 +5,8 @@
 - 검색어 = 사용자 스콥만 (페르소나 기본 키워드는 '주요 MA 뉴스' 전용)
 - 본문 추출 → LLM 관련성 판정 → 스토리 클러스터링(같은 사건 매체별 재보도 1건으로) → LLM 작성 + 인용 검증
 - MSD 대표 기사 강제 삽입 금지
+- MA 컨텍스트 팩(ma_context.py): run 당 1회 포트폴리오·경쟁약 사실 블록을 만들어 작성·지원 검증 LLM 에 넘기고,
+  시사점의 숫자(본문·팩에 표기 그대로)와 영향 자산(팩의 MSD 자산)을 코드로 검증한다.
 DB 저장·발송은 하지 않는다 — 슬라이스 B(dispatch)가 RunResult 를 저장·발송한다.
 """
 from __future__ import annotations
@@ -19,6 +21,7 @@ from typing import Callable, Iterable
 from .archive_candidates import load_archive_candidates
 from .article_body import ArticleBody, fetch_article_body
 from .brief import (
+    IMPACT_LABELS,
     BriefItem,
     build_subject,
     clean_snippet,
@@ -46,10 +49,12 @@ from .llm import (
     RelevanceVerdict,
     judge_relevance,
     reject_implication_style,
+    unverified_numbers,
     verify_implication,
     verify_quote,
     write_brief,
 )
+from .ma_context import ContextPack, build_context_pack, render_context_block
 from .personas import resolve_personas
 from .review_board import build_article_card
 from .source_registry import SourceRegistry
@@ -74,6 +79,11 @@ IMPLICATION_REJECTIONS = {
     "implication_not_msd_specific": ("implication_not_msd_specific",
                                      "llm_relevance+quote_check+support_check+msd_link_rejected",
                                      "시사점 제외: MSD 자산 또는 한국MSD 포트폴리오에 닿는 기전이 명시되지 않음"),
+    # 컨텍스트 팩 코드 검증 (LLM 호출 전): 본문·팩에 없는 숫자, 팩의 MSD 자산이 아닌 영향 자산
+    "implication_unverified_number": ("implication_unverified_number", "llm_relevance+number_rejected",
+                                      "시사점 제외: 본문·컨텍스트에 없는 숫자"),
+    "implication_unknown_asset": ("implication_unknown_asset", "llm_relevance+asset_rejected",
+                                  "시사점 제외: 영향 자산이 MSD 포트폴리오에 없음"),
 }
 # 클러스터 대표 선정용 매체 권위 순위 (높을수록 우선). 등록되지 않은 매체는 0.
 SOURCE_TIER_AUTHORITY = {"official": 3, "official_payer": 3, "regulator": 3,
@@ -90,6 +100,8 @@ class EngineConfig:
     brief_limit: int = 5
     top_ma_news_limit: int = 2
     naver_display: int = 20
+    ma_context_path: str = "config/ma_context.yaml"   # 절대경로 또는 REPO_ROOT 기준 상대경로
+    context_pack_max_chars: int = 1500                # 작성·검증 프롬프트에 넣는 팩 블록 상한 (수백 토큰)
 
     @classmethod
     def from_settings(cls, settings: dict | None) -> "EngineConfig":
@@ -142,6 +154,44 @@ class _Judged:
 class _Selected:
     judged: _Judged
     duplicates: tuple[_Judged, ...] = ()   # 같은 사건을 보도한 다른 매체 기사 (메일에는 '외 N개 매체' 로만 표시)
+
+
+@dataclass(frozen=True)
+class _Rejection:
+    reason: str            # IMPLICATION_REJECTIONS 키
+    detail: str = ""       # 리뷰 노트용 (걸린 숫자, 자산명)
+
+
+@dataclass(frozen=True)
+class _Vetted:
+    implication: str = ""
+    quote: str = ""
+    impact: str = ""
+    affected_asset: str = ""
+    rejection: _Rejection | None = None
+
+
+@dataclass(frozen=True)
+class _RunContext:
+    """run 당 1회 만든 컨텍스트 팩 + 숫자 토큰 캐시 (기사마다 다시 계산하지 않는다)."""
+    pack: ContextPack
+    numbers: frozenset[str]
+
+    @classmethod
+    def build(cls, terms: list[str], *, deps: "EngineDeps", config: "EngineConfig", stats: dict) -> "_RunContext":
+        path = Path(config.ma_context_path)
+        if not path.is_absolute():
+            path = REPO_ROOT / path
+        try:
+            pack = build_context_pack(terms, db_path=deps.archive_db_path, yaml_path=path)
+        except Exception as exc:   # YAML 없음·형식 오류·DB 오류 — run 을 죽이지 않고 fail-closed(빈 팩 → 시사점 전부 제외)
+            stats["context_pack_error"] = f"{type(exc).__name__}: {exc}"
+            logger.warning("[daily_mailing] 컨텍스트 팩 생성 실패 — 빈 팩으로 진행(시사점은 자산 검증에서 제외됨): %s", exc)
+            pack = ContextPack(msd_assets=(), competitors=(), scope_terms=tuple(terms))
+        return cls(pack=pack, numbers=frozenset(pack.numbers()))
+
+    def block(self, *, article_text: str, max_chars: int) -> str:
+        return render_context_block(self.pack, article_text=article_text, max_chars=max_chars)
 
 
 def _now_kst(now: datetime | None) -> datetime:
@@ -288,41 +338,51 @@ def _bump(stats: dict, key: str) -> None:
     stats[key] = stats.get(key, 0) + 1
 
 
-def _vet_implication(draft, *, title: str, body_text: str, deps: EngineDeps, config: EngineConfig,
-                     stats: dict) -> tuple[str, str, str | None]:
-    """시사점 3단 검증. 반환 (시사점, 인용, 거부 사유|None) — 거부되면 시사점·인용은 빈 문자열.
-    순서: 코드 스타일 가드(LLM 없음) → 인용 substring 검증 → 지원 검증(2차 LLM 1회, 앞 단계 통과 시에만 호출).
-    지원 검증 1회 호출이 supported(인용이 결론을 뒷받침) 와 msd_specific(MSD 자산·기전이 구체적으로 명시) 을 함께 돌려주며
+def _vet_implication(draft, *, title: str, body_text: str, run_ctx: _RunContext, block: str,
+                     deps: EngineDeps, config: EngineConfig, stats: dict) -> _Vetted:
+    """시사점 검증. 거부되면 시사점·인용·영향·자산은 모두 빈 값.
+    순서 — LLM 없는 코드 검증 먼저(비용): 스타일 가드 → 숫자 검증(본문·제목·팩에 표기 그대로) → 영향 자산 검증(팩의 MSD 자산)
+    → 인용 substring 검증 → 지원 검증(2차 LLM 1회, 팩 블록 동봉). 지원 검증은 supported 와 msd_specific 을 함께 돌려주며
     둘 다 True 여야 렌더한다. supported=False 가 msd_specific 보다 우선하고, LLM 오류는 fail-closed(unsupported)."""
     implication = draft.ma_implication
     if not implication:
-        return "", "", None
+        return _Vetted()
     if reject_implication_style(implication, title):
         _bump(stats, "implication_rejected_style")
-        return "", "", "implication_style_rejected"
+        return _Vetted(rejection=_Rejection("implication_style_rejected"))
+    bad_numbers = unverified_numbers(implication, title, body_text, run_ctx.numbers)
+    if bad_numbers:
+        _bump(stats, "implication_unverified_number")
+        logger.info("[daily_mailing] 시사점 제외 — 근거 없는 숫자 %s (%s)", bad_numbers, title[:40])
+        return _Vetted(rejection=_Rejection("implication_unverified_number", ", ".join(bad_numbers)))
+    asset = run_ctx.pack.resolve_msd_asset(draft.affected_asset)
+    if not asset:
+        _bump(stats, "implication_unknown_asset")
+        logger.info("[daily_mailing] 시사점 제외 — 영향 자산 미확인 %r (%s)", draft.affected_asset, title[:40])
+        return _Vetted(rejection=_Rejection("implication_unknown_asset", draft.affected_asset or "(없음)"))
     if not verify_quote(draft.evidence_quote, body_text):
         # 설계 §5 ⑦: 인용 검증 실패 → 시사점 삭제 + 기사별 플래그 (리뷰보드 카드에 노출)
         _bump(stats, "quote_rejected")
-        return "", "", "quote_unverified"
+        return _Vetted(rejection=_Rejection("quote_unverified"))
     try:
         support = verify_implication(implication, draft.evidence_quote, body_text,
-                                     llm=deps.llm, model=config.support_model)
+                                     llm=deps.llm, model=config.support_model, context_block=block)
     except LLMError as exc:
         _bump(stats, "support_llm_errors")
         logger.warning("[daily_mailing] 시사점 지원 검증 실패 (%s): %s — fail-closed", title[:40], exc)
         support = ImplicationSupport(supported=False, msd_specific=False, reason="llm_error")
     if not support.supported:
         _bump(stats, "implication_unsupported")
-        return "", "", "implication_unsupported"
+        return _Vetted(rejection=_Rejection("implication_unsupported"))
     if not support.msd_specific:
         _bump(stats, "implication_not_msd_specific")
         logger.info("[daily_mailing] 시사점 제외 — MSD 구체 연결 없음 (%s): %s", title[:40], support.reason)
-        return "", "", "implication_not_msd_specific"
-    return implication, draft.evidence_quote, None
+        return _Vetted(rejection=_Rejection("implication_not_msd_specific"))
+    return _Vetted(implication=implication, quote=draft.evidence_quote, impact=draft.impact, affected_asset=asset)
 
 
-def _write(j: _Judged, terms: list[str], *, deps: EngineDeps, config: EngineConfig,
-           section: str, stats: dict, rejections: dict[str, str] | None = None,
+def _write(j: _Judged, terms: list[str], *, deps: EngineDeps, config: EngineConfig, run_ctx: _RunContext,
+           section: str, stats: dict, rejections: dict[str, _Rejection] | None = None,
            duplicates: Iterable[_Judged] = ()) -> BriefItem | None:
     item, body, verdict = j.item, j.body, j.verdict
     common = dict(title=item.title, publisher_url=item.publisher_url, naver_url=item.naver_url,
@@ -337,10 +397,12 @@ def _write(j: _Judged, terms: list[str], *, deps: EngineDeps, config: EngineConf
             stats["dropped_empty_summary"] = stats.get("dropped_empty_summary", 0) + 1
             return None
         return BriefItem(summary_bullets=snippet, body_status="snippet", **common)
+    block = run_ctx.block(article_text=f"{item.title}\n{body.text}", max_chars=config.context_pack_max_chars)
+    stats["context_pack_chars"] = max(stats.get("context_pack_chars", 0), len(block))
     try:
         draft = write_brief(title=item.title, body=body.text, scope_terms=terms,
                             matched_scope_terms=verdict.matched_scope_terms,
-                            llm=deps.llm, model=config.writer_model)
+                            llm=deps.llm, model=config.writer_model, context_block=block)
     except LLMError as exc:
         stats["writer_llm_errors"] = stats.get("writer_llm_errors", 0) + 1
         logger.warning("[daily_mailing] 브리핑 작성 실패 (%s): %s", item.title[:40], exc)
@@ -349,27 +411,33 @@ def _write(j: _Judged, terms: list[str], *, deps: EngineDeps, config: EngineConf
     if not bullets:
         stats["dropped_empty_summary"] = stats.get("dropped_empty_summary", 0) + 1
         return None
-    implication, quote, rejection = _vet_implication(draft, title=item.title, body_text=body.text,
-                                                     deps=deps, config=config, stats=stats)
-    if rejection and rejections is not None:
-        rejections[_key(item)] = rejection
+    vetted = _vet_implication(draft, title=item.title, body_text=body.text, run_ctx=run_ctx, block=block,
+                              deps=deps, config=config, stats=stats)
+    if vetted.rejection and rejections is not None:
+        rejections[_key(item)] = vetted.rejection
     return BriefItem(
         summary_bullets=bullets,
-        ma_implication=implication,
-        evidence_quote=quote,
-        quote_verified=bool(implication),
+        ma_implication=vetted.implication,
+        evidence_quote=vetted.quote,
+        quote_verified=bool(vetted.implication),
         body_status="ok",
+        impact=vetted.impact,
+        affected_asset=vetted.affected_asset,
         **common,
     )
 
 
-def _card(j: _Judged, *, brief: BriefItem | None, personas, rejection: str | None = None,
+def _card(j: _Judged, *, brief: BriefItem | None, personas, rejection: _Rejection | None = None,
           duplicate_of: str | None = None) -> dict:
     card = build_article_card(replace(j.item, matched_keywords=j.verdict.matched_scope_terms),
                               selected_for_draft=brief is not None, personas=personas)
     note = f"관련성 {'통과' if j.verdict.relevant else '제외'}: {j.verdict.reason}"
     if brief is not None and brief.quote_verified:
         note += f" | 인용 확인: “{brief.evidence_quote}”"
+    if brief is not None and brief.ma_implication:
+        note += f" | 영향: {IMPACT_LABELS.get(brief.impact, brief.impact or '참고')} · {brief.affected_asset}"
+    card["impact"] = brief.impact if brief is not None else ""
+    card["affected_asset"] = brief.affected_asset if brief is not None else ""
     if duplicate_of:
         note += f" | 동일 사건 — 대표 기사 “{duplicate_of}” 에 흡수"
         flags = list(card.get("quality_flags") or [])
@@ -380,14 +448,14 @@ def _card(j: _Judged, *, brief: BriefItem | None, personas, rejection: str | Non
     card["matched_keywords"] = list(j.verdict.matched_scope_terms)
     card["verification_method"] = ("llm_relevance+quote_check+support_check"
                                    if brief is not None and brief.quote_verified else "llm_relevance")
-    if rejection in IMPLICATION_REJECTIONS:
-        flag, method, reason = IMPLICATION_REJECTIONS[rejection]
+    if rejection is not None and rejection.reason in IMPLICATION_REJECTIONS:
+        flag, method, reason = IMPLICATION_REJECTIONS[rejection.reason]
         flags = list(card.get("quality_flags") or [])
         if flag not in flags:
             flags.append(flag)
         card["quality_flags"] = flags
         card["verification_method"] = method
-        card["reviewer_note"] = f"{note} | {reason}"
+        card["reviewer_note"] = f"{note} | {reason}" + (f" ({rejection.detail})" if rejection.detail else "")
     card["verification_caveat"] = f"본문 {j.body.status}" + (f" ({j.body.error})" if j.body.error else "")
     card["review_status"] = ("ready_for_writer" if brief is not None
                              else "needs_review" if j.verdict.relevant else "excluded")
@@ -421,9 +489,10 @@ def generate_top_ma_news(*, deps: EngineDeps, config: EngineConfig | None = None
     judged = _judge(ranked, terms, deps=deps, config=config, stats=stats)
     out: list[BriefItem] = []
     selected, _ = _select(judged, terms, media=(), personas=personas, limit=config.top_ma_news_limit, stats=stats)
+    run_ctx = _RunContext.build(terms, deps=deps, config=config, stats=stats) if selected else None
     for s in selected:
-        written = _write(s.judged, terms, deps=deps, config=config, section="top_ma_news", stats=stats,
-                         duplicates=s.duplicates)
+        written = _write(s.judged, terms, deps=deps, config=config, run_ctx=run_ctx, section="top_ma_news",
+                         stats=stats, duplicates=s.duplicates)
         if written is not None:
             out.append(written)
     stats["judged"] = len(judged)
@@ -450,7 +519,7 @@ def generate_run(scope: DashboardScope, *, deps: EngineDeps, config: EngineConfi
     judged: list[_Judged] = []
     scope_items: list[BriefItem] = []
     brief_by_key: dict[str, BriefItem] = {}
-    rejections: dict[str, str] = {}     # 기사 key → 시사점 거부 사유 (IMPLICATION_REJECTIONS 키)
+    rejections: dict[str, _Rejection] = {}     # 기사 key → 시사점 거부 (IMPLICATION_REJECTIONS 키 + 상세)
     duplicate_of: dict[str, str] = {}
     discovered_count = 0
 
@@ -473,9 +542,10 @@ def generate_run(scope: DashboardScope, *, deps: EngineDeps, config: EngineConfi
             run_warnings.append("partial_relevance")   # 일부 후보만 판정됨 — 발송은 하되 표시
         selected, duplicate_of = _select(judged, terms, media=scope.media, personas=personas,
                                          limit=config.brief_limit, stats=stats)
+        run_ctx = _RunContext.build(terms, deps=deps, config=config, stats=stats) if selected else None
         for s in selected:
-            written = _write(s.judged, terms, deps=deps, config=config, section="scope", stats=stats,
-                             rejections=rejections, duplicates=s.duplicates)
+            written = _write(s.judged, terms, deps=deps, config=config, run_ctx=run_ctx, section="scope",
+                             stats=stats, rejections=rejections, duplicates=s.duplicates)
             if written is not None:
                 scope_items.append(written)
                 brief_by_key[_key(s.judged.item)] = written

@@ -15,10 +15,14 @@ from agents.daily_mailing.llm import (
     OpenAIJsonLLM,
     judge_relevance,
     reject_implication_style,
+    unverified_numbers,
     verify_implication,
     verify_quote,
     write_brief,
 )
+
+NEW_CONTRACT = ('{"summary_bullets": ["...", "..."], "ma_implication": "...", "evidence_quote": "...", '
+                '"impact": "opportunity|threat|neutral|none", "affected_asset": "키트루다"}')
 
 
 class RecordingLLM:
@@ -177,8 +181,7 @@ def test_writer_prompt_frames_reader_as_korea_msd_market_access_and_prefers_empt
     assert "한국MSD" in WRITER_SYSTEM and "Market Access" in WRITER_SYSTEM
     for phrase in ("위협", "경쟁 구도", "빈 문자열", "추측", "옹호"):
         assert phrase in WRITER_SYSTEM, phrase
-    # JSON 계약 불변
-    assert '{"summary_bullets": ["...", "..."], "ma_implication": "...", "evidence_quote": "..."}' in WRITER_SYSTEM
+    assert NEW_CONTRACT in WRITER_SYSTEM
 
 
 # ---- MSD 구체 연결 (2026-09-30 파일럿: 스타틴 복합제 인하 기사 → 'MSD 의 시장 접근 전략에 위협' 상투구) ----
@@ -187,7 +190,7 @@ def test_writer_prompt_requires_named_msd_asset_or_mechanism_and_bans_vague_form
         assert asset in WRITER_SYSTEM, asset
     for phrase in ("시장 접근 전략에 위협", "경쟁력에 영향", "기전", "45%", "재평가", "빈 문자열"):
         assert phrase in WRITER_SYSTEM, phrase
-    assert '{"summary_bullets": ["...", "..."], "ma_implication": "...", "evidence_quote": "..."}' in WRITER_SYSTEM
+    assert NEW_CONTRACT in WRITER_SYSTEM
 
 
 def test_support_prompt_judges_msd_link_in_the_same_call():
@@ -203,7 +206,8 @@ def test_verify_implication_asks_support_model_once_and_returns_support_plus_msd
     assert len(llm.calls) == 1                                   # 지원 + MSD 연결 판정은 같은 1회 호출
     call = llm.calls[0]
     assert call["system"] == SUPPORT_SYSTEM and call["model"] == "gpt-4o-mini"
-    assert call["user"] == {"implication": "경쟁 심화", "quote": "인용 문장", "article_body": ("본문 " * 10)[:SUPPORT_BODY_CHARS]}
+    assert call["user"] == {"implication": "경쟁 심화", "quote": "인용 문장", "article_body": ("본문 " * 10)[:SUPPORT_BODY_CHARS],
+                            "ma_context": ""}
     # 2026-09-30 파일럿: 인용은 '경쟁 심화' 를 뒷받침하지만 MSD 자산·기전이 없는 상투구
     res = verify_implication("x", "q", "b", llm=RecordingLLM({"supported": True, "msd_specific": False, "reason": "MSD 제품 없음"}),
                              model="m")
@@ -245,3 +249,69 @@ def test_verify_implication_truncates_body_and_propagates_llm_error():
 ])
 def test_reject_implication_style(implication, title, expected):
     assert reject_implication_style(implication, title) == expected
+
+
+# ---- MA 컨텍스트 팩 결합 (2026-09-30 파일럿: 테빔브라 급여 확대가 '키트루다에 긍정적' 으로 적힘) ----
+def test_writer_prompt_allows_pack_facts_requires_asset_direction_and_verbatim_numbers():
+    for phrase in ("ma_context", "affected_asset", "impact", "threat", "opportunity", "neutral", "none",
+                   "표기 그대로", "테빔브라", "RSA", "위협"):
+        assert phrase in WRITER_SYSTEM, phrase
+    assert NEW_CONTRACT in WRITER_SYSTEM
+
+
+def test_write_brief_sends_context_block_and_parses_impact_and_asset():
+    llm = RecordingLLM({"summary_bullets": ["a"], "ma_implication": "테빔브라가 키트루다 RSA 조건을 압박한다",
+                        "evidence_quote": "인용 문장입니다 열 글자 이상", "impact": "threat", "affected_asset": "키트루다"})
+    d = write_brief(title="t", body="본문", scope_terms=["x"], matched_scope_terms=["x"], llm=llm, model="w",
+                    context_block="[한국MSD 포트폴리오]\n- 키트루다(...)")
+    assert llm.calls[0]["user"]["ma_context"] == "[한국MSD 포트폴리오]\n- 키트루다(...)"
+    assert d.impact == "threat" and d.affected_asset == "키트루다"
+    # 시사점이 비면 impact none · asset 빈 문자열 (작성자가 뭐라 하든)
+    empty = write_brief(title="t", body="b", scope_terms=[], matched_scope_terms=[], model="w",
+                        llm=RecordingLLM({"summary_bullets": ["a"], "ma_implication": "", "impact": "threat", "affected_asset": "키트루다"}))
+    assert empty.impact == "none" and empty.affected_asset == ""
+    # 시사점이 있는데 impact 가 없거나 이상하면 neutral 로 (렌더는 '참고')
+    odd = write_brief(title="t", body="b", scope_terms=[], matched_scope_terms=[], model="w",
+                      llm=RecordingLLM({"summary_bullets": ["a"], "ma_implication": "x", "impact": "bad", "affected_asset": " 키트루다 "}))
+    assert odd.impact == "neutral" and odd.affected_asset == "키트루다"
+    legacy = write_brief(title="t", body="b", scope_terms=[], matched_scope_terms=[], model="w",
+                         llm=RecordingLLM({"summary_bullets": ["a"], "ma_implication": "x", "evidence_quote": "q"}))
+    assert legacy.impact == "neutral" and legacy.affected_asset == ""
+    # 기본값: 컨텍스트 없이 호출하면 빈 블록
+    assert llm.calls[0]["user"]["article_body"] == "본문"
+
+
+PACK = "- 키트루다(펨브롤리주맙, PD-(L)1) 약가 2,100,556원/100mg/4mL (2026.07.01) · 급여 적응증 4/15\n- 테빔브라(...) 약가 1,206,000원/100mg/1병"
+BODY = "테빔브라가 비소세포폐암 1차 등 4개 적응증에 급여 확대됐다. 키트루다는 RSA 를 재계약했다. 환급률은 30% 다."
+
+
+@pytest.mark.parametrize("implication,expected", [
+    ("테빔브라(1,206,000원/100mg)가 키트루다(2,100,556원/100mg)와 같은 급여 적응증을 가져가 RSA 조건을 압박한다", []),
+    ("2026.07.01 기준 약가 비교", []),                                     # 날짜 토큰 전체·부분 모두 팩에 있음
+    ("환급률 30% 를 유지하는 키트루다", []),                                 # 본문 숫자
+    ("1차 급여 확대는 키트루다의 4개 급여 적응증과 겹친다", []),              # 서수(1차)는 검증 대상 아님, 4 는 본문
+    ("PD-1 계열 경쟁 — 키트루다 MK-3475", []),                             # 식별자 안 숫자는 검증 대상 아님
+    ("테빔브라 약가는 키트루다의 약 57% 수준이다", ["57"]),                 # 계산값 — 어디에도 없음
+    ("키트루다 약가가 2배 높다", ["2"]),                                    # 배수 계산
+    ("키트루다 약가 2,100,000원", ["2,100,000"]),                            # 반올림
+    ("2027년 재계약", ["2027"]),
+    ("", []),
+])
+def test_unverified_numbers(implication, expected):
+    assert unverified_numbers(implication, BODY, PACK) == expected
+
+
+def test_unverified_numbers_accepts_precomputed_token_sets():
+    assert unverified_numbers("약가 2,100,556원", {"2100556"}) == []
+    assert unverified_numbers("약가 2,100,556원", set()) == ["2,100,556"]
+
+
+def test_support_prompt_accepts_pack_reasoning_and_verify_implication_sends_context():
+    for phrase in ("ma_context", "결합", "msd_specific", "키트루다", "시장 접근 전략에 위협", "기전"):
+        assert phrase in SUPPORT_SYSTEM, phrase
+    assert '{"supported": true 또는 false, "msd_specific": true 또는 false, "reason": "한국어 한 문장"}' in SUPPORT_SYSTEM
+    llm = RecordingLLM({"supported": True, "msd_specific": True})
+    verify_implication("x", "q", "b", llm=llm, model="m", context_block=PACK)
+    assert llm.calls[0]["user"] == {"implication": "x", "quote": "q", "article_body": "b", "ma_context": PACK}
+    verify_implication("x", "q", "b", llm=llm, model="m")
+    assert llm.calls[1]["user"]["ma_context"] == ""

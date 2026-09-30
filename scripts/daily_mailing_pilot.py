@@ -12,6 +12,7 @@ import argparse
 import json
 import os
 import sys
+from dataclasses import replace
 from datetime import datetime
 from html import escape
 from pathlib import Path
@@ -20,7 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from agents.daily_mailing.brief import BriefItem, publisher_display_name  # noqa: E402
+from agents.daily_mailing.brief import IMPACT_LABELS, BriefItem, publisher_display_name  # noqa: E402
 from agents.daily_mailing.dashboard_scope import load_dashboard_scope  # noqa: E402
 from agents.daily_mailing.discovery import canonicalize_url  # noqa: E402
 from agents.daily_mailing.engine import (  # noqa: E402
@@ -43,7 +44,8 @@ def _load_env(path: Path) -> None:
 
 
 # 검수 페이지에 보여줄 콘텐츠 엔진 플래그만 (registry 기반 일반 플래그는 제외)
-REVIEW_FLAGS = ("duplicate_story", "quote_unverified", "implication_unsupported", "implication_style_rejected")
+REVIEW_FLAGS = ("duplicate_story", "quote_unverified", "implication_unsupported", "implication_style_rejected",
+                "implication_not_msd_specific", "implication_unverified_number", "implication_unknown_asset")
 
 
 def _judgments(articles: list[dict], items: list[BriefItem] = ()) -> list[dict]:
@@ -66,6 +68,9 @@ def _judgments(articles: list[dict], items: list[BriefItem] = ()) -> list[dict]:
             "flags": [f for f in (a.get("quality_flags") or []) if f in REVIEW_FLAGS],
             "verification": a.get("verification_method"),
             "also_reported_by": [dict(e) for e in brief.also_reported_by] if brief is not None else [],
+            "impact": brief.impact if brief is not None else "",
+            "affected_asset": brief.affected_asset if brief is not None else "",
+            "implication": brief.ma_implication if brief is not None else "",
         })
     return out
 
@@ -76,6 +81,14 @@ def _also_reported_cell(j: dict) -> str:
         return ""
     names = ", ".join(escape(str(e.get("source_name") or e.get("url") or "")) for e in entries)
     return f"외 {len(entries)}개 매체: {names}"
+
+
+def _implication_cell(j: dict) -> str:
+    if not j.get("implication"):
+        return ""
+    label = IMPACT_LABELS.get(str(j.get("impact") or ""), "참고")
+    badge = f"<b>{escape(label)}</b>" + (f" · {escape(str(j.get('affected_asset') or ''))}" if j.get("affected_asset") else "")
+    return f"{badge}<br>{escape(str(j.get('implication') or ''))}"
 
 
 def render_index(summaries: list[dict], top: list[BriefItem], generated_at: str) -> str:
@@ -90,6 +103,7 @@ def render_index(summaries: list[dict], top: list[BriefItem], generated_at: str)
             f"<td>{escape(j['note'] or '')}</td>"
             f"<td>{escape(j['body'] or '')}</td>"
             f"<td>{escape(', '.join(j.get('flags') or []))}<br><small>{escape(j.get('verification') or '')}</small></td>"
+            f"<td>{_implication_cell(j)}</td>"
             f"<td>{_also_reported_cell(j)}</td>"
             "</tr>"
             for j in s["judgments"]
@@ -100,7 +114,7 @@ def render_index(summaries: list[dict], top: list[BriefItem], generated_at: str)
             f"판정 {s['judged']}건(제외 {s['excluded']}) · "
             f"<a href=\"{escape(s['html'], quote=True)}\">메일 미리보기 열기</a></p>"
             "<table><thead><tr><th>선정</th><th>기사</th><th>매체</th><th>매칭 스콥</th><th>판정 근거</th><th>본문</th>"
-            "<th>플래그</th><th>동일 보도</th></tr></thead>"
+            "<th>플래그</th><th>시사점</th><th>동일 보도</th></tr></thead>"
             f"<tbody>{rows}</tbody></table>"
         )
     top_list = "".join(f"<li>{escape(t.title)}</li>" for t in top) or "<li>(없음)</li>"
@@ -153,11 +167,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--db", default=str(REPO_ROOT / "data" / "db" / "drug_prices.db"),
                         help="뉴스 아카이브(competitor_news) 읽기 전용 소스. 없으면 Naver 만 사용")
     parser.add_argument("--settings", default=str(REPO_ROOT / "config" / "settings.json"))
+    parser.add_argument("--ma-context", default=None,
+                        help="MA 컨텍스트 팩 큐레이션 YAML (기본: settings.daily_mailing.ma_context_path). --db 의 약가·적응증·RSA 로 보강")
     args = parser.parse_args(argv)
 
     _load_env(Path(args.env))
     settings = json.loads(Path(args.settings).read_text(encoding="utf-8"))
     config = EngineConfig.from_settings(settings)
+    if args.ma_context:
+        config = replace(config, ma_context_path=args.ma_context)
     db_path = args.db if Path(args.db).exists() else None
     deps = EngineDeps.default(db_path=db_path)
     paths = [p for p in sorted(Path(args.scope_dir).glob("*.json")) if p.name != "scopes_index.json"]

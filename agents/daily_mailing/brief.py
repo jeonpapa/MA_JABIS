@@ -15,6 +15,7 @@ from typing import Iterable
 from urllib.parse import urlparse
 
 WEEKDAYS_KR = "월화수목금토일"
+IMPACT_LABELS = {"threat": "위협", "opportunity": "기회", "neutral": "참고"}
 LINK_SCHEMES = ("http", "https")
 # 매체명이 아닌 자리표시자 — 메일에는 원문 URL 의 등록 도메인으로 대체한다 (2026-09-19 파일럿 리뷰)
 PLACEHOLDER_SOURCE_NAMES = frozenset({"", "unknown publisher", "naver news api"})
@@ -110,6 +111,8 @@ class BriefItem:
     section: str = "scope"                        # scope | top_ma_news
     # 같은 사건을 보도한 다른 매체 (클러스터링으로 흡수된 기사): ({"source_name": ..., "url": ...}, ...)
     also_reported_by: tuple[dict, ...] = ()
+    impact: str = ""                              # threat | opportunity | neutral — 시사점이 렌더될 때만, 아니면 ""
+    affected_asset: str = ""                      # 시사점이 지목한 MSD 자산 (한글 브랜드명), 시사점 없으면 ""
 
     def to_dict(self) -> dict:
         data = asdict(self)
@@ -142,6 +145,8 @@ class BriefItem:
             also_reported_by=tuple(
                 {"source_name": str(e.get("source_name") or ""), "url": str(e.get("url") or "")}
                 for e in (data.get("also_reported_by") or ()) if isinstance(e, dict)),
+            impact=str(data.get("impact") or ""),
+            affected_asset=str(data.get("affected_asset") or ""),
         )
 
 
@@ -311,7 +316,7 @@ def render_brief_html(*, name: str, run_date: date, scope_terms: Iterable[str],
         f'{body}{top_html}'
         '<div style="font-size:11px;color:#9CA3AF;margin-top:28px;line-height:1.6;">'
         'MA AI Dossier · 구독 설정에 따라 자동 생성된 메일입니다. '
-        '본문 인용으로 확인되지 않은 MA 시사점은 표시하지 않습니다.</div>'
+        '본문 인용으로 확인되지 않은 시사점은 표시하지 않습니다.</div>'
         '</div></body></html>'
     )
 

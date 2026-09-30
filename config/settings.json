@@ -55,6 +55,8 @@
     "max_naver_queries": 40,
     "brief_limit": 5,
     "top_ma_news_limit": 2,
-    "naver_display": 20
+    "naver_display": 20,
+    "ma_context_path": "config/ma_context.yaml",
+    "context_pack_max_chars": 1500
   }
 }

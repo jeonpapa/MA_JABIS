@@ -40,13 +40,17 @@ class FakeNaver:
 
 class FakeLLM:
     def __init__(self, quote_mode="verbatim", fail_relevance=False, fail_writer=False,
-                 support_mode="ok", implication=None):
+                 support_mode="ok", implication=None, impact="threat", affected_asset="키트루다"):
         self.quote_mode = quote_mode
         self.fail_relevance = fail_relevance
         self.fail_writer = fail_writer
         self.support_mode = support_mode      # ok | reject | not_msd | legacy | error
         self.implication = implication        # None → 제목과 구별되는 기본 시사점
+        self.impact = impact
+        self.affected_asset = affected_asset
         self.support_calls = []               # (model, implication)
+        self.writer_calls = []                # user payload dict
+        self.support_payloads = []
 
     def complete_json(self, *, system, user, model):
         data = json.loads(user)
@@ -57,6 +61,7 @@ class FakeLLM:
             return {"relevant": bool(hits), "matched_scope_terms": hits, "reason": "제목 주제" if hits else "무관"}
         if system == SUPPORT_SYSTEM:
             self.support_calls.append((model, data["implication"]))
+            self.support_payloads.append(data)
             if self.support_mode == "error":
                 raise LLMError("down")
             if self.support_mode == "legacy":          # msd_specific 이 없는 구 계약 응답
@@ -65,10 +70,11 @@ class FakeLLM:
                     "msd_specific": self.support_mode in ("ok", "reject"), "reason": "검증"}
         if self.fail_writer:
             raise LLMError("down")
+        self.writer_calls.append(data)
         quote = data["article_body"][:40] if self.quote_mode == "verbatim" else "본문에 없는 인용 문장입니다 정말로"
         implication = self.implication if self.implication is not None else f"{data['title']} → 한국MSD 경쟁 구도 영향"
         return {"summary_bullets": [f"{data['title']} 요약"], "ma_implication": implication,
-                "evidence_quote": quote}
+                "evidence_quote": quote, "impact": self.impact, "affected_asset": self.affected_asset}
 
 
 def _deps(naver, llm=None, body_status="ok"):
@@ -569,16 +575,17 @@ def test_supported_but_not_msd_specific_drops_implication_keeps_item_and_flags_c
     assert "implication_not_msd_specific" in card["quality_flags"]
     assert card["verification_method"].endswith("+msd_link_rejected")
     assert "시사점 제외" in card["reviewer_note"] and "MSD" in card["reviewer_note"]
-    assert "▶ MA 시사점" not in result.html and STATIN_BOILERPLATE not in result.html
+    assert "MA 시사점" not in result.html and STATIN_BOILERPLATE not in result.html
 
 
 def test_supported_and_msd_specific_renders_implication():
-    concrete = "제네릭 45% 인하 개편은 키트루다 LOE 후 자사 오리지널의 가격 경쟁 압력으로 이어진다"
+    concrete = "파드셉 병용의 요로상피암 1차 급여 확대 논의는 키트루다 병용 급여 협상 안건의 암질심 일정에 직접 닿는다"
     llm = FakeLLM(support_mode="ok", implication=concrete)
     result = generate_run(_scope(), deps=_deps(FakeNaver({"파드셉": [PADCEV]}), llm), name="파드셉", now=NOW)
     item = result.items[0]
     assert item.ma_implication == concrete and item.quote_verified is True
-    assert "▶ MA 시사점" in result.html and concrete in result.html
+    assert item.impact == "threat" and item.affected_asset == "키트루다"
+    assert "MA 시사점" in result.html and concrete in result.html
     card = result.articles[0]
     assert card["verification_method"] == "llm_relevance+quote_check+support_check"
     assert "implication_not_msd_specific" not in card["quality_flags"]
@@ -639,3 +646,168 @@ def test_snippet_item_keeps_head_and_joins_naver_excerpt_fragments():
     assert "검색 요약: 환우회는 국회 토론회에서 … 위한 급여기준 개선을 요청했다고 밝혔다" in result.html
     assert "검색 요약: 환우회는 국회 토론회에서 … 위한 급여기준 개선을 요청했다고 밝혔다" in result.markdown
 
+
+
+# ---- MA 컨텍스트 팩 (2026-09-30 파일럿: '키트루다·테빔브라 사용범위 확대, RSA 재계약' → '키트루다에 긍정적') ----
+import sqlite3
+
+CTX_YAML = """msd_assets:
+  - brand_kr: 키트루다
+    brand_en: Keytruda
+    ingredient: 펨브롤리주맙
+    inn: pembrolizumab
+    class: PD-(L)1
+    price_match: 키트루다주
+    indication_slug: keytruda
+  - brand_kr: 웰리렉
+    brand_en: Welireg
+    ingredient: 벨주티판
+    class: HIF-2α
+competitors:
+  - brand_kr: 테빔브라
+    brand_en: Tevimbra
+    ingredient: 티슬렐리주맙
+    inn: tislelizumab
+    class: PD-(L)1
+    company: BeiGene Korea
+    watch_for: [키트루다]
+    price_match: 테빔브라주
+"""
+TEVIMBRA_TITLE = "사용범위 넓어진 키트루다·테빔브라, RSA도 다시 계약"
+TEVIMBRA_BODY = ("건강보험공단은 테빔브라(티슬렐리주맙)의 급여 범위를 비소세포폐암 1차 등 키트루다와 같은 적응증으로 확대하고 "
+                 "키트루다의 위험분담계약(RSA)을 재계약했다고 밝혔다. 두 약제는 같은 PD-1 계열이다. ") * 3
+TEVIMBRA_IMPLICATION = ("같은 PD-1 계열 테빔브라(약가 1,206,000원/100mg)가 키트루다(2,100,556원/100mg)와 같은 급여 적응증을 가져가면 "
+                        "키트루다 RSA 재계약 조건에 약가 인하 압박이 된다")
+TEVIMBRA = _raw(TEVIMBRA_TITLE, "https://www.yakup.com/tv1")
+
+
+def _ctx(tmp_path):
+    yaml_path = tmp_path / "ma_context.yaml"
+    yaml_path.write_text(CTX_YAML, encoding="utf-8")
+    db = tmp_path / "ctx.db"
+    if db.exists():
+        db.unlink()
+    with sqlite3.connect(db) as c:
+        c.execute("CREATE TABLE drug_prices (id INTEGER PRIMARY KEY, apply_date TEXT, insurance_code TEXT, product_name_kr TEXT, max_price INTEGER)")
+        c.executemany("INSERT INTO drug_prices (apply_date, insurance_code, product_name_kr, max_price) VALUES (?,?,?,?)", [
+            ("2026.07.01", "K1", "키트루다주(펨브롤리주맙,유전자재조합)_(0.1g/4mL)", 2100556),
+            ("2026.07.01", "T1", "테빔브라주100밀리그램(티슬렐리주맙)_(0.1g/1병)", 1206000)])
+    return str(yaml_path), str(db)
+
+
+def _ctx_deps(tmp_path, llm, body=TEVIMBRA_BODY):
+    yaml_path, db = _ctx(tmp_path)
+    registry = SourceRegistry([SourceInfo(name="약업신문", domains=("yakup.com",), source_tier="media_tier_A")])
+    deps = EngineDeps(naver=FakeNaver({"키트루다": [TEVIMBRA]}), llm=llm, registry=registry,
+                      fetch_body=lambda p, n: ArticleBody("ok", body, p), archive_db_path=db)
+    return deps, EngineConfig(ma_context_path=yaml_path)
+
+
+def test_tevimbra_case_writer_gets_pack_and_threat_implication_renders(tmp_path):
+    llm = FakeLLM(implication=TEVIMBRA_IMPLICATION, impact="threat", affected_asset="키트루다")
+    deps, config = _ctx_deps(tmp_path, llm)
+    result = generate_run(_scope(keywords=(), brands=("키트루다",)), deps=deps, config=config, name="키트루다", now=NOW)
+    ctx = llm.writer_calls[0]["ma_context"]
+    assert "키트루다(펨브롤리주맙, PD-(L)1) 약가 2,100,556원/100mg/4mL (2026.07.01)" in ctx
+    assert "[경쟁 계열 PD-(L)1 → 키트루다]" in ctx and "테빔브라(티슬렐리주맙, BeiGene Korea) 약가 1,206,000원/100mg/1병" in ctx
+    assert llm.support_payloads[0]["ma_context"] == ctx                      # 지원 검증도 같은 팩을 본다
+    item = result.items[0]
+    assert item.ma_implication == TEVIMBRA_IMPLICATION and item.quote_verified is True
+    assert item.impact == "threat" and item.affected_asset == "키트루다"
+    assert result.status == "ready"
+    assert TEVIMBRA_IMPLICATION in result.html and TEVIMBRA_IMPLICATION in result.markdown
+    assert result.payload["items"][0]["impact"] == "threat" and result.payload["items"][0]["affected_asset"] == "키트루다"
+    assert result.stats["context_pack_chars"] == len(ctx) > 0
+    card = result.articles[0]
+    assert card["impact"] == "threat" and card["affected_asset"] == "키트루다"
+    assert "위협 · 키트루다" in card["reviewer_note"]
+
+
+def test_invented_number_in_implication_is_rejected_in_code(tmp_path):
+    invented = "테빔브라 약가는 키트루다의 약 57% 수준이라 키트루다 RSA 조건에 인하 압박이 된다"
+    llm = FakeLLM(implication=invented)
+    deps, config = _ctx_deps(tmp_path, llm)
+    result = generate_run(_scope(keywords=(), brands=("키트루다",)), deps=deps, config=config, name="키트루다", now=NOW)
+    item = result.items[0]
+    assert item.ma_implication == "" and item.impact == "" and item.affected_asset == "" and item.summary_bullets
+    assert result.stats["implication_unverified_number"] == 1
+    assert llm.support_calls == []                                            # 코드 검증 실패 → LLM 호출 없음
+    card = result.articles[0]
+    assert "implication_unverified_number" in card["quality_flags"]
+    assert card["verification_method"] == "llm_relevance+number_rejected"
+    assert "57" in card["reviewer_note"] and "시사점 제외" in card["reviewer_note"]
+    assert result.status == "ready" and invented not in result.html
+
+
+def test_unknown_or_missing_affected_asset_is_rejected_in_code(tmp_path):
+    competitor_as_asset = FakeLLM(implication="테빔브라 급여 확대는 테빔브라에 기회다", affected_asset="테빔브라", impact="opportunity")
+    deps, config = _ctx_deps(tmp_path, competitor_as_asset)
+    result = generate_run(_scope(keywords=(), brands=("키트루다",)), deps=deps, config=config, name="키트루다", now=NOW)
+    assert result.items[0].ma_implication == "" and result.stats["implication_unknown_asset"] == 1
+    assert competitor_as_asset.support_calls == []
+    card = result.articles[0]
+    assert "implication_unknown_asset" in card["quality_flags"] and card["verification_method"] == "llm_relevance+asset_rejected"
+    assert "테빔브라" in card["reviewer_note"]
+    missing = FakeLLM(implication="키트루다 RSA 재계약 조건에 인하 압박이 된다", affected_asset="")
+    deps, config = _ctx_deps(tmp_path, missing)
+    result = generate_run(_scope(keywords=(), brands=("키트루다",)), deps=deps, config=config, name="키트루다", now=NOW)
+    assert result.items[0].ma_implication == "" and result.stats["implication_unknown_asset"] == 1
+    # 별칭(영문·성분)은 한글 브랜드명으로 정규화
+    alias = FakeLLM(implication="키트루다 RSA 재계약 조건에 인하 압박이 된다", affected_asset="Keytruda")
+    deps, config = _ctx_deps(tmp_path, alias)
+    result = generate_run(_scope(keywords=(), brands=("키트루다",)), deps=deps, config=config, name="키트루다", now=NOW)
+    assert result.items[0].affected_asset == "키트루다" and result.items[0].ma_implication
+
+
+def test_empty_implication_has_no_impact_and_no_asset(tmp_path):
+    llm = FakeLLM(implication="", impact="threat", affected_asset="키트루다")
+    deps, config = _ctx_deps(tmp_path, llm)
+    result = generate_run(_scope(keywords=(), brands=("키트루다",)), deps=deps, config=config, name="키트루다", now=NOW)
+    item = result.items[0]
+    assert item.ma_implication == "" and item.impact == "" and item.affected_asset == ""
+    assert "implication_unknown_asset" not in result.stats and llm.support_calls == []
+
+
+def test_policy_scope_pack_is_compact_and_expands_on_article_mention(tmp_path):
+    llm = FakeLLM(implication="", impact="none", affected_asset="")
+    yaml_path, db = _ctx(tmp_path)
+    registry = SourceRegistry([SourceInfo(name="약업신문", domains=("yakup.com",), source_tier="media_tier_A")])
+    policy = _raw("급여 확대 제도 개편안 행정예고", "https://www.yakup.com/pol1")
+    deps = EngineDeps(naver=FakeNaver({"급여 확대": [policy], "RSA": [TEVIMBRA]}), llm=llm, registry=registry,
+                      fetch_body=lambda p, n: ArticleBody("ok", TEVIMBRA_BODY if p.endswith("tv1") else "급여 확대 개편안 본문 " * 10, p),
+                      archive_db_path=db)
+    generate_run(_scope(keywords=("급여 확대", "RSA"), brands=()), deps=deps, config=EngineConfig(ma_context_path=yaml_path),
+                 name="정책", now=NOW)
+    by_title = {c["title"]: c["ma_context"] for c in llm.writer_calls}
+    assert "- 그 외: 키트루다(펨브롤리주맙, PD-(L)1) · 웰리렉(벨주티판, HIF-2α)" in by_title["급여 확대 제도 개편안 행정예고"]
+    assert "테빔브라" not in by_title["급여 확대 제도 개편안 행정예고"]
+    assert "테빔브라(티슬렐리주맙, BeiGene Korea) 약가 1,206,000원" in by_title[TEVIMBRA_TITLE]
+    assert "키트루다(펨브롤리주맙, PD-(L)1) 약가 2,100,556원" in by_title[TEVIMBRA_TITLE]
+
+
+def test_context_pack_failure_is_fail_closed_and_visible(tmp_path):
+    llm = FakeLLM()
+    deps, _ = _ctx_deps(tmp_path, llm)
+    config = EngineConfig(ma_context_path=str(tmp_path / "missing.yaml"))
+    result = generate_run(_scope(keywords=(), brands=("키트루다",)), deps=deps, config=config, name="키트루다", now=NOW)
+    assert result.stats["context_pack_error"]
+    assert llm.writer_calls[0]["ma_context"] == ""
+    assert result.items[0].ma_implication == "" and result.stats["implication_unknown_asset"] == 1
+    assert result.status == "ready"
+
+
+def test_context_pack_config_from_settings():
+    settings = json.loads((Path(__file__).resolve().parents[1] / "config" / "settings.json").read_text(encoding="utf-8"))
+    config = EngineConfig.from_settings(settings)
+    assert config.ma_context_path == "config/ma_context.yaml"
+    assert config.context_pack_max_chars == 1500
+    assert EngineConfig().ma_context_path == "config/ma_context.yaml"
+
+
+def test_default_pack_uses_repo_yaml_without_db():
+    llm = FakeLLM()
+    result = generate_run(_scope(), deps=_deps(FakeNaver({"파드셉": [PADCEV]}), llm), name="파드셉", now=NOW)
+    ctx = llm.writer_calls[0]["ma_context"]
+    assert "[한국MSD 포트폴리오]" in ctx and "키트루다(펨브롤리주맙, PD-(L)1)" in ctx
+    assert "약가" not in ctx.split("[한국MSD 포트폴리오]")[1].split("\n")[1] or "약가 미등재" in ctx   # DB 없음 → 수치 없음
+    assert result.items[0].affected_asset == "키트루다"

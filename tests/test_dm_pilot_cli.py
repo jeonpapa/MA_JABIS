@@ -31,7 +31,7 @@ class LLM:
         if system == SUPPORT_SYSTEM:
             return {"supported": True, "msd_specific": True, "reason": "검증"}
         return {"summary_bullets": ["요약"], "ma_implication": "키트루다 요로상피암 급여 경쟁 심화",
-                "evidence_quote": data["article_body"][:30]}
+                "evidence_quote": data["article_body"][:30], "impact": "threat", "affected_asset": "키트루다"}
 
 
 def test_run_pilot_writes_outputs(tmp_path):
@@ -48,6 +48,8 @@ def test_run_pilot_writes_outputs(tmp_path):
     assert (out / "sub_19.html").read_text(encoding="utf-8").count("파드셉 급여 확대") >= 1
     judgments = json.loads((out / "sub_19.judgments.json").read_text(encoding="utf-8"))
     assert judgments["judgments"][0]["selected"] is True
+    assert judgments["judgments"][0]["impact"] == "threat" and judgments["judgments"][0]["affected_asset"] == "키트루다"
+    assert judgments["judgments"][0]["implication"] == "키트루다 요로상피암 급여 경쟁 심화"
     index = (out / "index.html").read_text(encoding="utf-8")
     assert "파드셉 &lt;테스트&gt;" in index
     assert "sub_19.html" in index
@@ -86,3 +88,11 @@ def test_run_pilot_review_page_shows_cluster_flags_and_display_source(tmp_path):
     assert "duplicate_story" in index and "외 1개 매체" in index
     assert "Unknown publisher" not in index
     assert "<th>플래그</th>" in index and "<th>동일 보도</th>" in index
+    assert "<th>시사점</th>" in index
+
+
+def test_pilot_review_flags_include_context_pack_rejections():
+    from scripts.daily_mailing_pilot import REVIEW_FLAGS
+
+    assert "implication_unverified_number" in REVIEW_FLAGS and "implication_unknown_asset" in REVIEW_FLAGS
+    assert "implication_not_msd_specific" in REVIEW_FLAGS

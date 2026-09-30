@@ -33,7 +33,11 @@ def test_round_trip_dict():
     assert data["evidence_quotes"] == ["1차 치료로 급여 확대"]
     assert data["description"] == "요약1 요약2"
     assert data["work_note"] == "요로상피암 1차 급여 경쟁 구도 변화"
+    assert data["impact"] == "" and data["affected_asset"] == ""
     assert BriefItem.from_dict(data) == item
+    tagged = _item(impact="threat", affected_asset="키트루다")
+    assert BriefItem.from_dict(tagged.to_dict()) == tagged
+    assert BriefItem.from_dict({"title": "t", "publisher_url": "https://x/1"}).impact == ""
 
 
 def test_subject_and_date_label():
