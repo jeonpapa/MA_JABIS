@@ -75,6 +75,20 @@ class Recorder:
         return {"ok": False, "sent": False, "message": "token expired"}
 
 
+def _persist_run(db, run_id, *, sub=19, delivery, approval="not_required", is_test=False,
+                 generated_at=None, attempts=0, run_date="2026-09-18"):
+    """프로세스가 죽어 남은 run 행을 직접 심는다 (persist 직후·선점 전 상태 재현)."""
+    from agents.daily_mailing.run_store import update_run
+    from agents.daily_mailing.storage import persist_daily_mailing_run
+    persist_daily_mailing_run({
+        "run_id": run_id, "generated_at": (generated_at or FRI_0810).isoformat(), "keywords": [],
+        "subscription_id": sub, "status": "ready", "run_date": run_date, "is_test": is_test,
+        "email_subject": "[MA Daily] 파드셉", "email_html": "<p>orphan</p>", "recipients": ["r@msd.com"],
+        "delivery_status": delivery, "approval_status": approval}, articles=[], db_path=db)
+    if attempts:
+        update_run(run_id, db_path=db, send_attempts=attempts)
+
+
 def _deps(db, rec, now=FRI_0810, gmail_ready=True):
     return DispatchDeps(db_path=db, generate=rec.generate, load_top_ma_news=lambda d: [],
                         send=rec.send, now=lambda: now, gmail_ready=lambda: gmail_ready)
@@ -272,3 +286,42 @@ def test_health_check(tmp_path):
     dispatch_due_subscriptions(_deps(db, rec))
     problems = {(p["subscription_id"], p["problem"]) for p in health_check(_deps(db, rec))["problems"]}
     assert problems == {(19, "held")}
+
+
+def test_orphaned_ready_to_send_is_sent_on_next_tick(tmp_path):
+    """persist(ready_to_send) 직후 프로세스가 죽어 선점(claim)이 없었던 run — send_attempts=0 이라 재시도가 안전.
+
+    이전에는 슬롯만 점유한 채 영원히 ready_to_send 로 남았다 (재시도는 send_failed 만, 복구는 sending 만 봄).
+    """
+    db = _db(tmp_path, {"id": 19, "mode": "auto"})
+    _persist_run(db, "dm_19_orphan", delivery="ready_to_send")
+    rec = Recorder()
+    summary = dispatch_due_subscriptions(_deps(db, rec))
+    assert summary["skipped"] == 1 and rec.generated == []          # 슬롯 점유 — 재생성 없음
+    assert summary["retried"] == 1
+    run = get_run("dm_19_orphan", db_path=db)
+    assert (run["delivery_status"], run["send_attempts"], run["gmail_message_id"]) == ("sent", 1, "m1")
+    assert rec.sent == [(["r@msd.com"], "[MA Daily] 파드셉")]
+    with sqlite3.connect(db) as c:
+        assert c.execute("SELECT last_sent_at FROM mail_subscription WHERE id=19").fetchone()[0]
+
+
+def test_orphaned_or_failed_test_run_is_never_retried_to_real_recipients(tmp_path):
+    """[TEST] run 의 recipients_json 은 구독 수신자 — 재시도 경로가 집으면 테스트 메일이 실수신자에게 간다."""
+    db = _db(tmp_path, {"id": 19, "time": "09:00"})
+    _persist_run(db, "dm_19_t1_test", delivery="ready_to_send", is_test=True)
+    _persist_run(db, "dm_19_t2_test", delivery="send_failed", is_test=True, attempts=1)
+    rec = Recorder()
+    summary = dispatch_due_subscriptions(_deps(db, rec))
+    assert summary["retried"] == 0 and rec.sent == []
+    assert get_run("dm_19_t1_test", db_path=db)["delivery_status"] == "ready_to_send"
+    assert get_run("dm_19_t2_test", db_path=db)["delivery_status"] == "send_failed"
+
+
+def test_health_flags_ready_to_send_stuck_over_five_minutes(tmp_path):
+    db = _db(tmp_path, {"id": 19}, {"id": 20})
+    _persist_run(db, "dm_19_stuck", delivery="ready_to_send", generated_at=FRI_0810 - timedelta(minutes=6))
+    _persist_run(db, "dm_20_fresh", sub=20, delivery="ready_to_send", generated_at=FRI_0810 - timedelta(minutes=2))
+    problems = {(p["subscription_id"], p["problem"]) for p in health_check(_deps(db, Recorder()))["problems"]}
+    assert (19, "ready_to_send") in problems
+    assert all(p[0] != 20 for p in problems)   # 2분 전 생성 — 진행 중으로 본다

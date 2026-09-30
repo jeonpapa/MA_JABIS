@@ -12,6 +12,9 @@ from pathlib import Path
 
 from .storage import DEFAULT_DB_PATH, RETENTION_DAYS, ensure_daily_mailing_tables
 
+# 재시도 대상 상태: send_failed(발송 실패) + ready_to_send(persist 직후·선점 전 프로세스 중단 — 발송 시도 0회라 안전)
+RETRYABLE_SEND_STATUSES = ("send_failed", "ready_to_send")
+
 UPDATABLE_FIELDS = frozenset({
     "delivery_status", "approval_status", "sent_at", "gmail_message_id",
     "send_attempts", "delivery_error", "approved_by", "approved_at",
@@ -53,8 +56,15 @@ def list_runs_for_date(run_date: str, *, db_path: str | Path = DEFAULT_DB_PATH,
 
 
 def list_failed_sends(*, db_path: str | Path = DEFAULT_DB_PATH, max_attempts: int = 3) -> list[dict]:
-    return _rows(db_path, "SELECT * FROM daily_mailing_run WHERE delivery_status='send_failed' "
-                          "AND send_attempts < ? ORDER BY generated_at", (max_attempts,))
+    """재시도 대상 정규 run — RETRYABLE_SEND_STATUSES 이고 시도 횟수가 남은 것.
+
+    [TEST] run 은 제외한다: recipients_json 이 구독 수신자라 재시도 경로가 집으면 요청자가 아닌
+    실수신자에게 테스트 메일이 나간다 (테스트는 요청자가 다시 누르면 된다).
+    """
+    placeholders = ",".join("?" for _ in RETRYABLE_SEND_STATUSES)
+    return _rows(db_path, f"SELECT * FROM daily_mailing_run WHERE delivery_status IN ({placeholders}) "
+                          "AND is_test=0 AND send_attempts < ? ORDER BY generated_at",
+                 (*RETRYABLE_SEND_STATUSES, max_attempts))
 
 
 def list_sending_runs(*, db_path: str | Path = DEFAULT_DB_PATH) -> list[dict]:

@@ -17,6 +17,7 @@ from typing import Any, Callable
 
 from .dashboard_scope import scope_from_dict
 from .run_store import (
+    RETRYABLE_SEND_STATUSES,
     claim_for_sending,
     expire_pending_before,
     find_regular_run,
@@ -37,6 +38,8 @@ MAX_SEND_ATTEMPTS = 3
 RETRY_MIN_INTERVAL_MINUTES = 9   # 10분 tick 기준: 실패 직후 같은 tick 재시도 금지, 다음 tick 부터
 STALE_SENDING_MINUTES = 15
 STALE_SENDING_ERROR = "발송 중 프로세스 중단 — 실제 발송 여부 확인 필요"
+STUCK_READY_MINUTES = 5   # ready_to_send 가 이만큼 지나도 선점되지 않았으면 헬스체크 문제로 표시 (재시도 대상)
+STUCK_READY_DETAIL = "발송 대기(ready_to_send) 정체 — 선점 전 중단, 다음 주기 재시도 대상"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROBLEM_STATUSES = ("held", "send_failed", "error", "expired")
 
@@ -264,10 +267,11 @@ def _route_new_run(result, sub: dict, deps: DispatchDeps) -> dict | None:
 
 
 def retry_failed_sends(deps: DispatchDeps) -> int:
-    """send_failed 재시도 — 마지막 선점(claimed_at) 후 RETRY_MIN_INTERVAL_MINUTES 이상 지난 run 만.
+    """send_failed·ready_to_send 재시도 — 마지막 선점(claimed_at) 후 RETRY_MIN_INTERVAL_MINUTES 이상 지난 run 만.
 
     실패 직후 같은 tick 에서 바로 재시도하지 않고 주기 간격을 둔다 (일시 장애 회복 여유).
-    claimed_at 이 없는(컬럼 도입 전) 행은 충분히 오래된 것으로 보고 재시도한다.
+    claimed_at 이 없는 행(컬럼 도입 전, 또는 persist 직후·선점 전에 프로세스가 죽어 남은 ready_to_send 고아)은
+    선점된 적이 없으므로 바로 재시도한다 — 발송 시도 0회라 이중 발송 위험이 없다.
     """
     cutoff = _now(deps) - timedelta(minutes=RETRY_MIN_INTERVAL_MINUTES)
     retried = 0
@@ -275,7 +279,7 @@ def retry_failed_sends(deps: DispatchDeps) -> int:
         claimed = _parse_ts(run.get("claimed_at"))
         if claimed is not None and claimed > cutoff:
             continue  # 직전 tick 에서 막 실패 — 다음 주기로
-        send_run(run["run_id"], deps=deps, from_statuses=("send_failed",))
+        send_run(run["run_id"], deps=deps, from_statuses=RETRYABLE_SEND_STATUSES)
         retried += 1
     return retried
 
@@ -366,8 +370,16 @@ def send_test(subscription_id: int, *, requester_email: str, deps: DispatchDeps)
     return {"run_id": result.run_id, "status": result.status, "delivery_status": (run or {}).get("delivery_status")}
 
 
+def _stuck_ready(run: dict, now: datetime) -> bool:
+    """ready_to_send 인 채 STUCK_READY_MINUTES 넘게 선점되지 않은 run (생성 시각 기준; 없으면 정체로 본다)."""
+    if run.get("delivery_status") != "ready_to_send":
+        return False
+    generated = _parse_ts(run.get("generated_at")) or _parse_ts(run.get("created_at"))
+    return generated is None or generated <= now - timedelta(minutes=STUCK_READY_MINUTES)
+
+
 def health_check(deps: DispatchDeps) -> dict:
-    """오늘 이미 발송 시각이 지난 구독 중 미생성·보류·발송실패·오류·만료 + Gmail 토큰 상태."""
+    """오늘 이미 발송 시각이 지난 구독 중 미생성·보류·발송실패·오류·만료·발송대기 정체 + Gmail 토큰 상태."""
     now = _now(deps)
     run_date = now.date().isoformat()
     runs = {r["subscription_id"]: r for r in list_runs_for_date(run_date, db_path=deps.db_path)}
@@ -381,6 +393,9 @@ def health_check(deps: DispatchDeps) -> dict:
         elif run.get("delivery_status") in PROBLEM_STATUSES:
             problems.append({"subscription_id": sub["id"], "name": sub["name"],
                              "problem": run["delivery_status"], "detail": run.get("delivery_error")})
+        elif _stuck_ready(run, now):
+            problems.append({"subscription_id": sub["id"], "name": sub["name"],
+                             "problem": "ready_to_send", "detail": STUCK_READY_DETAIL})
     try:
         gmail_ok = bool(deps.gmail_ready())
     except Exception:
