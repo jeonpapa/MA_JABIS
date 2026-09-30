@@ -15,8 +15,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import scripts.agent_dispatcher as mod
-from scripts.agent_dispatcher import (ApiClient, CLAIMABLE_KINDS, CLAIMABLE_STATUSES, Dispatcher, main,
-                                      pick_runbook)
+from scripts.agent_dispatcher import ApiClient, CLAIMABLE_STATUSES, Dispatcher, main, pick_runbook
 
 
 class FakeClient:
@@ -62,12 +61,8 @@ def test_claimable_statuses_include_new_signals():
     assert CLAIMABLE_STATUSES == "new,triaged"
 
 
-def test_claimable_kinds_only_ops_incident():
-    """P1 은 ops_incident 만 처리한다 — 다른 종류(user_request 등)가 --max-tasks 슬롯을 먹으면 안 된다."""
-    assert CLAIMABLE_KINDS == "ops_incident"
-
-
 def test_runs_runbook_and_closes():
+    """목록은 kind=ops_incident 만(P1 — user_request 등이 --max-tasks 슬롯을 먹지 않게) + new,triaged."""
     client = FakeClient([_task()])
     out = Dispatcher(client).run_once()
     assert client.calls == [("list", "new,triaged", "ops_incident"), ("claim", 1),

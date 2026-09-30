@@ -252,6 +252,8 @@ def test_concurrent_claim_of_new_task_is_atomic(monkeypatch, tmp_path):
     real_get_task = store.get_task
     barrier = threading.Barrier(2, timeout=10)
 
+    # 결합 가정: claim 핸들러는 status=='new' 인 과제를 get_task 로 **정확히 1회** 읽은 뒤 쓰기로 간다.
+    # 핸들러가 new 상태에서 get_task 를 더/덜 부르면 barrier 참가자 수가 어긋나 timeout → 500 으로 깨진다.
     def gated_get_task(task_id, **kw):
         task = real_get_task(task_id, **kw)
         if task and task["status"] == "new":   # 두 실행 모두 'new' 를 읽은 뒤에야 쓰기로 넘어간다
@@ -364,16 +366,18 @@ def test_concurrent_claims_on_exhausted_task_emit_one_blocked_event(monkeypatch,
 # ── 권한 최소화: agent 토큰은 role='agent' 를 명시한 라우트(/api/agent/*)만 통과한다 ────────
 
 def test_agent_token_is_confined_to_agent_routes(monkeypatch, tmp_path):
-    """require_auth()(role 미지정) 도 agent 를 거부해야 한다 — VPS 자격증명으로 일반 사용자 API 접근 금지."""
+    """require_auth()(role 미지정) 도 agent 를 거부해야 한다 — VPS 자격증명으로 일반 사용자 API 접근 금지.
+
+    일반 라우트는 하나면 충분하다. /api/regimen/onco/search 는 q 가 없으면 DB 를 읽지 않고 빈 결과를 주므로
+    저장소 경로의 실제 drug_prices.db 를 건드리지 않는다 (403 은 어차피 핸들러 전에 끊긴다)."""
     _patch_db(monkeypatch, tmp_path)
     c = s.app.test_client()
-    assert c.get("/api/mail-subscriptions", headers=_h("agent")).status_code == 403
-    assert c.get("/api/msd/pipeline", headers=_h("agent")).status_code == 403
-    assert c.get("/api/auth/me", headers=_h("agent")).status_code == 403
+    plain = "/api/regimen/onco/search"
+    assert c.get(plain, headers=_h("agent")).status_code == 403
+    assert c.get(plain, headers=_h("user", "me@msd.com")).status_code == 200      # 사람 역할은 같은 게이트 통과
+    assert c.get(plain, headers=_h("admin", "admin@msd.com")).status_code == 200
     assert c.get("/api/agent/tasks", headers=_h("agent")).status_code == 200
     assert c.get("/api/agent/tasks", headers=_h("user")).status_code == 403
-    assert c.get("/api/mail-subscriptions", headers=_h("user", "me@msd.com")).status_code == 200
-    assert c.get("/api/mail-subscriptions", headers=_h("admin", "admin@msd.com")).status_code == 200
     assert c.get("/api/agent/tasks", headers=_h("admin", "admin@msd.com")).status_code == 200
 
 
