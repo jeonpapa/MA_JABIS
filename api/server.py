@@ -5383,9 +5383,23 @@ _AGENT_TASK_DB_PATH = _agent_store.DEFAULT_DB_PATH
 _AGENT_AUTO_TRIAGE_KINDS = ("ops_incident",)
 
 
-def _agent_statuses_arg(default: tuple[str, ...]) -> tuple[str, ...]:
-    raw = tuple(s for s in (request.args.get("status") or "").split(",") if s)
-    return raw or default
+def _agent_multi_arg(name: str, allowed: tuple[str, ...]):
+    """?name=a,b 와 ?name=a&name=b 를 같은 필터로 합친다(빈 문자열은 "필터 없음"). 모르는 값은 400.
+
+    (values, None) 또는 (None, error_response). status 와 kind 가 같은 규칙을 쓴다 — 오타가 200 빈 목록이면
+    디스패처가 조용히 아무 일도 안 한다.
+    """
+    values = tuple(dict.fromkeys(v.strip() for raw in request.args.getlist(name)
+                                 for v in raw.split(",") if v.strip()))
+    unknown = [v for v in values if v not in allowed]
+    if unknown:
+        return None, (jsonify({"error": f"알 수 없는 {name}: {unknown}", "code": "INVALID"}), 400)
+    return values, None
+
+
+def _agent_statuses_arg(default: tuple[str, ...]):
+    values, err = _agent_multi_arg("status", _agent_store.STATUSES)
+    return (values or default), err
 
 
 def _agent_stale_claim(task: dict, actor: str, role: str | None):
@@ -5406,15 +5420,16 @@ def _agent_stale_claim(task: dict, actor: str, role: str | None):
 @app.get("/api/agent/tasks")
 @require_auth(role="agent")
 def agent_tasks_list():
-    statuses = _agent_statuses_arg(_agent_store.OPEN_STATUSES)
+    statuses, err = _agent_statuses_arg(_agent_store.OPEN_STATUSES)
+    if err:
+        return err
     # kind=a,b : 디스패처가 처리할 수 있는 종류만 받는다(P1 은 ops_incident). 없으면 전 종류.
-    kinds = tuple(k for k in (request.args.get("kind") or "").split(",") if k) or None
-    if kinds and any(k not in _agent_store.KINDS for k in kinds):
-        return jsonify({"error": f"알 수 없는 kind: {[k for k in kinds if k not in _agent_store.KINDS]}",
-                        "code": "INVALID"}), 400
+    kinds, err = _agent_multi_arg("kind", _agent_store.KINDS)
+    if err:
+        return err
     limit = max(1, min(request.args.get("limit", default=50, type=int) or 50, 200))
     try:
-        tasks = _agent_store.list_tasks(db_path=_AGENT_TASK_DB_PATH, statuses=statuses, kinds=kinds,
+        tasks = _agent_store.list_tasks(db_path=_AGENT_TASK_DB_PATH, statuses=statuses, kinds=kinds or None,
                                         limit=limit)
         return jsonify({"tasks": tasks, "policy": _agent_policy.get_policy(db_path=_AGENT_TASK_DB_PATH)})
     except Exception as e:
@@ -5498,7 +5513,9 @@ def agent_task_resolve(task_id: int):
 @require_auth(role="admin")
 def admin_agent_tasks():
     # 기본은 전 상태: blocked(사람 확인 필요)·deployed 도 운영 원장 화면이 봐야 한다
-    statuses = _agent_statuses_arg(_agent_store.STATUSES)
+    statuses, err = _agent_statuses_arg(_agent_store.STATUSES)
+    if err:
+        return err
     try:
         return jsonify({
             # 최근 갱신순: 200건이 넘어도 방금 난 사고가 첫 페이지에 보인다 (디스패처 목록은 우선순위순 유지)

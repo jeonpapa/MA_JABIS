@@ -411,6 +411,26 @@ def test_agent_tasks_list_filters_by_kind(monkeypatch, tmp_path):
     assert {t["id"] for t in multi} == {ops, req}
     bad = c.get("/api/agent/tasks?kind=nope", headers=_h("agent"))
     assert bad.status_code == 400 and bad.get_json()["code"] == "INVALID"
+    # 반복 파라미터도 합친다 (?kind=a&kind=b) — 첫 값만 쓰면 조용히 절반이 빠진다
+    repeated = c.get("/api/agent/tasks?kind=ops_incident&kind=user_request", headers=_h("agent")).get_json()["tasks"]
+    assert {t["id"] for t in repeated} == {ops, req}
+
+
+def test_agent_tasks_list_validates_status_like_kind(monkeypatch, tmp_path):
+    """status 오타가 200 빈 목록이면 디스패처가 조용히 아무 일도 안 한다 — kind 와 같은 규칙으로 400."""
+    db = _patch_db(monkeypatch, tmp_path)
+    a = store.create_task(kind="ops_incident", source="x", source_ref="a", title="a", db_path=db)
+    b = _triaged_task(db, source_ref="b")
+    c = s.app.test_client()
+    bad = c.get("/api/agent/tasks?status=triage", headers=_h("agent"))
+    assert bad.status_code == 400 and bad.get_json()["code"] == "INVALID" and "triage" in bad.get_json()["error"]
+    admin_bad = c.get("/api/admin/agent-tasks?status=nope", headers=_h("admin", "admin@msd.com"))
+    assert admin_bad.status_code == 400 and admin_bad.get_json()["code"] == "INVALID"
+    # 콤마·반복 파라미터 모두 합친다, 빈 문자열은 "필터 없음"
+    assert {t["id"] for t in c.get("/api/agent/tasks?status=new&status=triaged", headers=_h("agent")).get_json()["tasks"]} == {a, b}
+    assert {t["id"] for t in c.get("/api/agent/tasks?status=new,triaged", headers=_h("agent")).get_json()["tasks"]} == {a, b}
+    assert [t["id"] for t in c.get("/api/agent/tasks?status=triaged", headers=_h("agent")).get_json()["tasks"]] == [b]
+    assert {t["id"] for t in c.get("/api/agent/tasks?status=&kind=", headers=_h("agent")).get_json()["tasks"]} == {a, b}
 
 
 # ── 소유권: 선점자가 아닌 호출자의 런북 실행·회신은 409 STALE_CLAIM ─────────────────────
