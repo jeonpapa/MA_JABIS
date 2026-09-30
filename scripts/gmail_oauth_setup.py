@@ -6,17 +6,23 @@
 실행:
   .venv/bin/python scripts/gmail_oauth_setup.py --client-secret ~/Downloads/client_secret.json
 결과: data/secrets/google_token.json (0600) + fly secret 등록 명령 출력.
+      (토큰 내용은 터미널에 찍지 않는다 — 명령이 파일을 읽는 형태라 셸 히스토리에도 남지 않음)
 """
 from __future__ import annotations
 
 import argparse
-import base64
 import os
 import subprocess
 from pathlib import Path
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
 REPO_ROOT = Path(__file__).resolve().parent.parent
+FLY_APP = "ma-ai-dossier"
+
+
+def fly_secret_command(token_path: str | Path) -> str:
+    """fly secret 등록 명령 — 토큰 파일을 셸이 읽어 인코딩한다. base64 전문을 출력/복사하지 않도록."""
+    return f'flyctl secrets set GOOGLE_TOKEN_JSON="$(base64 < {Path(token_path).resolve()})" -a {FLY_APP}'
 
 
 def _is_git_ignored(path: str | Path) -> bool:
@@ -58,10 +64,9 @@ def main() -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(creds.to_json(), encoding="utf-8")
     os.chmod(out, 0o600)
-    encoded = base64.b64encode(out.read_bytes()).decode("ascii")
     print(f"토큰 저장: {out}")
-    print("프로덕션 등록(사용자 직접 실행):")
-    print(f"  flyctl secrets set GOOGLE_TOKEN_JSON={encoded} -a ma-ai-dossier")
+    print("프로덕션 등록(사용자 직접 실행 — 토큰 내용은 출력하지 않습니다):")
+    print(f"  {fly_secret_command(out)}")
     return 0
 
 

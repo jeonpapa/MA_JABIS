@@ -10,7 +10,10 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from .storage import DEFAULT_DB_PATH, RETENTION_DAYS, ensure_daily_mailing_tables
+from .storage import DEFAULT_DB_PATH, RETENTION_DAYS, connect, ensure_daily_mailing_tables
+
+# 재시도 대상 상태: send_failed(발송 실패) + ready_to_send(persist 직후·선점 전 프로세스 중단 — 발송 시도 0회라 안전)
+RETRYABLE_SEND_STATUSES = ("send_failed", "ready_to_send")
 
 UPDATABLE_FIELDS = frozenset({
     "delivery_status", "approval_status", "sent_at", "gmail_message_id",
@@ -20,14 +23,14 @@ UPDATABLE_FIELDS = frozenset({
 
 def _rows(db_path: str | Path, sql: str, params: tuple = ()) -> list[dict]:
     ensure_daily_mailing_tables(db_path)
-    with sqlite3.connect(str(db_path)) as conn:
+    with connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         return [dict(r) for r in conn.execute(sql, params).fetchall()]
 
 
 def _write(db_path: str | Path, sql: str, params: tuple) -> int:
     ensure_daily_mailing_tables(db_path)
-    with sqlite3.connect(str(db_path)) as conn:
+    with connect(db_path) as conn:
         cur = conn.execute(sql, params)
         conn.commit()
         return cur.rowcount
@@ -52,9 +55,23 @@ def list_runs_for_date(run_date: str, *, db_path: str | Path = DEFAULT_DB_PATH,
     return _rows(db_path, sql + " ORDER BY generated_at", (run_date,))
 
 
-def list_failed_sends(*, db_path: str | Path = DEFAULT_DB_PATH, max_attempts: int = 3) -> list[dict]:
-    return _rows(db_path, "SELECT * FROM daily_mailing_run WHERE delivery_status='send_failed' "
-                          "AND send_attempts < ? ORDER BY generated_at", (max_attempts,))
+def list_failed_sends(*, db_path: str | Path = DEFAULT_DB_PATH, max_attempts: int = 3,
+                      run_date: str | None = None) -> list[dict]:
+    """재시도 대상 정규 run — RETRYABLE_SEND_STATUSES 이고 시도 횟수가 남은 것. run_date 를 주면 그날 것만.
+
+    디스패처는 오늘 run_date 만 넘긴다: 장애 복구 후 전날 send_failed 가 며칠 늦게 나가면 안 된다
+    (지난 날짜는 expire_pending_before 가 stale pending 과 같이 expired 로 닫는다).
+    [TEST] run 은 제외한다: recipients_json 이 구독 수신자라 재시도 경로가 집으면 요청자가 아닌
+    실수신자에게 테스트 메일이 나간다 (테스트는 요청자가 다시 누르면 된다).
+    """
+    placeholders = ",".join("?" for _ in RETRYABLE_SEND_STATUSES)
+    sql = (f"SELECT * FROM daily_mailing_run WHERE delivery_status IN ({placeholders}) "
+           "AND is_test=0 AND send_attempts < ?")
+    params: tuple = (*RETRYABLE_SEND_STATUSES, max_attempts)
+    if run_date:
+        sql += " AND run_date=?"
+        params += (run_date,)
+    return _rows(db_path, sql + " ORDER BY generated_at", params)
 
 
 def list_sending_runs(*, db_path: str | Path = DEFAULT_DB_PATH) -> list[dict]:
@@ -86,8 +103,14 @@ def claim_for_sending(run_id: str, *, from_statuses: tuple[str, ...], claimed_at
 
 
 def expire_pending_before(run_date: str, *, db_path: str | Path = DEFAULT_DB_PATH) -> int:
+    """run_date 이전의 승인 대기·재시도 대기(send_failed/ready_to_send) run 을 expired 로 닫는다 (설계 §6).
+
+    다음 날 run 과 섞이지 않게 하고, 전날 실패분이 뒤늦게 발송되는 것을 막는다. delivery_error 는 보존.
+    """
+    statuses = ("pending_approval", *RETRYABLE_SEND_STATUSES)
+    placeholders = ",".join("?" for _ in statuses)
     return _write(db_path, "UPDATE daily_mailing_run SET delivery_status='expired' "
-                           "WHERE delivery_status='pending_approval' AND run_date < ?", (run_date,))
+                           f"WHERE delivery_status IN ({placeholders}) AND run_date < ?", (*statuses, run_date))
 
 
 def record_error_run(*, subscription_id: int, run_date: str, error: str, now: datetime,

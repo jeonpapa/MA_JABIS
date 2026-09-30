@@ -562,6 +562,9 @@ export default function AdminDailyMailingKanbanPage() {
       await reload();
     } catch (e) {
       alert(e instanceof Error ? e.message : '처리 실패');
+      // 409(다른 요청이 이미 선점·만료) / 500 뒤에도 서버 상태는 바뀌었을 수 있다 — 카드가 stale 한 승인·발송/반려
+      // 버튼을 계속 보여주지 않도록 실패 경로에서도 다시 읽는다 (reload 는 자체적으로 오류를 삼킨다).
+      if (action !== 'preview') await reload();
     } finally {
       setBusyRunId(null);
     }
