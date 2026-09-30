@@ -62,11 +62,10 @@ export interface SubscriptionScopeResponse {
   scope: Record<string, unknown>;
 }
 
+// POST /api/mail-subscriptions/:id/test-request — 202 {ok, message} / 409 {error, code: 'IN_PROGRESS'} (ApiError 로 throw)
 export interface TestMailRequestResult {
   ok: boolean;
   message?: string;
-  requested_at?: string;
-  snapshot_path?: string;
 }
 
 export async function listMailSubscriptions(): Promise<MailSubListResponse> {
