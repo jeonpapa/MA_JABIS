@@ -97,6 +97,11 @@ async def run_pipeline():
             logger.warning("catch-up 일부 오류 — 다음 실행 시 재시도(멱등): %s", result["errors"])
     except Exception as e:
         logger.error("국내 약가 catch-up 실패: %s", e, exc_info=True)
+        # 캐치업 자체가 예외로 죽은 경우에도 에이전트 원장에 신호를 남긴다 (신호 실패가 잡을 막지 않게)
+        try:
+            _agent_record_job_failure("domestic_price_pipeline", f"{type(e).__name__}: {e}"[:300])
+        except Exception as signal_err:
+            logger.warning("국내 약가 실패 신호 기록 실패: %s", signal_err)
         # 적재 실패해도 대쉬보드는 기존 데이터로 갱신
 
     # 2) 대쉬보드 에이전트
