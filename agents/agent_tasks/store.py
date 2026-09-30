@@ -144,8 +144,16 @@ def get_task(task_id: int, *, db_path: str | Path = DEFAULT_DB_PATH) -> dict | N
         conn.close()
 
 
+# list_tasks 정렬: 디스패처는 우선순위(priority, id), 운영 원장 화면은 최근 갱신순(updated_at DESC, id DESC)
+# — 화면은 limit 에 잘려도 최신 사고가 첫 페이지에 남아야 한다.
+ORDERS = {"priority": "priority, id", "recent": "updated_at DESC, id DESC"}
+
+
 def list_tasks(*, db_path: str | Path = DEFAULT_DB_PATH, statuses: tuple[str, ...] = OPEN_STATUSES,
-               kinds: tuple[str, ...] | None = None, limit: int = 100) -> list[dict]:
+               kinds: tuple[str, ...] | None = None, limit: int = 100,
+               order: str = "priority") -> list[dict]:
+    if order not in ORDERS:
+        raise AgentTaskError(f"알 수 없는 order: {order}")
     conn = connect(db_path)
     try:
         sql = f"SELECT * FROM agent_task WHERE status IN ({','.join('?' for _ in statuses)})"
@@ -153,7 +161,7 @@ def list_tasks(*, db_path: str | Path = DEFAULT_DB_PATH, statuses: tuple[str, ..
         if kinds:
             sql += f" AND kind IN ({','.join('?' for _ in kinds)})"
             params += list(kinds)
-        sql += " ORDER BY priority, id LIMIT ?"
+        sql += f" ORDER BY {ORDERS[order]} LIMIT ?"
         params.append(int(limit))
         return [dict(r) for r in conn.execute(sql, params).fetchall()]
     finally:

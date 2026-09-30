@@ -335,3 +335,22 @@ def test_agent_token_is_confined_to_agent_routes(monkeypatch, tmp_path):
     assert c.get("/api/mail-subscriptions", headers=_h("user", "me@msd.com")).status_code == 200
     assert c.get("/api/mail-subscriptions", headers=_h("admin", "admin@msd.com")).status_code == 200
     assert c.get("/api/agent/tasks", headers=_h("admin", "admin@msd.com")).status_code == 200
+
+
+# ── 운영 원장 정렬: 과제가 200건을 넘어도 최신 사고가 첫 페이지에 보여야 한다 ────────────
+
+def test_admin_ledger_shows_newest_task_when_over_page_limit(monkeypatch, tmp_path):
+    db = _patch_db(monkeypatch, tmp_path)
+    ids = [store.create_task(kind="ops_incident", source="x", source_ref=f"old:{i}", title=f"old {i}",
+                             priority=1, db_path=db) for i in range(200)]
+    newest = store.create_task(kind="ops_incident", source="x", source_ref="new:incident",
+                               title="방금 난 사고", priority=3, db_path=db)
+    c = s.app.test_client()
+    data = c.get("/api/admin/agent-tasks", headers=_h("admin", "admin@msd.com")).get_json()
+    listed = [t["id"] for t in data["tasks"]]
+    assert len(listed) == 200
+    assert listed[0] == newest and newest in listed
+    assert ids[0] not in listed                      # 가장 오래된 것이 밀려난다
+    # 디스패처용 목록은 우선순위 순 유지 (priority 1 인 old 가 먼저)
+    agent = c.get("/api/agent/tasks?limit=5", headers=_h("agent")).get_json()["tasks"]
+    assert [t["id"] for t in agent] == ids[:5]

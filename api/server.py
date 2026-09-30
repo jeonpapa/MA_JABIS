@@ -5477,7 +5477,9 @@ def admin_agent_tasks():
     statuses = _agent_statuses_arg(_agent_store.STATUSES)
     try:
         return jsonify({
-            "tasks": _agent_store.list_tasks(db_path=_AGENT_TASK_DB_PATH, statuses=statuses, limit=200),
+            # 최근 갱신순: 200건이 넘어도 방금 난 사고가 첫 페이지에 보인다 (디스패처 목록은 우선순위순 유지)
+            "tasks": _agent_store.list_tasks(db_path=_AGENT_TASK_DB_PATH, statuses=statuses, limit=200,
+                                             order="recent"),
             "policy": _agent_policy.get_policy(db_path=_AGENT_TASK_DB_PATH),
             "runbooks": _agent_runbooks.list_runbooks(),
         })

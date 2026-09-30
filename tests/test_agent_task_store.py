@@ -124,3 +124,15 @@ def test_claim_refused_after_max_attempts(tmp_path):
     assert claim_task(tid, actor="vps-9", db_path=db) is False                # 한도 초과
     t = get_task(tid, db_path=db)
     assert t["status"] == "triaged" and t["attempts"] == MAX_ATTEMPTS and t["claimed_by"] is None
+
+
+def test_list_tasks_order_recent_puts_latest_update_first(tmp_path):
+    db = tmp_path / "a.db"
+    a = _new(db)
+    b = _new(db, source_ref="dm:2026-10-01", title="둘째", priority=1)
+    c_ = _new(db, source_ref="dm:2026-10-02", title="셋째")
+    update_task(a, db_path=db, detail="가장 최근에 손댐", actor="test")     # updated_at 갱신
+    assert [t["id"] for t in list_tasks(db_path=db)] == [b, a, c_]                    # 기본: priority, id
+    assert [t["id"] for t in list_tasks(db_path=db, order="recent")] == [a, c_, b]    # updated_at DESC, id DESC
+    with pytest.raises(AgentTaskError):
+        list_tasks(db_path=db, order="whatever")
