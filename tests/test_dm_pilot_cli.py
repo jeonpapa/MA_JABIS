@@ -51,3 +51,38 @@ def test_run_pilot_writes_outputs(tmp_path):
     index = (out / "index.html").read_text(encoding="utf-8")
     assert "파드셉 &lt;테스트&gt;" in index
     assert "sub_19.html" in index
+
+
+class ClusterNaver:
+    def search(self, query, display=20, sort="date"):
+        if query != "약가":
+            return []
+        mk = lambda t, u: {"title": t, "originallink": u, "link": u, "description": "설명…",
+                           "pubDate": "Fri, 18 Sep 2026 06:00:00 +0900"}
+        return [mk("듀카브·램시마 등 80개 품목 약가 평균 4.6% 인하…339억원 절감", "https://www.newsmp.com/u1"),
+                mk("사용량 늘어난 의약품 80개 약가 평균 4.6% 인하", "https://www.yakup.com/u2")]
+
+
+def test_run_pilot_review_page_shows_cluster_flags_and_display_source(tmp_path):
+    scope_dir = tmp_path / "scopes"
+    scope_dir.mkdir()
+    (scope_dir / "19.json").write_text(json.dumps({"subscription_id": "19", "name": "약가", "keywords": ["약가"],
+                                                   "recipients": ["r@msd.com"]}, ensure_ascii=False), encoding="utf-8")
+    deps = EngineDeps(naver=ClusterNaver(), llm=LLM(), registry=SourceRegistry([]),
+                      fetch_body=lambda p, n: ArticleBody("ok", BODY, p))
+    out = tmp_path / "out"
+    run_pilot(sorted(scope_dir.glob("*.json")), out, deps=deps, config=EngineConfig(), now=NOW)
+    judgments = json.loads((out / "sub_19.judgments.json").read_text(encoding="utf-8"))["judgments"]
+    by_url = {j["url"]: j for j in judgments}
+    kept = next(j for j in judgments if j["selected"])
+    absorbed = next(j for j in judgments if not j["selected"])
+    assert kept["also_reported_by"] == [{"source_name": absorbed["source"], "url": absorbed["url"]}]
+    assert absorbed["also_reported_by"] == []
+    assert "duplicate_story" in absorbed["flags"]
+    assert kept["verification"] == "llm_relevance+quote_check+support_check"
+    assert {j["source"] for j in judgments} == {"newsmp.com", "yakup.com"}      # 'Unknown publisher' 아님
+    assert by_url["https://www.newsmp.com/u1"]["source"] == "newsmp.com"
+    index = (out / "index.html").read_text(encoding="utf-8")
+    assert "duplicate_story" in index and "외 1개 매체" in index
+    assert "Unknown publisher" not in index
+    assert "<th>플래그</th>" in index and "<th>동일 보도</th>" in index

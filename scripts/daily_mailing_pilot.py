@@ -20,8 +20,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from agents.daily_mailing.brief import BriefItem  # noqa: E402
+from agents.daily_mailing.brief import BriefItem, publisher_display_name  # noqa: E402
 from agents.daily_mailing.dashboard_scope import load_dashboard_scope  # noqa: E402
+from agents.daily_mailing.discovery import canonicalize_url  # noqa: E402
 from agents.daily_mailing.engine import (  # noqa: E402
     EngineConfig,
     EngineDeps,
@@ -41,17 +42,40 @@ def _load_env(path: Path) -> None:
         os.environ.setdefault(key.strip(), value.strip().strip('"\''))
 
 
-def _judgments(articles: list[dict]) -> list[dict]:
-    return [{
-        "title": a.get("title"),
-        "url": a.get("publisher_url"),
-        "source": a.get("source_name"),
-        "selected": bool(a.get("selected_for_draft")),
-        "review_status": a.get("review_status"),
-        "matched": a.get("matched_keywords") or [],
-        "note": a.get("reviewer_note"),
-        "body": a.get("verification_caveat"),
-    } for a in articles]
+# 검수 페이지에 보여줄 콘텐츠 엔진 플래그만 (registry 기반 일반 플래그는 제외)
+REVIEW_FLAGS = ("duplicate_story", "quote_unverified", "implication_unsupported", "implication_style_rejected")
+
+
+def _judgments(articles: list[dict], items: list[BriefItem] = ()) -> list[dict]:
+    """기사 카드 + (선정된 경우) 메일 항목의 also_reported_by. 매체명은 메일과 같은 표시 규칙(도메인 폴백)."""
+    by_url = {canonicalize_url(i.publisher_url or i.naver_url): i for i in items}
+    out = []
+    for a in articles:
+        url = str(a.get("publisher_url") or "")
+        brief = by_url.get(canonicalize_url(url or str(a.get("naver_url") or "")))
+        out.append({
+            "title": a.get("title"),
+            "url": url,
+            "source": publisher_display_name(str(a.get("source_name") or ""), url or str(a.get("naver_url") or ""),
+                                             source_tier=str(a.get("source_tier") or "")),
+            "selected": bool(a.get("selected_for_draft")),
+            "review_status": a.get("review_status"),
+            "matched": a.get("matched_keywords") or [],
+            "note": a.get("reviewer_note"),
+            "body": a.get("verification_caveat"),
+            "flags": [f for f in (a.get("quality_flags") or []) if f in REVIEW_FLAGS],
+            "verification": a.get("verification_method"),
+            "also_reported_by": [dict(e) for e in brief.also_reported_by] if brief is not None else [],
+        })
+    return out
+
+
+def _also_reported_cell(j: dict) -> str:
+    entries = j.get("also_reported_by") or []
+    if not entries:
+        return ""
+    names = ", ".join(escape(str(e.get("source_name") or e.get("url") or "")) for e in entries)
+    return f"외 {len(entries)}개 매체: {names}"
 
 
 def render_index(summaries: list[dict], top: list[BriefItem], generated_at: str) -> str:
@@ -65,6 +89,8 @@ def render_index(summaries: list[dict], top: list[BriefItem], generated_at: str)
             f"<td>{escape(', '.join(j['matched']))}</td>"
             f"<td>{escape(j['note'] or '')}</td>"
             f"<td>{escape(j['body'] or '')}</td>"
+            f"<td>{escape(', '.join(j.get('flags') or []))}<br><small>{escape(j.get('verification') or '')}</small></td>"
+            f"<td>{_also_reported_cell(j)}</td>"
             "</tr>"
             for j in s["judgments"]
         )
@@ -73,7 +99,8 @@ def render_index(summaries: list[dict], top: list[BriefItem], generated_at: str)
             f"<p>상태 <b>{escape(s['status'])}</b> · 메일 기사 {s['items']}건 · 주요 MA 뉴스 {s['top_ma_news']}건 · "
             f"판정 {s['judged']}건(제외 {s['excluded']}) · "
             f"<a href=\"{escape(s['html'], quote=True)}\">메일 미리보기 열기</a></p>"
-            "<table><thead><tr><th>선정</th><th>기사</th><th>매체</th><th>매칭 스콥</th><th>판정 근거</th><th>본문</th></tr></thead>"
+            "<table><thead><tr><th>선정</th><th>기사</th><th>매체</th><th>매칭 스콥</th><th>판정 근거</th><th>본문</th>"
+            "<th>플래그</th><th>동일 보도</th></tr></thead>"
             f"<tbody>{rows}</tbody></table>"
         )
     top_list = "".join(f"<li>{escape(t.title)}</li>" for t in top) or "<li>(없음)</li>"
@@ -101,7 +128,7 @@ def run_pilot(scope_paths: list[Path], out_dir: Path, *, deps: EngineDeps, confi
         stem = f"sub_{scope.subscription_id}"
         (out_dir / f"{stem}.html").write_text(result.html, encoding="utf-8")
         (out_dir / f"{stem}.md").write_text(result.markdown, encoding="utf-8")
-        judgments = _judgments(result.articles)
+        judgments = _judgments(result.articles, result.items + result.top_ma_news)
         (out_dir / f"{stem}.judgments.json").write_text(json.dumps({
             "subject": result.subject, "status": result.status, "quality_report": result.quality_report,
             "stats": result.stats, "judgments": judgments,
