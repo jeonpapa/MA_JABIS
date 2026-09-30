@@ -248,6 +248,23 @@ def test_main_dry_run_with_injected_client(monkeypatch):
     assert built == {"base": "https://api.test", "email": "agent@msd.com", "password": "pw"}
 
 
+def test_claim_server_error_skips_task_and_continues():
+    """claim 이 5xx(sqlite 잠김 등)로 터져도 실행 전체가 죽지 않는다 — 그 과제만 skip + 로그, 다음 과제 처리."""
+
+    class Flaky(FakeClient):
+        def claim(self, task_id):
+            self.calls.append(("claim", task_id))
+            if task_id == 1:
+                raise _http_error(500)
+            return True
+
+    client = Flaky([_task(1), _task(2)])
+    out = Dispatcher(client).run_once()
+    assert ("claim", 1) in client.calls and ("claim", 2) in client.calls
+    assert [c for c in client.calls if c[0] == "resolve"] == [("resolve", 2, "closed", "복구 완료")]
+    assert out["handled"] == 1 and out["errors"] == 1
+
+
 # ── 선점 무효(STALE_CLAIM): 이 과제는 내 것이 아니다 → 조용히 skip, 다음 과제로 ─────────────
 
 def test_lost_claim_on_runbook_skips_task_without_resolving():

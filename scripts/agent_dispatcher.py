@@ -141,7 +141,13 @@ class Dispatcher:
             planned.append({"task_id": task_id, "runbook": runbook})
             if self.dry_run:
                 continue
-            if not self.client.claim(task_id):
+            try:
+                claimed = self.client.claim(task_id)
+            except Exception as exc:   # 5xx(sqlite 잠김 등)·네트워크 — 이 과제만 건너뛰고 실행은 계속한다
+                errors += 1
+                logger.error("선점 요청 실패 task=%s: %s — 건너뜀", task_id, exc)
+                continue
+            if not claimed:
                 logger.info("선점 실패(다른 실행이 가져갔거나 정책이 막음): %s", task_id)
                 continue
             try:
