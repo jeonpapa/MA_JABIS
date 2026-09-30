@@ -74,7 +74,7 @@ class DispatchDeps:
 
         from .brief import BriefItem
         from .engine import EngineConfig, EngineDeps, generate_run, generate_top_ma_news
-        from .top_news import load_top_ma_news, store_top_ma_news
+        from .top_news import TOP_NEWS_FAILED, load_top_ma_news_entry, mark_top_ma_news_failed, store_top_ma_news
 
         config = EngineConfig.from_settings(_load_settings())
         cache: dict[str, Any] = {}
@@ -87,11 +87,25 @@ class DispatchDeps:
         def generate(scope, **kwargs):
             return generate_run(scope, deps=engine_deps(), config=config, **kwargs)
 
-        def top_ma_news(run_date: str) -> list:
-            cached = load_top_ma_news(run_date, db_path=db_path)
-            if cached is not None:
-                return [BriefItem.from_dict(d) for d in cached]
-            items = generate_top_ma_news(deps=engine_deps(), config=config)
+        def top_ma_news(run_date: str, *, retry_failed: bool = False) -> list:
+            """그날 캐시(성공/실패 마커) 우선. 실패 마커는 retry_failed=True 일 때만 다시 시도한다.
+
+            실패를 캐시하지 않으면 10분 tick 의 모든 신규 생성이 엔진(LLM·Naver)을 다시 돌린다 — 하루 1회 원칙.
+            (scheduler 의 06:40 잡이 retry_failed=True 로 부르면 그날 한 번 더 시도할 수 있다.)
+            """
+            entry = load_top_ma_news_entry(run_date, db_path=db_path)
+            if entry is not None and not (retry_failed and entry["status"] == TOP_NEWS_FAILED):
+                if entry["status"] == TOP_NEWS_FAILED:
+                    logger.warning("[daily_mailing] 주요 MA 뉴스 %s 오늘 이미 실패(%s) — 재시도 없이 빈 목록으로 진행",
+                                   run_date, entry.get("error"))
+                return [BriefItem.from_dict(d) for d in entry["items"]]
+            try:
+                items = generate_top_ma_news(deps=engine_deps(), config=config)
+            except Exception as exc:
+                logger.exception("[daily_mailing] 주요 MA 뉴스 %s 생성 실패 — 오늘은 재시도하지 않음 (failed 마커 캐시)",
+                                 run_date)
+                mark_top_ma_news_failed(run_date, f"{type(exc).__name__}: {exc}", db_path=db_path)
+                return []
             store_top_ma_news(run_date, [i.to_dict() for i in items], db_path=db_path)
             return items
 

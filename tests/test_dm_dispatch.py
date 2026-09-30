@@ -440,3 +440,53 @@ def test_health_does_not_report_admin_rejected_run_as_problem(tmp_path):
     problems = {(p["subscription_id"], p["problem"]) for p in report["problems"]}
     assert problems == {(20, "held")}
     assert report["rejected"] == [{"subscription_id": 19, "name": "파드셉", "approved_by": "admin@msd.com"}]
+
+
+def _production_top_news(monkeypatch, db, generate):
+    """DispatchDeps.production 의 top_ma_news 클로저만 실행 — 엔진 의존성은 지연 생성이라 default 를 가짜로 막는다."""
+    from agents.daily_mailing import engine as engine_mod
+    monkeypatch.setattr(engine_mod.EngineDeps, "default", classmethod(lambda cls, **kw: SimpleNamespace()))
+    monkeypatch.setattr(engine_mod, "generate_top_ma_news", generate)
+    return DispatchDeps.production(db_path=db).load_top_ma_news
+
+
+def test_production_top_news_failure_is_cached_for_the_day(tmp_path, monkeypatch, caplog):
+    """generate_top_ma_news 예외가 캐시되지 않으면 10분마다 모든 tick 이 엔진(LLM·Naver)을 다시 돌린다."""
+    from agents.daily_mailing.top_news import TOP_NEWS_FAILED, load_top_ma_news_entry
+    db = tmp_path / "d.db"
+    calls = {"n": 0}
+
+    def failing(*, deps, config, **kw):
+        calls["n"] += 1
+        raise RuntimeError("openai down")
+
+    top = _production_top_news(monkeypatch, db, failing)
+    with caplog.at_level(logging.ERROR, logger="agents.daily_mailing.dispatch"):
+        assert top("2026-09-18") == []
+    assert calls["n"] == 1
+    assert any("주요 MA 뉴스" in r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR)
+    entry = load_top_ma_news_entry("2026-09-18", db_path=db)
+    assert entry["status"] == TOP_NEWS_FAILED and "openai down" in entry["error"]
+    assert top("2026-09-18") == [] and top("2026-09-18") == []
+    assert calls["n"] == 1                                    # 같은 날 재시도 없음
+    assert top("2026-09-19") == [] and calls["n"] == 2        # 다음 날은 새 시도
+    assert top("2026-09-18", retry_failed=True) == [] and calls["n"] == 3   # 명시 재시도(06:40 잡용)만 다시 돈다
+
+
+def test_production_top_news_success_is_cached_and_round_trips_brief_items(tmp_path, monkeypatch):
+    from agents.daily_mailing.brief import BriefItem
+    db = tmp_path / "d.db"
+    calls = {"n": 0}
+    item = BriefItem(title="약평위 결과", publisher_url="https://www.yakup.com/p1", source_name="약업신문",
+                     published_at="2026-09-18T06:00:00+09:00", summary_bullets=("요약",), ma_implication="시사점",
+                     matched_scope_terms=("약평위",), section="top_ma_news", body_status="ok")
+
+    def ok(*, deps, config, **kw):
+        calls["n"] += 1
+        return [item]
+
+    top = _production_top_news(monkeypatch, db, ok)
+    assert [i.title for i in top("2026-09-18")] == ["약평위 결과"]
+    assert [i.title for i in top("2026-09-18")] == ["약평위 결과"]
+    assert calls["n"] == 1
+    assert top("2026-09-18", retry_failed=True) and calls["n"] == 1   # 성공 캐시는 retry_failed 로도 다시 돌지 않는다
