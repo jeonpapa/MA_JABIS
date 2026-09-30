@@ -427,3 +427,16 @@ def test_previous_day_send_failed_is_expired_not_sent_late(tmp_path):
     assert get_run("dm_19_yesterday", db_path=db)["delivery_status"] == "expired"
     assert rec.sent == [(["r@msd.com"], "[MA Daily] 파드셉")]        # 오늘 정규 run 만 발송
     assert find_regular_run(19, "2026-09-18", db_path=db)["delivery_status"] == "sent"
+
+
+def test_health_does_not_report_admin_rejected_run_as_problem(tmp_path):
+    """관리자 반려(held + rejected)는 의도된 결정 — 09:30 헬스체크가 매일 문제로 보고하면 안 된다. 품질 게이트 held 는 계속 문제."""
+    db = _db(tmp_path, {"id": 19}, {"id": 20})
+    rec = Recorder(results={"20": "held"})
+    deps = _deps(db, rec)
+    dispatch_due_subscriptions(deps)
+    reject_run(find_regular_run(19, "2026-09-18", db_path=db)["run_id"], approver="admin@msd.com", deps=deps)
+    report = health_check(deps)
+    problems = {(p["subscription_id"], p["problem"]) for p in report["problems"]}
+    assert problems == {(20, "held")}
+    assert report["rejected"] == [{"subscription_id": 19, "name": "파드셉", "approved_by": "admin@msd.com"}]

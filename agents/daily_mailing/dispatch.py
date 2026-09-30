@@ -444,18 +444,29 @@ def _stuck_ready(run: dict, now: datetime) -> bool:
     return generated is None or generated <= now - timedelta(minutes=STUCK_READY_MINUTES)
 
 
+def _is_admin_rejected(run: dict) -> bool:
+    """관리자 반려 — held 이지만 의도된 결정이라 헬스체크 문제가 아니다 (품질 게이트·발송 실패의 held 와 구분)."""
+    return run.get("delivery_status") == "held" and run.get("approval_status") == "rejected"
+
+
 def health_check(deps: DispatchDeps) -> dict:
-    """오늘 이미 발송 시각이 지난 구독 중 미생성·보류·발송실패·오류·만료·발송대기 정체 + Gmail 토큰 상태."""
+    """오늘 이미 발송 시각이 지난 구독 중 미생성·보류·발송실패·오류·만료·발송대기 정체 + Gmail 토큰 상태.
+
+    관리자 반려(held+rejected)는 problems 가 아닌 `rejected` 로 따로 알린다.
+    """
     now = _now(deps)
     run_date = now.date().isoformat()
     runs = {r["subscription_id"]: r for r in list_runs_for_date(run_date, db_path=deps.db_path)}
     problems: list[dict] = []
+    rejected: list[dict] = []
     for sub in load_subscriptions(deps.db_path):
         if not is_due(sub, now):
             continue
         run = runs.get(sub["id"])
         if run is None:
             problems.append({"subscription_id": sub["id"], "name": sub["name"], "problem": "not_generated"})
+        elif _is_admin_rejected(run):
+            rejected.append({"subscription_id": sub["id"], "name": sub["name"], "approved_by": run.get("approved_by")})
         elif run.get("delivery_status") in PROBLEM_STATUSES:
             problems.append({"subscription_id": sub["id"], "name": sub["name"],
                              "problem": run["delivery_status"], "detail": run.get("delivery_error")})
@@ -469,4 +480,4 @@ def health_check(deps: DispatchDeps) -> dict:
     if not gmail_ok:
         problems.append({"subscription_id": None, "name": "-", "problem": "gmail_token_invalid"})
     return {"run_date": run_date, "checked_at": now.isoformat(), "ok": not problems,
-            "problems": problems, "gmail_ready": gmail_ok}
+            "problems": problems, "rejected": rejected, "gmail_ready": gmail_ok}
