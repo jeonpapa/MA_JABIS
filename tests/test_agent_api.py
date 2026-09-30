@@ -313,11 +313,51 @@ def test_claim_exhausted_attempts_blocks_task(monkeypatch, tmp_path):
     assert r.get_json()["reason"] == "attempts_exhausted"
     t = store.get_task(tid, db_path=db)
     assert t["status"] == "blocked" and t["attempts"] == store.MAX_ATTEMPTS
-    assert t["resolution"] == "재시도 한도(3회) 초과 — 사람 확인 필요"
+    assert t["resolution"] == f"재시도 한도({store.MAX_ATTEMPTS}회) 초과 — 사람 확인 필요"
     events = [e["event"] for e in store.list_events(tid, db_path=db)]
     assert events[-1] == "status:blocked"
-    # 이미 blocked 인 과제에 또 claim 해도 같은 409, 상태는 그대로
-    assert c.post(f"/api/agent/tasks/{tid}/claim", headers=_h("agent")).status_code == 409
+    # 이미 blocked 인 과제에 또 claim 해도 409, 상태는 그대로, 이벤트도 더 늘지 않는다
+    again = c.post(f"/api/agent/tasks/{tid}/claim", headers=_h("agent"))
+    assert again.status_code == 409 and "reason" not in again.get_json()
+    assert store.get_task(tid, db_path=db)["status"] == "blocked"
+    assert [e["event"] for e in store.list_events(tid, db_path=db)].count("status:blocked") == 1
+
+
+def test_concurrent_claims_on_exhausted_task_emit_one_blocked_event(monkeypatch, tmp_path):
+    """스레드 재현(API): 소진된 과제에 두 디스패처가 동시에 claim — 둘 다 409, reason=attempts_exhausted 는
+    전이를 수행한 하나에만, status:blocked 이벤트는 정확히 1개."""
+    import threading
+
+    db = _patch_db(monkeypatch, tmp_path)
+    tid = _triaged_task(db)
+    c = s.app.test_client()
+    for _ in range(store.MAX_ATTEMPTS):
+        assert c.post(f"/api/agent/tasks/{tid}/claim", headers=_h("agent")).status_code == 200
+        assert c.post(f"/api/agent/tasks/{tid}/resolve", headers=_h("agent"),
+                      json={"status": "triaged"}).status_code == 200
+    real_claim = store.claim_task
+    barrier = threading.Barrier(2, timeout=10)
+
+    def gated_claim(task_id, **kw):        # 두 실행이 모두 선점 직전까지 온 뒤에야 store 로 들어간다
+        barrier.wait()
+        return real_claim(task_id, **kw)
+
+    monkeypatch.setattr(s._agent_store, "claim_task", gated_claim)
+    results: dict[str, tuple[int, str | None]] = {}
+
+    def worker(actor: str):
+        r = s.app.test_client().post(f"/api/agent/tasks/{tid}/claim", headers=_h("agent", actor))
+        results[actor] = (r.status_code, r.get_json().get("reason"))
+
+    threads = [threading.Thread(target=worker, args=(a,)) for a in ("vps-0@x", "vps-1@x")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+    assert sorted(v[0] for v in results.values()) == [409, 409], results
+    assert sorted(v[1] or "" for v in results.values()) == ["", "attempts_exhausted"], results
+    events = [e["event"] for e in store.list_events(tid, db_path=db)]
+    assert events.count("status:blocked") == 1, events
     assert store.get_task(tid, db_path=db)["status"] == "blocked"
 
 

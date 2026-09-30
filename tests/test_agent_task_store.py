@@ -47,8 +47,8 @@ def test_claim_is_exclusive_and_counts_attempts(tmp_path):
     db = tmp_path / "a.db"
     tid = _new(db)
     update_task(tid, db_path=db, status="triaged", actor="sentinel")
-    assert claim_task(tid, actor="vps-1", db_path=db) is True
-    assert claim_task(tid, actor="vps-2", db_path=db) is False
+    assert claim_task(tid, actor="vps-1", db_path=db) == "claimed"
+    assert claim_task(tid, actor="vps-2", db_path=db) == "not_claimable"
     t = get_task(tid, db_path=db)
     assert t["status"] == "in_progress" and t["claimed_by"] == "vps-1" and t["attempts"] == 1
 
@@ -100,30 +100,71 @@ def test_returning_to_triaged_clears_claim_so_retry_can_claim(tmp_path):
     db = tmp_path / "a.db"
     tid = _new(db)
     update_task(tid, db_path=db, status="triaged", actor="sentinel")
-    assert claim_task(tid, actor="vps-1", db_path=db) is True
+    assert claim_task(tid, actor="vps-1", db_path=db) == "claimed"
     update_task(tid, db_path=db, status="blocked", actor="vps-1", resolution="런북 실패")
     update_task(tid, db_path=db, status="triaged", actor="admin")
     t = get_task(tid, db_path=db)
     assert t["claimed_by"] is None and t["claimed_at"] is None and t["attempts"] == 1   # attempts 보존
-    assert claim_task(tid, actor="vps-2", db_path=db) is True
+    assert claim_task(tid, actor="vps-2", db_path=db) == "claimed"
     t = get_task(tid, db_path=db)
     assert t["claimed_by"] == "vps-2" and t["attempts"] == 2
 
 
-def test_claim_refused_after_max_attempts(tmp_path):
+def _exhaust(db, tid, max_attempts):
+    for n in range(1, max_attempts + 1):
+        assert claim_task(tid, actor=f"vps-{n}", db_path=db) == "claimed"
+        assert get_task(tid, db_path=db)["attempts"] == n
+        update_task(tid, db_path=db, status="triaged", actor=f"vps-{n}")      # in_progress → triaged
+
+
+def test_claim_refused_after_max_attempts_and_store_blocks_it_once(tmp_path):
+    """설계 §5 의 재시도 한도(최초 1 + 재시도 2 = 3)를 고정하는 유일한 단언. 한도를 다 쓴 triaged 과제는
+    store 가 스스로 blocked 로 넘기고(status:blocked 이벤트 1개) 'exhausted' 를 돌려준다. 그 뒤의 claim 은
+    'not_claimable'(이미 blocked) 이고 이벤트는 더 늘지 않는다."""
     from agents.agent_tasks.store import MAX_ATTEMPTS
 
     assert MAX_ATTEMPTS == 3
     db = tmp_path / "a.db"
     tid = _new(db)
     update_task(tid, db_path=db, status="triaged", actor="sentinel")
-    for n in range(1, MAX_ATTEMPTS + 1):
-        assert claim_task(tid, actor=f"vps-{n}", db_path=db) is True
-        assert get_task(tid, db_path=db)["attempts"] == n
-        update_task(tid, db_path=db, status="triaged", actor=f"vps-{n}")      # in_progress → triaged
-    assert claim_task(tid, actor="vps-9", db_path=db) is False                # 한도 초과
+    _exhaust(db, tid, MAX_ATTEMPTS)
+    assert claim_task(tid, actor="vps-9", db_path=db) == "exhausted"          # 한도 초과 → store 가 blocked
     t = get_task(tid, db_path=db)
-    assert t["status"] == "triaged" and t["attempts"] == MAX_ATTEMPTS and t["claimed_by"] is None
+    assert t["status"] == "blocked" and t["attempts"] == MAX_ATTEMPTS and t["claimed_by"] is None
+    assert t["resolution"] == f"재시도 한도({MAX_ATTEMPTS}회) 초과 — 사람 확인 필요"
+    events = list_events(tid, db_path=db)
+    assert [e["event"] for e in events].count("status:blocked") == 1
+    assert events[-1]["event"] == "status:blocked" and events[-1]["actor"] == "vps-9"
+    assert claim_task(tid, actor="vps-10", db_path=db) == "not_claimable"
+    assert [e["event"] for e in list_events(tid, db_path=db)].count("status:blocked") == 1
+
+
+def test_concurrent_claims_on_exhausted_task_block_it_exactly_once(tmp_path):
+    """스레드 재현: 소진된 triaged 과제를 두 claim 이 동시에 친다 — status:blocked 이벤트는 정확히 1개,
+    결과는 exhausted 1 + not_claimable 1. (조건부 UPDATE 1회 — 전이표에 기댄 우연한 안전이 아니다.)"""
+    import threading
+    from agents.agent_tasks.store import MAX_ATTEMPTS
+
+    db = tmp_path / "a.db"
+    tid = _new(db)
+    update_task(tid, db_path=db, status="triaged", actor="sentinel")
+    _exhaust(db, tid, MAX_ATTEMPTS)
+    barrier = threading.Barrier(2, timeout=10)
+    results: dict[str, str] = {}
+
+    def worker(actor: str):
+        barrier.wait()
+        results[actor] = claim_task(tid, actor=actor, db_path=db)
+
+    threads = [threading.Thread(target=worker, args=(a,)) for a in ("vps-a", "vps-b")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+    assert sorted(results.values()) == ["exhausted", "not_claimable"], results
+    events = [e["event"] for e in list_events(tid, db_path=db)]
+    assert events.count("status:blocked") == 1, events
+    assert get_task(tid, db_path=db)["status"] == "blocked"
 
 
 def test_list_tasks_order_recent_puts_latest_update_first(tmp_path):
