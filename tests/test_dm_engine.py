@@ -14,7 +14,7 @@ from agents.daily_mailing.engine import (
     generate_top_ma_news,
     top_ma_news_terms,
 )
-from agents.daily_mailing.llm import RELEVANCE_SYSTEM, LLMError
+from agents.daily_mailing.llm import RELEVANCE_SYSTEM, SUPPORT_SYSTEM, LLMError
 from agents.daily_mailing.source_registry import SourceInfo, SourceRegistry
 
 KST = timezone(timedelta(hours=9))
@@ -39,10 +39,14 @@ class FakeNaver:
 
 
 class FakeLLM:
-    def __init__(self, quote_mode="verbatim", fail_relevance=False, fail_writer=False):
+    def __init__(self, quote_mode="verbatim", fail_relevance=False, fail_writer=False,
+                 support_mode="ok", implication=None):
         self.quote_mode = quote_mode
         self.fail_relevance = fail_relevance
         self.fail_writer = fail_writer
+        self.support_mode = support_mode      # ok | reject | error
+        self.implication = implication        # None → 제목과 구별되는 기본 시사점
+        self.support_calls = []               # (model, implication)
 
     def complete_json(self, *, system, user, model):
         data = json.loads(user)
@@ -51,10 +55,16 @@ class FakeLLM:
                 raise LLMError("down")
             hits = [t for t in data["scope_terms"] if t in data["title"]]
             return {"relevant": bool(hits), "matched_scope_terms": hits, "reason": "제목 주제" if hits else "무관"}
+        if system == SUPPORT_SYSTEM:
+            self.support_calls.append((model, data["implication"]))
+            if self.support_mode == "error":
+                raise LLMError("down")
+            return {"supported": self.support_mode == "ok", "reason": "검증"}
         if self.fail_writer:
             raise LLMError("down")
         quote = data["article_body"][:40] if self.quote_mode == "verbatim" else "본문에 없는 인용 문장입니다 정말로"
-        return {"summary_bullets": [f"{data['title']} 요약"], "ma_implication": f"{data['title']} 시사점",
+        implication = self.implication if self.implication is not None else f"{data['title']} → 한국MSD 경쟁 구도 영향"
+        return {"summary_bullets": [f"{data['title']} 요약"], "ma_implication": implication,
                 "evidence_quote": quote}
 
 
@@ -258,7 +268,7 @@ def test_quote_rejected_flags_article_card():
     assert card["verification_method"] == "llm_relevance+quote_rejected"
     ok = generate_run(_scope(), deps=_deps(FakeNaver({"파드셉": [PADCEV]})), name="파드셉", now=NOW)
     assert "quote_unverified" not in ok.articles[0]["quality_flags"]
-    assert ok.articles[0]["verification_method"] == "llm_relevance+quote_check"
+    assert ok.articles[0]["verification_method"] == "llm_relevance+quote_check+support_check"
 
 
 def test_generate_run_completes_with_unparseable_url_candidate():
@@ -479,3 +489,66 @@ def test_distinct_stories_are_not_clustered():
     assert len(result.items) == 2
     assert all(i.also_reported_by == () for i in result.items)
     assert result.stats["clustered_duplicates"] == 0
+
+
+# ---- MA 시사점 검증 (item 2b/2c) ----
+def test_support_rejected_drops_implication_keeps_item_and_flags_card():
+    llm = FakeLLM(support_mode="reject")
+    result = generate_run(_scope(), deps=_deps(FakeNaver({"파드셉": [PADCEV]}), llm), name="파드셉", now=NOW)
+    item = result.items[0]
+    assert item.ma_implication == "" and item.evidence_quote == "" and item.quote_verified is False
+    assert result.status == "ready"
+    assert result.stats["implication_unsupported"] == 1
+    assert "quote_rejected" not in result.stats
+    card = result.articles[0]
+    assert "implication_unsupported" in card["quality_flags"]
+    assert card["verification_method"] == "llm_relevance+quote_check+support_rejected"
+    assert "시사점 제외" in card["reviewer_note"]
+
+
+def test_support_check_uses_config_model_and_is_skipped_for_empty_implication():
+    llm = FakeLLM()
+    generate_run(_scope(), deps=_deps(FakeNaver({"파드셉": [PADCEV]}), llm), name="파드셉", now=NOW,
+                 config=EngineConfig(support_model="gpt-4o-mini-2024"))
+    assert llm.support_calls == [("gpt-4o-mini-2024", "파드셉 요로상피암 급여 확대 → 한국MSD 경쟁 구도 영향")]
+    empty = FakeLLM(implication="")
+    result = generate_run(_scope(), deps=_deps(FakeNaver({"파드셉": [PADCEV]}), empty), name="파드셉", now=NOW)
+    assert empty.support_calls == []
+    assert result.items[0].ma_implication == ""
+    assert result.status == "ready" and "implication_unsupported" not in result.stats
+
+
+def test_support_check_not_called_when_quote_fails_and_llm_error_fails_closed():
+    fake_quote = FakeLLM(quote_mode="fake")
+    result = generate_run(_scope(), deps=_deps(FakeNaver({"파드셉": [PADCEV]}), fake_quote), name="파드셉", now=NOW)
+    assert fake_quote.support_calls == []                       # 인용 실패면 지원 검증 호출 없음 (비용)
+    assert result.stats["quote_rejected"] == 1
+    down = FakeLLM(support_mode="error")
+    result = generate_run(_scope(), deps=_deps(FakeNaver({"파드셉": [PADCEV]}), down), name="파드셉", now=NOW)
+    assert result.items[0].ma_implication == ""                 # fail-closed
+    assert result.stats["support_llm_errors"] == 1 and result.stats["implication_unsupported"] == 1
+    assert result.status == "ready"
+    assert "implication_unsupported" in result.articles[0]["quality_flags"]
+
+
+def test_style_guard_rejects_title_restatement_and_advocacy_without_support_call():
+    restate = FakeLLM(implication="파드셉 요로상피암 급여 확대.")
+    result = generate_run(_scope(), deps=_deps(FakeNaver({"파드셉": [PADCEV]}), restate), name="파드셉", now=NOW)
+    assert result.items[0].ma_implication == "" and result.items[0].summary_bullets
+    assert result.stats["implication_rejected_style"] == 1
+    assert restate.support_calls == []
+    card = result.articles[0]
+    assert "implication_style_rejected" in card["quality_flags"]
+    assert card["verification_method"] == "llm_relevance+style_rejected"
+    advocacy = FakeLLM(implication="복지부는 급여 확대를 신속히 추진해야 한다")
+    result = generate_run(_scope(), deps=_deps(FakeNaver({"파드셉": [PADCEV]}), advocacy), name="파드셉", now=NOW)
+    assert result.items[0].ma_implication == ""
+    assert result.stats["implication_rejected_style"] == 1
+    assert advocacy.support_calls == []
+
+
+def test_support_model_config_default_and_settings():
+    assert EngineConfig().support_model == "gpt-4o-mini"
+    settings = json.loads((Path(__file__).resolve().parents[1] / "config" / "settings.json").read_text(encoding="utf-8"))
+    assert settings["daily_mailing"]["support_model"] == "gpt-4o-mini"
+    assert EngineConfig.from_settings(settings).support_model == "gpt-4o-mini"

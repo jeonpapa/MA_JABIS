@@ -30,7 +30,17 @@ from .discovery import (
     rank_items,
     select_daily_items,
 )
-from .llm import JsonLLM, LLMError, OpenAIJsonLLM, RelevanceVerdict, judge_relevance, verify_quote, write_brief
+from .llm import (
+    JsonLLM,
+    LLMError,
+    OpenAIJsonLLM,
+    RelevanceVerdict,
+    judge_relevance,
+    reject_implication_style,
+    verify_implication,
+    verify_quote,
+    write_brief,
+)
 from .personas import resolve_personas
 from .review_board import build_article_card
 from .source_registry import SourceRegistry
@@ -43,6 +53,15 @@ DEFAULT_REGISTRY_PATH = REPO_ROOT / "config" / "source_registry.yaml"
 TOP_MA_NEWS_PERSONAS = ("ma_lead", "policy_watch")
 TOP_MA_NEWS_ARCHIVE_KINDS = ("gov_policy",)   # 설계 §5.1: 주요 MA 뉴스 아카이브 후보는 정책뉴스만
 RELEVANCE_CIRCUIT_THRESHOLD = 3               # 관련성 LLM 연속 실패 허용 횟수 (초과 시 판정 중단)
+# 시사점 거부 사유 → (카드 quality_flag, verification_method, 리뷰 노트)
+IMPLICATION_REJECTIONS = {
+    "quote_unverified": ("quote_unverified", "llm_relevance+quote_rejected",
+                         "시사점 제외: 인용문이 본문에 없음"),
+    "implication_unsupported": ("implication_unsupported", "llm_relevance+quote_check+support_rejected",
+                                "시사점 제외: 인용이 시사점을 뒷받침하지 않음"),
+    "implication_style_rejected": ("implication_style_rejected", "llm_relevance+style_rejected",
+                                   "시사점 제외: 제목 재진술 또는 옹호 표현"),
+}
 # 클러스터 대표 선정용 매체 권위 순위 (높을수록 우선). 등록되지 않은 매체는 0.
 SOURCE_TIER_AUTHORITY = {"official": 3, "official_payer": 3, "regulator": 3,
                          "media_tier_A": 2, "tier_1_trade_media": 2}
@@ -52,6 +71,7 @@ SOURCE_TIER_AUTHORITY = {"official": 3, "official_payer": 3, "regulator": 3,
 class EngineConfig:
     relevance_model: str = "gpt-4o-mini"
     writer_model: str = "gpt-4o"
+    support_model: str = "gpt-4o-mini"     # 시사점 지원 검증 (인용이 시사점을 뒷받침하는지) 2차 호출
     max_candidates: int = 15
     max_naver_queries: int = 40
     brief_limit: int = 5
@@ -245,8 +265,39 @@ def _also_reported_by(duplicates: Iterable[_Judged]) -> tuple[dict, ...]:
                  for d in duplicates)
 
 
+def _bump(stats: dict, key: str) -> None:
+    stats[key] = stats.get(key, 0) + 1
+
+
+def _vet_implication(draft, *, title: str, body_text: str, deps: EngineDeps, config: EngineConfig,
+                     stats: dict) -> tuple[str, str, str | None]:
+    """시사점 3단 검증. 반환 (시사점, 인용, 거부 사유|None) — 거부되면 시사점·인용은 빈 문자열.
+    순서: 코드 스타일 가드(LLM 없음) → 인용 substring 검증 → 지원 검증(2차 LLM, 앞 단계 통과 시에만 호출)."""
+    implication = draft.ma_implication
+    if not implication:
+        return "", "", None
+    if reject_implication_style(implication, title):
+        _bump(stats, "implication_rejected_style")
+        return "", "", "implication_style_rejected"
+    if not verify_quote(draft.evidence_quote, body_text):
+        # 설계 §5 ⑦: 인용 검증 실패 → 시사점 삭제 + 기사별 플래그 (리뷰보드 카드에 노출)
+        _bump(stats, "quote_rejected")
+        return "", "", "quote_unverified"
+    try:
+        supported = verify_implication(implication, draft.evidence_quote, body_text,
+                                       llm=deps.llm, model=config.support_model)
+    except LLMError as exc:
+        _bump(stats, "support_llm_errors")
+        logger.warning("[daily_mailing] 시사점 지원 검증 실패 (%s): %s — fail-closed", title[:40], exc)
+        supported = False
+    if not supported:
+        _bump(stats, "implication_unsupported")
+        return "", "", "implication_unsupported"
+    return implication, draft.evidence_quote, None
+
+
 def _write(j: _Judged, terms: list[str], *, deps: EngineDeps, config: EngineConfig,
-           section: str, stats: dict, rejected_keys: set[str] | None = None,
+           section: str, stats: dict, rejections: dict[str, str] | None = None,
            duplicates: Iterable[_Judged] = ()) -> BriefItem | None:
     item, body, verdict = j.item, j.body, j.verdict
     common = dict(title=item.title, publisher_url=item.publisher_url, naver_url=item.naver_url,
@@ -272,23 +323,21 @@ def _write(j: _Judged, terms: list[str], *, deps: EngineDeps, config: EngineConf
     if not bullets:
         stats["dropped_empty_summary"] = stats.get("dropped_empty_summary", 0) + 1
         return None
-    verified = bool(draft.ma_implication) and verify_quote(draft.evidence_quote, body.text)
-    if draft.ma_implication and not verified:
-        # 설계 §5 ⑦: 인용 검증 실패 → 시사점 삭제 + 기사별 플래그 (리뷰보드 카드에 노출)
-        stats["quote_rejected"] = stats.get("quote_rejected", 0) + 1
-        if rejected_keys is not None:
-            rejected_keys.add(_key(item))
+    implication, quote, rejection = _vet_implication(draft, title=item.title, body_text=body.text,
+                                                     deps=deps, config=config, stats=stats)
+    if rejection and rejections is not None:
+        rejections[_key(item)] = rejection
     return BriefItem(
         summary_bullets=bullets,
-        ma_implication=draft.ma_implication if verified else "",
-        evidence_quote=draft.evidence_quote if verified else "",
-        quote_verified=verified,
+        ma_implication=implication,
+        evidence_quote=quote,
+        quote_verified=bool(implication),
         body_status="ok",
         **common,
     )
 
 
-def _card(j: _Judged, *, brief: BriefItem | None, personas, quote_rejected: bool = False,
+def _card(j: _Judged, *, brief: BriefItem | None, personas, rejection: str | None = None,
           duplicate_of: str | None = None) -> dict:
     card = build_article_card(replace(j.item, matched_keywords=j.verdict.matched_scope_terms),
                               selected_for_draft=brief is not None, personas=personas)
@@ -303,14 +352,16 @@ def _card(j: _Judged, *, brief: BriefItem | None, personas, quote_rejected: bool
         card["quality_flags"] = flags
     card["reviewer_note"] = note
     card["matched_keywords"] = list(j.verdict.matched_scope_terms)
-    card["verification_method"] = ("llm_relevance+quote_check" if brief is not None and brief.quote_verified
-                                   else "llm_relevance")
-    if quote_rejected:
+    card["verification_method"] = ("llm_relevance+quote_check+support_check"
+                                   if brief is not None and brief.quote_verified else "llm_relevance")
+    if rejection in IMPLICATION_REJECTIONS:
+        flag, method, reason = IMPLICATION_REJECTIONS[rejection]
         flags = list(card.get("quality_flags") or [])
-        if "quote_unverified" not in flags:
-            flags.append("quote_unverified")
+        if flag not in flags:
+            flags.append(flag)
         card["quality_flags"] = flags
-        card["verification_method"] = "llm_relevance+quote_rejected"
+        card["verification_method"] = method
+        card["reviewer_note"] = f"{note} | {reason}"
     card["verification_caveat"] = f"본문 {j.body.status}" + (f" ({j.body.error})" if j.body.error else "")
     card["review_status"] = ("ready_for_writer" if brief is not None
                              else "needs_review" if j.verdict.relevant else "excluded")
@@ -373,7 +424,7 @@ def generate_run(scope: DashboardScope, *, deps: EngineDeps, config: EngineConfi
     judged: list[_Judged] = []
     scope_items: list[BriefItem] = []
     brief_by_key: dict[str, BriefItem] = {}
-    quote_rejected_keys: set[str] = set()
+    rejections: dict[str, str] = {}     # 기사 key → 시사점 거부 사유 (IMPLICATION_REJECTIONS 키)
     duplicate_of: dict[str, str] = {}
     discovered_count = 0
 
@@ -398,7 +449,7 @@ def generate_run(scope: DashboardScope, *, deps: EngineDeps, config: EngineConfi
                                          limit=config.brief_limit, stats=stats)
         for s in selected:
             written = _write(s.judged, terms, deps=deps, config=config, section="scope", stats=stats,
-                             rejected_keys=quote_rejected_keys, duplicates=s.duplicates)
+                             rejections=rejections, duplicates=s.duplicates)
             if written is not None:
                 scope_items.append(written)
                 brief_by_key[_key(s.judged.item)] = written
@@ -423,7 +474,7 @@ def generate_run(scope: DashboardScope, *, deps: EngineDeps, config: EngineConfi
                                      items=all_items, window_label=window_label)
     run_id = f"dm_{_safe_id(sid)}_{now:%Y%m%d_%H%M%S}" + ("_test" if is_test else "")
     articles = [_card(j, brief=brief_by_key.get(_key(j.item)), personas=personas,
-                      quote_rejected=_key(j.item) in quote_rejected_keys,
+                      rejection=rejections.get(_key(j.item)),
                       duplicate_of=duplicate_of.get(_key(j.item))) for j in judged]
     payload = {
         "run_id": run_id,

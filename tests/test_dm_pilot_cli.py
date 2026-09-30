@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from agents.daily_mailing.article_body import ArticleBody
 from agents.daily_mailing.engine import EngineConfig, EngineDeps
-from agents.daily_mailing.llm import RELEVANCE_SYSTEM
+from agents.daily_mailing.llm import RELEVANCE_SYSTEM, SUPPORT_SYSTEM
 from agents.daily_mailing.source_registry import SourceRegistry
 from scripts.daily_mailing_pilot import run_pilot
 
@@ -28,7 +28,10 @@ class LLM:
         if system == RELEVANCE_SYSTEM:
             hits = [t for t in data["scope_terms"] if t in data["title"]]
             return {"relevant": bool(hits), "matched_scope_terms": hits, "reason": "주제"}
-        return {"summary_bullets": ["요약"], "ma_implication": "시사점", "evidence_quote": data["article_body"][:30]}
+        if system == SUPPORT_SYSTEM:
+            return {"supported": True, "reason": "검증"}
+        return {"summary_bullets": ["요약"], "ma_implication": "키트루다 요로상피암 급여 경쟁 심화",
+                "evidence_quote": data["article_body"][:30]}
 
 
 def test_run_pilot_writes_outputs(tmp_path):

@@ -50,6 +50,7 @@
   "daily_mailing": {
     "relevance_model": "gpt-4o-mini",
     "writer_model": "gpt-4o",
+    "support_model": "gpt-4o-mini",
     "max_candidates": 15,
     "max_naver_queries": 40,
     "brief_limit": 5,

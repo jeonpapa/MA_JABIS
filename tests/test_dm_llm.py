@@ -7,10 +7,14 @@ import pytest
 
 from agents.daily_mailing.llm import (
     RELEVANCE_SYSTEM,
+    SUPPORT_BODY_CHARS,
+    SUPPORT_SYSTEM,
     WRITER_SYSTEM,
     LLMError,
     OpenAIJsonLLM,
     judge_relevance,
+    reject_implication_style,
+    verify_implication,
     verify_quote,
     write_brief,
 )
@@ -165,3 +169,52 @@ def test_openai_wrapper_no_sleep_for_non_retryable_error():
     with pytest.raises(LLMError):
         llm.complete_json(system="s", user="u", model="m")
     assert sleeps == []
+
+
+# ---- MA 시사점 품질 (2026-09-19 파일럿: 경쟁사 관점·일반론·기사 주장 옮김) ----
+def test_writer_prompt_frames_reader_as_korea_msd_market_access_and_prefers_empty():
+    assert "한국MSD" in WRITER_SYSTEM and "Market Access" in WRITER_SYSTEM
+    for phrase in ("위협", "경쟁 구도", "빈 문자열", "추측", "옹호"):
+        assert phrase in WRITER_SYSTEM, phrase
+    # JSON 계약 불변
+    assert '{"summary_bullets": ["...", "..."], "ma_implication": "...", "evidence_quote": "..."}' in WRITER_SYSTEM
+
+
+def test_verify_implication_asks_support_model_and_returns_bool():
+    llm = RecordingLLM({"supported": True, "reason": "인용이 결론을 직접 뒷받침"})
+    ok = verify_implication("경쟁 심화", "인용 문장", "본문 " * 10, llm=llm, model="gpt-4o-mini")
+    assert ok is True
+    call = llm.calls[0]
+    assert call["system"] == SUPPORT_SYSTEM and call["model"] == "gpt-4o-mini"
+    assert call["user"] == {"implication": "경쟁 심화", "quote": "인용 문장", "article_body": ("본문 " * 10)[:SUPPORT_BODY_CHARS]}
+    assert verify_implication("x", "q", "b", llm=RecordingLLM({"supported": False}), model="m") is False
+    assert verify_implication("x", "q", "b", llm=RecordingLLM({"supported": "yes"}), model="m") is False  # bool 만 신뢰
+    assert verify_implication("x", "q", "b", llm=RecordingLLM({}), model="m") is False
+
+
+def test_verify_implication_truncates_body_and_propagates_llm_error():
+    llm = RecordingLLM({"supported": True})
+    verify_implication("x", "q", "가" * 10000, llm=llm, model="m")
+    assert len(llm.calls[0]["user"]["article_body"]) == SUPPORT_BODY_CHARS
+
+    class Down:
+        def complete_json(self, **kw):
+            raise LLMError("down")
+
+    with pytest.raises(LLMError):
+        verify_implication("x", "q", "b", llm=Down(), model="m")
+
+
+@pytest.mark.parametrize("implication,title,expected", [
+    ("", "듀카브 등 80개 품목 약가 인하", None),
+    ("듀카브 등 80개 품목 약가 인하.", "듀카브 등 80개 품목 약가 인하", "restates_title"),
+    ("듀카브 등 80개 품목 약가가 인하됐다", "듀카브·램시마 등 80개 품목 약가 평균 4.6% 인하…339억원 절감", None),
+    ("사용량 연동 인하가 MSD 다품목에도 적용될 수 있어 자사 인하 리스크 점검이 필요하다", "80개 품목 약가 인하", "advocacy"),
+    ("복지부는 신속히 추진해야 한다", "약사회 성분명 처방 촉구", "advocacy"),
+    ("복지부는 신속히 추진해야한다", "약사회 성분명 처방 촉구", "advocacy"),
+    ("약사회가 성분명 처방 도입을 촉구했다", "약사회 성분명 처방 촉구 집회", "advocacy"),
+    ("제도 보완이 요구된다", "제도 개편안", "advocacy"),
+    ("경쟁 약제의 1차 급여 진입으로 키트루다의 요로상피암 급여 협상 입지가 좁아진다", "파드셉 급여 확대", None),
+])
+def test_reject_implication_style(implication, title, expected):
+    assert reject_implication_style(implication, title) == expected
