@@ -10,6 +10,7 @@ from agents.daily_mailing.llm import (
     SUPPORT_BODY_CHARS,
     SUPPORT_SYSTEM,
     WRITER_SYSTEM,
+    ImplicationSupport,
     LLMError,
     OpenAIJsonLLM,
     judge_relevance,
@@ -180,20 +181,46 @@ def test_writer_prompt_frames_reader_as_korea_msd_market_access_and_prefers_empt
     assert '{"summary_bullets": ["...", "..."], "ma_implication": "...", "evidence_quote": "..."}' in WRITER_SYSTEM
 
 
-def test_verify_implication_asks_support_model_and_returns_bool():
-    llm = RecordingLLM({"supported": True, "reason": "인용이 결론을 직접 뒷받침"})
-    ok = verify_implication("경쟁 심화", "인용 문장", "본문 " * 10, llm=llm, model="gpt-4o-mini")
-    assert ok is True
+# ---- MSD 구체 연결 (2026-09-30 파일럿: 스타틴 복합제 인하 기사 → 'MSD 의 시장 접근 전략에 위협' 상투구) ----
+def test_writer_prompt_requires_named_msd_asset_or_mechanism_and_bans_vague_forms():
+    for asset in ("키트루다", "가다실", "린파자", "웰리렉", "브리디온", "에멘드", "박스뉴반스", "윈레브에어"):
+        assert asset in WRITER_SYSTEM, asset
+    for phrase in ("시장 접근 전략에 위협", "경쟁력에 영향", "기전", "45%", "재평가", "빈 문자열"):
+        assert phrase in WRITER_SYSTEM, phrase
+    assert '{"summary_bullets": ["...", "..."], "ma_implication": "...", "evidence_quote": "..."}' in WRITER_SYSTEM
+
+
+def test_support_prompt_judges_msd_link_in_the_same_call():
+    assert '{"supported": true 또는 false, "msd_specific": true 또는 false, "reason": "한국어 한 문장"}' in SUPPORT_SYSTEM
+    for phrase in ("msd_specific", "키트루다", "시장 접근 전략에 위협", "기전"):
+        assert phrase in SUPPORT_SYSTEM, phrase
+
+
+def test_verify_implication_asks_support_model_once_and_returns_support_plus_msd_link():
+    llm = RecordingLLM({"supported": True, "msd_specific": True, "reason": "키트루다 급여 경쟁에 직접 닿음"})
+    res = verify_implication("경쟁 심화", "인용 문장", "본문 " * 10, llm=llm, model="gpt-4o-mini")
+    assert res == ImplicationSupport(supported=True, msd_specific=True, reason="키트루다 급여 경쟁에 직접 닿음")
+    assert len(llm.calls) == 1                                   # 지원 + MSD 연결 판정은 같은 1회 호출
     call = llm.calls[0]
     assert call["system"] == SUPPORT_SYSTEM and call["model"] == "gpt-4o-mini"
     assert call["user"] == {"implication": "경쟁 심화", "quote": "인용 문장", "article_body": ("본문 " * 10)[:SUPPORT_BODY_CHARS]}
-    assert verify_implication("x", "q", "b", llm=RecordingLLM({"supported": False}), model="m") is False
-    assert verify_implication("x", "q", "b", llm=RecordingLLM({"supported": "yes"}), model="m") is False  # bool 만 신뢰
-    assert verify_implication("x", "q", "b", llm=RecordingLLM({}), model="m") is False
+    # 2026-09-30 파일럿: 인용은 '경쟁 심화' 를 뒷받침하지만 MSD 자산·기전이 없는 상투구
+    res = verify_implication("x", "q", "b", llm=RecordingLLM({"supported": True, "msd_specific": False, "reason": "MSD 제품 없음"}),
+                             model="m")
+    assert res.supported is True and res.msd_specific is False and res.reason == "MSD 제품 없음"
+    assert verify_implication("x", "q", "b", llm=RecordingLLM({"supported": False, "msd_specific": True}), model="m") \
+        == ImplicationSupport(supported=False, msd_specific=True, reason="")
+    # bool 만 신뢰 — 문자열·누락은 모두 False (fail-closed)
+    assert verify_implication("x", "q", "b", llm=RecordingLLM({"supported": "yes", "msd_specific": "yes"}), model="m") \
+        == ImplicationSupport(False, False, "")
+    assert verify_implication("x", "q", "b", llm=RecordingLLM({}), model="m") == ImplicationSupport(False, False, "")
+    # 구 계약 응답(msd_specific 누락) 은 MSD 연결 미확인으로 취급
+    legacy = verify_implication("x", "q", "b", llm=RecordingLLM({"supported": True, "reason": "r"}), model="m")
+    assert legacy.supported is True and legacy.msd_specific is False
 
 
 def test_verify_implication_truncates_body_and_propagates_llm_error():
-    llm = RecordingLLM({"supported": True})
+    llm = RecordingLLM({"supported": True, "msd_specific": True})
     verify_implication("x", "q", "가" * 10000, llm=llm, model="m")
     assert len(llm.calls[0]["user"]["article_body"]) == SUPPORT_BODY_CHARS
 

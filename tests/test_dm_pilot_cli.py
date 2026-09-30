@@ -29,7 +29,7 @@ class LLM:
             hits = [t for t in data["scope_terms"] if t in data["title"]]
             return {"relevant": bool(hits), "matched_scope_terms": hits, "reason": "주제"}
         if system == SUPPORT_SYSTEM:
-            return {"supported": True, "reason": "검증"}
+            return {"supported": True, "msd_specific": True, "reason": "검증"}
         return {"summary_bullets": ["요약"], "ma_implication": "키트루다 요로상피암 급여 경쟁 심화",
                 "evidence_quote": data["article_body"][:30]}
 

@@ -44,7 +44,7 @@ class FakeLLM:
         self.quote_mode = quote_mode
         self.fail_relevance = fail_relevance
         self.fail_writer = fail_writer
-        self.support_mode = support_mode      # ok | reject | error
+        self.support_mode = support_mode      # ok | reject | not_msd | legacy | error
         self.implication = implication        # None → 제목과 구별되는 기본 시사점
         self.support_calls = []               # (model, implication)
 
@@ -59,7 +59,10 @@ class FakeLLM:
             self.support_calls.append((model, data["implication"]))
             if self.support_mode == "error":
                 raise LLMError("down")
-            return {"supported": self.support_mode == "ok", "reason": "검증"}
+            if self.support_mode == "legacy":          # msd_specific 이 없는 구 계약 응답
+                return {"supported": True, "reason": "검증"}
+            return {"supported": self.support_mode in ("ok", "not_msd"),
+                    "msd_specific": self.support_mode in ("ok", "reject"), "reason": "검증"}
         if self.fail_writer:
             raise LLMError("down")
         quote = data["article_body"][:40] if self.quote_mode == "verbatim" else "본문에 없는 인용 문장입니다 정말로"
@@ -545,6 +548,53 @@ def test_style_guard_rejects_title_restatement_and_advocacy_without_support_call
     assert result.items[0].ma_implication == ""
     assert result.stats["implication_rejected_style"] == 1
     assert advocacy.support_calls == []
+
+
+# ---- MSD 구체 연결 게이트 (2026-09-30 파일럿: 스타틴 복합제 인하 기사 → 'MSD 의 시장 접근 전략에 위협' 상투구) ----
+STATIN_BOILERPLATE = "피타바스타틴·에제티미브 저용량 시장의 경쟁 심화는 MSD의 시장 접근 전략에 위협이 될 수 있다."
+
+
+def test_supported_but_not_msd_specific_drops_implication_keeps_item_and_flags_card():
+    llm = FakeLLM(support_mode="not_msd", implication=STATIN_BOILERPLATE)
+    result = generate_run(_scope(), deps=_deps(FakeNaver({"파드셉": [PADCEV]}), llm), name="파드셉", now=NOW)
+    item = result.items[0]
+    assert item.ma_implication == "" and item.evidence_quote == "" and item.quote_verified is False
+    assert item.summary_bullets                                  # 기사는 유지, 시사점만 제거
+    assert result.status == "ready"
+    assert result.stats["implication_not_msd_specific"] == 1
+    assert "implication_unsupported" not in result.stats and "quote_rejected" not in result.stats
+    assert len(llm.support_calls) == 1                          # 지원 + MSD 연결 판정은 support_model 1회 호출
+    card = result.articles[0]
+    assert card["selected_for_draft"] is True
+    assert "implication_not_msd_specific" in card["quality_flags"]
+    assert card["verification_method"].endswith("+msd_link_rejected")
+    assert "시사점 제외" in card["reviewer_note"] and "MSD" in card["reviewer_note"]
+    assert "▶ MA 시사점" not in result.html and STATIN_BOILERPLATE not in result.html
+
+
+def test_supported_and_msd_specific_renders_implication():
+    concrete = "제네릭 45% 인하 개편은 키트루다 LOE 후 자사 오리지널의 가격 경쟁 압력으로 이어진다"
+    llm = FakeLLM(support_mode="ok", implication=concrete)
+    result = generate_run(_scope(), deps=_deps(FakeNaver({"파드셉": [PADCEV]}), llm), name="파드셉", now=NOW)
+    item = result.items[0]
+    assert item.ma_implication == concrete and item.quote_verified is True
+    assert "▶ MA 시사점" in result.html and concrete in result.html
+    card = result.articles[0]
+    assert card["verification_method"] == "llm_relevance+quote_check+support_check"
+    assert "implication_not_msd_specific" not in card["quality_flags"]
+    assert "implication_not_msd_specific" not in result.stats
+
+
+def test_unsupported_takes_precedence_over_msd_link_and_legacy_answer_fails_closed():
+    reject = FakeLLM(support_mode="reject")                     # supported=False, msd_specific=True
+    result = generate_run(_scope(), deps=_deps(FakeNaver({"파드셉": [PADCEV]}), reject), name="파드셉", now=NOW)
+    assert result.stats["implication_unsupported"] == 1 and "implication_not_msd_specific" not in result.stats
+    assert result.articles[0]["verification_method"] == "llm_relevance+quote_check+support_rejected"
+    legacy = FakeLLM(support_mode="legacy")                     # {"supported": true} 만 — MSD 연결 미확인
+    result = generate_run(_scope(), deps=_deps(FakeNaver({"파드셉": [PADCEV]}), legacy), name="파드셉", now=NOW)
+    assert result.items[0].ma_implication == ""
+    assert result.stats["implication_not_msd_specific"] == 1 and "implication_unsupported" not in result.stats
+    assert "implication_not_msd_specific" in result.articles[0]["quality_flags"]
 
 
 def test_support_model_config_default_and_settings():

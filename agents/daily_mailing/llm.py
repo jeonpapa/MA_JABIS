@@ -5,7 +5,11 @@
 - 작성: 본문 근거 요약 2~3개 + MA 시사점 1문장 + 본문 원문 인용. 인용은 verify_quote 로 코드 검증.
 - 시사점 (2026-09-19 파일럿 이후): 독자는 한국MSD MA 팀. 시사점은 'MSD 의 한국 접근 업무에 무엇을 뜻하는가' 만,
   근거 없으면 빈 문자열이 정답. 코드 가드(reject_implication_style: 제목 재진술·옹호 표현) →
-  인용 검증(verify_quote) → 지원 검증(verify_implication: 인용이 시사점을 '뒷받침' 하는지 2차 LLM) 순으로 통과해야 렌더.
+  인용 검증(verify_quote) → 지원 검증(verify_implication, 2차 LLM 1회) 순으로 통과해야 렌더.
+- MSD 구체 연결 (2026-09-30 파일럿 이후): 스타틴 복합제 인하 기사에 'MSD 의 시장 접근 전략에 위협' 같은 상투구가 붙었다 —
+  인용은 '경쟁 심화' 를 뒷받침하므로 지원 검증만으로는 못 거른다. 시사점은 특정 MSD 자산(키트루다·가다실·린파자·웰리렉·
+  브리디온·에멘드·박스뉴반스·윈레브에어 등) 또는 한국MSD 포트폴리오에 실제로 닿는 정책·절차 기전을 이름으로 적어야 하고,
+  verify_implication 은 같은 호출에서 supported 와 msd_specific 을 함께 판정한다. 렌더는 둘 다 True 일 때만.
 """
 from __future__ import annotations
 
@@ -45,24 +49,41 @@ WRITER_SYSTEM = """너는 한국MSD(MSD Korea) Market Access(MA) 팀을 위한 �
 반드시 JSON 객체 하나만 출력한다:
 {"summary_bullets": ["...", "..."], "ma_implication": "...", "evidence_quote": "..."}
 - summary_bullets: 2~3개. 각 60자 안팎의 사실 요약(누가·무엇을·언제). 본문 사실만. 기사나 단체의 주장·요구는 '~라고 주장했다'처럼 출처를 밝혀 사실로 적는다.
-- ma_implication: 한 문장, 구체적으로. 이 기사가 한국MSD 의 한국 시장 접근 업무(급여·약가·등재)에 무엇을 뜻하는지만 쓴다 —
-  (1) 자사 자산(키트루다·가다실·린파자·웰리렉·브리디온 등)의 기회 또는 위협, (2) 경쟁 구도 변화, (3) 급여·약가·등재 절차·일정 영향 중 하나.
-  관점은 항상 한국MSD 다. 경쟁사 약제의 호재(임상 우위·급여·허가)는 MSD 에게 위협 또는 경쟁 심화로 쓴다. 경쟁사 입장에서 '긍정적'이라고 쓰지 않는다.
+- ma_implication: 한 문장. 이 기사가 한국MSD 의 한국 시장 접근 업무(급여·약가·등재)에 무엇을 뜻하는지만 쓴다.
+  반드시 '구체적 연결' 을 이름으로 적는다 — 다음 둘 중 하나여야 한다:
+  (1) 특정 MSD 자산·파이프라인: 키트루다·가다실·린파자·웰리렉·브리디온·에멘드·박스뉴반스·윈레브에어 등.
+      기사가 그 자산, 그 자산의 직접 경쟁약, 또는 같은 적응증·경쟁 구도를 다룰 때만 쓴다 (예: 경쟁 약제의 1차 급여 진입 → 키트루다의 해당 적응증 급여 협상 입지 축소).
+  (2) 한국MSD 포트폴리오에 실제로 닿는 정책·절차 기전: 예) 제네릭 45% 인하 개편 → 자사 오리지널의 LOE 후 가격 경쟁,
+      기등재 의약품 재평가 → 자사 등재 품목 인하 리스크, 암질심·약평위 일정 변경 → 자사 심의 안건 일정 영향.
+  자산도 기전도 이름 없이 'MSD 의 시장 접근 전략에 위협', '경쟁력에 영향', '급여 결정에 영향', '시장 경쟁 심화는 위협' 처럼
+  어떤 기사에나 붙일 수 있는 문장은 금지다. 'MSD' 라는 이름을 넣는다고 구체적 연결이 되지 않는다.
+  관점은 항상 한국MSD 다. 경쟁사 약제의 호재(임상 우위·급여·허가)는 MSD 의 '어느 자산' 에 대한 위협인지 자산명을 붙여 쓴다. 경쟁사 입장에서 '긍정적'이라고 쓰지 않는다.
   기사·단체의 주장·촉구·요구를 그대로 옮기지 않는다(옹호·의견 금지: '~해야 한다', '~가 필요하다' 금지). 본문을 넘어선 추측(예상·가능성·전망) 금지.
-  빈 문자열이 기본값이다. 한국MSD 의 MA 업무에 근거 있는 구체적 결과를 말할 수 없으면 빈 문자열을 낸다. 일상적인 업계 뉴스, MSD 자산·경쟁 구도와
-  무관한 기사, '급여 결정에 영향' 같은 일반론만 가능한 기사는 빈 문자열이 올바르고 선호되는 출력이다. 억지로 채우지 않는다.
+  빈 문자열이 기본값이자 선호되는 출력이다. 위 (1)(2) 어느 쪽도 본문 근거로 말할 수 없으면 빈 문자열을 낸다.
+  MSD 에 제품이 없는 시장(예: 스타틴 복합제·고혈압 제네릭)의 약가·경쟁 뉴스, 일상적인 업계·실적·인사 뉴스, MSD 자산·경쟁 구도와 무관한 기사,
+  일반론만 가능한 기사는 모두 빈 문자열이 올바르다. 대부분의 업계 뉴스에는 시사점이 없다. 억지로 채우지 않는다.
 - evidence_quote: ma_implication 의 근거가 되는 본문 문장을 글자 그대로 복사(20~200자). ma_implication 이 빈 문자열이면 빈 문자열."""
 
 SUPPORT_SYSTEM = """너는 한국MSD Market Access 브리핑의 사실 검증자다.
 기사 본문(article_body), 본문에서 인용한 문장(quote), 작성자가 쓴 MA 시사점(implication)이 주어진다.
-질문: quote(필요하면 article_body 로 보충)가 implication 을 뒷받침하는가?
+두 가지를 독립적으로 판정한다.
+[1] supported — quote(필요하면 article_body 로 보충)가 implication 을 뒷받침하는가?
 '둘 다 존재한다'가 아니라, 인용 내용에서 시사점의 결론이 직접 따라 나오는지만 본다.
 - 시사점이 인용·본문에 없는 사실·수치·전망을 더하면 supported=false.
 - 시사점이 기사·단체의 주장·촉구를 사실처럼 옮긴 것이면 supported=false.
 - 시사점의 관점이 한국MSD 가 아니거나(예: 경쟁사 입장에서 '긍정적'), 방향이 본문과 다르면 supported=false.
 - 인용이 시사점과 무관한 문장이면 supported=false.
 - 시사점이 한국MSD 의 급여·약가·등재 업무와 무관한 일반론이면 supported=false.
-반드시 JSON 객체 하나만 출력한다: {"supported": true 또는 false, "reason": "한국어 한 문장"}"""
+[2] msd_specific — 시사점이 한국MSD 포트폴리오와의 '구체적 연결' 을 이름으로 적고, 그 연결이 본문에서 확인되는가?
+인정하는 연결은 둘뿐이다:
+- 특정 MSD 자산·파이프라인 지목: 키트루다·가다실·린파자·웰리렉·브리디온·에멘드·박스뉴반스·윈레브에어 등.
+  본문이 그 자산, 그 자산의 직접 경쟁약, 또는 같은 적응증을 실제로 다뤄야 한다.
+- 한국MSD 포트폴리오에 실제로 닿는 정책·절차 기전: 예) 제네릭 45% 인하 → 자사 오리지널의 LOE 후 가격 경쟁,
+  기등재 재평가 → 자사 등재 품목 인하 리스크. 본문의 정책·절차가 MSD 품목에도 적용된다는 것이 본문에서 따라 나와야 한다.
+- 'MSD' 라는 이름만 있고 자산도 기전도 없는 문장('시장 접근 전략에 위협', '경쟁력에 영향', '경쟁 심화는 위협')은 msd_specific=false.
+- MSD 에 제품이 없는 시장(예: 스타틴 복합제·고혈압 제네릭 약가 인하)의 경쟁·가격 뉴스는 msd_specific=false.
+- 확신이 없으면 msd_specific=false. 대부분의 일상적인 업계 뉴스는 false 다.
+반드시 JSON 객체 하나만 출력한다: {"supported": true 또는 false, "msd_specific": true 또는 false, "reason": "한국어 한 문장"}"""
 
 
 class LLMError(RuntimeError):
@@ -152,6 +173,14 @@ class BriefDraft:
     evidence_quote: str
 
 
+@dataclass(frozen=True)
+class ImplicationSupport:
+    """verify_implication 결과 — 같은 1회 호출에서 나온 두 판정. 렌더는 supported 와 msd_specific 이 모두 True 일 때만."""
+    supported: bool        # 인용(과 본문)에서 시사점의 결론이 직접 따라 나오는가
+    msd_specific: bool     # 시사점이 MSD 자산 또는 한국MSD 포트폴리오에 닿는 기전을 이름으로 적고 본문이 그것을 확인하는가
+    reason: str = ""
+
+
 def judge_relevance(*, title: str, text: str, scope_terms: Iterable[str],
                     llm: JsonLLM, model: str) -> RelevanceVerdict:
     terms = [str(t) for t in scope_terms]
@@ -193,14 +222,18 @@ def verify_quote(quote: str, body: str) -> bool:
     return len(q) >= MIN_QUOTE_CHARS and q in _norm(body)
 
 
-def verify_implication(implication: str, quote: str, body: str, *, llm: JsonLLM, model: str) -> bool:
-    """인용(과 본문)이 시사점을 '뒷받침' 하는지 2차 LLM(JSON) 에 묻는다. bool 인 supported 만 신뢰한다.
-    LLMError 는 호출측이 fail-closed(시사점 삭제) 로 처리한다."""
+def verify_implication(implication: str, quote: str, body: str, *, llm: JsonLLM, model: str) -> ImplicationSupport:
+    """2차 LLM(JSON) 1회 호출로 두 가지를 묻는다 — 인용(과 본문)이 시사점을 '뒷받침' 하는지(supported) 와
+    시사점이 MSD 자산·기전으로 한국MSD 포트폴리오에 구체적으로 닿는지(msd_specific).
+    bool 값만 신뢰한다 (문자열·누락 → False, fail-closed). LLMError 는 호출측이 fail-closed(시사점 삭제) 로 처리한다."""
     user = json.dumps({"implication": implication, "quote": quote,
                        "article_body": (body or "")[:SUPPORT_BODY_CHARS]}, ensure_ascii=False)
     data = llm.complete_json(system=SUPPORT_SYSTEM, user=user, model=model)
-    supported = data.get("supported")
-    return supported is True
+    return ImplicationSupport(
+        supported=data.get("supported") is True,
+        msd_specific=data.get("msd_specific") is True,
+        reason=str(data.get("reason") or "")[:300],
+    )
 
 
 def title_restatement_ratio(implication: str, title: str) -> float:

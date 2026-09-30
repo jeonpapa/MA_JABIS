@@ -39,6 +39,7 @@ from .discovery import (
     select_daily_items,
 )
 from .llm import (
+    ImplicationSupport,
     JsonLLM,
     LLMError,
     OpenAIJsonLLM,
@@ -69,6 +70,10 @@ IMPLICATION_REJECTIONS = {
                                 "시사점 제외: 인용이 시사점을 뒷받침하지 않음"),
     "implication_style_rejected": ("implication_style_rejected", "llm_relevance+style_rejected",
                                    "시사점 제외: 제목 재진술 또는 옹호 표현"),
+    # 2026-09-30 파일럿: 인용은 뒷받침하지만 MSD 자산·기전이 없는 상투구 ('MSD 의 시장 접근 전략에 위협')
+    "implication_not_msd_specific": ("implication_not_msd_specific",
+                                     "llm_relevance+quote_check+support_check+msd_link_rejected",
+                                     "시사점 제외: MSD 자산 또는 한국MSD 포트폴리오에 닿는 기전이 명시되지 않음"),
 }
 # 클러스터 대표 선정용 매체 권위 순위 (높을수록 우선). 등록되지 않은 매체는 0.
 SOURCE_TIER_AUTHORITY = {"official": 3, "official_payer": 3, "regulator": 3,
@@ -286,7 +291,9 @@ def _bump(stats: dict, key: str) -> None:
 def _vet_implication(draft, *, title: str, body_text: str, deps: EngineDeps, config: EngineConfig,
                      stats: dict) -> tuple[str, str, str | None]:
     """시사점 3단 검증. 반환 (시사점, 인용, 거부 사유|None) — 거부되면 시사점·인용은 빈 문자열.
-    순서: 코드 스타일 가드(LLM 없음) → 인용 substring 검증 → 지원 검증(2차 LLM, 앞 단계 통과 시에만 호출)."""
+    순서: 코드 스타일 가드(LLM 없음) → 인용 substring 검증 → 지원 검증(2차 LLM 1회, 앞 단계 통과 시에만 호출).
+    지원 검증 1회 호출이 supported(인용이 결론을 뒷받침) 와 msd_specific(MSD 자산·기전이 구체적으로 명시) 을 함께 돌려주며
+    둘 다 True 여야 렌더한다. supported=False 가 msd_specific 보다 우선하고, LLM 오류는 fail-closed(unsupported)."""
     implication = draft.ma_implication
     if not implication:
         return "", "", None
@@ -298,15 +305,19 @@ def _vet_implication(draft, *, title: str, body_text: str, deps: EngineDeps, con
         _bump(stats, "quote_rejected")
         return "", "", "quote_unverified"
     try:
-        supported = verify_implication(implication, draft.evidence_quote, body_text,
-                                       llm=deps.llm, model=config.support_model)
+        support = verify_implication(implication, draft.evidence_quote, body_text,
+                                     llm=deps.llm, model=config.support_model)
     except LLMError as exc:
         _bump(stats, "support_llm_errors")
         logger.warning("[daily_mailing] 시사점 지원 검증 실패 (%s): %s — fail-closed", title[:40], exc)
-        supported = False
-    if not supported:
+        support = ImplicationSupport(supported=False, msd_specific=False, reason="llm_error")
+    if not support.supported:
         _bump(stats, "implication_unsupported")
         return "", "", "implication_unsupported"
+    if not support.msd_specific:
+        _bump(stats, "implication_not_msd_specific")
+        logger.info("[daily_mailing] 시사점 제외 — MSD 구체 연결 없음 (%s): %s", title[:40], support.reason)
+        return "", "", "implication_not_msd_specific"
     return implication, draft.evidence_quote, None
 
 
