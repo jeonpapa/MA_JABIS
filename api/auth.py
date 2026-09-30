@@ -68,7 +68,10 @@ def _extract_token() -> str | None:
 
 
 def require_auth(role: str | None = None):
-    """라우트 데코레이터. role='admin' 지정시 admin 만 허용."""
+    """라우트 데코레이터. role=<역할> 지정 시 그 역할과 admin 만 허용(admin 은 상위 권한).
+
+    예: require_auth(role="agent") → VPS 디스패처 서비스 계정(role='agent') 또는 admin.
+    """
     def deco(fn):
         @wraps(fn)
         def wrapper(*args, **kwargs):
@@ -78,8 +81,8 @@ def require_auth(role: str | None = None):
             payload = _decode_token(token)
             if payload is None:
                 return jsonify({"error": "invalid token", "code": "AUTH_INVALID"}), 401
-            if role == "admin" and payload.get("role") != "admin":
-                return jsonify({"error": "admin required", "code": "AUTH_FORBIDDEN"}), 403
+            if role and payload.get("role") not in (role, "admin"):
+                return jsonify({"error": f"{role} required", "code": "AUTH_FORBIDDEN"}), 403
             request.user = payload  # type: ignore[attr-defined]
             return fn(*args, **kwargs)
         return wrapper

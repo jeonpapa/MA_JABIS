@@ -5367,6 +5367,140 @@ def daily_mailing_health():
         return jsonify({"error": str(e)}), 500
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# 에이전트 팀 — 작업 원장 (설계: docs/superpowers/specs/2026-09-30-agent-team-full-service-design.md)
+#   /api/agent/*  : VPS 디스패처(role='agent') 전용. 원장은 API 로만 수정한다(DB 직접 쓰기 금지).
+#   /api/admin/agent-tasks : 운영 원장 화면(admin). 계약은 frontend/src/api/agentTasks.ts 와 맞춘다.
+# ──────────────────────────────────────────────────────────────────────────────
+from agents.agent_tasks import policy as _agent_policy  # noqa: E402
+from agents.agent_tasks import runbooks as _agent_runbooks  # noqa: E402
+from agents.agent_tasks import store as _agent_store  # noqa: E402
+
+# 모듈 변수로 둔다: 테스트가 임시 DB 로 바꿔치기한다. 엔드포인트는 호출 시점에 읽는다.
+_AGENT_TASK_DB_PATH = _agent_store.DEFAULT_DB_PATH
+# 선점 시 자동 분류 대상: 프로덕션 신호(signals.py)가 만든 ops_incident 는 new 로 생기고 아무도 triaged 로
+# 옮기지 않는다. P1 은 LLM 이 없으므로 결정적 런북 힌트를 가진 ops_incident 만 디스패처가 스스로 분류한다.
+_AGENT_AUTO_TRIAGE_KINDS = ("ops_incident",)
+
+
+def _agent_statuses_arg(default: tuple[str, ...]) -> tuple[str, ...]:
+    raw = tuple(s for s in (request.args.get("status") or "").split(",") if s)
+    return raw or default
+
+
+@app.get("/api/agent/tasks")
+@require_auth(role="agent")
+def agent_tasks_list():
+    statuses = _agent_statuses_arg(_agent_store.OPEN_STATUSES)
+    limit = max(1, min(request.args.get("limit", default=50, type=int) or 50, 200))
+    try:
+        tasks = _agent_store.list_tasks(db_path=_AGENT_TASK_DB_PATH, statuses=statuses, limit=limit)
+        return jsonify({"tasks": tasks, "policy": _agent_policy.get_policy(db_path=_AGENT_TASK_DB_PATH)})
+    except Exception as e:
+        logger.error("agent_tasks_list 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/agent/tasks/<int:task_id>/claim")
+@require_auth(role="agent")
+def agent_task_claim(task_id: int):
+    actor = request.user["sub"]  # type: ignore[attr-defined]
+    allowed, reason = _agent_policy.spend_check(db_path=_AGENT_TASK_DB_PATH)
+    if not allowed:
+        return jsonify({"claimed": False, "reason": reason, "code": "POLICY_BLOCKED"}), 423
+    task = _agent_store.get_task(task_id, db_path=_AGENT_TASK_DB_PATH)
+    if task is None:
+        return jsonify({"claimed": False, "error": "not found", "code": "NOT_FOUND"}), 404
+    if task["status"] == "new" and task["kind"] in _AGENT_AUTO_TRIAGE_KINDS:
+        try:
+            _agent_store.add_event(task_id, actor=actor, event="auto_triaged",
+                                   detail=f"{task['kind']} — 디스패처 자동 분류", db_path=_AGENT_TASK_DB_PATH)
+            _agent_store.update_task(task_id, actor=actor, db_path=_AGENT_TASK_DB_PATH, status="triaged")
+        except _agent_store.AgentTaskError:
+            pass  # 다른 실행이 먼저 분류함 — 아래 선점에서 판가름
+    if not _agent_store.claim_task(task_id, actor=actor, db_path=_AGENT_TASK_DB_PATH):
+        return jsonify({"claimed": False, "code": "NOT_CLAIMABLE"}), 409
+    return jsonify({"claimed": True, "task": _agent_store.get_task(task_id, db_path=_AGENT_TASK_DB_PATH)})
+
+
+@app.post("/api/agent/tasks/<int:task_id>/runbook")
+@require_auth(role="agent")
+def agent_task_runbook(task_id: int):
+    actor = request.user["sub"]  # type: ignore[attr-defined]
+    name = str((request.get_json(silent=True) or {}).get("name") or "")
+    task = _agent_store.get_task(task_id, db_path=_AGENT_TASK_DB_PATH)
+    if task is None:
+        return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+    if name not in _agent_runbooks.list_runbooks():
+        return jsonify({"error": f"알 수 없는 런북: {name}", "code": "INVALID"}), 400
+    if task["status"] != "in_progress":
+        # 선점 없이 런북을 돌리면 일일 예산 판정(spend_check)을 우회한다
+        return jsonify({"error": f"선점된(in_progress) 과제만 런북을 실행한다: {task['status']}",
+                        "code": "NOT_CLAIMED"}), 409
+    _agent_store.add_event(task_id, actor=actor, event="runbook_started", detail=name,
+                           db_path=_AGENT_TASK_DB_PATH)
+    result = _agent_runbooks.run(name)
+    _agent_store.add_event(task_id, actor=actor,
+                           event="runbook_ok" if result.get("ok") else "runbook_failed",
+                           detail=str(result.get("summary") or "")[:2000], db_path=_AGENT_TASK_DB_PATH)
+    return jsonify({"result": result})
+
+
+@app.post("/api/agent/tasks/<int:task_id>/resolve")
+@require_auth(role="agent")
+def agent_task_resolve(task_id: int):
+    actor = request.user["sub"]  # type: ignore[attr-defined]
+    body = request.get_json(silent=True) or {}
+    status = body.get("status") or "closed"
+    if status not in ("closed", "blocked", "rejected", "triaged"):
+        return jsonify({"error": "status must be closed|blocked|rejected|triaged", "code": "INVALID"}), 400
+    try:
+        task = _agent_store.update_task(task_id, actor=actor, db_path=_AGENT_TASK_DB_PATH,
+                                        status=status, resolution=str(body.get("resolution") or "")[:2000])
+        return jsonify({"task": task})
+    except _agent_store.AgentTaskError as e:
+        return jsonify({"error": str(e), "code": "INVALID_STATE"}), 409
+
+
+@app.get("/api/admin/agent-tasks")
+@require_auth(role="admin")
+def admin_agent_tasks():
+    # 기본은 전 상태: blocked(사람 확인 필요)·deployed 도 운영 원장 화면이 봐야 한다
+    statuses = _agent_statuses_arg(_agent_store.STATUSES)
+    try:
+        return jsonify({
+            "tasks": _agent_store.list_tasks(db_path=_AGENT_TASK_DB_PATH, statuses=statuses, limit=200),
+            "policy": _agent_policy.get_policy(db_path=_AGENT_TASK_DB_PATH),
+            "runbooks": _agent_runbooks.list_runbooks(),
+        })
+    except Exception as e:
+        logger.error("admin_agent_tasks 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/admin/agent-tasks/<int:task_id>")
+@require_auth(role="admin")
+def admin_agent_task_detail(task_id: int):
+    task = _agent_store.get_task(task_id, db_path=_AGENT_TASK_DB_PATH)
+    if task is None:
+        return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+    return jsonify({"task": task, "events": _agent_store.list_events(task_id, db_path=_AGENT_TASK_DB_PATH)})
+
+
+@app.post("/api/admin/agent-policy")
+@require_auth(role="admin")
+def admin_agent_policy():
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict):
+        return jsonify({"error": "body must be an object", "code": "INVALID"}), 400
+    actor = request.user["sub"]  # type: ignore[attr-defined]
+    try:
+        return jsonify({"policy": _agent_policy.set_policy(body, actor=actor, db_path=_AGENT_TASK_DB_PATH)})
+    except Exception as e:
+        logger.error("admin_agent_policy 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @app.post("/api/mail-subscriptions/<int:item_id>/test-send")
 @require_auth()
 def mail_sub_test_send(item_id: int):
