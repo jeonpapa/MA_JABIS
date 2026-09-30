@@ -6,7 +6,9 @@ from agents.agent_tasks.policy import DEFAULT_POLICY, get_policy, set_policy, sp
 from agents.agent_tasks.store import create_task, update_task
 
 KST = timezone(timedelta(hours=9))
-NOW = datetime(2026, 9, 30, 10, 0, tzinfo=KST)
+# 감사 이벤트는 실제 시각으로 기록되므로, 예산 판정 기준 시각도 '지금'이어야 한다
+# (고정 날짜를 쓰면 그날이 지나는 순간 테스트가 깨진다).
+NOW = datetime.now(KST)
 
 
 def test_default_policy_and_override(tmp_path):
