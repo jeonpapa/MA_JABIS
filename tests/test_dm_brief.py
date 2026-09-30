@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import re
 from datetime import date
+
+import pytest
 
 from agents.daily_mailing.brief import (
     BriefItem,
@@ -200,3 +203,57 @@ def test_render_snippet_item_as_single_search_summary_line():
     assert "본문 미확보" in md
     full = render_brief_html(name="n", run_date=date(2026, 9, 18), scope_terms=["x"], items=[_item()])
     assert "<ul" in full and "검색 요약" not in full
+
+
+# ---- 검색 요약 스니펫 (2026-09-30 파일럿: '검색 요약: 위한 급여기준 개선을 요청했다고 밝혔다.') ----
+PILOT_FRAGMENT = "위한 급여기준 개선을 요청했다고 밝혔다."
+NAVER_JOINED = "환우회는 국회 토론회에서 ... 위한 급여기준 개선을 요청했다고 밝혔다..."
+NAVER_PERIOD_JOINED = ("현재 국내외 임상진료지침에서는 GnRH 유사체를 표준 치료로 권고하고 있다.... "
+                       "또한 급여 기준과 별도로 치료 여부를 결정할 때는 사춘기 진행 속도를 가장 중요하게... ")
+
+
+def _norm(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
+
+@pytest.mark.parametrize("raw", [
+    PILOT_FRAGMENT,
+    PILOT_FRAGMENT + " 환우회는 이날 성명에서 PNH 치료제의 급여 확대와 본인부담 완화를... 촉구했다...",
+    "한국발작성야간혈색소뇨증환우회는 29일 국회 토론회에서 PNH 환자 치료 접근성을 위한 급여기준 개선을 요청했다고 밝혔다...",
+    NAVER_JOINED,
+    NAVER_PERIOD_JOINED,
+    "짧다. 아주 긴 두 번째 문장이 계속 이어지다가 검색 API 가 자르는 바람에 끝이 없…",
+])
+def test_clean_snippet_never_loses_the_beginning(raw):
+    out = clean_snippet(raw)
+    head = re.split(r"\.{2,}|…", _norm(raw))[0].strip()[:12]
+    assert out.startswith(head), (out, head)                          # 머리글은 항상 원문 시작
+    assert len(out) >= len(_norm(raw).rstrip(". …")) * 0.3            # 남는 길이 ≥ 30%
+    assert not re.search(r"\.{2,}\s*$|…\s*$", out)                     # 꼬리 말줄임은 뗀다
+    assert clean_snippet(out) == out                                   # 엔진이 bullets 를 다시 정리해도 같다
+
+
+def test_clean_snippet_pilot_fragment_is_kept_intact():
+    # 머리글이 없는 것은 네이버 발췌(키워드 중심 시작) 탓 — clean_snippet 은 남은 문장을 손대지 않는다
+    assert clean_snippet(PILOT_FRAGMENT) == PILOT_FRAGMENT
+    assert clean_snippet(PILOT_FRAGMENT + " 환우회는 이날 성명에서 급여 확대를... 촉구했다...") == PILOT_FRAGMENT
+
+
+def test_clean_snippet_normal_snippet_keeps_complete_sentences_and_drops_truncated_tail():
+    raw = ("한국발작성야간혈색소뇨증환우회는 29일 국회 토론회에서 PNH 환자 치료 접근성을 위한 급여기준 개선을 요청했다고 밝혔다. "
+           "환우회는 이날 성명에서 급여 확대와 본인부담 완화를 함께...")
+    assert clean_snippet(raw) == ("한국발작성야간혈색소뇨증환우회는 29일 국회 토론회에서 PNH 환자 치료 접근성을 위한 "
+                                  "급여기준 개선을 요청했다고 밝혔다.")
+
+
+def test_clean_snippet_inline_ellipsis_is_an_excerpt_joiner_not_a_sentence_end():
+    # 네이버 description 은 비연속 발췌를 '...' 로 잇는다 (아카이브 400건 중 257건). 이음표를 문장 끝으로 보면 머리 조각만 남는다.
+    assert clean_snippet(NAVER_JOINED) == "환우회는 국회 토론회에서 … 위한 급여기준 개선을 요청했다고 밝혔다"
+    # '있다....' = 문장 끝 + 이음표: 문장 끝은 살리고, 뒤 조각이 잘린 문장이면 거기까지만
+    assert clean_snippet(NAVER_PERIOD_JOINED) == "현재 국내외 임상진료지침에서는 GnRH 유사체를 표준 치료로 권고하고 있다."
+    # 뒤 조각에 완결 문장이 있으면 그 문장까지 (이음표 포함) 유지
+    assert clean_snippet("A 회사는 신약을 출시했다.... 이어 급여 등재를 신청했다. 회사는 내년...") \
+        == "A 회사는 신약을 출시했다. … 이어 급여 등재를 신청했다."
+    # 꼬리가 잘리지 않은(말줄임 없는) 본문은 이음표만 정리하고 자르지 않는다
+    assert clean_snippet("A 회사는 ... 출시했다. 이어 신청했다.") == "A 회사는 … 출시했다. 이어 신청했다."
+

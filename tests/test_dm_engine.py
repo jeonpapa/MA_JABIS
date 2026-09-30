@@ -626,3 +626,16 @@ def test_snippet_item_uses_cleaned_description_single_line():
     assert item.summary_bullets == ("파드셉 병용요법의 급여 확대가 논의된다.",)
     assert "검색 요약: 파드셉 병용요법의 급여 확대가 논의된다." in result.html
     assert "본문 미확보" in result.html
+
+
+def test_snippet_item_keeps_head_and_joins_naver_excerpt_fragments():
+    # 2026-09-30 파일럿: 본문 미확보 기사의 '검색 요약' 은 네이버 발췌(비연속 조각을 '...' 로 이음) — 머리글 보존, 이음표는 문장 끝 아님
+    desc = "환우회는 국회 토론회에서 ... 위한 급여기준 개선을 요청했다고 밝혔다..."
+    result = generate_run(_scope(), deps=_deps(FakeNaver({"파드셉": [dict(PADCEV, description=desc)]}), body_status="failed"),
+                          name="파드셉", now=NOW)
+    item = result.items[0]
+    assert item.body_status == "snippet"
+    assert item.summary_bullets == ("환우회는 국회 토론회에서 … 위한 급여기준 개선을 요청했다고 밝혔다",)
+    assert "검색 요약: 환우회는 국회 토론회에서 … 위한 급여기준 개선을 요청했다고 밝혔다" in result.html
+    assert "검색 요약: 환우회는 국회 토론회에서 … 위한 급여기준 개선을 요청했다고 밝혔다" in result.markdown
+

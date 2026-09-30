@@ -23,7 +23,11 @@ NON_PUBLISHER_TIERS = frozenset({"search_channel"})
 MULTI_LABEL_SUFFIXES = frozenset({"co.kr", "or.kr", "go.kr", "ne.kr", "re.kr", "ac.kr", "pe.kr",
                                   "co.jp", "ne.jp", "or.jp", "co.uk", "org.uk", "ac.uk",
                                   "com.au", "com.cn", "com.tw", "com.sg"})
-_ELLIPSIS_TAIL = re.compile(r"(?:\.{2,}|…)+\s*$")
+# 네이버 description 은 키워드 중심 발췌라 비연속 조각을 '...' 로 잇고(아카이브 400건 중 257건) 끝을 '...' 로 자른다.
+# 점 2개 이상 또는 '…' 의 연속 = 발췌 이음표. '있다....' 처럼 점 4개 이상이면 문장 끝 마침표 + 이음표로 본다.
+_ELLIPSIS_RUN = re.compile(r"\s*(?:\.{2,}|…)+\s*")
+_JOINER = " … "
+_JOINER_TAIL = re.compile(r"\s*…\s*$")
 _SENTENCE_END = re.compile(r"[.!?。](?=\s|$)")
 MIN_SENTENCE_KEEP_RATIO = 0.3   # 잘린 스니펫을 문장 경계에서 자를 때 남는 길이의 최소 비율
 
@@ -51,15 +55,23 @@ def publisher_display_name(source_name: str, publisher_url: str, *, source_tier:
     return registrable_domain(publisher_url)
 
 
+def _normalize_joiner(match: re.Match) -> str:
+    run = match.group(0).strip()
+    return "." + _JOINER if "…" not in run and run.count(".") >= 4 else _JOINER
+
+
 def clean_snippet(text: str) -> str:
-    """검색 API 스니펫을 한 줄로 정리. 공백 정규화 후, 말줄임(…/...)으로 잘린 경우 말줄임을 떼고
-    문장 경계가 충분히 뒤(MIN_SENTENCE_KEEP_RATIO 이상)에 있으면 거기서 자른다."""
+    """검색 API 스니펫을 한 줄로 정리. 결과는 항상 원문의 시작에서 시작한다 (머리글을 잃지 않는다).
+    ① 공백 정규화 ② 인라인 말줄임(...)은 문장 끝이 아니라 발췌 이음표 ' … ' 로 통일 ③ 꼬리 말줄임은 뗀다
+    ④ 꼬리가 잘린 경우에만, 마지막 '진짜' 문장 끝이 충분히 뒤(MIN_SENTENCE_KEEP_RATIO 이상)에 있으면 뒤 조각을 자른다.
+    이음표에서 자르면 머리 조각만 남거나 '...' 로 끝나는 줄이 되므로(2026-09-30 파일럿) 이음표는 절단 후보가 아니다."""
     value = re.sub(r"\s+", " ", text or "").strip()
     if not value:
         return ""
-    stripped = _ELLIPSIS_TAIL.sub("", value).rstrip()
-    if stripped == value:
-        return value
+    joined = _ELLIPSIS_RUN.sub(_normalize_joiner, value).strip()
+    stripped = _JOINER_TAIL.sub("", joined).strip()
+    if not stripped or stripped == joined:
+        return stripped                     # 꼬리가 잘리지 않은 스니펫은 자르지 않는다
     ends = [m.end() for m in _SENTENCE_END.finditer(stripped)]
     if ends and ends[-1] >= len(stripped) * MIN_SENTENCE_KEEP_RATIO and ends[-1] < len(stripped):
         return stripped[: ends[-1]].rstrip()
