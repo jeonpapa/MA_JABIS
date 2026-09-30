@@ -1575,6 +1575,7 @@ Expected: 기존 통과 수 + 이번 신규(약 27개). `tests/test_access_insig
 
 - **운영 원장 화면의 상태 변경 버튼**(종료·`triaged` 되돌리기·`blocked`): P1 화면은 정책 토글만 있고, 상태 변경은 admin 토큰 + `POST /api/agent/tasks/<id>/resolve` 로만 한다(`docs/agent_team/VPS_SETUP.md` §6 운영 개입 절차).
 - **런북 실행을 job 분리 + `202` 폴링으로**: P1 의 `POST /runbook` 은 동기(수 분)이고 디스패처가 600초를 기다리지만 프록시/워커가 그보다 먼저 끊지 않는다는 근거가 없다(`api/server.py` 의 "수 분짜리 동기 요청은 프록시 타임아웃에 끊긴다" 원칙). 끊기면 서버엔 `runbook_ok`, 과제는 디스패처 오류로 `blocked`.
+- **서버측 런북 동시 실행 차단**(실행 중인 런북이 있으면 `POST /runbook` 을 `409` 로): P1 은 VPS 크론의 `flock -n` 으로만 겹침을 막는다(`VPS_SETUP.md` §4). 디스패처가 여러 대가 되거나 잠금이 빠지면 1GB 머신에 Playwright 크롤이 동시에 뜬다.
 
 ### P3 — 개선자 (스스로 과제 만들기)
 

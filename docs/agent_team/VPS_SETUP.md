@@ -92,10 +92,11 @@ crontab -e
 ```
 
 ```cron
-*/10 * * * * cd /srv/ma-dossier && set -a && . ./.env && set +a && ./venv/bin/python scripts/agent_dispatcher.py >> logs/agent.log 2>&1
+*/10 * * * * cd /srv/ma-dossier && flock -n /srv/ma-dossier/agent.lock sh -c 'set -a && . ./.env && set +a && exec ./venv/bin/python scripts/agent_dispatcher.py' >> logs/agent.log 2>&1
 ```
 
-- 상주 데몬이 아니라 짧은 실행의 반복이다. 실행 하나가 죽어도 다음 실행이 이어받는다(자동 분류·선점 모두 조건부 UPDATE 1회라 중복 실행에도 안전 — 같은 과제를 두 실행이 동시에 집어도 하나만 선점된다).
+- `flock -n /srv/ma-dossier/agent.lock` 은 **디스패처 실행이 겹치지 않게** 한다. 한 실행은 최대 `--max-tasks`(3) × 런북 시간(수 분)이라 10분 크론과 쉽게 겹치고, 겹치면 서버가 `domestic_price_catchup`(Playwright 크롤)을 **동시에** 여러 개 띄운다 — 1GB 머신에서는 OOM 이다. 잠금이 잡혀 있으면 이번 실행은 조용히 건너뛰고(`-n`: 대기 없음) 다음 10분에 다시 온다. 서버측 "실행 중 런북이 있으면 `409`" 는 P2(계획 문서 "P2 로 넘김").
+- 상주 데몬이 아니라 짧은 실행의 반복이다. 실행 하나가 죽어도 다음 실행이 이어받는다(자동 분류·선점 모두 조건부 UPDATE 1회라 중복 실행에도 안전 — 같은 과제를 두 실행이 동시에 집어도 하나만 선점된다. 잠금은 그 위에 **런북 동시 실행** 을 막는 층이다).
 - 런북은 서버 안에서 **동기** 실행된다(`domestic_price_catchup` 은 Playwright 크롤로 수 분). 디스패처는 런북 호출만 600초(`RUNBOOK_TIMEOUT_SECONDS`)를 기다리고 로그인·목록·선점·회신은 30초(`REQUEST_TIMEOUT_SECONDS`)다. **600초를 프록시(Fly)·워커가 버틴다는 것은 미검증이다** — 프록시가 먼저 끊으면 서버에는 `runbook_ok` 가 남고 과제는 "디스패처 오류: ..." 로 `blocked` 되는 조합으로 나타난다(운영 원장 상세에서 `runbook_ok` 뒤에 `status:blocked` 가 붙어 있으면 이 경우다 — 런북은 실제로 성공했으니 `closed` 로 종료하면 된다). 근본 해결은 P2 의 job 분리 + `202` 폴링(`api/server.py` 의 기존 원칙과 같다).
 - 로그 순환: `logrotate` 에 `/srv/ma-dossier/logs/agent.log { weekly rotate 8 compress missingok notifempty }` 를 등록한다.
 - 코드 갱신: `cd /srv/ma-dossier && git pull --ff-only`. 디스패처는 서버 API 계약(`/api/agent/*`)만 쓰므로 프로덕션 배포와 순서를 맞출 필요는 없다.

@@ -3,8 +3,9 @@
 흐름(설계 §3): 로그인 → 선점 가능한 과제 조회 → 우선순위순 선점 → 런북 실행 요청 → 결과 회신.
 원장은 API 로만 만진다(DB 직접 쓰기 금지). 표준 라이브러리만 쓰므로 VPS 에 pip 의존성이 없다.
 
-크론 예: */10 * * * * cd /srv/ma-dossier && set -a && . ./.env && set +a \
-            && ./venv/bin/python scripts/agent_dispatcher.py >> logs/agent.log 2>&1
+크론 예(VPS_SETUP §4 — flock 으로 실행 겹침 방지, 안 그러면 서버에 Playwright 크롤이 동시에 뜬다):
+  */10 * * * * cd /srv/ma-dossier && flock -n /srv/ma-dossier/agent.lock sh -c 'set -a && . ./.env \
+               && set +a && exec ./venv/bin/python scripts/agent_dispatcher.py' >> logs/agent.log 2>&1
 
 환경변수: MA_API_BASE(예: https://ma-ai-dossier.fly.dev), MA_AGENT_EMAIL, MA_AGENT_PASSWORD.
 로그인은 매 실행마다 한다(7일 JWT 를 디스크에 보관하지 않는다).
