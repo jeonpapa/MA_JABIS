@@ -12,7 +12,9 @@
 과제 상태: 프로덕션 신호(signals.py)는 과제를 new 로 만든다. 서버의 claim 이 ops_incident 를 자동
 분류(new→triaged)한 뒤 선점하므로 디스패처는 new·triaged 를 함께 조회한다(kind=ops_incident 만).
 런북 결과가 ok 면 closed, 아니면 blocked(사람 확인). 런북 힌트가 없는 과제도 blocked 로 넘겨 사람이
-보게 한다. 재시도는 사람이 화면에서 triaged 로 되돌리면 되고, 서버가 3회 한도를 넘기면 blocked 로 막는다.
+보게 한다. 재시도는 운영자가 admin 토큰으로 `POST /api/agent/tasks/<id>/resolve {"status":"triaged"}`
+를 보내면 된다(관리자 화면에는 정책 토글만 있고 상태 변경 버튼은 P2 — VPS_SETUP §6). 서버가 3회 한도를
+넘기면 blocked 로 막는다.
 """
 from __future__ import annotations
 

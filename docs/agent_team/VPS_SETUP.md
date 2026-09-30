@@ -122,11 +122,29 @@ crontab -e
 | `HTTP Error 401` (로그인) | 비밀번호 불일치·계정 없음 | 1 단계 재발급 후 `.env` 갱신 |
 | `HTTP Error 403` | 계정 역할이 `agent`/`admin` 이 아님 | 계정 삭제 후 `role=agent` 로 재생성 |
 | 매 실행 `선점 거부 ... HTTP 423` | 정책 정지 또는 일일 예산 초과 | 화면에서 정책·오늘 처리 수 확인 |
-| `blocked` + "자동 복구 런북 없음" | 신호에 런북 매핑이 없음 | `agents/agent_tasks/signals.py` 의 `JOB_RUNBOOK`/`HEALTH_RUNBOOK` 에 매핑 추가(런북은 `runbooks.py` 에 등록) 또는 사람이 처리 후 화면에서 종료 |
+| `blocked` + "자동 복구 런북 없음" | 신호에 런북 매핑이 없음 | `agents/agent_tasks/signals.py` 의 `JOB_RUNBOOK`/`HEALTH_RUNBOOK` 에 매핑 추가(런북은 `runbooks.py` 에 등록) 또는 사람이 처리한 뒤 아래 **운영 개입 절차** 로 종료 |
 | `blocked` + "디스패처 오류: ..." | 런북 요청 중 네트워크/서버 오류 | `flyctl logs` 로 서버측 원인 확인. 재시도는 `triaged` 로 되돌리면 된다(`POST /api/agent/tasks/<id>/resolve {"status":"triaged"}`) — 선점 표식(`claimed_by`)이 풀리고 다음 실행이 집는다. `attempts` 는 보존된다 |
-| `blocked` + "재시도 한도(3회) 초과 — 사람 확인 필요" | 같은 과제가 3번 선점됐는데도 닫히지 않음(설계 §5: 재시도 2회까지) | 자동 복구로는 안 되는 문제다. 원인을 사람이 처리한 뒤 화면에서 종료한다. 다시 돌리고 싶으면 새 과제가 생기게 두거나(신호는 매일 새 `source_ref`), `triaged` 로 되돌려도 서버가 다시 `blocked` 로 막는다 |
+| `blocked` + "재시도 한도(3회) 초과 — 사람 확인 필요" | 같은 과제가 3번 선점됐는데도 닫히지 않음(설계 §5: 재시도 2회까지) | 자동 복구로는 안 되는 문제다. 원인을 사람이 처리한 뒤 아래 **운영 개입 절차** 로 종료한다. 다시 돌리고 싶으면 새 과제가 생기게 두거나(신호는 매일 새 `source_ref`), `triaged` 로 되돌려도 서버가 다시 `blocked` 로 막는다 |
 | 과제가 `in_progress` 에 오래 머묾 | 디스패처가 회신 전에 죽음 | **`claimed_at` 에서 런북 타임아웃(디스패처 `REQUEST_TIMEOUT_SECONDS`, 600초)이 지나기 전에는 되돌리지 말 것** — 런북이 아직 도는 중일 수 있다. 되돌리면 `claimed_by` 가 비워져 다음 실행이 재선점하고, 서버가 같은 런북을 **두 번** 돌린다(1GB 머신에서 Playwright 크롤 2개). 타임아웃이 지난 뒤 admin 토큰으로 `POST /api/agent/tasks/<id>/resolve {"status":"blocked","resolution":"..."}` 또는 `{"status":"triaged"}`. 되돌린 뒤 원래 실행이 뒤늦게 회신하면 서버가 `409 STALE_CLAIM` 으로 거부하고 디스패처는 그 과제를 건너뛴다(로그 `선점 무효`) |
 | VPS 로그 `선점 무효 task=N (STALE_CLAIM)` | 위 되돌리기 뒤 다른 실행이 재선점한 과제에 원래 실행이 회신함 | 정상 동작(결과는 재선점한 실행의 것만 남는다). 되돌리기가 너무 일렀다는 신호 — 위 경고 참고 |
+
+### 운영 개입 절차 (종료·되돌리기·blocked)
+
+관리자 화면(`/admin/agent-tasks`)에는 **정책 토글만** 있고 과제 상태를 바꾸는 버튼은 없다(상태 변경 UI 는 P2 —
+`docs/superpowers/plans/2026-09-30-agent-team-P1-ops-sentinel.md` "P2 로 넘김"). 상태 변경은 **admin 토큰** 으로 `resolve` API 를 직접 보낸다
+(`agent` 토큰은 자기 선점 과제만 만질 수 있다 — §7 소유권 규칙):
+
+```bash
+ADMIN_TOKEN=...   # 1 단계와 같은 방법으로 발급
+# 사람이 처리한 과제 종료 (in_progress·blocked → closed)
+curl -sS -X POST "$MA_API_BASE/api/agent/tasks/<id>/resolve" -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' -d '{"status":"closed","resolution":"<처리 내용>"}'
+# 재시도: triaged 로 되돌리기 (claimed_by 가 비워지고 다음 실행이 다시 집는다. attempts 는 보존)
+curl -sS -X POST "$MA_API_BASE/api/agent/tasks/<id>/resolve" -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' -d '{"status":"triaged"}'
+```
+
+허용 전이는 `agents/agent_tasks/store.py:ALLOWED_TRANSITIONS` (예: `blocked → triaged|rejected|closed`). 위반이면 `409 INVALID_STATE`.
 
 ## 7. 동작 원리 (한 사이클)
 

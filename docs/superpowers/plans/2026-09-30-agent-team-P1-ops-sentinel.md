@@ -1571,6 +1571,10 @@ Expected: 기존 통과 수 + 이번 신규(약 27개). `tests/test_access_insig
 4. 요청자 회신: `service_request.resolution_note`/`commit_ref` 갱신 → `/my-requests` 반영.
 5. 안전: 요청 처리 중 금지 경로 변경 시 자동 `blocked`.
 
+#### P1 리뷰에서 P2 로 넘김
+
+- **운영 원장 화면의 상태 변경 버튼**(종료·`triaged` 되돌리기·`blocked`): P1 화면은 정책 토글만 있고, 상태 변경은 admin 토큰 + `POST /api/agent/tasks/<id>/resolve` 로만 한다(`docs/agent_team/VPS_SETUP.md` §6 운영 개입 절차).
+
 ### P3 — 개선자 (스스로 과제 만들기)
 
 1. 수집기: QualityGuard 리포트·RuleCompliance 결과·Daily Mailing 통계(시사점 제외율·본문 확보율·클러스터 수)·발송 실패율을 매일 05:00 에 읽어 임계치 초과 시 과제 생성.
