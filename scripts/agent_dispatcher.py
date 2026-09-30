@@ -38,9 +38,14 @@ CLAIMABLE_STATUSES = "new,triaged"
 # P1 이 처리할 수 있는 종류만 받는다 — user_request 등이 --max-tasks 슬롯을 먹지 않게 (P2 에서 확장)
 CLAIMABLE_KINDS = "ops_incident"
 DEFAULT_MAX_TASKS = 3
-# 런북은 동기 실행이다(domestic_price_catchup 은 Playwright 크롤로 수 분). 짧은 타임아웃이면 서버는 계속
-# 도는데 클라이언트만 끊겨 과제가 blocked 로 남으므로 넉넉히 둔다.
-REQUEST_TIMEOUT_SECONDS = 600
+# 요청별 타임아웃. login/list/claim/resolve 는 짧게 — 로그인 hang 하나가 프로세스를 10분 잡지 않게.
+REQUEST_TIMEOUT_SECONDS = 30
+# 런북 호출만 길게: 서버 안에서 동기 실행이다(domestic_price_catchup 은 Playwright 크롤로 수 분). 짧으면 서버는
+# 계속 도는데 클라이언트만 끊겨 과제가 blocked 로 남는다. 단 프록시/워커가 이보다 먼저 끊을 수 있다는 것은
+# **미검증** (api/server.py 의 "수 분짜리 동기 요청은 프록시 타임아웃에 끊긴다 → job 분리 + 202 폴링" 참고).
+# 그 경우 서버엔 runbook_ok 가 남고 과제는 "디스패처 오류" 로 blocked 되는 조합으로 나타난다. 근본 해결은 P2 의
+# 202 + 폴링.
+RUNBOOK_TIMEOUT_SECONDS = 600
 NO_RUNBOOK_RESOLUTION = "자동 복구 런북 없음 — 사람 확인 필요"
 # 서버가 409 로 "이 과제는 네 것이 아니다" 라고 답하는 코드. STALE_CLAIM: 운영자가 triaged 로 되돌린 뒤 다른
 # 실행이 재선점(claimed_by 불일치). NOT_CLAIMED: 선점 직후 누군가 상태를 바꿔 in_progress 가 아니다.
@@ -75,13 +80,14 @@ class ApiClient:
         self._token: str | None = None
         self._token = self._login(email, password)
 
-    def _request(self, method: str, path: str, body: dict | None = None) -> dict:
+    def _request(self, method: str, path: str, body: dict | None = None, *,
+                 timeout: float = REQUEST_TIMEOUT_SECONDS) -> dict:
         data = json.dumps(body).encode("utf-8") if body is not None else None
         req = urllib.request.Request(f"{self.base}{path}", data=data, method=method)
         req.add_header("Content-Type", "application/json")
         if self._token:
             req.add_header("Authorization", f"Bearer {self._token}")
-        with self._opener(req, timeout=REQUEST_TIMEOUT_SECONDS) as resp:
+        with self._opener(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8") or "{}")
 
     def _login(self, email: str, password: str) -> str:
@@ -99,10 +105,10 @@ class ApiClient:
                 return False
             raise
 
-    def _owned_request(self, path: str, body: dict) -> dict:
+    def _owned_request(self, path: str, body: dict, *, timeout: float = REQUEST_TIMEOUT_SECONDS) -> dict:
         """선점한 과제에만 허용되는 요청 — 409 STALE_CLAIM/NOT_CLAIMED 는 LostClaim 으로 올린다."""
         try:
-            return self._request("POST", path, body)
+            return self._request("POST", path, body, timeout=timeout)
         except urllib.error.HTTPError as exc:
             code = _error_code(exc) if exc.code == 409 else ""
             if code in LOST_CLAIM_CODES:
@@ -110,7 +116,8 @@ class ApiClient:
             raise
 
     def run_runbook(self, task_id: int, name: str) -> dict:
-        return self._owned_request(f"/api/agent/tasks/{task_id}/runbook", {"name": name})["result"]
+        return self._owned_request(f"/api/agent/tasks/{task_id}/runbook", {"name": name},
+                                   timeout=RUNBOOK_TIMEOUT_SECONDS)["result"]
 
     def resolve(self, task_id: int, status: str, resolution: str) -> None:
         self._owned_request(f"/api/agent/tasks/{task_id}/resolve", {"status": status, "resolution": resolution})

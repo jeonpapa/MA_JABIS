@@ -15,8 +15,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import scripts.agent_dispatcher as mod
-from scripts.agent_dispatcher import (ApiClient, CLAIMABLE_KINDS, CLAIMABLE_STATUSES, Dispatcher,
-                                      REQUEST_TIMEOUT_SECONDS, main, pick_runbook)
+from scripts.agent_dispatcher import (ApiClient, CLAIMABLE_KINDS, CLAIMABLE_STATUSES, Dispatcher, main,
+                                      pick_runbook)
 
 
 class FakeClient:
@@ -175,23 +175,31 @@ def test_api_client_logs_in_once_and_sends_bearer():
     assert list_auth == "Bearer T"
 
 
-def test_api_client_list_url_carries_kind_filter_and_long_timeout():
-    """목록 URL 에 kind=ops_incident 가 붙고, 동기 런북(Playwright 크롤 수 분)이 클라이언트 타임아웃에
-    걸려 서버만 계속 돌고 과제는 blocked 되는 일이 없도록 요청 타임아웃은 600초."""
-    seen_timeouts = []
+def test_api_client_timeouts_are_per_request_and_only_runbook_is_long():
+    """목록 URL 에 kind=ops_incident 가 붙는다. 타임아웃은 요청별: login/list/claim/resolve 는 짧게(로그인 hang 이
+    프로세스를 10분 잡지 않게), 동기 런북(Playwright 크롤 수 분) 호출만 길게."""
+    seen: list[tuple[str, int | None]] = []
 
     def opener(req, timeout=None):
-        seen_timeouts.append(timeout)
         path = req.full_url.replace("https://api.test", "")
+        seen.append((path, timeout))
         if path == "/api/auth/login":
             return _Resp({"token": "T"})
-        assert path == "/api/agent/tasks?status=new,triaged&kind=ops_incident", path
-        return _Resp({"tasks": [], "policy": {}})
+        if path == "/api/agent/tasks?status=new,triaged&kind=ops_incident":
+            return _Resp({"tasks": [], "policy": {}})
+        if path.endswith("/runbook"):
+            return _Resp({"result": {"ok": True, "summary": "s"}})
+        return _Resp({"claimed": True, "task": {}} if path.endswith("/claim") else {"task": {}})
 
     c = ApiClient("https://api.test", "a", "b", opener=opener)
     assert c.list_tasks("new,triaged", "ops_incident") == []
-    assert REQUEST_TIMEOUT_SECONDS == 600
-    assert seen_timeouts == [600, 600]
+    assert c.claim(7) is True
+    c.run_runbook(7, "domestic_price_catchup")
+    c.resolve(7, "closed", "done")
+    assert [t for _, t in seen] == [mod.REQUEST_TIMEOUT_SECONDS] * 2 + [mod.REQUEST_TIMEOUT_SECONDS,
+                                                                        mod.RUNBOOK_TIMEOUT_SECONDS,
+                                                                        mod.REQUEST_TIMEOUT_SECONDS]
+    assert mod.RUNBOOK_TIMEOUT_SECONDS > mod.REQUEST_TIMEOUT_SECONDS
 
 
 def test_api_client_claim_maps_409_423_to_false_and_raises_others():
