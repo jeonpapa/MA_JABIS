@@ -149,3 +149,66 @@ def test_test_request_runs_in_background(monkeypatch):
             break
         time.sleep(0.02)
     assert calls == [(19, "me@msd.com")]
+
+
+def _inflight_cleared(sid, tries=100):
+    for _ in range(tries):
+        if sid not in s._DM_TEST_INFLIGHT:
+            return True
+        time.sleep(0.02)
+    return False
+
+
+def test_test_request_rejects_second_click_while_first_is_running(monkeypatch):
+    """더블클릭/재클릭이 엔진 run 을 두 번 돌려 [TEST] 메일 2통 + LLM·Naver 비용 2배가 되지 않도록 구독별 in-flight 가드."""
+    import threading
+    started, release = threading.Event(), threading.Event()
+    calls: list = []
+
+    def slow_send_test(sid, requester_email, deps):
+        calls.append(sid)
+        started.set()
+        release.wait(5)
+        return {}
+
+    monkeypatch.setattr(s, "_mail_sub_exists", lambda item_id, owner: True)
+    monkeypatch.setattr(dispatch.DispatchDeps, "production", classmethod(lambda cls, db_path=None: SimpleNamespace()))
+    monkeypatch.setattr(dispatch, "send_test", slow_send_test)
+    c = s.app.test_client()
+    try:
+        assert c.post("/api/mail-subscriptions/19/test-request", headers=_user()).status_code == 202
+        assert started.wait(2)
+        second = c.post("/api/mail-subscriptions/19/test-request", headers=_user())
+        assert second.status_code == 409 and second.get_json()["code"] == "IN_PROGRESS"
+        assert "생성 중" in second.get_json()["error"]
+        assert calls == [19]
+    finally:
+        release.set()
+    assert _inflight_cleared(19)
+    assert c.post("/api/mail-subscriptions/19/test-request", headers=_user()).status_code == 202   # 완료 후 재요청 OK
+    assert _inflight_cleared(19) and calls == [19, 19]
+
+
+def test_test_request_guard_is_per_subscription_and_cleared_on_failure(monkeypatch):
+    import threading
+    release = threading.Event()
+
+    def send_test(sid, requester_email, deps):
+        if sid == 19:
+            release.wait(5)
+            return {}
+        raise RuntimeError("engine down")
+
+    monkeypatch.setattr(s, "_mail_sub_exists", lambda item_id, owner: True)
+    monkeypatch.setattr(dispatch.DispatchDeps, "production", classmethod(lambda cls, db_path=None: SimpleNamespace()))
+    monkeypatch.setattr(dispatch, "send_test", send_test)
+    c = s.app.test_client()
+    try:
+        assert c.post("/api/mail-subscriptions/19/test-request", headers=_user()).status_code == 202
+        assert c.post("/api/mail-subscriptions/20/test-request", headers=_user()).status_code == 202  # 다른 구독은 무관
+        assert _inflight_cleared(20)                                                                  # 실패해도 finally 로 해제
+        assert c.post("/api/mail-subscriptions/20/test-request", headers=_user()).status_code == 202
+        assert _inflight_cleared(20)
+    finally:
+        release.set()
+    assert _inflight_cleared(19)

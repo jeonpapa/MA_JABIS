@@ -5470,16 +5470,29 @@ def mail_sub_scope(item_id: int):
         return jsonify({"error": str(e)}), 500
 
 
+# 테스트 메일 in-flight 가드 — 구독별로 엔진 run 1개만. 202 직후 재클릭이 [TEST] 메일 2통 + LLM·Naver 비용 2배가 되는 것을 막는다.
+_DM_TEST_INFLIGHT: set[int] = set()
+_DM_TEST_INFLIGHT_LOCK = _threading.Lock()
+
+
 @app.post("/api/mail-subscriptions/<int:item_id>/test-request")
 @require_auth()
 def mail_sub_test_request(item_id: int):
-    """테스트 메일 — 서버가 즉시(백그라운드) 브리핑을 생성해 요청자에게만 [TEST] 발송 (설계 §6)."""
+    """테스트 메일 — 서버가 즉시(백그라운드) 브리핑을 생성해 요청자에게만 [TEST] 발송 (설계 §6).
+
+    같은 구독의 생성이 진행 중이면 409 IN_PROGRESS — 스레드가 끝나야(finally) 다시 받는다.
+    """
     owner = request.user["sub"]  # type: ignore[attr-defined]
     try:
         if not _mail_sub_exists(item_id, owner):
             return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
-        import threading
         from agents.daily_mailing import dispatch as _dm_dispatch
+
+        with _DM_TEST_INFLIGHT_LOCK:
+            if item_id in _DM_TEST_INFLIGHT:
+                return jsonify({"error": "이미 이 구독의 테스트 메일을 생성 중입니다. 완료(1~3분) 후 다시 요청하세요.",
+                                "code": "IN_PROGRESS"}), 409
+            _DM_TEST_INFLIGHT.add(item_id)
 
         def _run() -> None:
             try:
@@ -5488,8 +5501,16 @@ def mail_sub_test_request(item_id: int):
                 logger.info("daily mailing 테스트 발송 (구독 %s): %s", item_id, res)
             except Exception:
                 logger.exception("daily mailing 테스트 발송 실패 (구독 %s)", item_id)
+            finally:
+                with _DM_TEST_INFLIGHT_LOCK:
+                    _DM_TEST_INFLIGHT.discard(item_id)
 
-        threading.Thread(target=_run, name=f"dm-test-{item_id}", daemon=True).start()
+        try:
+            _threading.Thread(target=_run, name=f"dm-test-{item_id}", daemon=True).start()
+        except BaseException:
+            with _DM_TEST_INFLIGHT_LOCK:      # 스레드가 뜨지 못하면 가드도 해제
+                _DM_TEST_INFLIGHT.discard(item_id)
+            raise
         return jsonify({"ok": True, "message": f"테스트 메일을 생성하고 있습니다. 1~3분 뒤 {owner} 메일함을 확인하세요 (제목 [TEST])."}), 202
     except Exception as e:
         logger.error("mail_sub_test_request 실패: %s", e, exc_info=True)

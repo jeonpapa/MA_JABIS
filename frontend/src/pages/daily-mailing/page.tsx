@@ -270,8 +270,11 @@ export default function DailyMailingPage() {
     } catch (e) {
       setTestRequestNote({ id, ok: false, message: e instanceof Error ? e.message : '테스트 메일 요청 실패' });
     } finally {
-      setTestRequestId(null);
-      setTimeout(() => setTestRequestNote(prev => (prev?.id === id ? null : prev)), 6000);
+      // 202 직후 버튼이 바로 살아나면 재클릭이 엔진 run 을 한 번 더 돌린다(서버는 409 로 막지만) — 안내가 사라질 때까지 비활성 유지
+      setTimeout(() => {
+        setTestRequestNote(prev => (prev?.id === id ? null : prev));
+        setTestRequestId(prev => (prev === id ? null : prev));
+      }, 6000);
     }
   };
 
@@ -729,7 +732,7 @@ export default function DailyMailingPage() {
                     <button onClick={() => handleRequestTestMail(setting.id)} disabled={testRequestId === setting.id}
                       className={`flex items-center gap-1 text-xs px-3 py-1 rounded-full cursor-pointer whitespace-nowrap transition-all border disabled:opacity-50 ${isDark ? 'border-[#F59E0B]/30 text-[#F59E0B] hover:bg-[#F59E0B]/10' : 'border-amber-300 text-amber-600 hover:bg-amber-50'}`}>
                       <i className="ri-mail-send-line text-xs"></i>
-                      {testRequestId === setting.id ? '요청 중…' : '테스트 메일 요청'}
+                      {testRequestId === setting.id ? (testRequestNote?.id === setting.id ? '생성 중…' : '요청 중…') : '테스트 메일 요청'}
                     </button>
                     <button onClick={() => toggleSetting(setting.id, !setting.active)}
                       className={`text-xs px-3 py-1 rounded-full cursor-pointer whitespace-nowrap transition-all border ${setting.active ? 'border-red-300 text-red-500 hover:bg-red-50' : 'border-teal-300 text-teal-600 hover:bg-teal-50'}`}>
