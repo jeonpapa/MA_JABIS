@@ -7,7 +7,7 @@ import {
   approveDailyMailingRun, rejectDailyMailingRun, fetchDailyMailingRunPreview, fetchDailyMailingHealth,
   type DailyMailingKanban, type KanbanArticle, type KanbanRun,
   type Persona, type ReviewerRole, type DraftItem, type QualityReport, type RunCounts,
-  type DailyMailingHealth, type RunPreview,
+  type DailyMailingHealth, type HealthRejected, type RunPreview,
 } from '@/api/dailyMailingKanban';
 
 const LANE_ICON: Record<string, string> = {
@@ -514,20 +514,55 @@ function RunRow({ run, busy, onPreview, onApprove, onReject }: {
   );
 }
 
+// 관리자 반려는 문제가 아니다 — 문제(적색)와 분리된 중립 한 줄로만 보인다
+function RejectedLine({ rejected }: { rejected: HealthRejected[] }) {
+  if (rejected.length === 0) return null;
+  const summary = rejected
+    .map(r => `구독 ${r.subscription_id ?? '?'} (${r.name || '-'})${r.approved_by ? ` · ${r.approved_by}` : ''}`)
+    .join(', ');
+  return (
+    <p className="text-[#8B9BB4] text-xs leading-snug">
+      <i className="ri-prohibited-line mr-1"></i>반려됨 {rejected.length}건 — {summary}
+      <span className="text-[#4A5568]"> · 관리자 반려는 점검 대상이 아님</span>
+    </p>
+  );
+}
+
 function HealthBanner({ health }: { health: DailyMailingHealth | null }) {
-  if (!health || health.ok) return null;
+  if (!health) return null;
+  const problems = Array.isArray(health.problems) ? health.problems : [];
+  const rejected = Array.isArray(health.rejected) ? health.rejected : [];
+  const hasProblems = problems.length > 0 || health.ok === false;
+  // 문제도 반려도 없으면 배너 없음 (기존 동작 유지)
+  if (!hasProblems && rejected.length === 0) return null;
+  if (!hasProblems) {
+    // 반려만 있는 날 — 오류처럼 보이지 않도록 무채색 카드
+    return (
+      <div className="rounded-2xl border border-[#1E2530] bg-[#161B27] p-4">
+        <p className="text-[#8B9BB4] text-sm font-bold mb-1">
+          <i className="ri-information-line mr-1"></i>Daily Mailing 반려 안내 ({health.run_date})
+        </p>
+        <RejectedLine rejected={rejected} />
+      </div>
+    );
+  }
   return (
     <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4">
       <p className="text-red-400 text-sm font-bold mb-1">
         <i className="ri-alarm-warning-line mr-1"></i>Daily Mailing 점검 필요 ({health.run_date})
       </p>
       <ul className="text-red-300 text-xs space-y-0.5">
-        {health.problems.map((p, i) => (
+        {problems.map((p, i) => (
           <li key={`${p.subscription_id ?? 'x'}_${i}`}>
             {p.subscription_id != null ? `구독 ${p.subscription_id} (${p.name})` : 'Gmail'} — {p.problem}{p.detail ? `: ${p.detail}` : ''}
           </li>
         ))}
       </ul>
+      {rejected.length > 0 && (
+        <div className="mt-2 pt-2 border-t border-red-500/20">
+          <RejectedLine rejected={rejected} />
+        </div>
+      )}
     </div>
   );
 }

@@ -288,11 +288,20 @@ export interface HealthProblem {
   detail?: string | null;
 }
 
+// 관리자 반려(delivery_status=held + approval_status=rejected) run — 의도된 결정이라 problems 가 아닌 별도 안내.
+// agents/daily_mailing/dispatch.py:health_check 의 rejected 요소와 동일 형태
+export interface HealthRejected {
+  subscription_id: number | null;
+  name: string;
+  approved_by?: string | null;
+}
+
 export interface DailyMailingHealth {
   run_date: string;
   checked_at: string;
-  ok: boolean;
+  ok: boolean;                          // problems 가 비었는지 — rejected 는 ok 에 영향 없음
   problems: HealthProblem[];
+  rejected?: HealthRejected[] | null;   // 2026-09 추가 — 구 서버 응답에는 없다
   gmail_ready: boolean;
 }
 
