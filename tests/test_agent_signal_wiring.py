@@ -38,10 +38,11 @@ def test_health_job_ok_records_nothing(monkeypatch):
 
 
 def test_signal_failure_does_not_break_the_job(monkeypatch):
+    """신호 경계는 래퍼(_agent_record_*) 다 — 호출부에 보호막이 없어도 잡이 살아야 한다."""
     def boom(report):
         raise RuntimeError("DB 잠김")
 
-    monkeypatch.setattr(sch, "_agent_record_health_problems", boom)
+    monkeypatch.setattr("agents.agent_tasks.signals.record_health_problems", boom)
 
     class FakeDeps:
         @classmethod
@@ -89,7 +90,24 @@ def test_pipeline_exception_branch_records_job_failure(monkeypatch):
 
 
 def test_pipeline_exception_branch_signal_failure_does_not_break_the_job(monkeypatch):
-    def boom_signal(job_id, err):
+    def boom_signal(job_id, err, **kw):
         raise RuntimeError("DB 잠김")
 
-    _run_pipeline_with_catchup_raising(monkeypatch, boom_signal)   # 예외가 밖으로 나오면 실패
+    monkeypatch.setattr("agents.agent_tasks.signals.record_job_failure", boom_signal)
+    _run_pipeline_with_catchup_raising(monkeypatch, sch._agent_record_job_failure)   # 진짜 래퍼 경유
+    # 예외가 밖으로 나오면 실패
+
+
+# ── 래퍼 자체가 신호 경계다: 예외를 삼키고 warning 만 남긴다 ─────────────────────────────
+
+def test_signal_wrappers_swallow_exceptions_and_warn(monkeypatch, caplog):
+    def boom(*a, **kw):
+        raise RuntimeError("DB 잠김")
+
+    monkeypatch.setattr("agents.agent_tasks.signals.record_health_problems", boom)
+    monkeypatch.setattr("agents.agent_tasks.signals.record_job_failure", boom)
+    with caplog.at_level("WARNING", logger=sch.logger.name):
+        sch._agent_record_health_problems({"run_date": "2026-09-30", "problems": [{"problem": "held"}]})
+        sch._agent_record_job_failure("domestic_price_pipeline", "x")
+    msgs = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert len(msgs) == 2 and all("DB 잠김" in m for m in msgs), msgs
