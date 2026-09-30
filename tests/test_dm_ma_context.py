@@ -235,10 +235,16 @@ def test_repo_yaml_seeds_keytruda_class_and_tevimbra_competitor():
     assert DEFAULT_MA_CONTEXT_PATH.name == "ma_context.yaml"
     cfg = load_ma_context(DEFAULT_MA_CONTEXT_PATH)
     names = {a.brand_kr for a in cfg.msd_assets}
-    for brand in ("키트루다", "가다실", "린파자", "웰리렉", "브리디온", "에멘드", "윈레브에어", "박스뉴반스", "엔플론시아"):
+    for brand in ("키트루다", "가다실", "린파자", "웰리렉", "에멘드", "윈레브에어", "박스뉴반스", "엔플론시아"):
         assert brand in names, brand
+    # 2026-09-30 사용자 확정: 브리디온·렌비마·자누비아·스테글라트로·아토젯은 자사 자산에서 제외
+    for excluded in ("브리디온", "렌비마", "자누비아", "스테글라트로", "아토젯"):
+        assert excluded not in names, excluded
     k = next(a for a in cfg.msd_assets if a.brand_kr == "키트루다")
     assert k.inn == "pembrolizumab" and k.drug_class == "PD-(L)1"
+    # 키트루다 RSA 는 확정값 — 기사에 없어도 컨텍스트 팩이 알고 있어야 한다
+    assert k.rsa_override is True and "총액제한" in (k.rsa_type_override or "")
+    assert "카보메틱스" not in {c.brand_kr for c in cfg.competitors}
     t = next(c for c in cfg.competitors if c.brand_kr == "테빔브라")
     assert t.inn == "tislelizumab" and "키트루다" in t.watch_for and t.drug_class == k.drug_class
     assert len(cfg.msd_assets) + len(cfg.competitors) <= 40          # 작게 유지
