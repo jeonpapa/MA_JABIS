@@ -23,7 +23,9 @@ msd_assets:
     price_match: 키트루다주
     indication_slug: keytruda
     enrichment_name: 키트루다주
-    note: "항 PD-1 면역항암제 · 국내 다수 적응증(폐암·흑색종·두경부암·요로상피암 등)"
+    rsa: true
+    rsa_type: "총액제한 + 단순환급 + 구간별환급 혼합"
+    note: "항 PD-1 면역항암제 · 국내 다수 적응증(폐암·흑색종·두경부암·요로상피암 등) · RSA 유형 복합(2026-09-30 사용자 확인)"
   - brand_kr: 가다실
     brand_en: Gardasil
     ingredient: 사람유두종바이러스 9가 백신
@@ -50,12 +52,6 @@ msd_assets:
     aliases: [웰리렉정, MK-6482]
     indication_slug: welireg
     note: "VHL·신세포암 — 국내 약가 미등재"
-  - brand_kr: 브리디온
-    brand_en: Bridion
-    ingredient: 수가마덱스
-    inn: sugammadex
-    class: 근이완 역전제
-    aliases: [브리디온주]
   - brand_kr: 에멘드
     brand_en: Emend
     ingredient: 아프레피탄트
@@ -177,19 +173,24 @@ competitors:
     price_match: 제줄라정
 
 # 확신 없는 항목 — 사용자 확인 전에는 팩에 넣지 않는다. 확인되면 위로 옮긴다.
-needs_review:
+# 사용자 확정 (2026-09-30) — 되묻지 않는다. 바꾸려면 여기 기록부터 수정.
+decided:
   - brand_kr: 키트루다
-    question: "RSA 대상 여부 — drug_enrichment.is_rsa 가 NULL(미확인). 확인되면 키트루다 항목에 'rsa: true' + 'rsa_type' 추가"
+    decision: "RSA 대상 확정. 유형은 총액제한 + 단순환급 + 구간별환급 혼합 — msd_assets 항목에 반영"
   - brand_kr: 렌비마
-    question: "MSD 공동 판매 자산으로 포트폴리오에 넣을지 (HIRA 등재사 한국에자이, indications_master 11건, home_brand seed)"
+    decision: "자사 자산 제외"
   - brand_kr: 자누비아
-    question: "2026.07 HIRA 등재사가 (주)종근당 — MSD 자산에서 제외했음. 유지(제외) 확인"
+    decision: "자사 자산 제외"
   - brand_kr: 스테글라트로
-    question: "SGLT2 (한국엠에스디 등재) — 구독에 나오지 않아 제외했음. 포함 여부"
+    decision: "자사 자산 제외"
   - brand_kr: 아토젯
-    question: "오가논 분사 이후 소속 불명 — product_alias_map 에는 있음. 포함 여부"
+    decision: "자사 자산 제외"
   - brand_kr: 브리디온
-    question: "drug_prices 에 행 없음(브리디온·sugammadex 검색 0). HIRA 등재명 확인 + 수가마덱스 제네릭 경쟁을 경쟁약으로 넣을지"
+    decision: "자사 자산 제외 — msd_assets 에서 삭제"
+  - brand_kr: 카보메틱스
+    decision: "경쟁 계열 제외 (웰리렉 대비 경쟁으로 보지 않음)"
+
+needs_review:
   - brand_kr: 여보이
     question: "옵디보 병용(CTLA-4) — PD-(L)1 경쟁 계열에 포함할지 (competitor_brand 에 없음)"
   - brand_kr: 파드셉
@@ -210,5 +211,3 @@ needs_review:
     question: "PAH 기존 치료제 — 윈레브에어 경쟁 범위(같은 기전 아님)"
   - brand_kr: 아킨지오
     question: "NK1 복합(네투피탄트/팔로노세트론) — 에멘드 경쟁으로 볼지"
-  - brand_kr: 카보메틱스
-    question: "신세포암 TKI — 웰리렉(RCC) 경쟁 범위"
