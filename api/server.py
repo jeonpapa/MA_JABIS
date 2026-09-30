@@ -5417,6 +5417,16 @@ def agent_task_claim(task_id: int):
         _agent_store.triage_task(task_id, actor=actor, db_path=_AGENT_TASK_DB_PATH,
                                  detail=f"{task['kind']} — 디스패처 자동 분류")
     if not _agent_store.claim_task(task_id, actor=actor, db_path=_AGENT_TASK_DB_PATH):
+        task = _agent_store.get_task(task_id, db_path=_AGENT_TASK_DB_PATH)
+        if _agent_store.attempts_exhausted(task):
+            # 설계 §5: 재시도 2회까지 — 3회를 다 쓴 과제는 더 돌리지 않고 사람에게 넘긴다
+            try:
+                _agent_store.update_task(
+                    task_id, actor=actor, db_path=_AGENT_TASK_DB_PATH, status="blocked",
+                    resolution=f"재시도 한도({_agent_store.MAX_ATTEMPTS}회) 초과 — 사람 확인 필요")
+            except _agent_store.AgentTaskError:
+                pass  # 다른 실행이 먼저 처리함
+            return jsonify({"claimed": False, "code": "NOT_CLAIMABLE", "reason": "attempts_exhausted"}), 409
         return jsonify({"claimed": False, "code": "NOT_CLAIMABLE"}), 409
     return jsonify({"claimed": True, "task": _agent_store.get_task(task_id, db_path=_AGENT_TASK_DB_PATH)})
 

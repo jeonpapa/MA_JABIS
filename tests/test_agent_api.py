@@ -278,3 +278,44 @@ def test_concurrent_claim_of_new_task_is_atomic(monkeypatch, tmp_path):
     events = [e["event"] for e in store.list_events(tid, db_path=db)]
     assert events.count("auto_triaged") == 1, events
     assert events == ["created", "auto_triaged", "status:triaged", "claimed"]
+
+
+# ── 재시도 경로: 되돌리기 후 재선점 + 한도 초과 시 자동 blocked ──────────────────────
+
+def test_resolve_triaged_then_reclaim(monkeypatch, tmp_path):
+    """blocked 과제를 triaged 로 되돌리면 다음 실행이 다시 집을 수 있어야 한다 (VPS_SETUP §6)."""
+    db = _patch_db(monkeypatch, tmp_path)
+    tid = _triaged_task(db)
+    c = s.app.test_client()
+    assert c.post(f"/api/agent/tasks/{tid}/claim", headers=_h("agent")).status_code == 200
+    assert c.post(f"/api/agent/tasks/{tid}/resolve", headers=_h("agent"),
+                  json={"status": "blocked", "resolution": "디스패처 오류"}).status_code == 200
+    assert c.post(f"/api/agent/tasks/{tid}/resolve", headers=_h("agent"),
+                  json={"status": "triaged"}).status_code == 200
+    t = store.get_task(tid, db_path=db)
+    assert t["status"] == "triaged" and t["claimed_by"] is None and t["attempts"] == 1
+    r = c.post(f"/api/agent/tasks/{tid}/claim", headers=_h("agent", "vps-2@x"))
+    assert r.status_code == 200 and r.get_json()["task"]["attempts"] == 2
+    assert r.get_json()["task"]["claimed_by"] == "vps-2@x"
+
+
+def test_claim_exhausted_attempts_blocks_task(monkeypatch, tmp_path):
+    """설계 §5: 재시도 2회까지. attempts 가 3 이면 선점 불가 + 서버가 blocked(사람 확인) 로 바꾼다."""
+    db = _patch_db(monkeypatch, tmp_path)
+    tid = _triaged_task(db)
+    c = s.app.test_client()
+    for _ in range(store.MAX_ATTEMPTS):
+        assert c.post(f"/api/agent/tasks/{tid}/claim", headers=_h("agent")).status_code == 200
+        assert c.post(f"/api/agent/tasks/{tid}/resolve", headers=_h("agent"),
+                      json={"status": "triaged"}).status_code == 200
+    r = c.post(f"/api/agent/tasks/{tid}/claim", headers=_h("agent"))
+    assert r.status_code == 409 and r.get_json()["claimed"] is False
+    assert r.get_json()["reason"] == "attempts_exhausted"
+    t = store.get_task(tid, db_path=db)
+    assert t["status"] == "blocked" and t["attempts"] == store.MAX_ATTEMPTS
+    assert t["resolution"] == "재시도 한도(3회) 초과 — 사람 확인 필요"
+    events = [e["event"] for e in store.list_events(tid, db_path=db)]
+    assert events[-1] == "status:blocked"
+    # 이미 blocked 인 과제에 또 claim 해도 같은 409, 상태는 그대로
+    assert c.post(f"/api/agent/tasks/{tid}/claim", headers=_h("agent")).status_code == 409
+    assert store.get_task(tid, db_path=db)["status"] == "blocked"

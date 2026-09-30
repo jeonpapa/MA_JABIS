@@ -32,6 +32,8 @@ ALLOWED_TRANSITIONS = {
 }
 UPDATABLE = frozenset({"status", "priority", "risk", "branch", "commit_ref",
                        "deploy_version", "resolution", "cost_usd", "detail"})
+# 설계 §5: 재시도 2회까지 — 선점(attempts) 3회째 이후는 claim_task 가 거부하고 서버가 blocked 로 넘긴다
+MAX_ATTEMPTS = 3
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS agent_task (
@@ -182,6 +184,11 @@ def update_task(task_id: int, *, actor: str, db_path: str | Path = DEFAULT_DB_PA
                 raise AgentTaskError(f"알 수 없는 status: {new_status}")
             if new_status not in ALLOWED_TRANSITIONS[row["status"]]:
                 raise AgentTaskError(f"허용되지 않은 전이: {row['status']} → {new_status}")
+        if new_status == "triaged":
+            # 재시도 경로(blocked/in_progress → triaged): 선점 표식을 비워 다음 실행이 다시 집을 수 있게 한다.
+            # attempts 는 보존 — claim_task 의 MAX_ATTEMPTS 한도가 여기에 걸린다.
+            fields["claimed_by"] = None
+            fields["claimed_at"] = None
         fields["updated_at"] = _now()
         sets = ", ".join(f"{k}=?" for k in fields)
         conn.execute(f"UPDATE agent_task SET {sets} WHERE id=?", (*fields.values(), task_id))
@@ -219,13 +226,18 @@ def triage_task(task_id: int, *, actor: str, detail: str | None = None,
 
 
 def claim_task(task_id: int, *, actor: str, db_path: str | Path = DEFAULT_DB_PATH) -> bool:
-    """triaged 과제를 선점(조건부 UPDATE 1회). 성공 시 in_progress + attempts +1."""
+    """triaged 과제를 선점(조건부 UPDATE 1회). 성공 시 in_progress + attempts +1.
+
+    attempts 가 MAX_ATTEMPTS 이상이면 거부한다(재시도 한도). 한도 때문에 거부됐는지는
+    attempts_exhausted() 로 판별한다.
+    """
     conn = connect(db_path)
     try:
         cur = conn.execute(
             "UPDATE agent_task SET status='in_progress', claimed_by=?, claimed_at=?, "
-            "attempts=attempts+1, updated_at=? WHERE id=? AND status='triaged' AND claimed_by IS NULL",
-            (actor, _now(), _now(), task_id))
+            "attempts=attempts+1, updated_at=? WHERE id=? AND status='triaged' AND claimed_by IS NULL"
+            " AND attempts < ?",
+            (actor, _now(), _now(), task_id, MAX_ATTEMPTS))
         if cur.rowcount != 1:
             conn.commit()
             return False
@@ -234,3 +246,8 @@ def claim_task(task_id: int, *, actor: str, db_path: str | Path = DEFAULT_DB_PAT
         return True
     finally:
         conn.close()
+
+
+def attempts_exhausted(task: dict | None) -> bool:
+    """선점 대기(triaged) 상태인데 재시도 한도를 다 쓴 과제인가 — 서버가 blocked 로 넘길 대상."""
+    return bool(task) and task["status"] == "triaged" and int(task["attempts"] or 0) >= MAX_ATTEMPTS

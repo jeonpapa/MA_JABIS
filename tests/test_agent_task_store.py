@@ -91,3 +91,36 @@ def test_triage_task_is_conditional_and_records_events_once(tmp_path):
     events = [(e["event"], e["actor"]) for e in list_events(tid, db_path=db)]
     assert events == [("created", "system"), ("auto_triaged", "vps-1"), ("status:triaged", "vps-1")]
     assert triage_task(999, actor="vps-1", db_path=db) is False                       # 없는 과제
+
+
+# ── 재시도 경로 (설계 §5: 재시도 2회까지, 3번째 실패는 blocked + 사람) ──────────────
+
+def test_returning_to_triaged_clears_claim_so_retry_can_claim(tmp_path):
+    """blocked → triaged 되돌리기 후 재선점. claimed_by 가 안 비워지면 claim_task 가 영원히 False."""
+    db = tmp_path / "a.db"
+    tid = _new(db)
+    update_task(tid, db_path=db, status="triaged", actor="sentinel")
+    assert claim_task(tid, actor="vps-1", db_path=db) is True
+    update_task(tid, db_path=db, status="blocked", actor="vps-1", resolution="런북 실패")
+    update_task(tid, db_path=db, status="triaged", actor="admin")
+    t = get_task(tid, db_path=db)
+    assert t["claimed_by"] is None and t["claimed_at"] is None and t["attempts"] == 1   # attempts 보존
+    assert claim_task(tid, actor="vps-2", db_path=db) is True
+    t = get_task(tid, db_path=db)
+    assert t["claimed_by"] == "vps-2" and t["attempts"] == 2
+
+
+def test_claim_refused_after_max_attempts(tmp_path):
+    from agents.agent_tasks.store import MAX_ATTEMPTS
+
+    assert MAX_ATTEMPTS == 3
+    db = tmp_path / "a.db"
+    tid = _new(db)
+    update_task(tid, db_path=db, status="triaged", actor="sentinel")
+    for n in range(1, MAX_ATTEMPTS + 1):
+        assert claim_task(tid, actor=f"vps-{n}", db_path=db) is True
+        assert get_task(tid, db_path=db)["attempts"] == n
+        update_task(tid, db_path=db, status="triaged", actor=f"vps-{n}")      # in_progress → triaged
+    assert claim_task(tid, actor="vps-9", db_path=db) is False                # 한도 초과
+    t = get_task(tid, db_path=db)
+    assert t["status"] == "triaged" and t["attempts"] == MAX_ATTEMPTS and t["claimed_by"] is None
