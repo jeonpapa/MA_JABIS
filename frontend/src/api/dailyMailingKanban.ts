@@ -72,6 +72,16 @@ export interface RunCounts {
   ready_for_writer?: number | null;
 }
 
+// 브리프 항목의 영향 방향 — agents/daily_mailing/brief.py:BriefItem.impact
+// threat|opportunity|neutral 은 시사점이 렌더될 때만, 시사점이 없으면 "none" 또는 "" (구 run 은 키 자체가 없음)
+export type DraftImpact = 'threat' | 'opportunity' | 'neutral' | 'none' | '';
+
+// 같은 사건을 보도한 다른 매체 (클러스터링으로 흡수된 기사) — BriefItem.also_reported_by
+export interface AlsoReportedBy {
+  source_name?: string | null;
+  url?: string | null;
+}
+
 export interface DraftItem {
   title?: string | null;
   description?: string | null;
@@ -79,6 +89,10 @@ export interface DraftItem {
   evidence_quotes?: string[] | null;
   monitoring_point?: string | null;
   work_note?: string | null;
+  // 2026-09 엔진 브리프(BriefItem.to_dict) 추가 필드 — 구 run 의 draft_items 에는 없다
+  impact?: DraftImpact | string | null;
+  affected_asset?: string | null;
+  also_reported_by?: AlsoReportedBy[] | null;
 }
 
 export interface KanbanRun {
@@ -188,6 +202,54 @@ export function normalizeReviewerFindings(
   if (Array.isArray(raw)) return raw.filter((f): f is ReviewerFinding => f != null && typeof f === 'object');
   if (typeof raw === 'object') return [raw];
   return [];
+}
+
+// impact 원값 → 렌더 키. threat|opportunity|neutral 만 배지를 그린다 ("none"/""/부재/이상값은 null → 배지 없음)
+export function normalizeImpact(value: unknown): 'threat' | 'opportunity' | 'neutral' | null {
+  if (typeof value !== 'string') return null;
+  const v = value.trim().toLowerCase();
+  return v === 'threat' || v === 'opportunity' || v === 'neutral' ? v : null;
+}
+
+// http(s) URL 만 링크로 허용 (메일 렌더 brief.py:_safe_link 와 동일 정책) — 그 외는 null
+export function safeHttpUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const v = value.trim();
+  if (!v) return null;
+  try {
+    const u = new URL(v);
+    return u.protocol === 'http:' || u.protocol === 'https:' ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+export const ALSO_REPORTED_MAX_NAMES = 3;
+
+export interface AlsoReportedEntry {
+  name: string;
+  href: string | null;
+}
+
+// '외 N개 매체: 이름 ≤3 (외 M곳)' 계산 — 메일의 brief.py:_also_reported_parts 와 동일 규칙.
+// 이름은 source_name, 없으면 URL 의 host (긴 링크 목록 대신 매체명만). 둘 다 없으면 건너뛴다.
+export function alsoReportedParts(
+  raw: AlsoReportedBy[] | null | undefined,
+): { total: number; shown: AlsoReportedEntry[]; rest: number } {
+  if (!Array.isArray(raw)) return { total: 0, shown: [], rest: 0 };
+  const entries: AlsoReportedEntry[] = [];
+  for (const e of raw) {
+    if (e == null || typeof e !== 'object') continue;
+    const href = safeHttpUrl(e.url);
+    let name = typeof e.source_name === 'string' ? e.source_name.trim() : '';
+    if (!name && href) {
+      try { name = new URL(href).hostname; } catch { name = ''; }
+    }
+    if (!name) continue;
+    entries.push({ name, href });
+  }
+  const shown = entries.slice(0, ALSO_REPORTED_MAX_NAMES);
+  return { total: entries.length, shown, rest: entries.length - shown.length };
 }
 
 export interface RunActionResult {

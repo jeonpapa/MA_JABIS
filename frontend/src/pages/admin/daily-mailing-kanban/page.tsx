@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { fetchMe } from '@/utils/authUsers';
 import {
   fetchDailyMailingKanban, parseJsonArray, asStringArray, normalizeReviewerFindings,
+  normalizeImpact, alsoReportedParts,
   approveDailyMailingRun, rejectDailyMailingRun, fetchDailyMailingRunPreview, fetchDailyMailingHealth,
   type DailyMailingKanban, type KanbanArticle, type KanbanRun,
   type Persona, type ReviewerRole, type DraftItem, type QualityReport, type RunCounts,
@@ -73,6 +74,13 @@ function boolBadge(label: string, value: boolean | null | undefined): JSX.Elemen
     </span>
   );
 }
+
+// 브리프 영향 배지 — 메일(brief.py IMPACT_LABELS/IMPACT_STYLES)과 같은 문구·색 계열: 위협 적색 / 기회 녹색 / 참고 회색
+const IMPACT_BADGE: Record<'threat' | 'opportunity' | 'neutral', { label: string; tone: string }> = {
+  threat: { label: '위협', tone: 'bg-red-500/10 text-red-400 border border-red-500/30' },
+  opportunity: { label: '기회', tone: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' },
+  neutral: { label: '참고', tone: 'bg-[#1E2530] text-[#8B9BB4] border border-[#2A3441]' },
+};
 
 function Chip({ text, tone = 'bg-[#1E2530] text-[#8B9BB4]' }: { text: string; tone?: string }) {
   return <span className={`text-[10px] px-1.5 py-0.5 rounded ${tone}`}>{text}</span>;
@@ -295,11 +303,41 @@ function DraftBriefPanel({ run }: { run: KanbanRun }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {items.map((item, idx) => {
           const quotes = asStringArray(item.evidence_quotes);
+          const impactKey = normalizeImpact(item.impact);
+          const impact = impactKey ? IMPACT_BADGE[impactKey] : null;
+          const asset = (item.affected_asset ?? '').trim();
+          const also = alsoReportedParts(item.also_reported_by);
           return (
             <div key={`${item.title ?? idx}`} className="bg-[#0D1117] border border-[#1E2530] rounded-xl p-4 space-y-2">
-              <p className="text-white text-sm font-semibold leading-snug">{item.title || '(제목 없음)'}</p>
+              <p className="text-white text-sm font-semibold leading-snug">
+                {impact && (
+                  <span className={`inline-block align-middle text-[10px] px-2 py-0.5 rounded-full font-bold mr-1.5 ${impact.tone}`}>
+                    {impact.label}
+                  </span>
+                )}
+                {asset && (
+                  <span className="inline-block align-middle text-[10px] px-2 py-0.5 rounded bg-[#7C3AED]/10 text-[#A78BFA] mr-1.5">
+                    {asset}
+                  </span>
+                )}
+                {item.title || '(제목 없음)'}
+              </p>
               {item.description && (
                 <p className="text-[#8B9BB4] text-xs leading-relaxed">{item.description}</p>
+              )}
+              {also.total > 0 && (
+                <p className="text-[10px] text-[#4A5568] leading-snug">
+                  <i className="ri-newspaper-line mr-1"></i>외 {also.total}개 매체:{' '}
+                  {also.shown.map((e, ei) => (
+                    <span key={`${e.name}_${ei}`}>
+                      {ei > 0 && ', '}
+                      {e.href ? (
+                        <a href={e.href} target="_blank" rel="noreferrer" className="hover:text-[#8B9BB4] hover:underline">{e.name}</a>
+                      ) : e.name}
+                    </span>
+                  ))}
+                  {also.rest > 0 && ` 외 ${also.rest}곳`}
+                </p>
               )}
               {quotes.length > 0 && (
                 <div className="space-y-1 border-l-2 border-[#00E5CC]/30 pl-2.5">
