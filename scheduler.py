@@ -516,7 +516,9 @@ def daily_mailing_top_news_job():
         from datetime import datetime
         from agents.daily_mailing.dispatch import DispatchDeps
         from agents.daily_mailing.schedule import KST
-        items = DispatchDeps.production().load_top_ma_news(datetime.now(KST).date().isoformat())
+        # retry_failed=True — 앞선 10분 tick 이 실패해 음성 캐시가 남아도 06:40 정기 잡은 1회 재시도.
+        items = DispatchDeps.production().load_top_ma_news(
+            datetime.now(KST).date().isoformat(), retry_failed=True)
         logger.info("daily mailing 주요 MA 뉴스: %d건", len(items))
     except Exception as e:
         logger.error("daily mailing 주요 MA 뉴스 실패: %s", e, exc_info=True)

@@ -62,7 +62,8 @@ def _default_now() -> datetime:
 class DispatchDeps:
     db_path: str | Path = DEFAULT_DB_PATH
     generate: Callable[..., Any] | None = None          # (scope, *, name, now, top_ma_news, is_test) -> RunResult
-    load_top_ma_news: Callable[[str], list] | None = None  # run_date -> list[BriefItem]
+    # (run_date, *, retry_failed=False) -> list[BriefItem] — 06:40 정기 잡만 실패 마커 재시도
+    load_top_ma_news: Callable[..., list] | None = None
     send: Callable[..., dict] | None = None             # (*, recipients, subject, body_html) -> dict
     now: Callable[[], datetime] = _default_now
     gmail_ready: Callable[[], bool] = lambda: False
