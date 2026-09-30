@@ -5,8 +5,10 @@ from datetime import date
 from agents.daily_mailing.brief import (
     BriefItem,
     build_subject,
+    clean_snippet,
     evaluate_brief_quality,
     format_date_label,
+    publisher_display_name,
     render_brief_html,
     render_brief_markdown,
 )
@@ -154,3 +156,47 @@ def test_also_reported_by_escapes_and_skips_unsafe_links():
     html = render_brief_html(name="n", run_date=date(2026, 9, 18), scope_terms=["x"], items=[item])
     assert "외 1개 매체: &lt;b&gt;x&lt;/b&gt;" in html
     assert "javascript:" not in html
+
+
+# ---- 표시 다듬기 (item 3): 매체명 폴백 · 검색 요약 한 줄 ----
+def test_publisher_display_name_falls_back_to_registrable_domain():
+    assert publisher_display_name("Unknown publisher", "https://www.newsmp.com/news/articleView.html?idxno=1") == "newsmp.com"
+    assert publisher_display_name("Unknown publisher", "http://www.hankooki.com/news/1") == "hankooki.com"
+    assert publisher_display_name("", "https://m.docdocdoc.co.kr/news/1") == "docdocdoc.co.kr"
+    assert publisher_display_name("Naver News API", "https://n.news.naver.com/article/1", source_tier="search_channel") == "naver.com"
+    assert publisher_display_name("Unknown publisher", "https://news.example.go.kr/x") == "example.go.kr"
+
+
+def test_publisher_display_name_keeps_registry_and_archive_names():
+    assert publisher_display_name("약업신문", "https://www.yakup.com/1") == "약업신문"
+    assert publisher_display_name("뉴스더보이스", "https://www.newsthevoice.com/1", source_tier="unregistered") == "뉴스더보이스"
+    assert publisher_display_name("Unknown publisher", "") == ""
+    assert publisher_display_name("Unknown publisher", "not a url") == ""
+    assert publisher_display_name("Unknown publisher", "http://[bad/1") == ""
+
+
+def test_clean_snippet_trims_truncated_tail_to_sentence_boundary():
+    truncated = ("건보공단은 사용량-약가 연동 협상으로 80개 품목의 약가를 인하한다고 밝혔다. "
+                 "이번 인하로 연간 339억원의 건강보험 재정이 절감될 것으로 공단은 기대...")
+    assert clean_snippet(truncated) == "건보공단은 사용량-약가 연동 협상으로 80개 품목의 약가를 인하한다고 밝혔다."
+    assert clean_snippet("문장 하나뿐인데 잘렸다 어디서 끝날지 몰라…") == "문장 하나뿐인데 잘렸다 어디서 끝날지 몰라"
+    assert clean_snippet("완전한 문장이다.") == "완전한 문장이다."
+    assert clean_snippet("  공백   정리  ") == "공백 정리"
+    assert clean_snippet("") == ""
+    # 경계가 너무 앞이면(조각만 남으면) 자르지 않고 말줄임만 뗀다
+    assert clean_snippet("짧다. 아주 긴 두 번째 문장이 계속 이어지다가 검색 API 가 자르는 바람에 끝이 없…") \
+        == "짧다. 아주 긴 두 번째 문장이 계속 이어지다가 검색 API 가 자르는 바람에 끝이 없"
+
+
+def test_render_snippet_item_as_single_search_summary_line():
+    snippet = _item(body_status="snippet", ma_implication="", evidence_quote="", quote_verified=False,
+                    summary_bullets=("건보공단이 80개 품목 약가를 인하했다.",))
+    html = render_brief_html(name="n", run_date=date(2026, 9, 18), scope_terms=["x"], items=[snippet])
+    assert "검색 요약: 건보공단이 80개 품목 약가를 인하했다." in html
+    assert "<ul" not in html
+    assert "본문 미확보" in html
+    md = render_brief_markdown(name="n", run_date=date(2026, 9, 18), scope_terms=["x"], items=[snippet])
+    assert "   - 검색 요약: 건보공단이 80개 품목 약가를 인하했다.\n" in md
+    assert "본문 미확보" in md
+    full = render_brief_html(name="n", run_date=date(2026, 9, 18), scope_terms=["x"], items=[_item()])
+    assert "<ul" in full and "검색 요약" not in full

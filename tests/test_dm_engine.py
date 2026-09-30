@@ -552,3 +552,27 @@ def test_support_model_config_default_and_settings():
     settings = json.loads((Path(__file__).resolve().parents[1] / "config" / "settings.json").read_text(encoding="utf-8"))
     assert settings["daily_mailing"]["support_model"] == "gpt-4o-mini"
     assert EngineConfig.from_settings(settings).support_model == "gpt-4o-mini"
+
+
+# ---- 표시 다듬기 (item 3) ----
+def test_unregistered_outlet_shows_domain_in_mail_but_card_keeps_raw_name():
+    raws = [_raw("파드셉 요로상피암 급여 확대", "https://www.newsmp.com/news/articleView.html?idxno=1"),
+            _raw("파드셉, 요로상피암 급여 확대 확정", "https://www.hankooki.com/news/2")]
+    result = generate_run(_scope(), deps=_deps(FakeNaver({"파드셉": raws})), name="파드셉", now=NOW)
+    assert len(result.items) == 1                                   # 같은 사건 → 1건 + also_reported_by
+    item = result.items[0]
+    assert item.source_name in {"newsmp.com", "hankooki.com"}
+    assert [e["source_name"] for e in item.also_reported_by] in (["hankooki.com"], ["newsmp.com"])
+    assert {a["source_name"] for a in result.articles} == {"Unknown publisher"}   # 카드(writer 완전성 검사) 는 원본 유지
+    assert "Unknown publisher" not in result.html
+
+
+def test_snippet_item_uses_cleaned_description_single_line():
+    truncated = dict(PADCEV, description="파드셉 병용요법의 급여 확대가 논의된다. 심평원 암질심은 다음 달 안건으로 상정할 예정이며 업계는...")
+    result = generate_run(_scope(), deps=_deps(FakeNaver({"파드셉": [truncated]}), body_status="failed"),
+                          name="파드셉", now=NOW)
+    item = result.items[0]
+    assert item.body_status == "snippet"
+    assert item.summary_bullets == ("파드셉 병용요법의 급여 확대가 논의된다.",)
+    assert "검색 요약: 파드셉 병용요법의 급여 확대가 논의된다." in result.html
+    assert "본문 미확보" in result.html

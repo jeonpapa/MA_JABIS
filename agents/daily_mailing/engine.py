@@ -18,7 +18,15 @@ from typing import Callable, Iterable
 
 from .archive_candidates import load_archive_candidates
 from .article_body import ArticleBody, fetch_article_body
-from .brief import BriefItem, build_subject, evaluate_brief_quality, render_brief_html, render_brief_markdown
+from .brief import (
+    BriefItem,
+    build_subject,
+    clean_snippet,
+    evaluate_brief_quality,
+    publisher_display_name,
+    render_brief_html,
+    render_brief_markdown,
+)
 from .cluster import cluster_stories
 from .dashboard_scope import DashboardScope
 from .discovery import (
@@ -260,8 +268,14 @@ def _select(judged: list[_Judged], terms: list[str], *, media, personas, limit: 
     return [by_key[_key(i)] for i in chosen if _key(i) in by_key], duplicate_of
 
 
+def _display_source(item: NewsDiscoveryItem) -> str:
+    """메일 표시용 매체명 — 카드(writer 완전성 검사가 'Unknown publisher' 를 본다) 는 원본 이름을 유지한다."""
+    return publisher_display_name(item.source_name, item.publisher_url or item.naver_url,
+                                  source_tier=item.source_tier)
+
+
 def _also_reported_by(duplicates: Iterable[_Judged]) -> tuple[dict, ...]:
-    return tuple({"source_name": d.item.source_name, "url": d.item.publisher_url or d.item.naver_url}
+    return tuple({"source_name": _display_source(d.item), "url": d.item.publisher_url or d.item.naver_url}
                  for d in duplicates)
 
 
@@ -301,10 +315,11 @@ def _write(j: _Judged, terms: list[str], *, deps: EngineDeps, config: EngineConf
            duplicates: Iterable[_Judged] = ()) -> BriefItem | None:
     item, body, verdict = j.item, j.body, j.verdict
     common = dict(title=item.title, publisher_url=item.publisher_url, naver_url=item.naver_url,
-                  source_name=item.source_name, published_at=item.published_at,
+                  source_name=_display_source(item), published_at=item.published_at,
                   matched_scope_terms=verdict.matched_scope_terms, relevance_reason=verdict.reason,
                   section=section, also_reported_by=_also_reported_by(duplicates))
-    snippet = (item.description,) if item.description else ()
+    cleaned = clean_snippet(item.description)
+    snippet = (cleaned,) if cleaned else ()
     if body.status != "ok":
         if not snippet:
             # 요약 근거가 전혀 없는 기사는 run 전체를 보류시키지 않도록 제외한다

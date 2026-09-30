@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from html import escape
@@ -15,6 +16,54 @@ from urllib.parse import urlparse
 
 WEEKDAYS_KR = "월화수목금토일"
 LINK_SCHEMES = ("http", "https")
+# 매체명이 아닌 자리표시자 — 메일에는 원문 URL 의 등록 도메인으로 대체한다 (2026-09-19 파일럿 리뷰)
+PLACEHOLDER_SOURCE_NAMES = frozenset({"", "unknown publisher", "naver news api"})
+NON_PUBLISHER_TIERS = frozenset({"search_channel"})
+# 2단계 공용 접미사 — 등록 도메인은 접미사 앞 라벨까지 (docdocdoc.co.kr)
+MULTI_LABEL_SUFFIXES = frozenset({"co.kr", "or.kr", "go.kr", "ne.kr", "re.kr", "ac.kr", "pe.kr",
+                                  "co.jp", "ne.jp", "or.jp", "co.uk", "org.uk", "ac.uk",
+                                  "com.au", "com.cn", "com.tw", "com.sg"})
+_ELLIPSIS_TAIL = re.compile(r"(?:\.{2,}|…)+\s*$")
+_SENTENCE_END = re.compile(r"[.!?。](?=\s|$)")
+MIN_SENTENCE_KEEP_RATIO = 0.3   # 잘린 스니펫을 문장 경계에서 자를 때 남는 길이의 최소 비율
+
+
+def registrable_domain(url: str) -> str:
+    """URL 의 등록 도메인 (www.newsmp.com → newsmp.com, m.docdocdoc.co.kr → docdocdoc.co.kr). 파싱 불가·호스트 없음 → ''."""
+    try:
+        host = (urlparse((url or "").strip()).hostname or "").lower().rstrip(".")
+    except ValueError:
+        return ""
+    labels = [x for x in host.split(".") if x]
+    if len(labels) < 2:
+        return ""
+    if len(labels) >= 3 and ".".join(labels[-2:]) in MULTI_LABEL_SUFFIXES:
+        return ".".join(labels[-3:])
+    return ".".join(labels[-2:])
+
+
+def publisher_display_name(source_name: str, publisher_url: str, *, source_tier: str = "") -> str:
+    """메일 표시용 매체명. 레지스트리·아카이브 이름은 유지하고, 자리표시자('Unknown publisher'·'Naver News API')
+    나 검색 채널 tier 면 원문 URL 의 등록 도메인으로 대체한다. 도메인도 없으면 ''."""
+    name = (source_name or "").strip()
+    if name.lower() not in PLACEHOLDER_SOURCE_NAMES and source_tier not in NON_PUBLISHER_TIERS:
+        return name
+    return registrable_domain(publisher_url)
+
+
+def clean_snippet(text: str) -> str:
+    """검색 API 스니펫을 한 줄로 정리. 공백 정규화 후, 말줄임(…/...)으로 잘린 경우 말줄임을 떼고
+    문장 경계가 충분히 뒤(MIN_SENTENCE_KEEP_RATIO 이상)에 있으면 거기서 자른다."""
+    value = re.sub(r"\s+", " ", text or "").strip()
+    if not value:
+        return ""
+    stripped = _ELLIPSIS_TAIL.sub("", value).rstrip()
+    if stripped == value:
+        return value
+    ends = [m.end() for m in _SENTENCE_END.finditer(stripped)]
+    if ends and ends[-1] >= len(stripped) * MIN_SENTENCE_KEEP_RATIO and ends[-1] < len(stripped):
+        return stripped[: ends[-1]].rstrip()
+    return stripped
 
 
 def _safe_link(*urls: str) -> str:
@@ -184,18 +233,28 @@ def _also_reported_md(item: BriefItem) -> str:
     return _also_reported_label(item) + ", ".join(names)
 
 
+def _snippet_line(item: BriefItem) -> str:
+    return clean_snippet(" ".join(item.summary_bullets))
+
+
 def _item_html(index: int, item: BriefItem) -> str:
     link = _safe_link(item.publisher_url, item.naver_url)
     url = escape(link, quote=True)
     title = escape(item.title)
     title_html = f'<a href="{url}" style="color:#0F172A;text-decoration:none;">{title}</a>' if link else title
     meta = " · ".join(x for x in (escape(item.source_name), escape(_published_label(item.published_at))) if x)
-    bullets = "".join(f'<li style="margin:0 0 4px;">{escape(b)}</li>' for b in item.summary_bullets)
+    if item.body_status == "ok":
+        bullets = "".join(f'<li style="margin:0 0 4px;">{escape(b)}</li>' for b in item.summary_bullets)
+        summary_html = f'<ul style="margin:0 0 8px 18px;padding:0;font-size:14px;line-height:1.6;color:#1F2937;">{bullets}</ul>'
+    else:
+        # 본문 미확보: 검색 스니펫 한 줄 (불릿 아님)
+        summary_html = ('<div style="font-size:14px;line-height:1.6;color:#1F2937;margin:0 0 8px;">'
+                        f'검색 요약: {escape(_snippet_line(item))}</div>')
     parts = [
         '<div style="margin:0 0 20px;padding:0 0 16px;border-bottom:1px solid #E5E7EB;">',
         f'<div style="font-size:16px;font-weight:700;line-height:1.45;margin:0 0 4px;">{index}. {title_html}</div>',
         f'<div style="font-size:12px;color:#64748B;margin:0 0 8px;">{meta}</div>',
-        f'<ul style="margin:0 0 8px 18px;padding:0;font-size:14px;line-height:1.6;color:#1F2937;">{bullets}</ul>',
+        summary_html,
     ]
     if item.ma_implication and item.quote_verified:
         parts.append(
@@ -248,9 +307,13 @@ def render_brief_html(*, name: str, run_date: date, scope_terms: Iterable[str],
 def _item_md(index: int, item: BriefItem) -> list[str]:
     link = _safe_link(item.publisher_url, item.naver_url)
     title = f"[{item.title}]({link})" if link else item.title
-    head = f"{index}. {title} — {item.source_name} {_published_label(item.published_at)}"
+    meta = " ".join(x for x in (item.source_name, _published_label(item.published_at)) if x)
+    head = f"{index}. {title} — {meta}" if meta else f"{index}. {title}"
     lines = [head.rstrip()]
-    lines += [f"   - {b}" for b in item.summary_bullets]
+    if item.body_status == "ok":
+        lines += [f"   - {b}" for b in item.summary_bullets]
+    else:
+        lines.append(f"   - 검색 요약: {_snippet_line(item)}")
     if item.ma_implication and item.quote_verified:
         lines.append(f"   - ▶ MA 시사점: {item.ma_implication}")
         lines.append(f"   - 근거: “{item.evidence_quote}”")
