@@ -19,7 +19,10 @@ const KIND_LABELS: Record<string, string> = {
   release: '릴리스',
 };
 
+// P1 에서 실제로 쓰이는 값은 signals.py 의 두 가지(scheduler_job·daily_mailing_health). 나머지는 설계 §5 의 예정 값.
 const SOURCE_LABELS: Record<string, string> = {
+  scheduler_job: '스케줄러 잡 실패',
+  daily_mailing_health: '메일링 헬스체크',
   health_check: '헬스 체크',
   quality_guard: 'Quality Guard',
   rule_compliance: 'Rule Compliance',

@@ -10,7 +10,8 @@ import { api } from './client';
 export interface AgentTask {
   id: number;
   kind: string;            // ops_incident | user_request | improvement | release
-  source: string;          // health_check | quality_guard | rule_compliance | service_request | mail_stats | manual
+  source: string;          // P1 실제 값(agents/agent_tasks/signals.py): scheduler_job | daily_mailing_health
+                           // 설계 §5 예정 값(P2~P3): health_check | quality_guard | rule_compliance | service_request | mail_stats | manual
   source_ref: string | null;
   title: string;
   detail: string;
