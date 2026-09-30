@@ -47,11 +47,14 @@ class BriefItem:
     matched_scope_terms: tuple[str, ...] = ()
     relevance_reason: str = ""
     section: str = "scope"                        # scope | top_ma_news
+    # 같은 사건을 보도한 다른 매체 (클러스터링으로 흡수된 기사): ({"source_name": ..., "url": ...}, ...)
+    also_reported_by: tuple[dict, ...] = ()
 
     def to_dict(self) -> dict:
         data = asdict(self)
         data["summary_bullets"] = list(self.summary_bullets)
         data["matched_scope_terms"] = list(self.matched_scope_terms)
+        data["also_reported_by"] = [dict(e) for e in self.also_reported_by]
         # 칸반 DraftItem 호환 키 (frontend/src/api/dailyMailingKanban.ts)
         data["description"] = " ".join(self.summary_bullets)
         data["evidence_quotes"] = [self.evidence_quote] if self.evidence_quote else []
@@ -75,6 +78,9 @@ class BriefItem:
             matched_scope_terms=tuple(str(x) for x in data.get("matched_scope_terms") or ()),
             relevance_reason=str(data.get("relevance_reason") or ""),
             section=str(data.get("section") or "scope"),
+            also_reported_by=tuple(
+                {"source_name": str(e.get("source_name") or ""), "url": str(e.get("url") or "")}
+                for e in (data.get("also_reported_by") or ()) if isinstance(e, dict)),
         )
 
 
@@ -155,6 +161,29 @@ def _split(items: Iterable[BriefItem]) -> tuple[list[BriefItem], list[BriefItem]
     return ([i for i in items if i.section == "scope"], [i for i in items if i.section == "top_ma_news"])
 
 
+def _also_reported_label(item: BriefItem) -> str:
+    return f"외 {len(item.also_reported_by)}개 매체: "
+
+
+def _also_reported_html(item: BriefItem) -> str:
+    """'외 2개 매체: 데일리팜, 약업신문' — 매체명은 http(s) URL 이 있을 때만 링크."""
+    names = []
+    for entry in item.also_reported_by:
+        name = escape(str(entry.get("source_name") or entry.get("url") or ""))
+        href = _safe_link(str(entry.get("url") or ""))
+        names.append(f'<a href="{escape(href, quote=True)}" style="color:#64748B;">{name}</a>' if href else name)
+    return escape(_also_reported_label(item)) + ", ".join(names)
+
+
+def _also_reported_md(item: BriefItem) -> str:
+    names = []
+    for entry in item.also_reported_by:
+        name = str(entry.get("source_name") or entry.get("url") or "")
+        href = _safe_link(str(entry.get("url") or ""))
+        names.append(f"[{name}]({href})" if href else name)
+    return _also_reported_label(item) + ", ".join(names)
+
+
 def _item_html(index: int, item: BriefItem) -> str:
     link = _safe_link(item.publisher_url, item.naver_url)
     url = escape(link, quote=True)
@@ -177,6 +206,8 @@ def _item_html(index: int, item: BriefItem) -> str:
         parts.append(f'<div style="font-size:12px;color:#6B7280;margin:0 0 6px;">근거: “{escape(item.evidence_quote)}”</div>')
     if item.body_status != "ok":
         parts.append('<div style="font-size:12px;color:#B45309;margin:0 0 6px;">본문 미확보 — 검색 요약 기반</div>')
+    if item.also_reported_by:
+        parts.append(f'<div style="font-size:12px;color:#64748B;margin:0 0 6px;">{_also_reported_html(item)}</div>')
     if link:
         parts.append(f'<div style="font-size:12px;"><a href="{url}" style="color:#2563EB;">원문 보기</a></div>')
     parts.append("</div>")
@@ -225,6 +256,8 @@ def _item_md(index: int, item: BriefItem) -> list[str]:
         lines.append(f"   - 근거: “{item.evidence_quote}”")
     if item.body_status != "ok":
         lines.append("   - (본문 미확보 — 검색 요약 기반)")
+    if item.also_reported_by:
+        lines.append(f"   - {_also_reported_md(item)}")
     lines.append("")
     return lines
 

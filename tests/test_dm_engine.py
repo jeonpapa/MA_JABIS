@@ -395,3 +395,87 @@ def test_payload_stats_is_json_serialisable():
     assert decoded["stats"]["naver"]["queries"] == 2
     assert decoded["stats"]["scope_terms"] == ["약가 인하", "파드셉"]
     assert decoded["stats"]["recent"] == 1
+
+
+# ---- 스토리 클러스터링 (2026-09-19 파일럿: 같은 사건 매체별 반복) ----
+USAGE_LINK_TITLES = [
+    "듀카브·램시마 등 80개 품목 약가 평균 4.6% 인하…339억원 절감",
+    "건보공단, '사용량-약가 연동 협상'으로 80개 품목 약가 인하",
+    "사용량 늘어난 의약품 80개 약가 평균 4.6% 인하",
+]
+
+
+def _multi_registry():
+    return SourceRegistry([
+        SourceInfo(name="약업신문", domains=("yakup.com",), source_tier="media_tier_A"),
+        SourceInfo(name="데일리팜", domains=("dailypharm.com",), source_tier="media_tier_A"),
+        SourceInfo(name="메디파나뉴스", domains=("medipana.com",), source_tier="media_tier_A"),
+    ])
+
+
+def test_same_story_across_outlets_collapses_to_one_item_with_also_reported_by():
+    raws = [_raw(USAGE_LINK_TITLES[0], "https://www.yakup.com/u1"),
+            _raw(USAGE_LINK_TITLES[1], "https://www.dailypharm.com/u2"),
+            _raw(USAGE_LINK_TITLES[2], "https://www.medipana.com/u3"),
+            _raw("파드셉 요로상피암 급여 확대", "https://www.yakup.com/p1")]
+    naver = FakeNaver({"약가": raws})
+    deps = EngineDeps(naver=naver, llm=FakeLLM(), registry=_multi_registry(),
+                      fetch_body=lambda p, n: ArticleBody("ok", BODY, p))
+    result = generate_run(_scope(keywords=("약가", "파드셉"), brands=()), deps=deps, name="n", now=NOW)
+    titles = [i.title for i in result.items]
+    assert len(titles) == 2
+    assert "파드셉 요로상피암 급여 확대" in titles
+    kept = next(i for i in result.items if i.title != "파드셉 요로상피암 급여 확대")
+    assert kept.title in USAGE_LINK_TITLES
+    assert len(kept.also_reported_by) == 2
+    assert {e["url"] for e in kept.also_reported_by} <= {"https://www.yakup.com/u1", "https://www.dailypharm.com/u2",
+                                                          "https://www.medipana.com/u3"}
+    assert all(e["source_name"] for e in kept.also_reported_by)
+    assert kept.publisher_url not in {e["url"] for e in kept.also_reported_by}
+    assert "외 2개 매체" in result.html and "외 2개 매체" in result.markdown
+    assert result.stats["story_clusters"] == 2
+    assert result.stats["clustered_duplicates"] == 2
+    # 중복 기사 카드: 선정되지 않았지만 '제외' 가 아니라 동일 사건 표시
+    dup_cards = [a for a in result.articles if a["title"] in USAGE_LINK_TITLES and not a["selected_for_draft"]]
+    assert len(dup_cards) == 2
+    for card in dup_cards:
+        assert "duplicate_story" in card["quality_flags"]
+        assert kept.title in card["reviewer_note"]
+        assert card["review_status"] == "needs_review"
+    assert result.payload["items"][0]["also_reported_by"] == [dict(e) for e in result.items[0].also_reported_by]
+
+
+def test_freed_slots_are_filled_with_next_distinct_story():
+    raws = [_raw(t, f"https://www.yakup.com/u{i}") for i, t in enumerate(USAGE_LINK_TITLES)]
+    raws += [_raw("약가 제도 개편안 행정예고", "https://www.yakup.com/d1"),
+             _raw("약가 협상 결렬 통보 논란", "https://www.yakup.com/d2")]
+    naver = FakeNaver({"약가": raws})
+    result = generate_run(_scope(keywords=("약가",), brands=()), deps=_deps(naver),
+                          config=EngineConfig(brief_limit=3), name="n", now=NOW)
+    titles = [i.title for i in result.items]
+    assert len(titles) == 3                                         # 묶인 3건이 슬롯 1개만 차지
+    assert sum(1 for t in titles if t in USAGE_LINK_TITLES) == 1
+    assert {"약가 제도 개편안 행정예고", "약가 협상 결렬 통보 논란"} <= set(titles)
+
+
+def test_cluster_representative_prefers_item_with_body():
+    raws = [_raw(USAGE_LINK_TITLES[0], "https://www.yakup.com/u1"),      # 랭킹 1위지만 본문 실패
+            _raw(USAGE_LINK_TITLES[2], "https://www.medipana.com/u3")]   # 본문 확보
+    naver = FakeNaver({"약가": raws})
+    deps = EngineDeps(naver=naver, llm=FakeLLM(), registry=_multi_registry(),
+                      fetch_body=lambda p, n: ArticleBody("ok", BODY, p) if p.endswith("/u3")
+                      else ArticleBody("failed", "", p))
+    result = generate_run(_scope(keywords=("약가",), brands=()), deps=deps, name="n", now=NOW)
+    assert [i.title for i in result.items] == [USAGE_LINK_TITLES[2]]
+    assert result.items[0].body_status == "ok"
+    assert [e["url"] for e in result.items[0].also_reported_by] == ["https://www.yakup.com/u1"]
+
+
+def test_distinct_stories_are_not_clustered():
+    raws = [_raw("약평위, 엔허투 급여 적정성 인정", "https://www.yakup.com/a1"),
+            _raw("약평위, 렉라자 급여 재평가 착수", "https://www.dailypharm.com/a2")]
+    result = generate_run(_scope(keywords=("약평위",), brands=()), deps=_deps(FakeNaver({"약평위": raws})),
+                          name="n", now=NOW)
+    assert len(result.items) == 2
+    assert all(i.also_reported_by == () for i in result.items)
+    assert result.stats["clustered_duplicates"] == 0

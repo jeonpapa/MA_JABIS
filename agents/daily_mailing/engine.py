@@ -3,7 +3,7 @@
 설계: docs/superpowers/specs/2026-09-18-daily-mailing-service-design.md §5.
 기존 파이프라인(discovery · rank_items · select_daily_items · build_article_card)을 재사용하고:
 - 검색어 = 사용자 스콥만 (페르소나 기본 키워드는 '주요 MA 뉴스' 전용)
-- 본문 추출 → LLM 관련성 판정 → LLM 작성 + 인용 검증
+- 본문 추출 → LLM 관련성 판정 → 스토리 클러스터링(같은 사건 매체별 재보도 1건으로) → LLM 작성 + 인용 검증
 - MSD 대표 기사 강제 삽입 금지
 DB 저장·발송은 하지 않는다 — 슬라이스 B(dispatch)가 RunResult 를 저장·발송한다.
 """
@@ -19,6 +19,7 @@ from typing import Callable, Iterable
 from .archive_candidates import load_archive_candidates
 from .article_body import ArticleBody, fetch_article_body
 from .brief import BriefItem, build_subject, evaluate_brief_quality, render_brief_html, render_brief_markdown
+from .cluster import cluster_stories
 from .dashboard_scope import DashboardScope
 from .discovery import (
     NaverNewsClient,
@@ -42,6 +43,9 @@ DEFAULT_REGISTRY_PATH = REPO_ROOT / "config" / "source_registry.yaml"
 TOP_MA_NEWS_PERSONAS = ("ma_lead", "policy_watch")
 TOP_MA_NEWS_ARCHIVE_KINDS = ("gov_policy",)   # 설계 §5.1: 주요 MA 뉴스 아카이브 후보는 정책뉴스만
 RELEVANCE_CIRCUIT_THRESHOLD = 3               # 관련성 LLM 연속 실패 허용 횟수 (초과 시 판정 중단)
+# 클러스터 대표 선정용 매체 권위 순위 (높을수록 우선). 등록되지 않은 매체는 0.
+SOURCE_TIER_AUTHORITY = {"official": 3, "official_payer": 3, "regulator": 3,
+                         "media_tier_A": 2, "tier_1_trade_media": 2}
 
 
 @dataclass(frozen=True)
@@ -99,6 +103,12 @@ class _Judged:
     item: NewsDiscoveryItem
     body: ArticleBody
     verdict: RelevanceVerdict
+
+
+@dataclass(frozen=True)
+class _Selected:
+    judged: _Judged
+    duplicates: tuple[_Judged, ...] = ()   # 같은 사건을 보도한 다른 매체 기사 (메일에는 '외 N개 매체' 로만 표시)
 
 
 def _now_kst(now: datetime | None) -> datetime:
@@ -189,23 +199,60 @@ def _judge(candidates: list[NewsDiscoveryItem], terms: list[str], *, deps: Engin
     return judged
 
 
-def _select(judged: list[_Judged], terms: list[str], *, media, personas, limit: int) -> list[_Judged]:
-    relevant = [j for j in judged if j.verdict.relevant]
+def _representative_key(j: _Judged) -> tuple:
+    """클러스터 대표 우선순위: 본문 확보(요약·시사점 작성 가능) → 랭킹 점수 → 매체 권위 → 최신."""
+    return (j.body.status == "ok", j.item.score,
+            SOURCE_TIER_AUTHORITY.get(j.item.source_tier, 1 if j.item.source_tier != "unregistered" else 0),
+            j.item.published_at)
+
+
+def _cluster(relevant: list[_Judged], *, stats: dict) -> tuple[list[_Selected], dict[str, str]]:
+    """관련 기사를 사건 단위로 묶고 묶음마다 대표 1건을 고른다.
+    반환: (대표 목록, 흡수된 기사 key → 대표 제목). 파일럿 회귀: 같은 사건이 매체 수만큼 슬롯을 차지하지 않도록."""
     by_key = {_key(j.item): j for j in relevant}
+    clusters = cluster_stories([j.item for j in relevant])
+    selected: list[_Selected] = []
+    duplicate_of: dict[str, str] = {}
+    for cluster in clusters:
+        members = [by_key[_key(i)] for i in cluster if _key(i) in by_key]
+        if not members:
+            continue
+        head = max(members, key=_representative_key)
+        rest = tuple(m for m in members if m is not head)
+        selected.append(_Selected(judged=head, duplicates=rest))
+        for m in rest:
+            duplicate_of[_key(m.item)] = head.item.title
+    stats["story_clusters"] = len(selected)
+    stats["clustered_duplicates"] = len(duplicate_of)
+    return selected, duplicate_of
+
+
+def _select(judged: list[_Judged], terms: list[str], *, media, personas, limit: int,
+            stats: dict) -> tuple[list[_Selected], dict[str, str]]:
+    relevant = [j for j in judged if j.verdict.relevant]
+    representatives, duplicate_of = _cluster(relevant, stats=stats)
+    by_key = {_key(s.judged.item): s for s in representatives}
     # rank_items 가 점수용 substring 매칭을 다시 계산해 matched_keywords 를 덮어쓰므로, LLM 매칭을 여기서
     # 주입해도 선정 결과는 같다. LLM 의 matched_scope_terms 는 _Judged.verdict 로 카드·BriefItem 에 전달된다.
-    chosen = select_daily_items([j.item for j in relevant], terms, limit=limit, media=media, personas=personas,
-                                force_msd_representative=False)
-    return [by_key[_key(i)] for i in chosen if _key(i) in by_key]
+    # 대표 기사만 선정에 넣으므로 같은 사건이 비운 슬롯은 다음 다른 사건이 채운다.
+    chosen = select_daily_items([s.judged.item for s in representatives], terms, limit=limit, media=media,
+                                personas=personas, force_msd_representative=False)
+    return [by_key[_key(i)] for i in chosen if _key(i) in by_key], duplicate_of
+
+
+def _also_reported_by(duplicates: Iterable[_Judged]) -> tuple[dict, ...]:
+    return tuple({"source_name": d.item.source_name, "url": d.item.publisher_url or d.item.naver_url}
+                 for d in duplicates)
 
 
 def _write(j: _Judged, terms: list[str], *, deps: EngineDeps, config: EngineConfig,
-           section: str, stats: dict, rejected_keys: set[str] | None = None) -> BriefItem | None:
+           section: str, stats: dict, rejected_keys: set[str] | None = None,
+           duplicates: Iterable[_Judged] = ()) -> BriefItem | None:
     item, body, verdict = j.item, j.body, j.verdict
     common = dict(title=item.title, publisher_url=item.publisher_url, naver_url=item.naver_url,
                   source_name=item.source_name, published_at=item.published_at,
                   matched_scope_terms=verdict.matched_scope_terms, relevance_reason=verdict.reason,
-                  section=section)
+                  section=section, also_reported_by=_also_reported_by(duplicates))
     snippet = (item.description,) if item.description else ()
     if body.status != "ok":
         if not snippet:
@@ -241,12 +288,19 @@ def _write(j: _Judged, terms: list[str], *, deps: EngineDeps, config: EngineConf
     )
 
 
-def _card(j: _Judged, *, brief: BriefItem | None, personas, quote_rejected: bool = False) -> dict:
+def _card(j: _Judged, *, brief: BriefItem | None, personas, quote_rejected: bool = False,
+          duplicate_of: str | None = None) -> dict:
     card = build_article_card(replace(j.item, matched_keywords=j.verdict.matched_scope_terms),
                               selected_for_draft=brief is not None, personas=personas)
     note = f"관련성 {'통과' if j.verdict.relevant else '제외'}: {j.verdict.reason}"
     if brief is not None and brief.quote_verified:
         note += f" | 인용 확인: “{brief.evidence_quote}”"
+    if duplicate_of:
+        note += f" | 동일 사건 — 대표 기사 “{duplicate_of}” 에 흡수"
+        flags = list(card.get("quality_flags") or [])
+        if "duplicate_story" not in flags:
+            flags.append("duplicate_story")
+        card["quality_flags"] = flags
     card["reviewer_note"] = note
     card["matched_keywords"] = list(j.verdict.matched_scope_terms)
     card["verification_method"] = ("llm_relevance+quote_check" if brief is not None and brief.quote_verified
@@ -289,8 +343,10 @@ def generate_top_ma_news(*, deps: EngineDeps, config: EngineConfig | None = None
     ranked = rank_items(candidates, terms, personas=personas)[: config.max_candidates]
     judged = _judge(ranked, terms, deps=deps, config=config, stats=stats)
     out: list[BriefItem] = []
-    for j in _select(judged, terms, media=(), personas=personas, limit=config.top_ma_news_limit):
-        written = _write(j, terms, deps=deps, config=config, section="top_ma_news", stats=stats)
+    selected, _ = _select(judged, terms, media=(), personas=personas, limit=config.top_ma_news_limit, stats=stats)
+    for s in selected:
+        written = _write(s.judged, terms, deps=deps, config=config, section="top_ma_news", stats=stats,
+                         duplicates=s.duplicates)
         if written is not None:
             out.append(written)
     stats["judged"] = len(judged)
@@ -318,6 +374,7 @@ def generate_run(scope: DashboardScope, *, deps: EngineDeps, config: EngineConfi
     scope_items: list[BriefItem] = []
     brief_by_key: dict[str, BriefItem] = {}
     quote_rejected_keys: set[str] = set()
+    duplicate_of: dict[str, str] = {}
     discovered_count = 0
 
     if not terms:
@@ -337,13 +394,14 @@ def generate_run(scope: DashboardScope, *, deps: EngineDeps, config: EngineConfi
             hold.append("llm_unavailable")
         elif judged and (stats.get("relevance_circuit_open") or stats.get("relevance_llm_errors", 0) > 0):
             run_warnings.append("partial_relevance")   # 일부 후보만 판정됨 — 발송은 하되 표시
-        selected = _select(judged, terms, media=scope.media, personas=personas, limit=config.brief_limit)
-        for j in selected:
-            written = _write(j, terms, deps=deps, config=config, section="scope", stats=stats,
-                             rejected_keys=quote_rejected_keys)
+        selected, duplicate_of = _select(judged, terms, media=scope.media, personas=personas,
+                                         limit=config.brief_limit, stats=stats)
+        for s in selected:
+            written = _write(s.judged, terms, deps=deps, config=config, section="scope", stats=stats,
+                             rejected_keys=quote_rejected_keys, duplicates=s.duplicates)
             if written is not None:
                 scope_items.append(written)
-                brief_by_key[_key(j.item)] = written
+                brief_by_key[_key(s.judged.item)] = written
         # 설계 §8: 선정 기사 '전부'가 작성 LLM 에서 실패했을 때만 run 보류 (자동 모드에서도 미발송).
         # 일부가 요약 근거 부재로 제외(dropped_empty_summary)된 경우는 LLM 장애가 아니므로 보류하지 않는다.
         if selected and not scope_items and stats.get("writer_llm_errors", 0) == len(selected):
@@ -365,7 +423,8 @@ def generate_run(scope: DashboardScope, *, deps: EngineDeps, config: EngineConfi
                                      items=all_items, window_label=window_label)
     run_id = f"dm_{_safe_id(sid)}_{now:%Y%m%d_%H%M%S}" + ("_test" if is_test else "")
     articles = [_card(j, brief=brief_by_key.get(_key(j.item)), personas=personas,
-                      quote_rejected=_key(j.item) in quote_rejected_keys) for j in judged]
+                      quote_rejected=_key(j.item) in quote_rejected_keys,
+                      duplicate_of=duplicate_of.get(_key(j.item))) for j in judged]
     payload = {
         "run_id": run_id,
         "generated_at": now.isoformat(),

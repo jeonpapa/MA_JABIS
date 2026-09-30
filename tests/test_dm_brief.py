@@ -130,3 +130,27 @@ def test_quality_accepts_external_warnings_without_blocking():
     assert r.warnings == ("body_not_extracted", "partial_relevance")
     assert r.to_dict()["warnings"] == ["body_not_extracted", "partial_relevance"]
     assert r.blocking_reasons == ()
+
+
+def test_also_reported_by_round_trip_and_render():
+    item = _item(also_reported_by=({"source_name": "데일리팜", "url": "https://www.dailypharm.com/2"},
+                                   {"source_name": "약업신문", "url": "https://www.yakup.com/3"}))
+    data = item.to_dict()
+    assert data["also_reported_by"] == [{"source_name": "데일리팜", "url": "https://www.dailypharm.com/2"},
+                                        {"source_name": "약업신문", "url": "https://www.yakup.com/3"}]
+    assert BriefItem.from_dict(data) == item
+    assert BriefItem.from_dict({"title": "t", "publisher_url": "https://x/1"}).also_reported_by == ()
+    html = render_brief_html(name="n", run_date=date(2026, 9, 18), scope_terms=["x"], items=[item])
+    assert "외 2개 매체: " in html
+    assert 'href="https://www.dailypharm.com/2"' in html and ">데일리팜</a>" in html
+    md = render_brief_markdown(name="n", run_date=date(2026, 9, 18), scope_terms=["x"], items=[item])
+    assert "외 2개 매체: [데일리팜](https://www.dailypharm.com/2), [약업신문](https://www.yakup.com/3)" in md
+    plain = render_brief_html(name="n", run_date=date(2026, 9, 18), scope_terms=["x"], items=[_item()])
+    assert "외 " not in plain
+
+
+def test_also_reported_by_escapes_and_skips_unsafe_links():
+    item = _item(also_reported_by=({"source_name": "<b>x</b>", "url": "javascript:alert(1)"},))
+    html = render_brief_html(name="n", run_date=date(2026, 9, 18), scope_terms=["x"], items=[item])
+    assert "외 1개 매체: &lt;b&gt;x&lt;/b&gt;" in html
+    assert "javascript:" not in html
