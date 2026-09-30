@@ -4285,9 +4285,20 @@ try:
 except Exception as _e:  # pragma: no cover - 마이그레이션 실패 시 mail-sub 엔드포인트가 SELECT 에서 드러남
     logger.warning("mail_subscription.test_request_json 마이그레이션 실패: %s", _e)
 
+# mail_subscription.delivery_mode / include_top_ma_news 멱등 마이그레이션 (Daily Mailing 프로덕션 발송)
+try:
+    from agents.daily_mailing.subscription_bridge import ensure_delivery_columns as _ensure_mail_sub_delivery_cols  # noqa: E402
+    with db._connect() as _conn:
+        _ensure_mail_sub_delivery_cols(_conn)
+except Exception as _e:  # pragma: no cover
+    logger.warning("mail_subscription 발송모드 컬럼 마이그레이션 실패: %s", _e)
+
 
 def _mail_scope_export(publish: bool) -> None:
     """구독 변경/테스트요청 직후 스콥 export (best-effort — 저장 응답을 절대 막지 않음).
+
+    2026-09-18 헤르메스 git 버스 retire — 구독 CRUD/테스트요청 훅에서 더 이상 호출하지 않는다
+    (프로덕션 서버가 DB 스콥으로 직접 생성·발송). 정의는 롤백용으로만 보존.
 
     publish=False: 빠른 로컬 스냅샷만 (create/update/delete 훅).
     publish=True: 비공개 repo scopes/ 채널 발행 시도 (test-request '지금 보내기' 의도).
@@ -4323,10 +4334,12 @@ def _mail_sub_row_to_dict(r) -> dict:
         "disease_areas": _json.loads(r[15]) if len(r) > 15 and r[15] else [],
         "custom_sources": _json.loads(r[16]) if len(r) > 16 and r[16] else [],
         "test_request": _json.loads(r[17]) if len(r) > 17 and r[17] else None,
+        "deliveryMode": r[18] if len(r) > 18 and r[18] else "approval",
+        "includeTopMaNews": bool(r[19]) if len(r) > 19 and r[19] is not None else True,
     }
 
 
-_MAIL_SUB_COLS = "id, name, keywords_json, media_json, schedule, time, week_day, emails_json, active, created_at, updated_at, last_sent_at, companies_json, brands_json, policy_topics_json, disease_areas_json, custom_sources_json, test_request_json"
+_MAIL_SUB_COLS = "id, name, keywords_json, media_json, schedule, time, week_day, emails_json, active, created_at, updated_at, last_sent_at, companies_json, brands_json, policy_topics_json, disease_areas_json, custom_sources_json, test_request_json, delivery_mode, include_top_ma_news"
 
 
 # Daily Mailing 고정 소스셋 (LOCKED) — 프론트 MEDIA_CATEGORIES 와 일치.
@@ -4412,7 +4425,49 @@ def _coerce_mail_sub_input(body: dict) -> dict | tuple[dict, str]:
             name = (entry.get("name") if isinstance(entry, dict) else "") or ""
             cleaned.append({"url": url, "name": str(name).strip()})
         out["custom_sources_json"] = _json.dumps(cleaned, ensure_ascii=False)
+    if "deliveryMode" in body:
+        mode = body.get("deliveryMode")
+        if mode not in ("approval", "auto"):
+            return ({}, "deliveryMode must be approval|auto")
+        out["delivery_mode"] = mode
+    if "includeTopMaNews" in body:
+        out["include_top_ma_news"] = 1 if body.get("includeTopMaNews") else 0
     return out
+
+
+_MAIL_SCOPE_BODY_KEYS = {"name": "name", "keywords": "keywords", "brands": "brands", "companies": "companies",
+                         "policyTopics": "policy_topics", "diseaseAreas": "disease_areas"}
+
+
+def _known_mail_brands() -> list[str]:
+    """이름-약제 불일치 경고용 약제 사전: MSD 브랜드 + 경쟁사 뉴스 아카이브 브랜드."""
+    from agents.daily_mailing.scope_validation import MSD_BRANDS
+    brands = set(MSD_BRANDS)
+    try:
+        with db._connect() as conn:
+            brands.update(r[0] for r in conn.execute(
+                "SELECT DISTINCT brand FROM competitor_news WHERE brand IS NOT NULL AND brand <> ''"))
+    except Exception:
+        pass
+    return sorted(brands)
+
+
+def _mail_scope_for_validation(body: dict, existing: dict | None = None) -> dict:
+    """검증 대상 스콥 = 기존 구독 값(수정 시) 위에 요청 본문 값을 덮어쓴 것."""
+    merged: dict = {"name": "", "keywords": [], "brands": [], "companies": [], "policy_topics": [], "disease_areas": []}
+    if existing:
+        for key in merged:
+            merged[key] = existing.get(key, merged[key])
+    for body_key, key in _MAIL_SCOPE_BODY_KEYS.items():
+        if body_key in body:
+            merged[key] = body.get(body_key) or ("" if key == "name" else [])
+    return merged
+
+
+def _mail_sub_exists(item_id: int, owner: str) -> bool:
+    with db._connect() as conn:
+        return conn.execute("SELECT 1 FROM mail_subscription WHERE id=? AND owner_email=?",
+                            (item_id, owner)).fetchone() is not None
 
 
 @app.get("/api/regimen-comparisons")
@@ -5070,6 +5125,10 @@ def mail_sub_create():
         _, msg = result
         return jsonify({"error": msg, "code": "INVALID"}), 400
     fields = result
+    from agents.daily_mailing.scope_validation import validate_scope
+    errors, warnings = validate_scope(_mail_scope_for_validation(body), _known_mail_brands())
+    if errors:
+        return jsonify({"error": errors[0], "code": "INVALID"}), 400
     fields = _with_default_sources(fields)
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).isoformat()
@@ -5090,8 +5149,7 @@ def mail_sub_create():
             row = conn.execute(
                 f"SELECT {_MAIL_SUB_COLS} FROM mail_subscription WHERE id=?", (cur.lastrowid,),
             ).fetchone()
-        _mail_scope_export(publish=False)  # 로컬 스콥 스냅샷 즉시 갱신 (repo 발행은 스케줄러)
-        return jsonify({"item": _mail_sub_row_to_dict(row)}), 201
+        return jsonify({"item": _mail_sub_row_to_dict(row), "warnings": warnings}), 201
     except Exception as e:
         logger.error("mail_sub_create 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
@@ -5109,6 +5167,18 @@ def mail_sub_update(item_id: int):
     fields = result
     if not fields:
         return jsonify({"error": "변경할 필드 없음", "code": "INVALID"}), 400
+    warnings: list[str] = []
+    if set(_MAIL_SCOPE_BODY_KEYS) & set(body):
+        from agents.daily_mailing.scope_validation import validate_scope
+        with db._connect() as conn:
+            current = conn.execute(f"SELECT {_MAIL_SUB_COLS} FROM mail_subscription WHERE id=? AND owner_email=?",
+                                   (item_id, owner)).fetchone()
+        if current is None:
+            return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+        errors, warnings = validate_scope(
+            _mail_scope_for_validation(body, _mail_sub_row_to_dict(current)), _known_mail_brands())
+        if errors:
+            return jsonify({"error": errors[0], "code": "INVALID"}), 400
     from datetime import datetime, timezone
     fields["updated_at"] = datetime.now(timezone.utc).isoformat()
     set_clause = ", ".join(f"{k} = ?" for k in fields.keys())
@@ -5125,8 +5195,7 @@ def mail_sub_update(item_id: int):
             row = conn.execute(
                 f"SELECT {_MAIL_SUB_COLS} FROM mail_subscription WHERE id=?", (item_id,),
             ).fetchone()
-        _mail_scope_export(publish=False)  # 로컬 스콥 스냅샷 즉시 갱신 (repo 발행은 스케줄러)
-        return jsonify({"item": _mail_sub_row_to_dict(row)})
+        return jsonify({"item": _mail_sub_row_to_dict(row), "warnings": warnings})
     except Exception as e:
         logger.error("mail_sub_update 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
@@ -5145,7 +5214,6 @@ def mail_sub_delete(item_id: int):
             if res.rowcount == 0:
                 return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
             conn.commit()
-        _mail_scope_export(publish=False)  # 로컬 스냅샷 갱신 (삭제분 원격 prune 은 스케줄러 발행이 수행)
         return jsonify({"ok": True})
     except Exception as e:
         logger.error("mail_sub_delete 실패: %s", e, exc_info=True)
@@ -5231,6 +5299,74 @@ def daily_mailing_admin_kanban():
         return jsonify({"error": str(e)}), 500
 
 
+def _dm_run_brief(run: dict | None) -> dict:
+    run = run or {}
+    return {k: run.get(k) for k in ("run_id", "delivery_status", "approval_status", "sent_at",
+                                     "delivery_error", "approved_by", "approved_at")}
+
+
+@app.post("/api/admin/daily-mailing/runs/<run_id>/approve")
+@require_auth(role="admin")
+def daily_mailing_run_approve(run_id: str):
+    from agents.daily_mailing import dispatch as _dm_dispatch
+    try:
+        run = _dm_dispatch.approve_run(run_id, approver=request.user["sub"],  # type: ignore[attr-defined]
+                                       deps=_dm_dispatch.DispatchDeps.production())
+        return jsonify({"ok": True, "run": _dm_run_brief(run)})
+    except LookupError:
+        return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+    except _dm_dispatch.ApprovalError as e:
+        return jsonify({"error": str(e), "code": "INVALID_STATE"}), 409
+    except Exception as e:
+        logger.error("daily_mailing approve 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/admin/daily-mailing/runs/<run_id>/reject")
+@require_auth(role="admin")
+def daily_mailing_run_reject(run_id: str):
+    from agents.daily_mailing import dispatch as _dm_dispatch
+    try:
+        run = _dm_dispatch.reject_run(run_id, approver=request.user["sub"],  # type: ignore[attr-defined]
+                                      deps=_dm_dispatch.DispatchDeps.production())
+        return jsonify({"ok": True, "run": _dm_run_brief(run)})
+    except LookupError:
+        return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+    except _dm_dispatch.ApprovalError as e:
+        return jsonify({"error": str(e), "code": "INVALID_STATE"}), 409
+    except Exception as e:
+        logger.error("daily_mailing reject 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/admin/daily-mailing/runs/<run_id>/preview")
+@require_auth(role="admin")
+def daily_mailing_run_preview(run_id: str):
+    """메일 미리보기 — DB 의 email_html 만 읽는다 (칸반과 같은 storage 기본 DB, 엔진/Gmail 의존성 생성 없음)."""
+    try:
+        from agents.daily_mailing import run_store as _dm_run_store
+        from agents.daily_mailing import storage as _dm_storage
+        run = _dm_run_store.get_run(run_id, db_path=_dm_storage.DEFAULT_DB_PATH)
+        if run is None or not run.get("email_html"):
+            return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+        return jsonify({"subject": run.get("email_subject") or "", "html": run["email_html"],
+                        "delivery_status": run.get("delivery_status")})
+    except Exception as e:
+        logger.error("daily_mailing preview 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/admin/daily-mailing/health")
+@require_auth(role="admin")
+def daily_mailing_health():
+    from agents.daily_mailing import dispatch as _dm_dispatch
+    try:
+        return jsonify(_dm_dispatch.health_check(_dm_dispatch.DispatchDeps.production()))
+    except Exception as e:
+        logger.error("daily_mailing health 실패: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @app.post("/api/mail-subscriptions/<int:item_id>/test-send")
 @require_auth()
 def mail_sub_test_send(item_id: int):
@@ -5255,18 +5391,20 @@ def mail_sub_test_send(item_id: int):
             "mode": "none",
             "sent": False,
             "recipients": item["emails"],
-            "message": "아직 헤르메스 발송 이력이 없습니다 — 실제 메일은 헤르메스가 작성·발송합니다.",
+            "message": "아직 생성된 브리핑이 없습니다 — 구독 발송 시각이 되면 서버가 생성합니다.",
         }
         try:
             from agents.daily_mailing.storage import load_latest_run_for_subscription
         except Exception:  # 모듈 미탑재 배포 방어 (kanban 임포트와 동일 케이스)
             return jsonify(no_history)
         run = load_latest_run_for_subscription(item_id, owner)
+        if run is not None and run.get("subscription_id") != item_id:
+            run = None  # 다른 구독의 run 으로 폴백하지 않는다
         if run is None:
             return jsonify(no_history)
-        body_html = None
+        body_html = run.get("email_html") or None
         html_path = run.get("html_path")
-        if html_path:
+        if body_html is None and html_path:
             try:
                 from pathlib import Path as _Path
                 p = _Path(html_path)
@@ -5289,7 +5427,7 @@ def mail_sub_test_send(item_id: int):
         if body_html is None:
             return jsonify(no_history)
         generated = (run.get("generated_at") or "")[:10]
-        subject = f"[Daily Mailing] {item['name']}" + (f" · {generated}" if generated else "")
+        subject = run.get("email_subject") or (f"[Daily Mailing] {item['name']}" + (f" · {generated}" if generated else ""))
         return jsonify({
             "ok": True,
             "mode": "preview",
@@ -5299,7 +5437,7 @@ def mail_sub_test_send(item_id: int):
             "html": body_html,
             "run_id": run.get("run_id"),
             "generated_at": run.get("generated_at"),
-            "message": "이 스콥으로 헤르메스가 실제 작성한 최신 브리프입니다. 대쉬보드는 메일을 직접 발송하지 않습니다.",
+            "message": "이 구독으로 생성된 최신 브리핑입니다.",
         })
     except Exception as e:
         logger.error("mail_sub_test_send 실패: %s", e, exc_info=True)
@@ -5335,38 +5473,24 @@ def mail_sub_scope(item_id: int):
 @app.post("/api/mail-subscriptions/<int:item_id>/test-request")
 @require_auth()
 def mail_sub_test_request(item_id: int):
-    """테스트 메일 요청 — test_request 플래그를 행에 지속하고 헤르메스 채널에 전달.
-
-    대쉬보드는 발송하지 않는다. 플래그는 mail_subscription.test_request_json 에 지속되어
-    모든 스콥 export 에 실리고, 헤르메스가 [TEST] run(is_test=true)을 커밋하면
-    inbound run-sync 가 플래그를 해제한다(1회성 소비). '지금 보내기' 의도이므로
-    저장 직후 비공개 repo 발행까지 best-effort 시도한다 (실패해도 15분 주기 잡이 발행).
-    """
+    """테스트 메일 — 서버가 즉시(백그라운드) 브리핑을 생성해 요청자에게만 [TEST] 발송 (설계 §6)."""
     owner = request.user["sub"]  # type: ignore[attr-defined]
     try:
-        import json as _json
-        from datetime import datetime, timezone
-        from agents.daily_mailing.subscription_bridge import subscription_to_scope, write_scope_snapshot
-        requested_at = datetime.now(timezone.utc).isoformat()
-        test_request = {"requested_at": requested_at, "requested_by": owner}
-        with db._connect() as conn:
-            res = conn.execute(
-                "UPDATE mail_subscription SET test_request_json=? WHERE id=? AND owner_email=?",
-                (_json.dumps(test_request, ensure_ascii=False), item_id, owner),
-            )
-            if res.rowcount == 0:
-                return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
-            conn.commit()
-            row = conn.execute(
-                f"SELECT {_MAIL_SUB_COLS} FROM mail_subscription WHERE id=?", (item_id,),
-            ).fetchone()
-        item = _mail_sub_row_to_dict(row)
-        item["owner_email"] = owner
-        scope = subscription_to_scope(item)  # test_request 는 지속된 행 값에서 포함됨
-        snapshot_path = write_scope_snapshot(scope)
-        _mail_scope_export(publish=True)  # '지금 보내기' 의도 — repo 발행 시도 (네트워크 실패 무해)
-        return jsonify({"ok": True, "snapshot_path": str(snapshot_path), "requested_at": requested_at,
-                        "message": "헤르메스에 테스트 요청을 전달했습니다. 검토 후 [TEST] 메일이 발송됩니다."})
+        if not _mail_sub_exists(item_id, owner):
+            return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+        import threading
+        from agents.daily_mailing import dispatch as _dm_dispatch
+
+        def _run() -> None:
+            try:
+                res = _dm_dispatch.send_test(item_id, requester_email=owner,
+                                             deps=_dm_dispatch.DispatchDeps.production())
+                logger.info("daily mailing 테스트 발송 (구독 %s): %s", item_id, res)
+            except Exception:
+                logger.exception("daily mailing 테스트 발송 실패 (구독 %s)", item_id)
+
+        threading.Thread(target=_run, name=f"dm-test-{item_id}", daemon=True).start()
+        return jsonify({"ok": True, "message": f"테스트 메일을 생성하고 있습니다. 1~3분 뒤 {owner} 메일함을 확인하세요 (제목 [TEST])."}), 202
     except Exception as e:
         logger.error("mail_sub_test_request 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500

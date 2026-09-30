@@ -1,4 +1,5 @@
 # 헤르메스 Daily Mailing 작업 지시서 (핸드오프)
+> ⚠️ **RETIRED 2026-09-18** — 생성·발송은 프로덕션 서버(`agents/daily_mailing/dispatch.py` + `engine.py`)로 이전. 설계: `docs/superpowers/specs/2026-09-18-daily-mailing-service-design.md`. 이 문서는 이력용.
 
 > 대상: 외부 GPT-5.5 에이전트 "헤르메스". 대쉬보드는 **모니터링 스콥만** 정하고, 헤르메스가
 > 그 스콥으로 **매일 메일을 검토·작성·발송**한다. (정책 인텔리전스 헤르메스 모델과 동일 구조:

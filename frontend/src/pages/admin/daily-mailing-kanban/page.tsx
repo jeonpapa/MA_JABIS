@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type JSX } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchMe } from '@/utils/authUsers';
 import {
   fetchDailyMailingKanban, parseJsonArray, asStringArray, normalizeReviewerFindings,
+  approveDailyMailingRun, rejectDailyMailingRun, fetchDailyMailingRunPreview, fetchDailyMailingHealth,
   type DailyMailingKanban, type KanbanArticle, type KanbanRun,
   type Persona, type ReviewerRole, type DraftItem, type QualityReport, type RunCounts,
+  type DailyMailingHealth, type RunPreview,
 } from '@/api/dailyMailingKanban';
 
 const LANE_ICON: Record<string, string> = {
@@ -40,6 +42,7 @@ function DELIVERY_TONE(status: string): string {
   const v = (status || '').toLowerCase();
   if (v.includes('sent') || v.includes('delivered')) return 'bg-[#00E5CC]/10 text-[#00E5CC]';
   if (v.includes('fail') || v.includes('error')) return 'bg-red-500/10 text-red-400';
+  if (v.includes('pending') || v.includes('held') || v.includes('expired')) return 'bg-[#F59E0B]/10 text-[#F59E0B]';
   if (v.includes('draft')) return 'bg-[#F59E0B]/10 text-[#F59E0B]';
   return 'bg-[#3B82F6]/10 text-[#60A5FA]';
 }
@@ -286,7 +289,7 @@ function DraftBriefPanel({ run }: { run: KanbanRun }) {
       <div className="flex items-center gap-2 mb-1">
         <span className="w-5 h-5 flex items-center justify-center"><i className="ri-newspaper-line text-[#00E5CC]"></i></span>
         <h2 className="text-white font-bold text-base">오늘의 브리프</h2>
-        <span className="text-[10px] px-2 py-0.5 rounded bg-[#00E5CC]/10 text-[#00E5CC]">{items.length}건 · 헤르메스 초안</span>
+        <span className="text-[10px] px-2 py-0.5 rounded bg-[#00E5CC]/10 text-[#00E5CC]">{items.length}건 · 오늘의 브리핑 초안</span>
       </div>
       <p className="text-[#8B9BB4] text-xs mb-4">최신 run 에서 선택·작성된 브리프 항목 (draft_items)</p>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -398,16 +401,24 @@ function ReviewerRolesPanel({ roles }: { roles: ReviewerRole[] }) {
   );
 }
 
-function RunRow({ run }: { run: KanbanRun }) {
+function RunRow({ run, busy, onPreview, onApprove, onReject }: {
+  run: KanbanRun;
+  busy: boolean;
+  onPreview: (runId: string) => void;
+  onApprove: (runId: string) => void;
+  onReject: (runId: string) => void;
+}) {
   const keywords = parseJsonArray(run.keywords_json);
   const recipients = parseJsonArray(run.recipients_json);
   const qrStatus = run.quality_report?.status ?? null;
   const counts = run.counts ?? {};
+  const pending = run.delivery_status === 'pending_approval';
   return (
     <tr className="border-b border-[#1E2530]/50 last:border-b-0 hover:bg-[#1E2530]/30 align-top">
       <td className="py-2.5 pr-3 whitespace-nowrap">
         <span className="text-white text-xs font-mono">{run.run_id}</span>
-        {run.window_label && <p className="text-[#4A5568] text-[10px] mt-0.5">{run.window_label}</p>}
+        {run.is_test ? <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-[#7C3AED]/10 text-[#A78BFA]">TEST</span> : null}
+        {run.email_subject && <p className="text-[#8B9BB4] text-[10px] mt-0.5 max-w-[220px] truncate">{run.email_subject}</p>}
       </td>
       <td className="py-2.5 pr-3 text-[#8B9BB4] text-xs whitespace-nowrap">
         {run.generated_at ? new Date(run.generated_at).toLocaleString('ko-KR') : <Dash />}
@@ -420,9 +431,13 @@ function RunRow({ run }: { run: KanbanRun }) {
       </td>
       <td className="py-2.5 pr-3 whitespace-nowrap">
         <span className={`text-[10px] px-2 py-0.5 rounded ${DELIVERY_TONE(run.delivery_status)}`}>{run.delivery_status}</span>
+        {run.delivery_error && (
+          <p className="text-red-400 text-[10px] mt-0.5 max-w-[180px] truncate" title={run.delivery_error}>{run.delivery_error}</p>
+        )}
       </td>
       <td className="py-2.5 pr-3 whitespace-nowrap">
         <span className={`text-[10px] px-2 py-0.5 rounded ${badgeTone(run.approval_status)}`}>{run.approval_status}</span>
+        {run.approved_by && <p className="text-[#4A5568] text-[10px] mt-0.5">{run.approved_by}</p>}
       </td>
       <td className="py-2.5 pr-3 text-[#8B9BB4] text-xs whitespace-nowrap">
         발굴 {run.discovered_count} · 최신 {run.recent_count} · 선택 {run.selected_count}
@@ -436,12 +451,61 @@ function RunRow({ run }: { run: KanbanRun }) {
       <td className="py-2.5 pr-3 text-[#8B9BB4] text-xs max-w-[180px]">
         <span className="block truncate">{run.owner_email ?? <Dash />}{recipients.length > 0 ? ` (+${recipients.length})` : ''}</span>
       </td>
-      <td className="py-2.5 text-right whitespace-nowrap">
-        {run.html_path
-          ? <span className="text-[10px] text-[#4A5568]"><i className="ri-file-text-line mr-0.5"></i>{run.html_path.split('/').pop()}</span>
-          : <Dash />}
+      <td className="py-2.5 text-right whitespace-nowrap space-x-1">
+        {run.has_email_html && (
+          <button onClick={() => onPreview(run.run_id)} disabled={busy}
+            className="text-[10px] px-2 py-1 rounded bg-[#1E2530] text-[#8B9BB4] hover:text-white cursor-pointer disabled:opacity-50">
+            미리보기
+          </button>
+        )}
+        {pending && (
+          <>
+            <button onClick={() => onApprove(run.run_id)} disabled={busy}
+              className="text-[10px] px-2 py-1 rounded bg-[#00E5CC]/10 text-[#00E5CC] hover:bg-[#00E5CC]/20 cursor-pointer disabled:opacity-50">
+              승인·발송
+            </button>
+            <button onClick={() => onReject(run.run_id)} disabled={busy}
+              className="text-[10px] px-2 py-1 rounded bg-red-500/10 text-red-400 hover:bg-red-500/20 cursor-pointer disabled:opacity-50">
+              반려
+            </button>
+          </>
+        )}
+        {!run.has_email_html && !pending && <Dash />}
       </td>
     </tr>
+  );
+}
+
+function HealthBanner({ health }: { health: DailyMailingHealth | null }) {
+  if (!health || health.ok) return null;
+  return (
+    <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4">
+      <p className="text-red-400 text-sm font-bold mb-1">
+        <i className="ri-alarm-warning-line mr-1"></i>Daily Mailing 점검 필요 ({health.run_date})
+      </p>
+      <ul className="text-red-300 text-xs space-y-0.5">
+        {health.problems.map((p, i) => (
+          <li key={`${p.subscription_id ?? 'x'}_${i}`}>
+            {p.subscription_id != null ? `구독 ${p.subscription_id} (${p.name})` : 'Gmail'} — {p.problem}{p.detail ? `: ${p.detail}` : ''}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function PreviewModal({ preview, onClose }: { preview: RunPreview | null; onClose: () => void }) {
+  if (!preview) return null;
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-6" onClick={onClose}>
+      <div className="bg-[#161B27] rounded-2xl border border-[#1E2530] w-full max-w-3xl p-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-white text-sm font-bold truncate">{preview.subject}</p>
+          <button onClick={onClose} className="text-[#8B9BB4] hover:text-white cursor-pointer"><i className="ri-close-line text-lg"></i></button>
+        </div>
+        <iframe title="메일 미리보기" sandbox="" srcDoc={preview.html} className="w-full h-[70vh] bg-white rounded-lg" />
+      </div>
+    </div>
   );
 }
 
@@ -451,6 +515,9 @@ export default function AdminDailyMailingKanbanPage() {
   const [data, setData] = useState<DailyMailingKanban | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [health, setHealth] = useState<DailyMailingHealth | null>(null);
+  const [preview, setPreview] = useState<RunPreview | null>(null);
+  const [busyRunId, setBusyRunId] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -473,10 +540,30 @@ export default function AdminDailyMailingKanbanPage() {
     try {
       const r = await fetchDailyMailingKanban();
       setData(r);
+      fetchDailyMailingHealth().then(setHealth).catch(() => setHealth(null));
     } catch (e) {
       setError(e instanceof Error ? e.message : '칸반 조회 실패');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const runAction = async (runId: string, action: 'approve' | 'reject' | 'preview') => {
+    if (action === 'approve' && !window.confirm('이 브리핑을 수신자에게 발송할까요?')) return;
+    if (action === 'reject' && !window.confirm('이 브리핑을 반려할까요? (오늘은 발송되지 않습니다)')) return;
+    setBusyRunId(runId);
+    try {
+      if (action === 'preview') {
+        setPreview(await fetchDailyMailingRunPreview(runId));
+        return;
+      }
+      const r = action === 'approve' ? await approveDailyMailingRun(runId) : await rejectDailyMailingRun(runId);
+      if (r.run.delivery_error) alert(`발송 결과: ${r.run.delivery_status} — ${r.run.delivery_error}`);
+      await reload();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '처리 실패');
+    } finally {
+      setBusyRunId(null);
     }
   };
 
@@ -496,7 +583,7 @@ export default function AdminDailyMailingKanbanPage() {
   const personas = data?.personas ?? [];
   const reviewerRoles = data?.reviewer_roles ?? [];
   const boardPurpose = data?.operating_policy?.board_purpose
-    || '헤르메스 에이전트가 스콥을 검토·수집·작성·발송하는 파이프라인 현황 (Admin 전용, 읽기 전용 운영 보드).';
+    || '구독별 브리핑 생성·승인·발송 현황 (Admin 전용). 승인 모드 구독은 여기서 승인해야 발송됩니다.';
 
   return (
     <div className="min-h-screen bg-[#0D1117] text-white">
@@ -516,6 +603,7 @@ export default function AdminDailyMailingKanbanPage() {
       </div>
 
       <div className="px-8 py-6 space-y-5">
+        <HealthBanner health={health} />
         {loading && (
           <div className="text-center py-16 text-sm text-[#8B9BB4]">
             <i className="ri-loader-4-line animate-spin mr-2"></i>칸반 로드 중…
@@ -575,7 +663,7 @@ export default function AdminDailyMailingKanbanPage() {
             <div className="bg-[#161B27] rounded-2xl border border-[#1E2530] p-6">
               <h2 className="text-white font-bold text-base mb-4">실행(Run) 이력</h2>
               {data.runs.length === 0 ? (
-                <p className="text-[#4A5568] text-sm">아직 실행 이력이 없습니다. 헤르메스 run 번들 동기화 후 표시됩니다.</p>
+                <p className="text-[#4A5568] text-sm">아직 실행 이력이 없습니다. 구독 발송 시각이 되면 서버가 생성한 run 이 표시됩니다.</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -591,11 +679,16 @@ export default function AdminDailyMailingKanbanPage() {
                         <th className="text-left py-2 pr-3">검토/작성대기</th>
                         <th className="text-left py-2 pr-3">키워드</th>
                         <th className="text-left py-2 pr-3">수신</th>
-                        <th className="text-right py-2">산출물</th>
+                        <th className="text-right py-2">액션</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {data.runs.map(r => <RunRow key={r.run_id} run={r} />)}
+                      {data.runs.map(r => (
+                        <RunRow key={r.run_id} run={r} busy={busyRunId === r.run_id}
+                          onPreview={id => runAction(id, 'preview')}
+                          onApprove={id => runAction(id, 'approve')}
+                          onReject={id => runAction(id, 'reject')} />
+                      ))}
                     </tbody>
                   </table>
                 </div>
@@ -648,6 +741,7 @@ export default function AdminDailyMailingKanbanPage() {
           </>
         )}
       </div>
+      <PreviewModal preview={preview} onClose={() => setPreview(null)} />
     </div>
   );
 }

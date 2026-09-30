@@ -20,6 +20,10 @@ from .writer import infer_ma_implication, infer_news_insight
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[2] / "data" / "db" / "drug_prices.db"
 RETENTION_DAYS = 183  # 약 6개월
 
+
+class DuplicateRegularRunError(RuntimeError):
+    """같은 구독·같은 날(KST)의 정규 run 이 이미 있다 — INSERT OR REPLACE 로 발송 이력을 덮지 않는다."""
+
 # 이메일 브리프 렌더러(writer._render_html)와 동일한 monitoring-only fallback 문구.
 _MA_IMPLICATION_FALLBACK = (
     "현재 기사만으로는 별도 MA implication을 쓰지 않습니다. "
@@ -39,6 +43,10 @@ def _enrich_draft_items(items) -> list[dict]:
             enriched.append(item)
             continue
         out = dict(item)
+        if "ma_implication" in out:
+            # 엔진(LLM) 작성 항목 — 규칙 기반 문구로 덮어쓰지 않는다
+            enriched.append(out)
+            continue
         try:
             out["monitoring_point"] = infer_news_insight(item)
             out["work_note"] = infer_ma_implication(item) or _MA_IMPLICATION_FALLBACK
@@ -199,10 +207,26 @@ def ensure_daily_mailing_tables(db_path: str | Path = DEFAULT_DB_PATH) -> None:
             "counts_json": "ALTER TABLE daily_mailing_run ADD COLUMN counts_json TEXT NOT NULL DEFAULT 'null'",
             "draft_items_json": "ALTER TABLE daily_mailing_run ADD COLUMN draft_items_json TEXT NOT NULL DEFAULT '[]'",
             "dashboard_scope_json": "ALTER TABLE daily_mailing_run ADD COLUMN dashboard_scope_json TEXT NOT NULL DEFAULT 'null'",
+            # 2026-09-18 프로덕션 발송 (설계 §6)
+            "run_date": "ALTER TABLE daily_mailing_run ADD COLUMN run_date TEXT",
+            "is_test": "ALTER TABLE daily_mailing_run ADD COLUMN is_test INTEGER NOT NULL DEFAULT 0",
+            "email_subject": "ALTER TABLE daily_mailing_run ADD COLUMN email_subject TEXT",
+            "email_html": "ALTER TABLE daily_mailing_run ADD COLUMN email_html TEXT",
+            "send_attempts": "ALTER TABLE daily_mailing_run ADD COLUMN send_attempts INTEGER NOT NULL DEFAULT 0",
+            "delivery_error": "ALTER TABLE daily_mailing_run ADD COLUMN delivery_error TEXT",
+            "approved_by": "ALTER TABLE daily_mailing_run ADD COLUMN approved_by TEXT",
+            "approved_at": "ALTER TABLE daily_mailing_run ADD COLUMN approved_at TEXT",
+            # 발송 선점 시각 — 프로세스 중단으로 'sending' 에 멈춘 run 복구 판정용
+            "claimed_at": "ALTER TABLE daily_mailing_run ADD COLUMN claimed_at TEXT",
         }.items():
             if col not in existing:
                 conn.execute(ddl)
-        existing_article = {row[1] for row in conn.execute("PRAGMA table_info(daily_mailing_article)").fetchall()}
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_daily_mailing_run_regular "
+            "ON daily_mailing_run(subscription_id, run_date) "
+            "WHERE is_test = 0 AND subscription_id IS NOT NULL AND run_date IS NOT NULL"
+        )
+        existing_article ={row[1] for row in conn.execute("PRAGMA table_info(daily_mailing_article)").fetchall()}
         for col, ddl in {
             "tracking_lane": "ALTER TABLE daily_mailing_article ADD COLUMN tracking_lane TEXT",
             "reviewer_findings_json": "ALTER TABLE daily_mailing_article ADD COLUMN reviewer_findings_json TEXT NOT NULL DEFAULT '[]'",
@@ -274,8 +298,19 @@ def persist_daily_mailing_run(
     personas = _normalize_personas(payload.get("personas") or payload.get("persona_ids"))
     reviewer_roles = _normalize_reviewer_roles(payload.get("reviewer_roles") or payload.get("reviewer_role_ids"))
     operating_policy = payload.get("operating_policy") or dict(DEFAULT_OPERATING_POLICY)
+    sub_id = payload.get("subscription_id")
+    run_date = payload.get("run_date")
+    is_test = 1 if payload.get("is_test") else 0
 
     with sqlite3.connect(str(db_path)) as conn:
+        if sub_id is not None and run_date and not is_test:
+            clash = conn.execute(
+                "SELECT run_id FROM daily_mailing_run WHERE subscription_id=? AND run_date=? "
+                "AND is_test=0 AND run_id<>?",
+                (sub_id, run_date, run_id),
+            ).fetchone()
+            if clash:
+                raise DuplicateRegularRunError(f"구독 {sub_id} {run_date} 정규 run 이미 존재: {clash[0]}")
         conn.execute(
             """
             INSERT OR REPLACE INTO daily_mailing_run (
@@ -284,9 +319,9 @@ def persist_daily_mailing_run(
                 discovered_count, recent_count, selected_count, status,
                 markdown_path, html_path, json_path, review_board_path,
                 quality_report_json, personas_json, reviewer_roles_json, operating_policy_json,
-                counts_json, draft_items_json, dashboard_scope_json,
+                counts_json, draft_items_json, dashboard_scope_json, run_date, is_test, email_subject, email_html,
                 expires_at, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id,
@@ -315,6 +350,10 @@ def persist_daily_mailing_run(
                 json.dumps(counts, ensure_ascii=False),
                 json.dumps(_enrich_draft_items(payload.get("items")), ensure_ascii=False),
                 json.dumps(payload.get("dashboard_scope"), ensure_ascii=False),
+                run_date,
+                is_test,
+                payload.get("email_subject"),
+                payload.get("email_html"),
                 expires_at,
                 now.isoformat(),
             ),
@@ -428,6 +467,7 @@ def load_admin_kanban(db_path: str | Path = DEFAULT_DB_PATH, *, limit_runs: int 
     runs_out: list[dict] = []
     for r in runs:
         run = dict(r)
+        run["has_email_html"] = bool(run.pop("email_html", None))
         run["quality_report"] = _json_or(run.pop("quality_report_json", None), None)
         run["personas"] = _normalize_personas(_json_or(run.pop("personas_json", None), []))
         run["reviewer_roles"] = _normalize_reviewer_roles(_json_or(run.pop("reviewer_roles_json", None), []))

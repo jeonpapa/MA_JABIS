@@ -110,6 +110,14 @@ export interface KanbanRun {
   counts?: RunCounts | null;
   draft_items?: DraftItem[] | null;
   dashboard_scope?: Record<string, unknown> | null;
+  run_date?: string | null;
+  is_test?: number | boolean | null;
+  email_subject?: string | null;
+  has_email_html?: boolean;
+  send_attempts?: number | null;
+  delivery_error?: string | null;
+  approved_by?: string | null;
+  approved_at?: string | null;
 }
 
 export interface OperatingPolicy {
@@ -180,4 +188,52 @@ export function normalizeReviewerFindings(
   if (Array.isArray(raw)) return raw.filter((f): f is ReviewerFinding => f != null && typeof f === 'object');
   if (typeof raw === 'object') return [raw];
   return [];
+}
+
+export interface RunActionResult {
+  ok: boolean;
+  run: {
+    run_id: string;
+    delivery_status: string;
+    approval_status: string;
+    sent_at: string | null;
+    delivery_error: string | null;
+  };
+}
+
+export async function approveDailyMailingRun(runId: string): Promise<RunActionResult> {
+  return api.post<RunActionResult>(`/api/admin/daily-mailing/runs/${encodeURIComponent(runId)}/approve`, {});
+}
+
+export async function rejectDailyMailingRun(runId: string): Promise<RunActionResult> {
+  return api.post<RunActionResult>(`/api/admin/daily-mailing/runs/${encodeURIComponent(runId)}/reject`, {});
+}
+
+export interface RunPreview {
+  subject: string;
+  html: string;
+  delivery_status: string | null;
+}
+
+export async function fetchDailyMailingRunPreview(runId: string): Promise<RunPreview> {
+  return api.get<RunPreview>(`/api/admin/daily-mailing/runs/${encodeURIComponent(runId)}/preview`);
+}
+
+export interface HealthProblem {
+  subscription_id: number | null;
+  name: string;
+  problem: string;
+  detail?: string | null;
+}
+
+export interface DailyMailingHealth {
+  run_date: string;
+  checked_at: string;
+  ok: boolean;
+  problems: HealthProblem[];
+  gmail_ready: boolean;
+}
+
+export async function fetchDailyMailingHealth(): Promise<DailyMailingHealth> {
+  return api.get<DailyMailingHealth>('/api/admin/daily-mailing/health');
 }

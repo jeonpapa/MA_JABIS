@@ -18,6 +18,8 @@ export interface MailSubscription {
   policy_topics?: string[];
   disease_areas?: string[];
   custom_sources?: { url: string; name?: string }[];
+  deliveryMode?: 'approval' | 'auto';
+  includeTopMaNews?: boolean;
 }
 
 export interface MailSubscriptionInput {
@@ -34,7 +36,11 @@ export interface MailSubscriptionInput {
   policyTopics?: string[];
   diseaseAreas?: string[];
   customSources?: { url: string; name?: string }[];
+  deliveryMode?: 'approval' | 'auto';
+  includeTopMaNews?: boolean;
 }
+
+export interface MailSubSaveResult { item: MailSubscription; warnings: string[]; }
 
 export interface MailSubListResponse {
   items: MailSubscription[];
@@ -67,17 +73,17 @@ export async function listMailSubscriptions(): Promise<MailSubListResponse> {
   return api.get<MailSubListResponse>('/api/mail-subscriptions');
 }
 
-export async function createMailSubscription(input: MailSubscriptionInput): Promise<MailSubscription> {
-  const r = await api.post<{ item: MailSubscription }>('/api/mail-subscriptions', input);
-  return r.item;
+export async function createMailSubscription(input: MailSubscriptionInput): Promise<MailSubSaveResult> {
+  const r = await api.post<{ item: MailSubscription; warnings?: string[] }>('/api/mail-subscriptions', input);
+  return { item: r.item, warnings: r.warnings ?? [] };
 }
 
 export async function updateMailSubscription(
   id: number,
   patch: Partial<MailSubscriptionInput>,
-): Promise<MailSubscription> {
-  const r = await api.patch<{ item: MailSubscription }>(`/api/mail-subscriptions/${id}`, patch);
-  return r.item;
+): Promise<MailSubSaveResult> {
+  const r = await api.patch<{ item: MailSubscription; warnings?: string[] }>(`/api/mail-subscriptions/${id}`, patch);
+  return { item: r.item, warnings: r.warnings ?? [] };
 }
 
 export async function deleteMailSubscription(id: number): Promise<void> {
