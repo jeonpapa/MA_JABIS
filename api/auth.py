@@ -67,10 +67,17 @@ def _extract_token() -> str | None:
     return None
 
 
-def require_auth(role: str | None = None):
-    """라우트 데코레이터. role=<역할> 지정 시 그 역할과 admin 만 허용(admin 은 상위 권한).
+# 서비스 계정 역할: role=<이 값> 을 명시한 라우트에서만 통과한다. role 미지정(일반 사용자 API)은 403.
+# VPS 디스패처 자격증명이 새도 /api/agent/* 밖으로는 못 나간다(설계 §3·§8 권한 최소화).
+SERVICE_ROLES = frozenset({"agent"})
 
-    예: require_auth(role="agent") → VPS 디스패처 서비스 계정(role='agent') 또는 admin.
+
+def require_auth(role: str | None = None):
+    """라우트 데코레이터.
+
+    - role 미지정: 로그인한 사람 사용자(user·admin) 허용. 서비스 역할(SERVICE_ROLES)은 403.
+    - role=<역할> 지정: 그 역할과 admin 만 허용(admin 은 상위 권한).
+      예: require_auth(role="agent") → VPS 디스패처 서비스 계정(role='agent') 또는 admin.
     """
     def deco(fn):
         @wraps(fn)
@@ -81,8 +88,13 @@ def require_auth(role: str | None = None):
             payload = _decode_token(token)
             if payload is None:
                 return jsonify({"error": "invalid token", "code": "AUTH_INVALID"}), 401
-            if role and payload.get("role") not in (role, "admin"):
-                return jsonify({"error": f"{role} required", "code": "AUTH_FORBIDDEN"}), 403
+            actual = payload.get("role")
+            if role:
+                if actual not in (role, "admin"):
+                    return jsonify({"error": f"{role} required", "code": "AUTH_FORBIDDEN"}), 403
+            elif actual in SERVICE_ROLES:
+                return jsonify({"error": f"{actual} role is confined to its own routes",
+                                "code": "AUTH_FORBIDDEN"}), 403
             request.user = payload  # type: ignore[attr-defined]
             return fn(*args, **kwargs)
         return wrapper

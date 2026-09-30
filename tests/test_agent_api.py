@@ -319,3 +319,19 @@ def test_claim_exhausted_attempts_blocks_task(monkeypatch, tmp_path):
     # 이미 blocked 인 과제에 또 claim 해도 같은 409, 상태는 그대로
     assert c.post(f"/api/agent/tasks/{tid}/claim", headers=_h("agent")).status_code == 409
     assert store.get_task(tid, db_path=db)["status"] == "blocked"
+
+
+# ── 권한 최소화: agent 토큰은 role='agent' 를 명시한 라우트(/api/agent/*)만 통과한다 ────────
+
+def test_agent_token_is_confined_to_agent_routes(monkeypatch, tmp_path):
+    """require_auth()(role 미지정) 도 agent 를 거부해야 한다 — VPS 자격증명으로 일반 사용자 API 접근 금지."""
+    _patch_db(monkeypatch, tmp_path)
+    c = s.app.test_client()
+    assert c.get("/api/mail-subscriptions", headers=_h("agent")).status_code == 403
+    assert c.get("/api/msd/pipeline", headers=_h("agent")).status_code == 403
+    assert c.get("/api/auth/me", headers=_h("agent")).status_code == 403
+    assert c.get("/api/agent/tasks", headers=_h("agent")).status_code == 200
+    assert c.get("/api/agent/tasks", headers=_h("user")).status_code == 403
+    assert c.get("/api/mail-subscriptions", headers=_h("user", "me@msd.com")).status_code == 200
+    assert c.get("/api/mail-subscriptions", headers=_h("admin", "admin@msd.com")).status_code == 200
+    assert c.get("/api/agent/tasks", headers=_h("admin", "admin@msd.com")).status_code == 200
