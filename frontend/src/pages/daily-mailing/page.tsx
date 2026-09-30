@@ -582,7 +582,7 @@ export default function DailyMailingPage() {
                 <div className={`flex items-center gap-1 rounded-xl p-1 ${tabBg}`}>
                   {(['Daily', 'Weekly'] as const).map(s => (
                     <button type="button" key={s} onClick={() => setSchedule(s)}
-                      className={`px-5 py-2 rounded-lg text-sm font-semibold cursor-pointer whitespace-nowrap transition-all ${schedule === s ? tabActive : tabInactive}`}>{s}</button>
+                      className={`px-5 py-2 rounded-lg text-sm font-semibold cursor-pointer whitespace-nowrap transition-all ${schedule === s ? tabActive : tabInactive}`}>{s === 'Daily' ? 'Daily (평일)' : s}</button>
                   ))}
                 </div>
                 {schedule === 'Weekly' && (
@@ -605,10 +605,11 @@ export default function DailyMailingPage() {
               </div>
               <div className={`mt-4 flex items-center gap-2 rounded-xl px-4 py-3 border ${previewBg}`}>
                 <span className={`w-4 h-4 flex items-center justify-center ${accentColor}`}><i className="ri-information-line text-sm"></i></span>
-                <p className={`${textSub} text-xs`}>{(schedule === 'Daily' ? `매일 ${scheduleTime}` : `매주 ${weekDay} ${scheduleTime}`)
+                <p className={`${textSub} text-xs`}>{(schedule === 'Daily' ? `평일(월–금) 매일 ${scheduleTime}` : `매주 ${weekDay} ${scheduleTime}`)
                   + (deliveryMode === 'approval'
                     ? '에 서버가 브리핑을 생성합니다. 관리자가 승인하면 발송됩니다.'
-                    : '에 서버가 브리핑을 생성해 품질 게이트 통과 시 바로 발송합니다.')}</p>
+                    : '에 서버가 브리핑을 생성해 품질 게이트 통과 시 바로 발송합니다.')
+                  + (schedule === 'Daily' ? ' 토·일은 발송하지 않으며, 월요일 브리핑은 주말 뉴스(최근 72시간)를 함께 다룹니다.' : '')}</p>
               </div>
               <div className="mt-4 flex flex-wrap items-center gap-6">
                 <div className="flex items-center gap-2">
@@ -718,7 +719,7 @@ export default function DailyMailingPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${setting.schedule === 'Daily' ? scheduleDaily : scheduleWeekly}`}>
-                      {setting.schedule}
+                      {setting.schedule === 'Daily' ? '평일' : setting.schedule}
                       {setting.schedule === 'Weekly' && setting.weekDay ? ` ${setting.weekDay.slice(0, 3)}` : ''} {setting.time}
                     </span>
                     <button onClick={() => startEdit(setting)}

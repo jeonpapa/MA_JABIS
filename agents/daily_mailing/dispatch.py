@@ -1,6 +1,7 @@
 """Daily Mailing 발송 오케스트레이션 — 판정·생성·승인·발송·재시도·테스트·헬스체크.
 
 설계: docs/superpowers/specs/2026-09-18-daily-mailing-service-design.md §4·§6·§8.
+'Daily' 는 평일(월–금)만 발송하고, 월요일 run 은 lookback 72h 로 주말 뉴스를 덮는다 (schedule.py).
 콘텐츠 생성은 engine.generate_run(슬라이스 A)을 DispatchDeps.generate 로 주입받는다.
 상태: pending_approval → (승인) → sending → sent / send_failed(→재시도 최대 3회→held)
       ready_to_send(자동) → sending → sent | no_news_sent ; held / error / expired
@@ -29,7 +30,7 @@ from .run_store import (
     record_error_run,
     update_run,
 )
-from .schedule import KST, is_due
+from .schedule import KST, is_due, lookback_hours_for
 from .storage import DEFAULT_DB_PATH, connect, ensure_daily_mailing_tables, persist_daily_mailing_run
 from .subscription_bridge import ensure_delivery_columns, subscription_to_scope
 
@@ -204,6 +205,13 @@ def recover_stale_sending(deps: DispatchDeps, *, older_than_minutes: int = STALE
     return recovered
 
 
+def _build_scope(sub: dict, now: datetime):
+    """구독 → DashboardScope. lookback_hours 는 요일 규칙(월요일 72h)을 적용해 디스패처가 결정한다."""
+    scope = subscription_to_scope(sub)
+    scope["lookback_hours"] = lookback_hours_for(sub, now)
+    return scope_from_dict(scope)
+
+
 def _top_news(deps: DispatchDeps, run_date: str) -> list:
     if deps.load_top_ma_news is None:
         return []
@@ -372,7 +380,7 @@ def dispatch_due_subscriptions(deps: DispatchDeps) -> dict:
         try:
             if top is None:
                 top = _top_news(deps, run_date)
-            scope = scope_from_dict(subscription_to_scope(sub))
+            scope = _build_scope(sub, now)
             result = deps.generate(scope, name=sub["name"], now=now, top_ma_news=top, is_test=False)
         except Exception as exc:
             logger.exception("[daily_mailing] 구독 %s 생성 실패", sub["id"])
@@ -435,7 +443,7 @@ def send_test(subscription_id: int, *, requester_email: str, deps: DispatchDeps)
         raise LookupError(subscription_id)
     now = _now(deps)
     try:
-        scope = scope_from_dict(subscription_to_scope(sub))
+        scope = _build_scope(sub, now)
         result = deps.generate(scope, name=sub["name"], now=now,
                                top_ma_news=_top_news(deps, now.date().isoformat()), is_test=True)
     except Exception as exc:

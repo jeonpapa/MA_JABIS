@@ -51,6 +51,7 @@ def _db(tmp_path, *subs):
 class Recorder:
     def __init__(self, results=None, raise_on_generate=False, send_ok=True):
         self.generated = []
+        self.scopes = []
         self.sent = []
         self.results = results or {}
         self.raise_on_generate = raise_on_generate
@@ -60,9 +61,11 @@ class Recorder:
         if self.raise_on_generate:
             raise RuntimeError("engine down")
         self.generated.append((scope.subscription_id, is_test))
+        self.scopes.append(scope)
         status = self.results.get(scope.subscription_id, "ready")
         run_id = f"dm_{scope.subscription_id}_{now:%H%M%S}" + ("_test" if is_test else "")
         payload = {"run_id": run_id, "generated_at": now.isoformat(), "keywords": list(scope.brands),
+                   "lookback_hours": scope.lookback_hours,   # 엔진 payload 계약과 동일 (engine.generate_run)
                    "subscription_id": int(scope.subscription_id), "recipients": list(scope.recipients),
                    "status": status, "run_date": now.date().isoformat(), "is_test": is_test,
                    "email_subject": ("[TEST] " if is_test else "") + f"[MA Daily] {name}",
@@ -490,3 +493,22 @@ def test_production_top_news_success_is_cached_and_round_trips_brief_items(tmp_p
     assert [i.title for i in top("2026-09-18")] == ["약평위 결과"]
     assert calls["n"] == 1
     assert top("2026-09-18", retry_failed=True) and calls["n"] == 1   # 성공 캐시는 retry_failed 로도 다시 돌지 않는다
+
+
+def test_daily_is_weekdays_only_and_monday_lookback_is_72h(tmp_path):
+    """제품 결정: Daily = 평일. 토·일은 생성 없음(헬스체크도 조용). 월요일은 스콥 lookback_hours=72, 다른 평일은 24."""
+    db = _db(tmp_path, {"id": 19})
+    rec = Recorder()
+    sat = datetime(2026, 9, 19, 8, 10, tzinfo=KST)
+    sun = sat + timedelta(days=1)
+    mon = sat + timedelta(days=2)
+    assert dispatch_due_subscriptions(_deps(db, rec, now=sat))["generated"] == []
+    assert dispatch_due_subscriptions(_deps(db, rec, now=sun))["generated"] == []
+    assert rec.generated == [] and health_check(_deps(db, rec, now=sun))["problems"] == []
+    dispatch_due_subscriptions(_deps(db, rec, now=mon))
+    assert [(s.subscription_id, s.lookback_hours) for s in rec.scopes] == [("19", 72)]
+    assert find_regular_run(19, "2026-09-21", db_path=db)["lookback_hours"] == 72
+    dispatch_due_subscriptions(_deps(db, rec))                       # 금요일 — 구독값(24) 그대로
+    assert rec.scopes[-1].lookback_hours == 24
+    send_test(19, requester_email="me@msd.com", deps=_deps(db, rec, now=mon))   # 테스트 메일도 같은 규칙
+    assert rec.scopes[-1].lookback_hours == 72
