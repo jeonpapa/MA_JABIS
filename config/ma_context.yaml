@@ -1,0 +1,214 @@
+# Daily Mailing MA 컨텍스트 팩 — 한국MSD 자산 + 계열별 직접 경쟁약 (큐레이션).
+# 파서: agents/daily_mailing/ma_context.py (PyYAML 없음 — 아래 형태만: 'key:' + '- k: v' 항목, [a, b] 인라인 리스트, "따옴표", # 주석).
+#
+# 항목 키
+#   brand_kr(필수) · brand_en · ingredient(한글 성분) · inn · class · company · aliases · note
+#   price_match      drug_prices.product_name_kr 접두 (기본 brand_kr) — 다중 SKU 는 비교 단위 SKU 로 고정
+#   indication_slug  indications_master.product (기본 brand_en 소문자)
+#   enrichment_name  drug_enrichment.normalized_name 접두 (기본 price_match)
+#   rsa / rsa_type   큐레이션 RSA 여부 — DB(drug_enrichment.is_rsa) 가 NULL 일 때만 사용. 확인 전에는 쓰지 않는다.
+#   watch_for        (경쟁약) 압박하는 MSD 자산 brand_kr 목록 — 등록된 자산이어야 로드된다
+#
+# 출처: scope_validation.MSD_BRANDS · competitor_brand(anchor) · product_alias_map · drug_prices 2026.07.01 · CLAUDE.md
+# 확신 없는 항목은 needs_review 에만 둔다 (팩에 들어가지 않음). 사용자 확인 후 msd_assets/competitors 로 옮긴다.
+version: 1
+
+msd_assets:
+  - brand_kr: 키트루다
+    brand_en: Keytruda
+    ingredient: 펨브롤리주맙
+    inn: pembrolizumab
+    class: PD-(L)1
+    aliases: [키트루다주, MK-3475]
+    price_match: 키트루다주
+    indication_slug: keytruda
+    enrichment_name: 키트루다주
+    note: "항 PD-1 면역항암제 · 국내 다수 적응증(폐암·흑색종·두경부암·요로상피암 등)"
+  - brand_kr: 가다실
+    brand_en: Gardasil
+    ingredient: 사람유두종바이러스 9가 백신
+    inn: human_papillomavirus_vaccine
+    class: HPV 백신
+    aliases: [가다실9, "Gardasil 9", 9vHPV]
+    indication_slug: gardasil
+    note: "백신 — HIRA 약가표 미등재(국가예방접종·자비 접종 축)"
+  - brand_kr: 린파자
+    brand_en: Lynparza
+    ingredient: 올라파립
+    inn: olaparib
+    class: PARP 저해제
+    aliases: [린파자정]
+    price_match: 린파자정
+    indication_slug: lynparza
+    enrichment_name: 린파자정
+    note: "AZ·MSD 공동 판매 (HIRA 등재사 한국아스트라제네카)"
+  - brand_kr: 웰리렉
+    brand_en: Welireg
+    ingredient: 벨주티판
+    inn: belzutifan
+    class: HIF-2α 저해제
+    aliases: [웰리렉정, MK-6482]
+    indication_slug: welireg
+    note: "VHL·신세포암 — 국내 약가 미등재"
+  - brand_kr: 브리디온
+    brand_en: Bridion
+    ingredient: 수가마덱스
+    inn: sugammadex
+    class: 근이완 역전제
+    aliases: [브리디온주]
+  - brand_kr: 에멘드
+    brand_en: Emend
+    ingredient: 아프레피탄트
+    inn: aprepitant
+    class: NK1 길항제(항구토)
+    aliases: [에멘드캡슐, 에멘드IV, 포스아프레피탄트, fosaprepitant]
+    price_match: 에멘드캡슐125
+    enrichment_name: 에멘드캡슐
+  - brand_kr: 윈레브에어
+    brand_en: Winrevair
+    ingredient: 소타터셉트
+    inn: sotatercept
+    class: PAH(폐동맥고혈압) 액티빈 신호 억제제
+    aliases: [MK-7962]
+    note: "국내 약가 미등재 — 급여 등재 추진 (competitor_brand kind=msd_asset)"
+  - brand_kr: 박스뉴반스
+    brand_en: Vaxneuvance
+    ingredient: 15가 폐렴구균 단백접합백신
+    inn: pcv15
+    class: 폐렴구균 백신(PCV)
+    aliases: [PCV15, V114]
+    note: "백신 — HIRA 약가표 미등재"
+  - brand_kr: 엔플론시아
+    brand_en: Enflonsia
+    ingredient: 클레스로비맙
+    inn: clesrovimab
+    class: RSV 예방 단클론항체(영아)
+    aliases: [MK-1654]
+  - brand_kr: 저박사
+    brand_en: Zerbaxa
+    ingredient: 세프톨로잔/타조박탐
+    inn: ceftolozane_tazobactam
+    class: 항생제(세팔로스포린 복합)
+    aliases: [저박사주]
+    price_match: 저박사주
+  - brand_kr: 프레비미스
+    brand_en: Prevymis
+    ingredient: 레테르모비르
+    inn: letermovir
+    class: CMV 예방 항바이러스제
+    aliases: [프리비미스, MK-8228]
+    price_match: 프레비미스정240
+    indication_slug: prevymis
+
+competitors:
+  # ---- PD-(L)1: competitor_brand anchor '키트루다 / PD-(L)1' ----
+  - brand_kr: 테빔브라
+    brand_en: Tevimbra
+    ingredient: 티슬렐리주맙
+    inn: tislelizumab
+    class: PD-(L)1
+    company: BeiGene Korea
+    watch_for: [키트루다]
+    price_match: 테빔브라주
+    enrichment_name: 테빔브라주100mg
+  - brand_kr: 옵디보
+    brand_en: Opdivo
+    ingredient: 니볼루맙
+    inn: nivolumab
+    class: PD-(L)1
+    company: BMS/Ono Korea
+    watch_for: [키트루다]
+    aliases: [옵디보주]
+    price_match: 옵디보주100mg
+    enrichment_name: 옵디보주100mg
+  - brand_kr: 티쎈트릭
+    brand_en: Tecentriq
+    ingredient: 아테졸리주맙
+    inn: atezolizumab
+    class: PD-(L)1
+    company: Roche Korea
+    watch_for: [키트루다]
+    aliases: [테쎈트릭, 티쎈트릭주]
+    price_match: 티쎈트릭주
+    enrichment_name: 티쎈트릭주
+  - brand_kr: 임핀지
+    brand_en: Imfinzi
+    ingredient: 더발루맙
+    inn: durvalumab
+    class: PD-(L)1
+    company: AstraZeneca Korea
+    watch_for: [키트루다]
+    aliases: [임핀지주]
+    price_match: "임핀지주(더발루맙)_(0.5g"
+    enrichment_name: 임핀지주
+  - brand_kr: 바벤시오
+    brand_en: Bavencio
+    ingredient: 아벨루맙
+    inn: avelumab
+    class: PD-(L)1
+    company: Merck/Pfizer Korea
+    watch_for: [키트루다]
+    price_match: 바벤시오주
+  - brand_kr: 리브타요
+    brand_en: Libtayo
+    ingredient: 세미플리맙
+    inn: cemiplimab
+    class: PD-(L)1
+    company: Sanofi Korea
+    watch_for: [키트루다]
+  # ---- EGFR 폐암: competitor_brand anchor '키트루다 / EGFR 폐암' ----
+  - brand_kr: 타그리소
+    brand_en: Tagrisso
+    ingredient: 오시머티닙
+    inn: osimertinib
+    class: EGFR TKI(NSCLC)
+    company: AstraZeneca Korea
+    watch_for: [키트루다]
+    aliases: [타그리소정]
+    price_match: 타그리소정80
+  # ---- PARP: 린파자 직접 경쟁 ----
+  - brand_kr: 제줄라
+    brand_en: Zejula
+    ingredient: 니라파립
+    inn: niraparib
+    class: PARP 저해제
+    company: Takeda Korea
+    watch_for: [린파자]
+    price_match: 제줄라정
+
+# 확신 없는 항목 — 사용자 확인 전에는 팩에 넣지 않는다. 확인되면 위로 옮긴다.
+needs_review:
+  - brand_kr: 키트루다
+    question: "RSA 대상 여부 — drug_enrichment.is_rsa 가 NULL(미확인). 확인되면 키트루다 항목에 'rsa: true' + 'rsa_type' 추가"
+  - brand_kr: 렌비마
+    question: "MSD 공동 판매 자산으로 포트폴리오에 넣을지 (HIRA 등재사 한국에자이, indications_master 11건, home_brand seed)"
+  - brand_kr: 자누비아
+    question: "2026.07 HIRA 등재사가 (주)종근당 — MSD 자산에서 제외했음. 유지(제외) 확인"
+  - brand_kr: 스테글라트로
+    question: "SGLT2 (한국엠에스디 등재) — 구독에 나오지 않아 제외했음. 포함 여부"
+  - brand_kr: 아토젯
+    question: "오가논 분사 이후 소속 불명 — product_alias_map 에는 있음. 포함 여부"
+  - brand_kr: 브리디온
+    question: "drug_prices 에 행 없음(브리디온·sugammadex 검색 0). HIRA 등재명 확인 + 수가마덱스 제네릭 경쟁을 경쟁약으로 넣을지"
+  - brand_kr: 여보이
+    question: "옵디보 병용(CTLA-4) — PD-(L)1 경쟁 계열에 포함할지 (competitor_brand 에 없음)"
+  - brand_kr: 파드셉
+    question: "요로상피암 1차 키트루다 병용 파트너(EV+P) — 경쟁이 아니라 병용. 어느 자산에 어떻게 연결할지"
+  - brand_kr: 빌로이
+    question: "위암 CLDN18.2 (competitor_brand anchor 'Others') — 키트루다 위암 1차 구도의 경쟁으로 볼지"
+  - brand_kr: 엔허투·트로델비·다트로웨이
+    question: "ADC 계열(competitor_brand anchor 'ADC') — 어느 MSD 자산(사크-TMT 파이프라인·키트루다 병용/경쟁)의 직접 경쟁인지"
+  - brand_kr: 탈제나
+    question: "PARP (탈라조파립) — 린파자 경쟁 계열에 포함할지 (drug_prices 에 행 없음)"
+  - brand_kr: 서바릭스
+    question: "HPV 2가 백신 — 가다실 경쟁으로 볼지"
+  - brand_kr: 프리베나
+    question: "PCV13/20 — 박스뉴반스 경쟁으로 볼지"
+  - brand_kr: 베이포투스
+    question: "RSV 예방 nirsevimab — 엔플론시아 경쟁으로 볼지"
+  - brand_kr: 업트라비·옵서미트
+    question: "PAH 기존 치료제 — 윈레브에어 경쟁 범위(같은 기전 아님)"
+  - brand_kr: 아킨지오
+    question: "NK1 복합(네투피탄트/팔로노세트론) — 에멘드 경쟁으로 볼지"
+  - brand_kr: 카보메틱스
+    question: "신세포암 TKI — 웰리렉(RCC) 경쟁 범위"
