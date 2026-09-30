@@ -47,6 +47,17 @@ def setup_logging(config: dict):
 logger = logging.getLogger(__name__)
 
 
+def _agent_record_health_problems(report: dict) -> None:
+    """헬스 문제를 에이전트 작업 원장에 남긴다 (실패해도 잡을 막지 않는다)."""
+    from agents.agent_tasks.signals import record_health_problems
+    record_health_problems(report)
+
+
+def _agent_record_job_failure(job_id: str, error: str) -> None:
+    from agents.agent_tasks.signals import record_job_failure
+    record_job_failure(job_id, error)
+
+
 # ── 파이프라인 ──────────────────────────────────────────────────────────────
 
 def load_config() -> dict:
@@ -77,6 +88,11 @@ async def run_pipeline():
             # 게시판 로딩 실패 등 전체 실패 — silent no-op 이 아니라 ERROR 로 남긴다
             logger.error("국내 약가 catch-up 실패 — 적재 0건, 오류 %s (1~7일 일일 재시도)",
                          result["errors"])
+            try:
+                _agent_record_job_failure("domestic_price_pipeline",
+                                          "; ".join(str(e) for e in result["errors"])[:300])
+            except Exception as signal_err:
+                logger.warning("국내 약가 실패 신호 기록 실패: %s", signal_err)
         elif result.get("errors"):
             logger.warning("catch-up 일부 오류 — 다음 실행 시 재시도(멱등): %s", result["errors"])
     except Exception as e:
@@ -533,6 +549,10 @@ def daily_mailing_health_job():
             logger.info("daily mailing health OK (%s)", res["run_date"])
         else:
             logger.error("daily mailing health 문제 %d건: %s", len(res["problems"]), res["problems"])
+            try:
+                _agent_record_health_problems(res)
+            except Exception as signal_err:
+                logger.warning("daily mailing health 신호 기록 실패: %s", signal_err)
     except Exception as e:
         logger.error("daily mailing health 실패: %s", e, exc_info=True)
 
