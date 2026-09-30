@@ -414,3 +414,16 @@ def test_locked_db_while_recording_generate_error_does_not_abort_other_subscript
     summary = dispatch_due_subscriptions(deps)
     assert calls["n"] == 1 and summary["errors"] == [19]
     assert find_regular_run(20, "2026-09-18", db_path=db)["delivery_status"] == "pending_approval"
+
+
+def test_previous_day_send_failed_is_expired_not_sent_late(tmp_path):
+    """전날 send_failed(attempts 1) 가 오늘 tick 에서 재시도되어 하루 늦게 나가지 않는다 — stale pending 처럼 expired."""
+    db = _db(tmp_path, {"id": 19, "mode": "auto"})
+    _persist_run(db, "dm_19_yesterday", delivery="send_failed", attempts=1, run_date="2026-09-17",
+                 generated_at=FRI_0810 - timedelta(days=1))
+    rec = Recorder()
+    summary = dispatch_due_subscriptions(_deps(db, rec))
+    assert summary["expired"] == 1 and summary["retried"] == 0
+    assert get_run("dm_19_yesterday", db_path=db)["delivery_status"] == "expired"
+    assert rec.sent == [(["r@msd.com"], "[MA Daily] 파드셉")]        # 오늘 정규 run 만 발송
+    assert find_regular_run(19, "2026-09-18", db_path=db)["delivery_status"] == "sent"

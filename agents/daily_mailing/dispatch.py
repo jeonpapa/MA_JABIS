@@ -304,15 +304,19 @@ def _route_new_run(result, sub: dict, deps: DispatchDeps) -> dict | None:
 
 
 def retry_failed_sends(deps: DispatchDeps) -> int:
-    """send_failed·ready_to_send 재시도 — 마지막 선점(claimed_at) 후 RETRY_MIN_INTERVAL_MINUTES 이상 지난 run 만.
+    """오늘(run_date) send_failed·ready_to_send 재시도 — 마지막 선점(claimed_at) 후 RETRY_MIN_INTERVAL_MINUTES 이상 지난 run 만.
+
+    전날 실패분은 재시도하지 않는다 (dispatch 가 expire_pending_before 로 expired 처리 — 며칠 늦은 발송 방지).
 
     실패 직후 같은 tick 에서 바로 재시도하지 않고 주기 간격을 둔다 (일시 장애 회복 여유).
     claimed_at 이 없는 행(컬럼 도입 전, 또는 persist 직후·선점 전에 프로세스가 죽어 남은 ready_to_send 고아)은
     선점된 적이 없으므로 바로 재시도한다 — 발송 시도 0회라 이중 발송 위험이 없다.
     """
-    cutoff = _now(deps) - timedelta(minutes=RETRY_MIN_INTERVAL_MINUTES)
+    now = _now(deps)
+    cutoff = now - timedelta(minutes=RETRY_MIN_INTERVAL_MINUTES)
     retried = 0
-    for run in list_failed_sends(db_path=deps.db_path, max_attempts=MAX_SEND_ATTEMPTS):
+    for run in list_failed_sends(db_path=deps.db_path, max_attempts=MAX_SEND_ATTEMPTS,
+                                 run_date=now.date().isoformat()):
         claimed = _parse_ts(run.get("claimed_at"))
         if claimed is not None and claimed > cutoff:
             continue  # 직전 tick 에서 막 실패 — 다음 주기로

@@ -106,3 +106,21 @@ def test_failed_list_includes_orphaned_ready_to_send_and_excludes_tests(tmp_path
     _persist(db, "t_orphan_test", sub=22, is_test=True, delivery="ready_to_send")
     _persist(db, "t_failed_test", sub=23, is_test=True, delivery="send_failed")
     assert {r["run_id"] for r in list_failed_sends(db_path=db)} == {"orphan", "failed"}
+
+
+def test_failed_list_is_bounded_to_run_date_and_stale_retryables_expire(tmp_path):
+    """장애 복구 후 전날 send_failed 가 며칠 늦게 나가면 안 된다 — 오늘 run_date 만 재시도, 지난 것은 expired 로 닫는다."""
+    db = tmp_path / "d.db"
+    _persist(db, "y_failed", run_date="2026-09-17", delivery="send_failed")
+    _persist(db, "y_orphan", sub=20, run_date="2026-09-17", delivery="ready_to_send")
+    _persist(db, "y_sent", sub=21, run_date="2026-09-17", delivery="sent")
+    _persist(db, "t_failed", sub=22, delivery="send_failed")
+    update_run("y_failed", db_path=db, delivery_error="token expired")
+    assert {r["run_id"] for r in list_failed_sends(db_path=db)} == {"y_failed", "y_orphan", "t_failed"}
+    assert [r["run_id"] for r in list_failed_sends(db_path=db, run_date="2026-09-18")] == ["t_failed"]
+    assert expire_pending_before("2026-09-18", db_path=db) == 2
+    assert get_run("y_failed", db_path=db)["delivery_status"] == "expired"
+    assert get_run("y_failed", db_path=db)["delivery_error"] == "token expired"   # 사유는 보존
+    assert get_run("y_orphan", db_path=db)["delivery_status"] == "expired"
+    assert get_run("y_sent", db_path=db)["delivery_status"] == "sent"
+    assert get_run("t_failed", db_path=db)["delivery_status"] == "send_failed"
