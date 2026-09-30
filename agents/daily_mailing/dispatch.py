@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -29,7 +30,7 @@ from .run_store import (
     update_run,
 )
 from .schedule import KST, is_due
-from .storage import DEFAULT_DB_PATH, ensure_daily_mailing_tables, persist_daily_mailing_run
+from .storage import DEFAULT_DB_PATH, connect, ensure_daily_mailing_tables, persist_daily_mailing_run
 from .subscription_bridge import ensure_delivery_columns, subscription_to_scope
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,10 @@ STALE_SENDING_MINUTES = 15
 STALE_SENDING_ERROR = "발송 중 프로세스 중단 — 실제 발송 여부 확인 필요"
 STUCK_READY_MINUTES = 5   # ready_to_send 가 이만큼 지나도 선점되지 않았으면 헬스체크 문제로 표시 (재시도 대상)
 STUCK_READY_DETAIL = "발송 대기(ready_to_send) 정체 — 선점 전 중단, 다음 주기 재시도 대상"
+# 발송 성공 '후' bookkeeping(update_run·last_sent_at) 이 database-is-locked 로 실패하면 sent_at·gmail_message_id 를
+# 잃고 run 이 sending → held(프로세스 중단 오인) 로 빠진다. 짧게 재시도하고, 그래도 안 되면 복구 가능한 ERROR 로그.
+DB_WRITE_RETRY_ATTEMPTS = 3
+DB_WRITE_RETRY_BACKOFF_SECONDS = (0.5, 1.0)
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROBLEM_STATUSES = ("held", "send_failed", "error", "expired")
 
@@ -60,6 +65,7 @@ class DispatchDeps:
     send: Callable[..., dict] | None = None             # (*, recipients, subject, body_html) -> dict
     now: Callable[[], datetime] = _default_now
     gmail_ready: Callable[[], bool] = lambda: False
+    sleep: Callable[[float], None] = time.sleep          # DB 쓰기 재시도 백오프 (테스트에서 주입)
 
     @classmethod
     def production(cls, db_path: str | Path = DEFAULT_DB_PATH) -> "DispatchDeps":
@@ -143,7 +149,7 @@ def _sub_row_to_dict(row: sqlite3.Row) -> dict:
 
 
 def load_subscriptions(db_path: str | Path, *, active_only: bool = True) -> list[dict]:
-    with sqlite3.connect(str(db_path)) as conn:
+    with connect(db_path) as conn:
         ensure_delivery_columns(conn)
         conn.row_factory = sqlite3.Row
         sql = "SELECT * FROM mail_subscription" + (" WHERE active = 1" if active_only else "") + " ORDER BY id"
@@ -202,12 +208,35 @@ def _persist(result, deps: DispatchDeps, *, delivery_status: str, approval_statu
     return get_run(result.run_id, db_path=deps.db_path)
 
 
-def _mark_last_sent(subscription_id: int, sent_at: str, db_path: str | Path) -> None:
+def _retry_db_write(write: Callable[[], None], *, deps: DispatchDeps, describe: str) -> bool:
+    """database-is-locked(OperationalError) 에 한해 DB_WRITE_RETRY_ATTEMPTS 회 재시도. 최종 실패는 ERROR 로그 + False.
+
+    발송이 이미 끝난 뒤의 bookkeeping 에 쓴다 — 예외를 전파하면 API 500/스케줄러 중단으로 이어지지만
+    메일은 이미 나갔으므로, 운영자가 로그의 식별자(run_id·gmail_message_id)로 수동 반영할 수 있게 남긴다.
+    """
+    for attempt in range(1, DB_WRITE_RETRY_ATTEMPTS + 1):
+        try:
+            write()
+            return True
+        except sqlite3.OperationalError as exc:
+            if attempt >= DB_WRITE_RETRY_ATTEMPTS:
+                logger.error("[daily_mailing] DB 쓰기 %d회 모두 실패 — %s: %s", attempt, describe, exc)
+                return False
+            backoff = DB_WRITE_RETRY_BACKOFF_SECONDS[min(attempt - 1, len(DB_WRITE_RETRY_BACKOFF_SECONDS) - 1)]
+            logger.warning("[daily_mailing] DB 잠김 (%d/%d) — %.1fs 후 재시도: %s",
+                           attempt, DB_WRITE_RETRY_ATTEMPTS, backoff, describe)
+            deps.sleep(backoff)
+    return False
+
+
+def _mark_last_sent(subscription_id: int, sent_at: str, deps: DispatchDeps) -> None:
     """발송 성공 후 표시용 bookkeeping — 실패해도 이미 발송된 run 상태(sent)를 되돌리지 않는다."""
-    try:
-        with sqlite3.connect(str(db_path)) as conn:
+    def write() -> None:
+        with connect(deps.db_path) as conn:
             conn.execute("UPDATE mail_subscription SET last_sent_at=? WHERE id=?", (sent_at, subscription_id))
             conn.commit()
+    try:
+        _retry_db_write(write, deps=deps, describe=f"구독 {subscription_id} last_sent_at={sent_at} 갱신 (발송은 완료)")
     except sqlite3.Error as exc:
         logger.warning("[daily_mailing] 구독 %s last_sent_at 갱신 실패 (발송은 완료): %s", subscription_id, exc)
 
@@ -237,16 +266,24 @@ def _send_claimed(run_id: str, *, deps: DispatchDeps, from_statuses: tuple[str, 
         res = {"ok": False, "sent": False, "message": f"{type(exc).__name__}: {exc}"}
     if res.get("ok") and res.get("sent"):
         sent_at = _now(deps).isoformat()
-        update_run(run_id, db_path=deps.db_path,
-                   delivery_status="no_news_sent" if run.get("status") == "no_news" else "sent",
-                   sent_at=sent_at, gmail_message_id=res.get("gmail_message_id"),
-                   send_attempts=attempts, delivery_error=None)
+        message_id = res.get("gmail_message_id")
+        final_status = "no_news_sent" if run.get("status") == "no_news" else "sent"
+        # 메일은 이미 나갔다 — 여기서 예외가 새면 run 이 'sending' 에 남아 나중에 held(프로세스 중단)로 오인된다
+        _retry_db_write(
+            lambda: update_run(run_id, db_path=deps.db_path, delivery_status=final_status, sent_at=sent_at,
+                               gmail_message_id=message_id, send_attempts=attempts, delivery_error=None),
+            deps=deps,
+            describe=(f"run {run_id} 발송 완료 기록 실패 — 수동 반영 필요: delivery_status={final_status} "
+                      f"sent_at={sent_at} gmail_message_id={message_id} send_attempts={attempts}"))
         if not run.get("is_test") and run.get("subscription_id") is not None:
-            _mark_last_sent(run["subscription_id"], sent_at, deps.db_path)
+            _mark_last_sent(run["subscription_id"], sent_at, deps)
     else:
-        update_run(run_id, db_path=deps.db_path,
-                   delivery_status="send_failed" if attempts < MAX_SEND_ATTEMPTS else "held",
-                   send_attempts=attempts, delivery_error=str(res.get("message") or "send failed")[:500])
+        failed_status = "send_failed" if attempts < MAX_SEND_ATTEMPTS else "held"
+        error = str(res.get("message") or "send failed")[:500]
+        _retry_db_write(
+            lambda: update_run(run_id, db_path=deps.db_path, delivery_status=failed_status,
+                               send_attempts=attempts, delivery_error=error),
+            deps=deps, describe=f"run {run_id} 발송 실패 기록 (attempt {attempts}: {error})")
     return get_run(run_id, db_path=deps.db_path), True
 
 
@@ -279,9 +316,23 @@ def retry_failed_sends(deps: DispatchDeps) -> int:
         claimed = _parse_ts(run.get("claimed_at"))
         if claimed is not None and claimed > cutoff:
             continue  # 직전 tick 에서 막 실패 — 다음 주기로
-        send_run(run["run_id"], deps=deps, from_statuses=RETRYABLE_SEND_STATUSES)
+        try:
+            send_run(run["run_id"], deps=deps, from_statuses=RETRYABLE_SEND_STATUSES)
+        except sqlite3.OperationalError as exc:
+            logger.error("[daily_mailing] run %s 재시도 중 DB 잠김 — 다음 주기로: %s", run["run_id"], exc)
+            continue
         retried += 1
     return retried
+
+
+def _record_generate_error(sub_id: int, run_date: str, exc: BaseException, *, now: datetime,
+                           deps: DispatchDeps) -> None:
+    """생성 예외를 그날의 error run 으로 기록 (설계 §6). DB 잠김이면 기록을 포기하고 다른 구독 처리를 계속한다."""
+    try:
+        record_error_run(subscription_id=sub_id, run_date=run_date, error=f"{type(exc).__name__}: {exc}",
+                         now=now, db_path=deps.db_path)
+    except sqlite3.OperationalError as db_exc:
+        logger.error("[daily_mailing] 구독 %s 오류 run 기록 실패 (DB 잠김) — 다음 주기에 재생성 시도: %s", sub_id, db_exc)
 
 
 def dispatch_due_subscriptions(deps: DispatchDeps) -> dict:
@@ -292,7 +343,7 @@ def dispatch_due_subscriptions(deps: DispatchDeps) -> dict:
     summary: dict[str, Any] = {"run_date": run_date,
                                "recovered": recover_stale_sending(deps),
                                "expired": expire_pending_before(run_date, db_path=deps.db_path),
-                               "generated": [], "skipped": 0, "errors": []}
+                               "generated": [], "skipped": 0, "errors": [], "deferred": []}
     top: list | None = None
     for sub in load_subscriptions(deps.db_path):
         if not is_due(sub, now):
@@ -305,11 +356,22 @@ def dispatch_due_subscriptions(deps: DispatchDeps) -> dict:
                 top = _top_news(deps, run_date)
             scope = scope_from_dict(subscription_to_scope(sub))
             result = deps.generate(scope, name=sub["name"], now=now, top_ma_news=top, is_test=False)
-            run = _route_new_run(result, sub, deps)
         except Exception as exc:
             logger.exception("[daily_mailing] 구독 %s 생성 실패", sub["id"])
-            record_error_run(subscription_id=sub["id"], run_date=run_date,
-                             error=f"{type(exc).__name__}: {exc}", now=now, db_path=deps.db_path)
+            _record_generate_error(sub["id"], run_date, exc, now=now, deps=deps)
+            summary["errors"].append(sub["id"])
+            continue
+        try:
+            run = _route_new_run(result, sub, deps)
+        except sqlite3.OperationalError as exc:
+            # 저장/선점 단계의 DB 잠김은 일시 장애 — 그날을 점유하는 error run 을 남기지 않고 다음 주기에 재시도
+            logger.error("[daily_mailing] 구독 %s run 저장 중 DB 잠김 — 이번 주기 건너뜀 (다음 주기 재시도): %s",
+                         sub["id"], exc)
+            summary["deferred"].append(sub["id"])
+            continue
+        except Exception as exc:
+            logger.exception("[daily_mailing] 구독 %s run 저장/분기 실패", sub["id"])
+            _record_generate_error(sub["id"], run_date, exc, now=now, deps=deps)
             summary["errors"].append(sub["id"])
             continue
         summary["generated"].append({"subscription_id": sub["id"], "run_id": result.run_id,

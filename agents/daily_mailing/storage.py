@@ -19,6 +19,19 @@ from .writer import infer_ma_implication, infer_news_insight
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[2] / "data" / "db" / "drug_prices.db"
 RETENTION_DAYS = 183  # 약 6개월
+# 다른 스케줄러 잡(뉴스 크롤·약가 적재)이 같은 WAL DB 에 긴 트랜잭션을 잡는 동안 'database is locked' 로
+# 발송 후 bookkeeping 이 죽지 않도록 모든 daily-mailing 연결이 공유하는 busy timeout (sqlite 기본 5초).
+SQLITE_BUSY_TIMEOUT_SECONDS = 30.0
+
+
+def connect(db_path: str | Path, *, timeout: float = SQLITE_BUSY_TIMEOUT_SECONDS) -> sqlite3.Connection:
+    """daily-mailing 공용 sqlite 연결 — storage·run_store·dispatch·top_news 는 반드시 이 헬퍼를 쓴다.
+
+    `sqlite3.connect(timeout=...)` 는 잠금 대기 busy handler 를 건다. 직접 `sqlite3.connect(str(db))` 를
+    쓰면 기본 5초라 크롤 잡의 긴 쓰기 트랜잭션과 겹칠 때 OperationalError 가 난다
+    (tests/test_dm_storage_delivery.py 가 4개 모듈의 모든 연결에 timeout 이 걸리는지 검사한다).
+    """
+    return sqlite3.connect(str(db_path), timeout=timeout)
 
 
 class DuplicateRegularRunError(RuntimeError):
@@ -185,7 +198,7 @@ def _normalize_findings(value) -> list[dict]:
 
 
 def ensure_daily_mailing_tables(db_path: str | Path = DEFAULT_DB_PATH) -> None:
-    with sqlite3.connect(str(db_path)) as conn:
+    with connect(db_path) as conn:
         conn.executescript(SCHEMA_SQL)
         # Lightweight migrations for DBs created before Daily Mailing delivery fields.
         existing = {row[1] for row in conn.execute("PRAGMA table_info(daily_mailing_run)").fetchall()}
@@ -247,7 +260,7 @@ def purge_expired_daily_mailing_rows(db_path: str | Path = DEFAULT_DB_PATH, *, n
     ensure_daily_mailing_tables(db_path)
     now = now or _utc_now()
     cutoff = now.isoformat()
-    with sqlite3.connect(str(db_path)) as conn:
+    with connect(db_path) as conn:
         article_deleted = conn.execute(
             "DELETE FROM daily_mailing_article WHERE expires_at < ?", (cutoff,)
         ).rowcount
@@ -302,7 +315,7 @@ def persist_daily_mailing_run(
     run_date = payload.get("run_date")
     is_test = 1 if payload.get("is_test") else 0
 
-    with sqlite3.connect(str(db_path)) as conn:
+    with connect(db_path) as conn:
         if sub_id is not None and run_date and not is_test:
             clash = conn.execute(
                 "SELECT run_id FROM daily_mailing_run WHERE subscription_id=? AND run_date=? "
@@ -421,7 +434,7 @@ def load_latest_run_for_subscription(
     ``draft_items``/``keywords`` 키를 추가한다.
     """
     ensure_daily_mailing_tables(db_path)
-    with sqlite3.connect(str(db_path)) as conn:
+    with connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         row = None
         if subscription_id is not None:
@@ -449,7 +462,7 @@ def load_latest_run_for_subscription(
 def load_admin_kanban(db_path: str | Path = DEFAULT_DB_PATH, *, limit_runs: int = 20) -> dict:
     ensure_daily_mailing_tables(db_path)
     purge_expired_daily_mailing_rows(db_path)
-    with sqlite3.connect(str(db_path)) as conn:
+    with connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         runs = conn.execute(
             "SELECT * FROM daily_mailing_run ORDER BY generated_at DESC LIMIT ?", (limit_runs,)

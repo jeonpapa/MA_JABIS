@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -325,3 +326,91 @@ def test_health_flags_ready_to_send_stuck_over_five_minutes(tmp_path):
     problems = {(p["subscription_id"], p["problem"]) for p in health_check(_deps(db, Recorder()))["problems"]}
     assert (19, "ready_to_send") in problems
     assert all(p[0] != 20 for p in problems)   # 2분 전 생성 — 진행 중으로 본다
+
+
+def test_post_send_bookkeeping_retries_on_locked_db(tmp_path, monkeypatch):
+    """Gmail 발송 성공 후 update_run 이 'database is locked' 면 짧게 재시도 — 발송 결과(sent_at·message id)를 잃지 않는다."""
+    db = _db(tmp_path, {"id": 19, "mode": "auto"})
+    rec = Recorder()
+    sleeps: list[float] = []
+    deps = _deps(db, rec)
+    deps.sleep = sleeps.append
+    real_update = dispatch_mod.update_run
+    fails = {"left": 2}
+
+    def flaky_update(run_id, **kw):
+        if kw.get("delivery_status") == "sent" and fails["left"] > 0:
+            fails["left"] -= 1
+            raise sqlite3.OperationalError("database is locked")
+        return real_update(run_id, **kw)
+
+    monkeypatch.setattr(dispatch_mod, "update_run", flaky_update)
+    dispatch_due_subscriptions(deps)
+    run = find_regular_run(19, "2026-09-18", db_path=db)
+    assert (run["delivery_status"], run["gmail_message_id"], run["send_attempts"]) == ("sent", "m1", 1)
+    assert run["sent_at"]
+    assert len(sleeps) == 2 and all(s > 0 for s in sleeps)
+    assert len(rec.sent) == 1                                   # 재시도는 DB 쓰기만 — 재발송 없음
+    with sqlite3.connect(db) as c:
+        assert c.execute("SELECT last_sent_at FROM mail_subscription WHERE id=19").fetchone()[0]
+
+
+def test_post_send_bookkeeping_gives_up_with_recoverable_error_log(tmp_path, monkeypatch, caplog):
+    """3회 모두 실패하면 예외 대신 run_id + gmail_message_id 를 ERROR 로 남겨 운영자가 복구할 수 있게 한다."""
+    db = _db(tmp_path, {"id": 19, "mode": "auto"})
+    rec = Recorder()
+    deps = _deps(db, rec)
+    deps.sleep = lambda s: None
+    real_update = dispatch_mod.update_run
+
+    def locked_update(run_id, **kw):
+        if kw.get("delivery_status") == "sent":
+            raise sqlite3.OperationalError("database is locked")
+        return real_update(run_id, **kw)
+
+    monkeypatch.setattr(dispatch_mod, "update_run", locked_update)
+    with caplog.at_level(logging.ERROR, logger="agents.daily_mailing.dispatch"):
+        summary = dispatch_due_subscriptions(deps)
+    run = find_regular_run(19, "2026-09-18", db_path=db)
+    assert run["delivery_status"] == "sending" and len(rec.sent) == 1   # 예외 전파 없음, 재발송 없음
+    assert summary["generated"][0]["delivery_status"] == "sending"
+    msgs = [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR]
+    assert any(run["run_id"] in m and "m1" in m for m in msgs), msgs
+
+
+def test_locked_db_during_persist_skips_tick_without_error_run(tmp_path, monkeypatch):
+    """persist 단계의 database-is-locked 는 일시 장애 — 그날을 점유하는 error run 대신 로그만 남기고 다음 tick 에 재시도."""
+    db = _db(tmp_path, {"id": 19})
+    rec = Recorder()
+    real_persist = dispatch_mod.persist_daily_mailing_run
+    monkeypatch.setattr(dispatch_mod, "persist_daily_mailing_run",
+                        lambda *a, **k: (_ for _ in ()).throw(sqlite3.OperationalError("database is locked")))
+    summary = dispatch_due_subscriptions(_deps(db, rec))
+    assert summary["deferred"] == [19] and summary["errors"] == [] and summary["generated"] == []
+    assert find_regular_run(19, "2026-09-18", db_path=db) is None       # 슬롯 비어 있음
+    monkeypatch.setattr(dispatch_mod, "persist_daily_mailing_run", real_persist)
+    summary = dispatch_due_subscriptions(_deps(db, rec, now=FRI_0810 + timedelta(minutes=10)))
+    assert len(rec.generated) == 2 and summary["generated"][0]["delivery_status"] == "pending_approval"
+
+
+def test_locked_db_while_recording_generate_error_does_not_abort_other_subscriptions(tmp_path, monkeypatch):
+    db = _db(tmp_path, {"id": 19}, {"id": 20})
+    rec = Recorder()
+    calls = {"n": 0}
+    real_generate = rec.generate
+
+    def generate(scope, **kw):
+        if scope.subscription_id == "19":
+            raise RuntimeError("engine down")
+        return real_generate(scope, **kw)
+
+    def locked_record(**kw):
+        calls["n"] += 1
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(dispatch_mod, "record_error_run", locked_record)
+    deps = DispatchDeps(db_path=db, generate=generate, load_top_ma_news=lambda d: [], send=rec.send,
+                        now=lambda: FRI_0810, gmail_ready=lambda: True)
+    summary = dispatch_due_subscriptions(deps)
+    assert calls["n"] == 1 and summary["errors"] == [19]
+    assert find_regular_run(20, "2026-09-18", db_path=db)["delivery_status"] == "pending_approval"

@@ -10,7 +10,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from .storage import DEFAULT_DB_PATH, RETENTION_DAYS, ensure_daily_mailing_tables
+from .storage import DEFAULT_DB_PATH, RETENTION_DAYS, connect, ensure_daily_mailing_tables
 
 # 재시도 대상 상태: send_failed(발송 실패) + ready_to_send(persist 직후·선점 전 프로세스 중단 — 발송 시도 0회라 안전)
 RETRYABLE_SEND_STATUSES = ("send_failed", "ready_to_send")
@@ -23,14 +23,14 @@ UPDATABLE_FIELDS = frozenset({
 
 def _rows(db_path: str | Path, sql: str, params: tuple = ()) -> list[dict]:
     ensure_daily_mailing_tables(db_path)
-    with sqlite3.connect(str(db_path)) as conn:
+    with connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         return [dict(r) for r in conn.execute(sql, params).fetchall()]
 
 
 def _write(db_path: str | Path, sql: str, params: tuple) -> int:
     ensure_daily_mailing_tables(db_path)
-    with sqlite3.connect(str(db_path)) as conn:
+    with connect(db_path) as conn:
         cur = conn.execute(sql, params)
         conn.commit()
         return cur.rowcount
