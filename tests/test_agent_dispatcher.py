@@ -238,3 +238,58 @@ def test_main_dry_run_with_injected_client(monkeypatch):
     monkeypatch.setenv("MA_AGENT_PASSWORD", "pw")
     assert main(["--dry-run", "--max-tasks", "2"]) == 0
     assert built == {"base": "https://api.test", "email": "agent@msd.com", "password": "pw"}
+
+
+# ── 선점 무효(STALE_CLAIM): 이 과제는 내 것이 아니다 → 조용히 skip, 다음 과제로 ─────────────
+
+def test_lost_claim_on_runbook_skips_task_without_resolving():
+    """서버가 409 STALE_CLAIM 을 주면(운영자가 되돌리고 다른 실행이 재선점) 그 과제는 건드리지 않는다 —
+    blocked 회신도 하지 않는다(그 회신도 남의 과제를 닫는 짓이다). 다음 과제는 정상 처리."""
+    from scripts.agent_dispatcher import LostClaim
+
+    class Stale(FakeClient):
+        def run_runbook(self, task_id, name):
+            self.calls.append(("runbook", task_id, name))
+            if task_id == 1:
+                raise LostClaim("STALE_CLAIM")
+            return self.runbook_result
+
+    client = Stale([_task(1), _task(2)])
+    out = Dispatcher(client).run_once()
+    resolves = [c for c in client.calls if c[0] == "resolve"]
+    assert resolves == [("resolve", 2, "closed", "복구 완료")]
+    assert out["handled"] == 1 and out["errors"] == 0 and out["skipped"] == 1
+
+
+def test_lost_claim_on_resolve_is_logged_not_raised(caplog):
+    class StaleResolve(FakeClient):
+        def resolve(self, task_id, status, resolution):
+            self.calls.append(("resolve", task_id, status, resolution))
+            raise mod.LostClaim("STALE_CLAIM")
+
+    client = StaleResolve([_task(1)])
+    with caplog.at_level("WARNING", logger="agent_dispatcher"):
+        out = Dispatcher(client).run_once()
+    assert out["handled"] == 0 and out["skipped"] == 1 and out["errors"] == 0
+    assert any("STALE_CLAIM" in rec.getMessage() for rec in caplog.records)
+
+
+def test_api_client_maps_409_stale_or_not_claimed_to_lost_claim():
+    def _409(code: str) -> urllib.error.HTTPError:
+        return urllib.error.HTTPError("https://api.test/x", 409, "conflict", None,
+                                      io.BytesIO(json.dumps({"code": code}).encode()))
+
+    op = _opener({("POST", "/api/auth/login"): {"token": "T"},
+                  ("POST", "/api/agent/tasks/1/runbook"): _409("STALE_CLAIM"),
+                  ("POST", "/api/agent/tasks/2/runbook"): _409("NOT_CLAIMED"),
+                  ("POST", "/api/agent/tasks/3/resolve"): _409("STALE_CLAIM"),
+                  ("POST", "/api/agent/tasks/4/resolve"): _409("INVALID_STATE")})
+    c = ApiClient("https://api.test", "a", "b", opener=op)
+    with pytest.raises(mod.LostClaim):
+        c.run_runbook(1, "domestic_price_catchup")
+    with pytest.raises(mod.LostClaim):
+        c.run_runbook(2, "domestic_price_catchup")
+    with pytest.raises(mod.LostClaim):
+        c.resolve(3, "closed", "x")
+    with pytest.raises(urllib.error.HTTPError):       # 상태 기계 위반은 그대로 오류
+        c.resolve(4, "closed", "x")

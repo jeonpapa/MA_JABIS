@@ -145,7 +145,7 @@ def test_resolve_validates_status_and_transition(monkeypatch, tmp_path):
     r = c.post(f"/api/agent/tasks/{tid}/resolve", headers=_h("agent"), json={"status": "closed"})
     assert r.status_code == 409 and r.get_json()["code"] == "INVALID_STATE"
     assert c.post("/api/agent/tasks/999/resolve", headers=_h("agent"),
-                  json={"status": "blocked"}).status_code == 409
+                  json={"status": "blocked"}).status_code == 404          # /runbook 과 같은 NOT_FOUND
 
 
 # ── 자동 분류: 신호가 만든 new 과제를 디스패처가 집을 수 있어야 한다 ─────────────
@@ -371,3 +371,89 @@ def test_agent_tasks_list_filters_by_kind(monkeypatch, tmp_path):
     assert {t["id"] for t in multi} == {ops, req}
     bad = c.get("/api/agent/tasks?kind=nope", headers=_h("agent"))
     assert bad.status_code == 400 and bad.get_json()["code"] == "INVALID"
+
+
+# ── 소유권: 선점자가 아닌 호출자의 런북 실행·회신은 409 STALE_CLAIM ─────────────────────
+
+def test_runbook_and_resolve_reject_stale_claim(monkeypatch, tmp_path, _fake_runbooks):
+    """A 선점 → 운영자가 triaged 로 되돌림 → B 선점. 이제 A 의 /runbook·/resolve 는 STALE_CLAIM,
+    B 는 정상 진행. (되돌리기가 claimed_by 를 비운 뒤 status 만 보면 A 가 B 의 과제를 닫는다.)"""
+    db = _patch_db(monkeypatch, tmp_path)
+    tid = _triaged_task(db, detail="런북: daily_mailing_dispatch")
+    c = s.app.test_client()
+    A, B = _h("agent", "vps-a@x"), _h("agent", "vps-b@x")
+    assert c.post(f"/api/agent/tasks/{tid}/claim", headers=A).status_code == 200
+    assert c.post(f"/api/agent/tasks/{tid}/resolve", headers=_h("admin", "admin@msd.com"),
+                  json={"status": "triaged"}).status_code == 200            # 운영 개입(admin)
+    assert c.post(f"/api/agent/tasks/{tid}/claim", headers=B).status_code == 200
+
+    stale_run = c.post(f"/api/agent/tasks/{tid}/runbook", headers=A, json={"name": "daily_mailing_dispatch"})
+    assert stale_run.status_code == 409 and stale_run.get_json()["code"] == "STALE_CLAIM"
+    stale_close = c.post(f"/api/agent/tasks/{tid}/resolve", headers=A, json={"status": "closed"})
+    assert stale_close.status_code == 409 and stale_close.get_json()["code"] == "STALE_CLAIM"
+    assert _fake_runbooks == []                                              # A 의 런북은 돌지 않았다
+    assert store.get_task(tid, db_path=db)["status"] == "in_progress"
+
+    assert c.post(f"/api/agent/tasks/{tid}/runbook", headers=B, json={"name": "daily_mailing_dispatch"}).status_code == 200
+    assert c.post(f"/api/agent/tasks/{tid}/resolve", headers=B,
+                  json={"status": "closed", "resolution": "B 복구"}).status_code == 200
+    t = store.get_task(tid, db_path=db)
+    assert t["status"] == "closed" and t["resolution"] == "B 복구" and t["claimed_by"] == "vps-b@x"
+
+
+def test_in_flight_runbook_cannot_close_task_reclaimed_by_other(monkeypatch, tmp_path):
+    """스레드 재현: A 의 런북이 도는 **도중**에 운영자가 triaged 로 되돌리고 B 가 선점한다.
+    A 의 런북 요청은 끝나지만(200, 이미 실행됐다) A 의 closed 회신은 STALE_CLAIM 이어야 하고,
+    B 의 결과만 원장에 남아야 한다."""
+    import threading
+
+    db = _patch_db(monkeypatch, tmp_path)
+    tid = _triaged_task(db, detail="런북: daily_mailing_dispatch")
+    started, released = threading.Event(), threading.Event()
+
+    def slow_run(name: str) -> dict:
+        if not released.is_set():          # 첫 호출(A)만 붙잡는다 — B 는 바로 통과
+            started.set()
+            assert released.wait(10)
+        return {"ok": True, "summary": f"{name} 복구 완료", "detail": {}}
+
+    monkeypatch.setattr(s._agent_runbooks, "run", slow_run)
+    A, B = _h("agent", "vps-a@x"), _h("agent", "vps-b@x")
+    c = s.app.test_client()
+    assert c.post(f"/api/agent/tasks/{tid}/claim", headers=A).status_code == 200
+    a_result: dict = {}
+
+    def a_worker():
+        cc = s.app.test_client()
+        a_result["runbook"] = cc.post(f"/api/agent/tasks/{tid}/runbook", headers=A,
+                                      json={"name": "daily_mailing_dispatch"}).status_code
+        r = cc.post(f"/api/agent/tasks/{tid}/resolve", headers=A, json={"status": "closed", "resolution": "A"})
+        a_result["resolve"] = (r.status_code, r.get_json().get("code"))
+
+    t = threading.Thread(target=a_worker)
+    t.start()
+    assert started.wait(10)                                                   # A 의 런북이 도는 중
+    assert c.post(f"/api/agent/tasks/{tid}/resolve", headers=_h("admin", "admin@msd.com"),
+                  json={"status": "triaged"}).status_code == 200
+    assert c.post(f"/api/agent/tasks/{tid}/claim", headers=B).status_code == 200
+    released.set()
+    t.join(timeout=30)
+
+    assert a_result["runbook"] == 200 and a_result["resolve"] == (409, "STALE_CLAIM"), a_result
+    assert c.post(f"/api/agent/tasks/{tid}/runbook", headers=B, json={"name": "daily_mailing_dispatch"}).status_code == 200
+    assert c.post(f"/api/agent/tasks/{tid}/resolve", headers=B, json={"status": "closed", "resolution": "B"}).status_code == 200
+    task = store.get_task(tid, db_path=db)
+    assert task["status"] == "closed" and task["resolution"] == "B" and task["claimed_by"] == "vps-b@x"
+
+
+def test_admin_token_may_resolve_task_claimed_by_agent(monkeypatch, tmp_path):
+    """admin 은 운영 개입용 예외: 남의 선점을 blocked/triaged 로 되돌릴 수 있다. agent 는 못 한다."""
+    db = _patch_db(monkeypatch, tmp_path)
+    tid = _triaged_task(db)
+    c = s.app.test_client()
+    assert c.post(f"/api/agent/tasks/{tid}/claim", headers=_h("agent", "vps-a@x")).status_code == 200
+    other = c.post(f"/api/agent/tasks/{tid}/resolve", headers=_h("agent", "vps-b@x"), json={"status": "blocked"})
+    assert other.status_code == 409 and other.get_json()["code"] == "STALE_CLAIM"
+    assert c.post(f"/api/agent/tasks/{tid}/resolve", headers=_h("admin", "admin@msd.com"),
+                  json={"status": "blocked", "resolution": "운영 개입"}).status_code == 200
+    assert store.get_task(tid, db_path=db)["status"] == "blocked"

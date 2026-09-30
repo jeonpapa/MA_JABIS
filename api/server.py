@@ -5388,6 +5388,21 @@ def _agent_statuses_arg(default: tuple[str, ...]) -> tuple[str, ...]:
     return raw or default
 
 
+def _agent_stale_claim(task: dict, actor: str, role: str | None):
+    """선점자가 아닌 호출자의 런북 실행·회신을 막는다 → 409 STALE_CLAIM (없으면 None).
+
+    되돌리기(→triaged)가 claimed_by 를 비우므로 status 만 보면 A 가 선점한 뒤 운영자가 되돌리고 B 가
+    다시 선점한 과제를 A 가 실행·종료할 수 있다(런북 이중 실행 + 비소유자 종료). claimed_by 가 비어
+    있으면(선점 전) 상태 기계가 판단한다.
+    예외: admin 토큰은 운영 개입용(되돌리기·강제 종료·blocked) 이라 남의 선점도 만진다 — VPS_SETUP §6.
+    """
+    owner = task.get("claimed_by")
+    if role == "admin" or not owner or owner == actor:
+        return None
+    return jsonify({"error": f"이 과제는 {owner} 가 선점했다 — {actor} 의 선점은 무효(되돌리기 후 재선점됨)",
+                    "code": "STALE_CLAIM", "claimed_by": owner}), 409
+
+
 @app.get("/api/agent/tasks")
 @require_auth(role="agent")
 def agent_tasks_list():
@@ -5451,6 +5466,9 @@ def agent_task_runbook(task_id: int):
         # 선점 없이 런북을 돌리면 일일 예산 판정(spend_check)을 우회한다
         return jsonify({"error": f"선점된(in_progress) 과제만 런북을 실행한다: {task['status']}",
                         "code": "NOT_CLAIMED"}), 409
+    stale = _agent_stale_claim(task, actor, request.user.get("role"))  # type: ignore[attr-defined]
+    if stale is not None:
+        return stale
     _agent_store.add_event(task_id, actor=actor, event="runbook_started", detail=name,
                            db_path=_AGENT_TASK_DB_PATH)
     result = _agent_runbooks.run(name)
@@ -5468,6 +5486,12 @@ def agent_task_resolve(task_id: int):
     status = body.get("status") or "closed"
     if status not in ("closed", "blocked", "rejected", "triaged"):
         return jsonify({"error": "status must be closed|blocked|rejected|triaged", "code": "INVALID"}), 400
+    task = _agent_store.get_task(task_id, db_path=_AGENT_TASK_DB_PATH)
+    if task is None:
+        return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+    stale = _agent_stale_claim(task, actor, request.user.get("role"))  # type: ignore[attr-defined]
+    if stale is not None:
+        return stale
     try:
         task = _agent_store.update_task(task_id, actor=actor, db_path=_AGENT_TASK_DB_PATH,
                                         status=status, resolution=str(body.get("resolution") or "")[:2000])

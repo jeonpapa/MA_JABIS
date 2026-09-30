@@ -125,7 +125,8 @@ crontab -e
 | `blocked` + "자동 복구 런북 없음" | 신호에 런북 매핑이 없음 | `agents/agent_tasks/signals.py` 의 `JOB_RUNBOOK`/`HEALTH_RUNBOOK` 에 매핑 추가(런북은 `runbooks.py` 에 등록) 또는 사람이 처리 후 화면에서 종료 |
 | `blocked` + "디스패처 오류: ..." | 런북 요청 중 네트워크/서버 오류 | `flyctl logs` 로 서버측 원인 확인. 재시도는 `triaged` 로 되돌리면 된다(`POST /api/agent/tasks/<id>/resolve {"status":"triaged"}`) — 선점 표식(`claimed_by`)이 풀리고 다음 실행이 집는다. `attempts` 는 보존된다 |
 | `blocked` + "재시도 한도(3회) 초과 — 사람 확인 필요" | 같은 과제가 3번 선점됐는데도 닫히지 않음(설계 §5: 재시도 2회까지) | 자동 복구로는 안 되는 문제다. 원인을 사람이 처리한 뒤 화면에서 종료한다. 다시 돌리고 싶으면 새 과제가 생기게 두거나(신호는 매일 새 `source_ref`), `triaged` 로 되돌려도 서버가 다시 `blocked` 로 막는다 |
-| 과제가 `in_progress` 에 오래 머묾 | 디스패처가 회신 전에 죽음 | agent 토큰으로 `POST /api/agent/tasks/<id>/resolve {"status":"blocked","resolution":"..."}` 또는 `{"status":"triaged"}` 로 되돌린다 |
+| 과제가 `in_progress` 에 오래 머묾 | 디스패처가 회신 전에 죽음 | **`claimed_at` 에서 런북 타임아웃(디스패처 `REQUEST_TIMEOUT_SECONDS`, 600초)이 지나기 전에는 되돌리지 말 것** — 런북이 아직 도는 중일 수 있다. 되돌리면 `claimed_by` 가 비워져 다음 실행이 재선점하고, 서버가 같은 런북을 **두 번** 돌린다(1GB 머신에서 Playwright 크롤 2개). 타임아웃이 지난 뒤 admin 토큰으로 `POST /api/agent/tasks/<id>/resolve {"status":"blocked","resolution":"..."}` 또는 `{"status":"triaged"}`. 되돌린 뒤 원래 실행이 뒤늦게 회신하면 서버가 `409 STALE_CLAIM` 으로 거부하고 디스패처는 그 과제를 건너뛴다(로그 `선점 무효`) |
+| VPS 로그 `선점 무효 task=N (STALE_CLAIM)` | 위 되돌리기 뒤 다른 실행이 재선점한 과제에 원래 실행이 회신함 | 정상 동작(결과는 재선점한 실행의 것만 남는다). 되돌리기가 너무 일렀다는 신호 — 위 경고 참고 |
 
 ## 7. 동작 원리 (한 사이클)
 
@@ -137,6 +138,9 @@ VPS 디스패처  GET  /api/agent/tasks?status=new,triaged&kind=ops_incident   (
               POST /api/agent/tasks/<id>/runbook {name}   프로덕션 안에서 런북 실행 (runbook_started → runbook_ok|runbook_failed)
               POST /api/agent/tasks/<id>/resolve          ok → closed, 실패·런북 없음·요청 오류 → blocked(사람 확인)
 ```
+
+`/runbook`·`/resolve` 는 **선점자(`claimed_by`)와 호출자가 같을 때만** 통과한다. 다르면 `409 STALE_CLAIM`(되돌리기 뒤 다른 실행이
+재선점한 과제) — 디스패처는 그 과제를 건너뛴다. admin 토큰만 예외(운영 개입: 되돌리기·강제 blocked·종료), `api/server.py:_agent_stale_claim`.
 
 모든 전이는 `agent_task_event` 에 append-only 로 남고 운영 원장 화면의 상세에서 그대로 보인다.
 런북은 선점된(`in_progress`) 과제에서만 실행된다 — 예산 판정(`spend_check`)을 우회할 수 없다.

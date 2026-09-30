@@ -40,6 +40,22 @@ DEFAULT_MAX_TASKS = 3
 # 도는데 클라이언트만 끊겨 과제가 blocked 로 남으므로 넉넉히 둔다.
 REQUEST_TIMEOUT_SECONDS = 600
 NO_RUNBOOK_RESOLUTION = "자동 복구 런북 없음 — 사람 확인 필요"
+# 서버가 409 로 "이 과제는 네 것이 아니다" 라고 답하는 코드. STALE_CLAIM: 운영자가 triaged 로 되돌린 뒤 다른
+# 실행이 재선점(claimed_by 불일치). NOT_CLAIMED: 선점 직후 누군가 상태를 바꿔 in_progress 가 아니다.
+# 둘 다 이 과제를 더 만지면 남의 결과를 덮는다 — blocked 회신조차 하지 않고 다음 과제로 넘어간다.
+LOST_CLAIM_CODES = frozenset({"STALE_CLAIM", "NOT_CLAIMED"})
+
+
+class LostClaim(Exception):
+    """서버가 409 STALE_CLAIM/NOT_CLAIMED 로 답했다 — 이 과제는 더 이상 이 실행의 것이 아니다."""
+
+
+def _error_code(exc: urllib.error.HTTPError) -> str:
+    """HTTPError 본문({"code": ...})의 code. 본문이 JSON 이 아니면 빈 문자열."""
+    try:
+        return str(json.loads(exc.read().decode("utf-8") or "{}").get("code") or "")
+    except Exception:
+        return ""
 
 
 def pick_runbook(task: dict) -> str | None:
@@ -81,12 +97,21 @@ class ApiClient:
                 return False
             raise
 
+    def _owned_request(self, path: str, body: dict) -> dict:
+        """선점한 과제에만 허용되는 요청 — 409 STALE_CLAIM/NOT_CLAIMED 는 LostClaim 으로 올린다."""
+        try:
+            return self._request("POST", path, body)
+        except urllib.error.HTTPError as exc:
+            code = _error_code(exc) if exc.code == 409 else ""
+            if code in LOST_CLAIM_CODES:
+                raise LostClaim(code) from exc
+            raise
+
     def run_runbook(self, task_id: int, name: str) -> dict:
-        return self._request("POST", f"/api/agent/tasks/{task_id}/runbook", {"name": name})["result"]
+        return self._owned_request(f"/api/agent/tasks/{task_id}/runbook", {"name": name})["result"]
 
     def resolve(self, task_id: int, status: str, resolution: str) -> None:
-        self._request("POST", f"/api/agent/tasks/{task_id}/resolve",
-                      {"status": status, "resolution": resolution})
+        self._owned_request(f"/api/agent/tasks/{task_id}/resolve", {"status": status, "resolution": resolution})
 
 
 class Dispatcher:
@@ -99,8 +124,7 @@ class Dispatcher:
         tasks = sorted(self.client.list_tasks(CLAIMABLE_STATUSES, CLAIMABLE_KINDS),
                        key=lambda t: (t.get("priority", 3), t["id"]))
         planned: list[dict] = []
-        handled = 0
-        errors = 0
+        handled = errors = skipped = 0
         for task in tasks[: self.max_tasks]:
             task_id = task["id"]
             runbook = pick_runbook(task)
@@ -110,23 +134,35 @@ class Dispatcher:
             if not self.client.claim(task_id):
                 logger.info("선점 실패(다른 실행이 가져갔거나 정책이 막음): %s", task_id)
                 continue
-            if runbook is None:
-                self.client.resolve(task_id, "blocked", NO_RUNBOOK_RESOLUTION)
-                continue
             try:
-                result = self.client.run_runbook(task_id, runbook)
-                self.client.resolve(task_id, "closed" if result.get("ok") else "blocked",
-                                    str(result.get("summary") or ""))
-                handled += 1
+                handled += self._handle_claimed(task_id, runbook)
+            except LostClaim as exc:
+                # 이 과제는 내 것이 아니다(운영자 되돌리기 후 재선점 등) — 회신 없이 다음 과제로
+                skipped += 1
+                logger.warning("선점 무효 task=%s (%s) — 다른 실행이 쥐고 있어 건너뜀", task_id, exc)
             except Exception as exc:  # 선점한 과제를 in_progress 에 방치하지 않는다
                 errors += 1
                 logger.error("런북 요청 실패 task=%s runbook=%s: %s", task_id, runbook, exc, exc_info=True)
                 try:
                     self.client.resolve(task_id, "blocked",
                                         f"디스패처 오류: {type(exc).__name__}: {exc}"[:2000])
+                except LostClaim as exc2:
+                    skipped += 1
+                    logger.warning("선점 무효 task=%s (%s) — blocked 회신 생략", task_id, exc2)
                 except Exception as exc2:
                     logger.error("blocked 회신도 실패 task=%s: %s", task_id, exc2)
-        return {"planned": planned, "handled": handled, "candidates": len(tasks), "errors": errors}
+        return {"planned": planned, "handled": handled, "candidates": len(tasks), "errors": errors,
+                "skipped": skipped}
+
+    def _handle_claimed(self, task_id: int, runbook: str | None) -> int:
+        """선점한 과제 하나: 런북 실행 → 회신. 처리 수(0|1)를 돌려주고 LostClaim 은 그대로 올린다."""
+        if runbook is None:
+            self.client.resolve(task_id, "blocked", NO_RUNBOOK_RESOLUTION)
+            return 0
+        result = self.client.run_runbook(task_id, runbook)
+        self.client.resolve(task_id, "closed" if result.get("ok") else "blocked",
+                            str(result.get("summary") or ""))
+        return 1
 
 
 def main(argv: list[str] | None = None) -> int:
