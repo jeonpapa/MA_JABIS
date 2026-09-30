@@ -237,3 +237,44 @@ def test_agent_service_account_can_be_created(tmp_path):
     user = db.create_user("agent@msd.com", "strong-passphrase", role="agent")
     assert user["role"] == "agent"
     assert db.verify_password("agent@msd.com", "strong-passphrase")["role"] == "agent"
+
+
+# ── 동시 claim: 자동 분류는 단일 트랜잭션이어야 한다 ─────────────────────────────
+
+def test_concurrent_claim_of_new_task_is_atomic(monkeypatch, tmp_path):
+    """두 디스패처가 같은 new 과제를 동시에 claim — 하나만 200, 최종 행은 승자의 in_progress,
+    auto_triaged 이벤트는 정확히 1개. (update_task 는 상태 가드가 없어 승자의 in_progress 를 되돌렸다.)"""
+    import threading
+
+    db = _patch_db(monkeypatch, tmp_path)
+    tid = store.create_task(kind="ops_incident", source="scheduler_job", source_ref="j:race",
+                            title="잡 실패", detail="런북: domestic_price_catchup", db_path=db)
+    real_get_task = store.get_task
+    barrier = threading.Barrier(2, timeout=10)
+
+    def gated_get_task(task_id, **kw):
+        task = real_get_task(task_id, **kw)
+        if task and task["status"] == "new":   # 두 실행 모두 'new' 를 읽은 뒤에야 쓰기로 넘어간다
+            barrier.wait()
+        return task
+
+    monkeypatch.setattr(s._agent_store, "get_task", gated_get_task)
+    results: dict[str, int] = {}
+
+    def worker(actor: str):
+        r = s.app.test_client().post(f"/api/agent/tasks/{tid}/claim", headers=_h("agent", actor))
+        results[actor] = r.status_code
+
+    threads = [threading.Thread(target=worker, args=(a,)) for a in ("vps-0@x", "vps-1@x")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+
+    assert sorted(results.values()) == [200, 409], results
+    winner = next(a for a, code in results.items() if code == 200)
+    task = real_get_task(tid, db_path=db)
+    assert task["status"] == "in_progress" and task["claimed_by"] == winner
+    events = [e["event"] for e in store.list_events(tid, db_path=db)]
+    assert events.count("auto_triaged") == 1, events
+    assert events == ["created", "auto_triaged", "status:triaged", "claimed"]

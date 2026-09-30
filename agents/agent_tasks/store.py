@@ -194,6 +194,30 @@ def update_task(task_id: int, *, actor: str, db_path: str | Path = DEFAULT_DB_PA
         conn.close()
 
 
+def triage_task(task_id: int, *, actor: str, detail: str | None = None,
+                db_path: str | Path = DEFAULT_DB_PATH) -> bool:
+    """new 과제를 자동 분류(new→triaged). 단일 트랜잭션의 조건부 UPDATE 1회.
+
+    update_task 는 SELECT 후 무조건 UPDATE 라 동시 claim 에서 승자의 in_progress 를 되돌릴 수 있다.
+    여기서는 `WHERE status='new'` 가 붙은 UPDATE 의 rowcount 가 1 일 때만 이벤트(auto_triaged,
+    status:triaged)를 남기므로, 몇 개의 실행이 동시에 와도 정확히 하나만 분류하고 이벤트도 한 번만 남는다.
+    """
+    conn = connect(db_path)
+    try:
+        cur = conn.execute(
+            "UPDATE agent_task SET status='triaged', updated_at=? WHERE id=? AND status='new'",
+            (_now(), task_id))
+        if cur.rowcount != 1:
+            conn.commit()
+            return False
+        add_event(task_id, actor=actor, event="auto_triaged", detail=detail, conn=conn)
+        add_event(task_id, actor=actor, event="status:triaged", conn=conn)
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
 def claim_task(task_id: int, *, actor: str, db_path: str | Path = DEFAULT_DB_PATH) -> bool:
     """triaged 과제를 선점(조건부 UPDATE 1회). 성공 시 in_progress + attempts +1."""
     conn = connect(db_path)

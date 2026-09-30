@@ -5412,12 +5412,10 @@ def agent_task_claim(task_id: int):
     if task is None:
         return jsonify({"claimed": False, "error": "not found", "code": "NOT_FOUND"}), 404
     if task["status"] == "new" and task["kind"] in _AGENT_AUTO_TRIAGE_KINDS:
-        try:
-            _agent_store.add_event(task_id, actor=actor, event="auto_triaged",
-                                   detail=f"{task['kind']} — 디스패처 자동 분류", db_path=_AGENT_TASK_DB_PATH)
-            _agent_store.update_task(task_id, actor=actor, db_path=_AGENT_TASK_DB_PATH, status="triaged")
-        except _agent_store.AgentTaskError:
-            pass  # 다른 실행이 먼저 분류함 — 아래 선점에서 판가름
+        # 단일 트랜잭션 조건부 UPDATE(WHERE status='new') — 동시 claim 이 와도 하나만 분류하고 이벤트도
+        # 한 번만 남는다. False(다른 실행이 먼저 분류·선점)면 아래 선점에서 판가름 난다.
+        _agent_store.triage_task(task_id, actor=actor, db_path=_AGENT_TASK_DB_PATH,
+                                 detail=f"{task['kind']} — 디스패처 자동 분류")
     if not _agent_store.claim_task(task_id, actor=actor, db_path=_AGENT_TASK_DB_PATH):
         return jsonify({"claimed": False, "code": "NOT_CLAIMABLE"}), 409
     return jsonify({"claimed": True, "task": _agent_store.get_task(task_id, db_path=_AGENT_TASK_DB_PATH)})

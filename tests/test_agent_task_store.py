@@ -78,3 +78,16 @@ def test_events_are_append_only_audit(tmp_path):
     update_task(tid, db_path=db, status="closed", actor="vps-1", resolution="9월분 적재 완료")
     assert [e["event"] for e in list_events(tid, db_path=db)] == [
         "created", "status:triaged", "claimed", "runbook_started", "status:closed"]
+
+
+def test_triage_task_is_conditional_and_records_events_once(tmp_path):
+    from agents.agent_tasks.store import triage_task
+
+    db = tmp_path / "a.db"
+    tid = _new(db)
+    assert triage_task(tid, actor="vps-1", detail="자동 분류", db_path=db) is True
+    assert triage_task(tid, actor="vps-2", detail="자동 분류", db_path=db) is False   # 이미 triaged
+    assert get_task(tid, db_path=db)["status"] == "triaged"
+    events = [(e["event"], e["actor"]) for e in list_events(tid, db_path=db)]
+    assert events == [("created", "system"), ("auto_triaged", "vps-1"), ("status:triaged", "vps-1")]
+    assert triage_task(999, actor="vps-1", db_path=db) is False                       # 없는 과제
