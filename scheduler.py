@@ -941,6 +941,9 @@ def main():
         action="store_true",
         help="Access Insight 신선 신호 크롤 즉시 실행 (tier A/B/D → amjilsim_media_signals)",
     )
+    # 런북(agents/agent_tasks/runbooks.py) 이 쓰는 뉴스 플래그 — news_weekly_crawl 은 분리 프로세스로 이 플래그를 띄운다
+    parser.add_argument("--news-daily-now", action="store_true", help="경쟁사·정부 뉴스 3일 fetch 즉시 실행")
+    parser.add_argument("--news-weekly-now", action="store_true", help="경쟁사·정부 뉴스 주간(6개월 창) 크롤 즉시 실행")
     parser.add_argument(
         "--reclassify-signals-now",
         action="store_true",
@@ -1064,6 +1067,14 @@ def main():
     if args.fresh_signals_now:
         logger.info("Access Insight 신선 신호 크롤 즉시 실행")
         access_insight_fresh_signal_job()
+        return
+
+    if args.news_daily_now:
+        logger.info("뉴스 매일 fetch 즉시 실행: %s", competitor_news_daily_job())
+        return
+
+    if args.news_weekly_now:
+        logger.info("뉴스 주간 크롤 즉시 실행: %s", competitor_news_weekly_job())
         return
 
     if args.reclassify_signals_now:
