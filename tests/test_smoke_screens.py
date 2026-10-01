@@ -186,7 +186,11 @@ def test_smoke_against_flask_test_client(monkeypatch, tmp_path):
     """실제 Flask 앱(빈 stub DB)으로 한 바퀴: 집계가 맞고, 로그인·권한 게이트가 통과하며, 같은 프로세스 토큰이 거부되지 않는다.
     데이터 의존 화면의 200/500 은 stub DB 의 사실이라 단정하지 않는다(프로덕션 첫 실행 예측은 계획 §T4)."""
     import api.server as s
+    import agents.gov_agency_clouds as _clouds
+    import agents.government_keyword_summary as _gov
     monkeypatch.setattr(s, "_AGENT_TASK_DB_PATH", tmp_path / "a.db")
+    monkeypatch.setattr(_gov, "CACHE_DIR", tmp_path)        # 두 Home 라우트의 일자 캐시는 git 추적 디렉터리 — 작업트리에 쓰지 않는다
+    monkeypatch.setattr(_clouds, "CACHE_DIR", tmp_path)
     opener = _flask_opener(s.app)
     res = smoke.run_smoke("http://test", smoke.mint_token_factory("http://test", opener=opener), opener=opener)
     total = sum(len(sc.checks) for sc in smoke.SCREENS)
