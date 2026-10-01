@@ -1,6 +1,7 @@
 """생존 헬스 — heartbeat 파일 판정 + /api/health 200/503 행렬 (P1.5 Task 4).
 
-503 은 두 경우뿐: (1) DB 접근 불가, (2) 부팅 유예(BOOT_GRACE_S) 가 지난 뒤 heartbeat 가 없거나 STALE_AFTER_S 를 넘었을 때.
+503 은 DB 접근 불가 때만. 스케줄러 heartbeat stale 은 200 + status='degraded' + 원장 과제 — Fly check 실패는 라우팅을
+끊지만 재시작을 보장하지 않으므로, 배경 잡 정지로 사용자 화면을 내리지 않는다.
 부팅 유예 안에서는 파일이 없어도·오래됐어도 200 — 배포 직후 볼륨에 남은 옛 heartbeat 로 Fly check 가 새 머신을
 죽이지 않게(첫 HTTP check 도입의 가장 큰 위험). 원장 기록·job run 조회 실패는 응답을 바꾸지 않는다(신호 경계).
 """
@@ -91,14 +92,15 @@ def test_health_ok_shape(monkeypatch, tmp_path):
     assert isinstance(body["jobs_failed_24h"], list) and "available_countries" in body
 
 
-def test_health_503_when_scheduler_stale_and_records_once(monkeypatch, tmp_path):
+def test_health_degraded_not_503_when_scheduler_stale_and_records_once(monkeypatch, tmp_path):
+    """스케줄러가 멈춰도 사이트는 서비스한다 — 200 + degraded + 원장 과제 1건."""
     c = _client(monkeypatch, tmp_path, hb_age=hb.STALE_AFTER_S + 10)
     db = Path(os.environ["AGENT_TASK_DB"])                 # conftest 가 임시 파일로 돌린다
     r = c.get("/api/health")
-    assert r.status_code == 503
+    assert r.status_code == 200
     body = r.get_json()
     assert body["status"] == "degraded" and body["db_ok"] is True and body["scheduler_stale"] is True
-    assert c.get("/api/health").status_code == 503
+    assert c.get("/api/health").status_code == 200
     tasks = list_tasks(db_path=db)
     assert len(tasks) == 1 and tasks[0]["source_ref"].startswith("scheduler_heartbeat:")
     assert tasks[0]["source"] == "scheduler_job"
@@ -113,10 +115,11 @@ def test_health_200_missing_heartbeat_inside_boot_grace(monkeypatch, tmp_path):
     assert list_tasks(db_path=Path(os.environ["AGENT_TASK_DB"])) == []
 
 
-def test_health_503_missing_heartbeat_past_boot_grace(monkeypatch, tmp_path):
+def test_health_degraded_missing_heartbeat_past_boot_grace(monkeypatch, tmp_path):
     c = _client(monkeypatch, tmp_path, hb_age=None, uptime=hb.BOOT_GRACE_S + 1)
     r = c.get("/api/health")
-    assert r.status_code == 503 and r.get_json()["scheduler_stale"] is True
+    body = r.get_json()
+    assert r.status_code == 200 and body["scheduler_stale"] is True and body["status"] == "degraded"
 
 
 def test_health_200_stale_file_inside_boot_grace(monkeypatch, tmp_path):
@@ -153,4 +156,4 @@ def test_health_survives_ledger_errors(monkeypatch, tmp_path):
     r = c.get("/api/health")
     assert r.status_code == 200 and r.get_json()["jobs_failed_24h"] == []
     c2 = _client(monkeypatch, tmp_path, hb_age=hb.STALE_AFTER_S + 10)
-    assert c2.get("/api/health").status_code == 503
+    assert c2.get("/api/health").status_code == 200          # stale 은 503 이 아니다

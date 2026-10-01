@@ -7354,8 +7354,11 @@ def _health_record_scheduler_stale(status: dict) -> None:
 def health():
     """생존 헬스 (fly.toml [[http_service.checks]] 가 30초마다 친다).
 
-    503 은 두 경우뿐: DB 접근 불가, 또는 부팅 유예(BOOT_GRACE_S=5분) 뒤 스케줄러 heartbeat 가 없거나 STALE_AFTER_S(15분)
-    넘게 오래됐을 때. 부팅 유예 안에는 heartbeat 가 없거나 옛것이어도 200 — 배포 직후 Fly check 가 새 머신을 죽이지 않게.
+    **503 은 DB 접근 불가 때만.** Fly 는 check 실패를 머신 unhealthy 로 처리해 프록시 라우팅에서 빼지만 자동 재시작은
+    보장하지 않는다 — 스케줄러 hang(배경 작업 문제)에 503 을 내면 웹은 멀쩡한데 사용자에게 사이트가 안 보이는 상태로
+    사람이 손쓸 때까지 남는다. 그래서 heartbeat stale 은 200 + status='degraded' + 원장 과제(하루 1건)로만 알린다.
+    DB 불가는 어차피 어떤 요청도 처리 못 하므로 503 으로 두어, 볼륨·마운트가 깨진 배포가 롤아웃에서 실패(롤백)하게 한다.
+    부팅 유예(BOOT_GRACE_S=5분) 안에는 heartbeat 가 없거나 옛것이어도 stale 로 보지 않는다(배포 직후 오탐 방지).
     원장 기록·job run 조회 실패는 응답을 바꾸지 않는다(신호 경계).
     """
     from agents.agent_tasks import heartbeat as _hb
@@ -7378,7 +7381,8 @@ def health():
     }
     if st["stale"]:
         _health_record_scheduler_stale(st)
-    return jsonify(body), (200 if body["status"] == "ok" else 503)
+    # status='degraded' 는 stale 도 포함하지만, HTTP 코드는 DB 불가에만 503 (위 docstring 근거)
+    return jsonify(body), (200 if db_ok else 503)
 
 
 if __name__ == "__main__":

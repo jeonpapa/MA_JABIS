@@ -25,8 +25,9 @@ primary_region = "nrt"   # Tokyo — 한국 최저 레이턴시 리전
   auto_start_machines = true
   min_machines_running = 1
 
-  # /api/health 는 DB 불가·스케줄러 heartbeat 15분 초과(웹 기동 5분 유예) 에만 503 → check 실패 → Fly 가 머신을 unhealthy 로
-  # 처리(라우팅 중단·배포 대기 실패·재시작). start_production.sh 가 재기동 시 web+scheduler 둘 다 다시 띄운다.
+  # /api/health 는 **DB 접근 불가에만** 503 → check 실패 → Fly 가 라우팅에서 빼고 배포 대기도 실패(= 깨진 배포는 롤백).
+  # 스케줄러 heartbeat stale 은 503 이 아니라 200 + status='degraded' + 원장 과제다: Fly 는 check 실패 시 자동 재시작을
+  # 보장하지 않으므로, 배경 잡이 멈춘 것 때문에 사용자 화면을 프록시에서 내리면 더 나쁜 상태가 된다.
   # grace 120s: 부팅 sync(reimb --amjilsim-daily-crawl-now) + 스케줄러 기동 시간 동안의 실패는 무시.
   [[http_service.checks]]
     grace_period = "120s"
