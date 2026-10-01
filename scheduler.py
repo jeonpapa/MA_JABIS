@@ -785,6 +785,20 @@ def scheduler_heartbeat_job():
     return None
 
 
+@guarded_job("platform_smoke")
+def platform_smoke_job():
+    """매일 07:50 — 21개 화면 + 권한 게이트 스모크 (같은 컨테이너의 웹 프로세스, 공유 JWT_SECRET 으로 토큰 직접 발급).
+
+    실패 = 화면 깨짐 → 과제 platform_smoke:{날짜} 하루 1건(guarded_job dedup). 토큰을 못 만들면(비밀 미공유) 그 역할
+    화면은 skipped — 오탐 아님. base 는 MA_SMOKE_BASE 로 바꿀 수 있다(로컬 포트 등).
+    """
+    from scripts.smoke import DEFAULT_BASE, mint_token_factory, run_smoke
+    base = os.environ.get("MA_SMOKE_BASE", DEFAULT_BASE)
+    res = run_smoke(base, mint_token_factory(base))
+    logger.info("플랫폼 스모크: %s", res["counts"])
+    return res
+
+
 # ── 등록부 ──────────────────────────────────────────────────────────────────
 # 잡 전부를 데이터(JobSpec)로 둔다 — tests/test_scheduler_job_specs.py 가 guarded·misfire·JOB_RUNBOOK 일치를 대조한다.
 
@@ -859,6 +873,8 @@ def build_job_specs(sched_cfg: dict) -> list[JobSpec]:
                 _cron(month=1, day=1, hour=9, minute=0), misfire_grace_time=PERIODIC_GRACE),
         JobSpec("scheduler_heartbeat", "스케줄러 heartbeat (60초, /api/health 생존 판정)", scheduler_heartbeat_job,
                 IntervalTrigger(seconds=60, timezone="Asia/Seoul"), misfire_grace_time=30),
+        JobSpec("platform_smoke", "화면별 API 스모크 (매일 07:50, 21 화면 + 권한 게이트)", platform_smoke_job,
+                _cron(hour=7, minute=50)),
     ]
 
 # ── 진입점 ─────────────────────────────────────────────────────────────────
@@ -929,6 +945,8 @@ def main():
                         help="Daily Mailing 발송 판정 1회 즉시 실행")
     parser.add_argument("--mailing-health-now", action="store_true",
                         help="Daily Mailing 헬스체크 1회 즉시 실행")
+    parser.add_argument("--smoke-now", action="store_true",
+                        help="화면별 스모크 즉시 실행 (웹 서버 필요 — 기본 http://127.0.0.1:5001, MA_SMOKE_BASE 로 변경)")
     parser.add_argument(
         "--nhis-sync-now",
         action="store_true",
@@ -1052,6 +1070,10 @@ def main():
     if args.mailing_health_now:
         logger.info("Daily Mailing 헬스체크 즉시 실행")
         daily_mailing_health_job()
+        return
+
+    if args.smoke_now:
+        logger.info("플랫폼 스모크 즉시 실행: %s", platform_smoke_job())
         return
 
     if args.nhis_sync_now:
