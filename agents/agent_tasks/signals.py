@@ -38,6 +38,7 @@ JOB_RUNBOOK: dict[str, str | None] = {
     "daily_mailing_health": None,
     "nhis_negotiation_sync": None,
     "home_brand_related_refresh": None,
+    "domain_freshness": None,                 # 판정기 자체의 실패용. stale 도메인 과제는 freshness.py 가 도메인별 런북 힌트로 만든다
     "amjilsim_d_minus_2_reporter": None,
     "amjilsim_d_plus_1_reporter": None,
     "amjilsim_monthly_trend": None,

@@ -24,6 +24,26 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DB = ROOT / "data" / "db" / "drug_prices.db"
 
 
+def coverage_gaps(db_path: Path | str) -> list[str]:
+    """foreign_drug_prices 에 있지만 indications_master 에 없는 product slug (LOWER(query_name) 기준).
+
+    ForeignApprovalAgent 를 만들지 않고도 부를 수 있게 모듈 함수 — 신선도 판정기(agents/agent_tasks/freshness.py)가 쓴다.
+    __init__ 은 스크레이퍼 6개를 생성하므로 판정 목적에는 과하다. db_path 는 `file:...?mode=ro` URI 도 받는다(읽기 전용).
+    """
+    p = str(db_path)
+    with sqlite3.connect(p, uri=p.startswith("file:")) as c:
+        price_slugs = {(r[0] or "").strip().lower() for r in c.execute(
+            "SELECT DISTINCT query_name FROM foreign_drug_prices WHERE query_name IS NOT NULL").fetchall() if r[0]}
+        approval_slugs = {(r[0] or "").strip().lower() for r in c.execute(
+            "SELECT DISTINCT product FROM indications_master").fetchall() if r[0]}
+    # brand ↔ generic 쌍 alias 처리 (예: keytruda ↔ pembrolizumab)
+    aliases: dict[str, str] = {
+        "pembrolizumab": "keytruda", "belzutifan": "welireg", "olaparib": "lynparza",
+        "lenvatinib": "lenvima", "sitagliptin": "januvia", "letermovir": "prevymis",
+    }
+    return sorted({aliases.get(s, s) for s in price_slugs} - approval_slugs)
+
+
 class ForeignApprovalAgent(_BuildersMixin, _MergerMixin, _MatrixMixin):
     """FDA + EMA 등 해외 규제기관의 indication 단위 허가사항을 통합 적재.
 
@@ -120,36 +140,8 @@ class ForeignApprovalAgent(_BuildersMixin, _MergerMixin, _MatrixMixin):
     # Auto-sync: 가격 파이프라인(query-driven) ↔ 허가 파이프라인(list-driven) 비대칭 해소
     # ──────────────────────────────────────────────────────────
     def list_coverage_gaps(self) -> list[str]:
-        """foreign_drug_prices 에 있지만 indications_master 에 없는 product slug 반환.
-
-        slug 는 `LOWER(query_name)` 기준. 브랜드/성분 중복 제거는 brand_slug 별칭 맵 참조.
-        """
-        with sqlite3.connect(str(self.db_path)) as c:
-            c.row_factory = sqlite3.Row
-            price_slugs = {
-                (r[0] or "").strip().lower()
-                for r in c.execute(
-                    "SELECT DISTINCT query_name FROM foreign_drug_prices WHERE query_name IS NOT NULL"
-                ).fetchall()
-                if r[0]
-            }
-            approval_slugs = {
-                (r[0] or "").strip().lower()
-                for r in c.execute("SELECT DISTINCT product FROM indications_master").fetchall()
-                if r[0]
-            }
-        # brand ↔ generic 쌍 alias 처리 (예: keytruda ↔ pembrolizumab)
-        aliases: dict[str, str] = {
-            "pembrolizumab": "keytruda",
-            "belzutifan": "welireg",
-            "olaparib": "lynparza",
-            "lenvatinib": "lenvima",
-            "sitagliptin": "januvia",
-            "letermovir": "prevymis",
-        }
-        normalized = {aliases.get(s, s) for s in price_slugs}
-        gaps = sorted(normalized - approval_slugs)
-        return gaps
+        """foreign_drug_prices 에 있지만 indications_master 에 없는 product slug — 모듈 함수 coverage_gaps 에 위임."""
+        return coverage_gaps(self.db_path)
 
     def sync_from_prices(
         self,
