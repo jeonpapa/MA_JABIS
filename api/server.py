@@ -2105,9 +2105,22 @@ def search_history():
 
 @app.get("/api/data/freshness")
 def data_freshness():
-    """데이터 신선도 조회. GET /api/data/freshness?type=hta&key=belzutifan_FDA"""
+    """데이터 신선도 조회.
+    - ?type=hta&key=belzutifan_FDA : 항목별 수집 시각(data_freshness — hta_agent 장부, 그대로 둔다)
+    - ?type=domain                 : 도메인별 최신 판정(domain_freshness, agents/agent_tasks/freshness.py, 매일 07:45)
+    - 파라미터 없음                 : data_freshness 전체
+    두 테이블은 단위가 다르다(항목별 수집 시각 vs 도메인별 판정) — 합치지 않는다.
+    """
     data_type = request.args.get("type", "").strip()
     scope_key = request.args.get("key", "").strip()
+    if data_type == "domain":
+        # 판정기가 아직 안 돌았으면 테이블이 없다 — GET 이 DDL 을 하지 않고 빈 목록을 돌려준다
+        with db._connect() as conn:
+            exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='domain_freshness'").fetchone()
+            rows = conn.execute(
+                "SELECT * FROM domain_freshness ORDER BY stale DESC, domain").fetchall() if exists else []
+        return jsonify([dict(r) for r in rows])
     if data_type and scope_key:
         info = db.get_freshness(data_type, scope_key)
         return jsonify(info or {"status": "not_found"})

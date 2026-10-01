@@ -668,6 +668,19 @@ def home_brand_related_refresh_job():
     return {"counts": {k: res.get(k, 0) for k in ("seeds_processed", "candidates_added")}}
 
 
+@guarded_job("domain_freshness")
+def domain_freshness_job(data_db_path: str | None = None):
+    """매일 07:45 Seoul — 14개 데이터 도메인 신선도 판정 → stale 은 원장 과제(도메인당 월 1건). 02:00~07:00 수집 잡 뒤, 업무 전.
+
+    잡 성공 여부와 무관하게 '데이터가 언제 것인가' 를 본다 — 폴백·빈 크롤·수동 업로드 누락은 여기서만 잡힌다.
+    stale 은 과제이지 잡 실패가 아니다(ok=True). data_db_path 는 CLI 전용(읽기 전용 URI 로 실제 DB 실측).
+    """
+    from agents.agent_tasks.freshness import run_and_record
+    res = run_and_record(base_dir=BASE_DIR, data_db_path=data_db_path)
+    logger.info("도메인 신선도: %s (stale=%s)", res["counts"], res["stale_domains"])
+    return res
+
+
 @guarded_job("amjilsim_d_minus_2_reporter")  # Task 7 이 스케줄에서 내림(함수·CLI 는 보존)
 def amjilsim_d_minus_2_reporter_job():
     """매일 16:00 Seoul — 오늘이 어느 위원회 D-2이면 사전 예측 보고서 발사 (17:00 마감).
@@ -867,6 +880,8 @@ def build_job_specs(sched_cfg: dict) -> list[JobSpec]:
         JobSpec("home_brand_related_refresh", "Home 브랜드 Naver 연관검색어 확장 (주간, 후보 제안 → admin 승인 대기)",
                 home_brand_related_refresh_job, _cron(day_of_week="mon", hour=5, minute=0),
                 misfire_grace_time=PERIODIC_GRACE),
+        JobSpec("domain_freshness", "데이터 도메인 신선도 판정 (매일 07:45, stale → 원장)", domain_freshness_job,
+                _cron(hour=7, minute=45)),
         JobSpec("amjilsim_d_minus_2_reporter", "amjilsim·약평위 D-2 사전 예측 보고서 발사 (16:00, 17:00 마감)",
                 amjilsim_d_minus_2_reporter_job, _cron(hour=16, minute=0)),
         JobSpec("amjilsim_d_plus_1_reporter", "amjilsim·약평위 D+1 결과 리뷰 + 예측 룰 자가 학습 (08:00, 09:00 마감)",
@@ -989,6 +1004,11 @@ def main():
         "--relink-sessions-now",
         action="store_true",
         help="신호 session_id 를 약제 track 별 위원회(항암=암질심/일반=약평위) 세션으로 재배정 (UPDATE-only, 멱등)",
+    )
+    parser.add_argument(
+        "--freshness-now", nargs="?", const="", metavar="DATA_DB",
+        help="14개 도메인 신선도 즉시 판정 + stale 과제 생성 (표 출력). 값을 주면 그 DB 를 판정 "
+             "(file:/경로/drug_prices.db?mode=ro 로 실제 DB 읽기 전용 실측; 과제는 AGENT_TASK_DB 로)",
     )
     args = parser.parse_args()
 
@@ -1125,6 +1145,15 @@ def main():
             res.get("total"), res.get("updated"),
             res.get("source_verified_fixed"), res.get("by_prominence"),
         )
+        return
+
+    if args.freshness_now is not None:
+        from agents.agent_tasks.freshness import Ctx, format_table, run_all, today_kst
+        data_db = args.freshness_now or resolve_db_path()
+        logger.info("도메인 신선도 즉시 판정 (데이터 DB=%s, 원장=%s)", data_db, resolve_db_path())
+        print(format_table(run_all(Ctx(db_path=data_db, base_dir=BASE_DIR, today=today_kst()))))
+        res = domain_freshness_job(data_db_path=args.freshness_now or None)
+        logger.info("신선도 판정 결과: %s", res)
         return
 
     if args.relink_sessions_now:
