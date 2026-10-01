@@ -81,14 +81,25 @@ def test_quality_review_changed_group_refreshes_detail(tmp_path):
     assert [e["event"] for e in list_events(t["id"], db_path=db)] == ["created", "refreshed"]
 
 
-def test_quality_review_closed_group_is_recreated_but_blocked_is_not(tmp_path):
+def test_quality_review_closed_group_reopens_same_row_rejected_and_blocked_stay(tmp_path):
+    """P1.5 fix B: closed 그룹은 새 행이 아니라 **같은 행**을 다시 연다(attempts 보존). rejected 는 같은 내용이면 그대로(내용이
+    바뀔 때만 다시 연다 — tests/test_recurring_signals.py), blocked 는 억제. 어느 경우도 행 수는 5 그대로."""
+    from agents.agent_tasks.store import get_task
     db = tmp_path / "a.db"
     record_quality_review(REVIEW, db_path=db)
     first = {t["source_ref"]: t for t in list_tasks(db_path=db)}
     update_task(first["qg:suggestion:🔐"]["id"], db_path=db, status="blocked", actor="t", resolution="x")
     update_task(first["qg:suggestion:💊"]["id"], db_path=db, status="rejected", actor="t", resolution="x")
+    closed = first["qg:suggestion:📦"]["id"]
+    update_task(closed, db_path=db, status="triaged", actor="t")
+    update_task(closed, db_path=db, status="in_progress", actor="t")
+    update_task(closed, db_path=db, status="closed", actor="t", resolution="분리 완료")
     record_quality_review(REVIEW, db_path=db)
-    assert count_source_tasks("quality_guard", db_path=db) == 6           # 💊 만 다시, 🔐(blocked) 는 억제
+    assert count_source_tasks("quality_guard", db_path=db) == 5           # 새 행 0
+    assert get_task(closed, db_path=db)["status"] == "triaged"            # 📦 같은 행 재개
+    assert [e["event"] for e in list_events(closed, db_path=db)][-2:] == ["reopened", "status:triaged"]
+    assert get_task(first["qg:suggestion:💊"]["id"], db_path=db)["status"] == "rejected"
+    assert get_task(first["qg:suggestion:🔐"]["id"], db_path=db)["status"] == "blocked"
 
 
 def test_regression_and_drift_are_incidents(tmp_path):

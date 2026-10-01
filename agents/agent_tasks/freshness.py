@@ -5,8 +5,10 @@
 하루 1회 잡(scheduler.domain_freshness_job) + CLI(--freshness-now). 결과는 domain_freshness 테이블(도메인당 1행)에
 기록하고 stale 만 원장 과제로 만든다.
 
-중복 억제: source_ref = "{domain}:{YYYY-MM}" — 같은 달 안에서는 과제 하나(blocked 포함). 사람이 닫았는데 다음 날에도
-stale 이면 다시 연다(고친 게 아니었다는 뜻). 새 달이 되면 다시 연다(월 상한 14건).
+중복 억제: source_ref = "{domain}:{YYYY-MM}" — 같은 달 안에서는 과제 하나(blocked 포함). 사람이나 디스패처가 닫았는데 다음 날에도
+stale 이면 **같은 행을 다시 연다**(signals.record_recurring → store.reopen_task; attempts 보존, 한도 3회면 blocked 로 사람 확인).
+새 행을 만들지 않는 이유(P1.5 fix B): 분리 런북은 '접수' 만으로 ok 라 디스패처가 매일 closed 로 닫고, 새 행은 attempts=0 이라
+재시도 한도가 영원히 안 걸렸다. 월 키는 유지 — 새 달엔 새 행(attempts 0)으로 월 단위 재시도 예산 + 도메인당 월 1행 상한.
 
 판정 불가(테이블·컬럼·파일 부재, 권한)는 과제가 아니다 — evidence 를 "판정 불가: ..." 로 남기고 stale=False.
 데이터 DB 는 읽기만 한다(SELECT) — `file:...?mode=ro` URI 도 받으므로 로컬 실측은 실제 DB 를 읽기 전용으로 연다.
@@ -24,8 +26,8 @@ from pathlib import Path
 from typing import Callable
 
 from .jobs import resolve_db_path
-from .signals import DEDUP_STATUSES, runbook_line
-from .store import DEFAULT_DB_PATH, connect, create_task
+from .signals import record_recurring, runbook_line
+from .store import DEFAULT_DB_PATH, connect
 
 logger = logging.getLogger(__name__)
 KST = timezone(timedelta(hours=9))
@@ -351,16 +353,16 @@ def write_domain_freshness(results: list[Freshness], *, db_path: str | Path = DE
 
 def record_freshness_problems(results: list[Freshness], *, today: date,
                               db_path: str | Path = DEFAULT_DB_PATH) -> list[int]:
-    """stale 도메인마다 과제 id (이미 열려/blocked 면 그 id). 판정 불가·신선은 건너뛴다."""
+    """stale 도메인마다 과제 id — 같은 달의 같은 행(열려 있으면 recurred, 닫혔으면 다시 연다). 판정 불가·신선은 건너뛴다."""
     ids: list[int] = []
     for r in results:
         if not r.stale:
             continue
-        ids.append(create_task(
+        ids.append(record_recurring(
             kind="ops_incident", source="domain_freshness", source_ref=f"{r.domain}:{today:%Y-%m}",
             title=f"데이터 신선도 — {r.domain} stale",
             detail=f"{r.evidence}\n관측={r.observed} 기한={r.deadline}\n{runbook_line(r.runbook)}",
-            priority=r.priority, actor="freshness", dedup_statuses=DEDUP_STATUSES, db_path=db_path))
+            priority=r.priority, actor="freshness", db_path=db_path)[0])
     return ids
 
 

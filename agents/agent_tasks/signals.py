@@ -8,6 +8,9 @@
   - QG 코드패턴/제안(Task 6): source_ref = "qg:issue:<유형>" / "qg:suggestion:<이모지>" — 그룹당 improvement 1건, 내용이
     바뀌면 refreshed 이벤트. QG 회귀/drift 와 RC FAIL 은 내용 키("qg:regression:<indication>", "qg:drift:<해시>",
     "rc:<memory>") 로 ops_incident 1건 — 날짜 키였다면 매일 13건이 쌓여 원장이 일주일 만에 무용지물이 된다.
+  - 반복 조건 신호는 **같은 행을 다시 연다**(P1.5 fix B, record_recurring): (source, source_ref) 로 찾아 없으면 생성, 열려 있거나
+    blocked 면 recurred 이벤트 ≤1/일, closed/rejected 면 같은 행을 triaged 로 다시 연다(store.reopen_task — attempts 보존,
+    한도면 blocked). 디스패처가 런북 '접수' 만으로 closed 로 닫아도 다음 날 새 행(attempts=0)이 생기지 않고 재시도 한도가 걸린다.
 어떤 런북으로 고칠 수 있는지 detail 에 '런북: <이름>' 으로 적는다 — 디스패처(scripts/agent_dispatcher.py:pick_runbook)가 이 힌트를 읽는다.
 """
 from __future__ import annotations
@@ -19,7 +22,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .store import (
-    DEFAULT_DB_PATH, OPEN_STATUSES, add_event, connect, create_task, find_task, list_events, update_task,
+    DEFAULT_DB_PATH, OPEN_STATUSES, TERMINAL_STATUSES, add_event, connect, create_task, find_task, list_events,
+    reopen_task, update_task,
 )
 
 KST = timezone(timedelta(hours=9))
@@ -95,25 +99,49 @@ def runbook_line(name: str | None) -> str:
 _runbook_line = runbook_line   # P1 호환
 
 
-def _note_recurrence(task_id: int, error: str, today: str, *, db_path: str | Path) -> None:
-    """이미 있던 과제에 오늘 처음 다시 났을 때만 recurred 이벤트 1건 (하루 1건 상한)."""
+_RECURRENCE_MARKS = ("created", "recurred", "reopened", "exhausted")
+
+
+def _note_recurrence(task_id: int, error: str, today: str, *, db_path: str | Path, actor: str = "scheduler") -> bool:
+    """이미 있던 과제에 오늘 처음 다시 났을 때만 recurred 이벤트 1건 (하루 1건 상한). 남겼으면 True."""
     for e in reversed(list_events(task_id, db_path=db_path)):
-        if e["event"] in ("created", "recurred") and _kst_date(e["created_at"]) == today:
-            return
-    add_event(task_id, actor="scheduler", event="recurred", detail=str(error)[:500], db_path=db_path)
+        if e["event"] in _RECURRENCE_MARKS and _kst_date(e["created_at"]) == today:
+            return False
+    add_event(task_id, actor=actor, event="recurred", detail=str(error)[:500], db_path=db_path)
+    return True
+
+
+def record_recurring(*, kind: str, source: str, source_ref: str, title: str, detail: str, priority: int,
+                     actor: str, db_path: str | Path = DEFAULT_DB_PATH, reopen_rejected: bool = True) -> tuple[int, str]:
+    """반복 조건 신호의 단일 진입점 — 같은 (source, source_ref) 는 행 하나. (task_id, outcome) 를 돌려준다.
+
+    outcome: "created"(없어서 생성) · "recurred"(열려 있거나 blocked — 오늘 첫 재발 이벤트) · "unchanged"(오늘 이미 기록) ·
+             "reopened"(closed/rejected → 같은 행을 triaged 로, attempts 보존, detail 갱신) · "exhausted"(한도 → blocked, 사람 확인).
+    reopen_rejected=False 면 rejected 는 '이 내용은 안 한다' 는 결정으로 존중해 recurred 만 남긴다(QG improvement 그룹) —
+    ops_incident 는 조건이 되돌아온 것이므로 rejected 도 다시 연다.
+    """
+    existing = find_task(source, source_ref, db_path=db_path)
+    if existing is None:
+        tid = create_task(kind=kind, source=source, source_ref=source_ref, title=title, detail=detail, priority=priority,
+                          actor=actor, dedup_statuses=DEDUP_STATUSES, db_path=db_path)
+        return tid, "created"
+    tid = int(existing["id"])
+    if existing["status"] in TERMINAL_STATUSES and (reopen_rejected or existing["status"] != "rejected"):
+        outcome = reopen_task(tid, actor=actor, detail=detail, db_path=db_path)
+        if outcome != "not_reopenable":
+            return tid, outcome
+    noted = _note_recurrence(tid, detail, _today(), db_path=db_path, actor=actor)
+    return tid, "recurred" if noted else "unchanged"
 
 
 def record_job_failure(job_id: str, error: str, *, error_class: str = "transient",
                        db_path: str | Path = DEFAULT_DB_PATH) -> int:
     runbook = job_runbook(job_id)
-    today = _today()
-    ref = f"{job_id}:config" if error_class == "config" else f"{job_id}:{today}"
+    ref = f"{job_id}:config" if error_class == "config" else f"{job_id}:{_today()}"
     title = f"스케줄러 잡 실패 — {job_id}" + (" (설정 문제)" if error_class == "config" else "")
-    tid = create_task(
+    tid, _ = record_recurring(
         kind="ops_incident", source="scheduler_job", source_ref=ref, title=title,
-        detail=f"{error}\n{runbook_line(runbook)}", priority=2, actor="scheduler",
-        dedup_statuses=DEDUP_STATUSES, db_path=db_path)
-    _note_recurrence(tid, error, today, db_path=db_path)
+        detail=f"{error}\n{runbook_line(runbook)}", priority=2, actor="scheduler", db_path=db_path)
     return tid
 
 
@@ -197,17 +225,27 @@ def count_source_tasks(source: str, *, db_path: str | Path = DEFAULT_DB_PATH) ->
 
 
 def _upsert_group_task(*, source_ref: str, title: str, items: list[str], db_path: str | Path) -> int:
-    """그룹 과제: 없으면(또는 닫혔으면) 생성. 열려 있거나 blocked 면 그대로 — 항목 집합이 바뀌었을 때만 detail 갱신 +
-    refreshed 이벤트(숫자만 바뀐 건 갱신하지 않는다: updated_at 이 매일 움직이면 원장 화면 첫 페이지가 이걸로 찬다)."""
+    """그룹 과제: 없으면 생성. 열려 있거나 blocked 면 그대로 — 항목 집합이 바뀌었을 때만 detail 갱신 + refreshed 이벤트
+    (숫자만 바뀐 건 갱신하지 않는다: updated_at 이 매일 움직이면 원장 화면 첫 페이지가 이걸로 찬다).
+    closed 면 같은 행을 다시 연다(새 행 X — 사람이 닫았는데 다음 날 같은 그룹이 또 나오면 고친 게 아니었다는 뜻).
+    rejected 는 '이 내용은 안 한다' 는 결정 — 같은 내용이면 recurred ≤1/일만 남기고, 내용이 바뀌었을 때만 다시 연다."""
     detail = _group_detail(items)
     existing = find_task("quality_guard", source_ref, db_path=db_path)
-    if existing and existing["status"] in DEDUP_STATUSES:
-        if _group_signature(existing["detail"]) != _group_signature(detail):
-            update_task(existing["id"], actor="quality_guard", db_path=db_path, detail=detail)
-            add_event(existing["id"], actor="quality_guard", event="refreshed", detail=f"{len(items)}건", db_path=db_path)
-        return int(existing["id"])
-    return create_task(kind="improvement", source="quality_guard", source_ref=source_ref, title=title, detail=detail,
-                       priority=3, actor="quality_guard", dedup_statuses=DEDUP_STATUSES, db_path=db_path)
+    if existing is None:
+        return create_task(kind="improvement", source="quality_guard", source_ref=source_ref, title=title, detail=detail,
+                           priority=3, actor="quality_guard", dedup_statuses=DEDUP_STATUSES, db_path=db_path)
+    tid = int(existing["id"])
+    changed = _group_signature(existing["detail"]) != _group_signature(detail)
+    if existing["status"] in DEDUP_STATUSES:
+        if changed:
+            update_task(tid, actor="quality_guard", db_path=db_path, detail=detail)
+            add_event(tid, actor="quality_guard", event="refreshed", detail=f"{len(items)}건", db_path=db_path)
+        return tid
+    if existing["status"] == "closed" or changed:
+        if reopen_task(tid, actor="quality_guard", detail=detail, db_path=db_path) != "not_reopenable":
+            return tid
+    _note_recurrence(tid, detail, _today(), db_path=db_path, actor="quality_guard")
+    return tid
 
 
 def record_quality_review(result: dict, *, db_path: str | Path = DEFAULT_DB_PATH) -> dict[str, list[int]]:
@@ -218,20 +256,19 @@ def record_quality_review(result: dict, *, db_path: str | Path = DEFAULT_DB_PATH
     ids: dict[str, list[int]] = {"incident": [], "improvement": []}
     for m in result.get("mfds_regressions") or []:
         ind = str(m.get("indication_id"))
-        ids["incident"].append(create_task(
+        ids["incident"].append(record_recurring(
             kind="ops_incident", source="quality_guard", source_ref=f"qg:regression:{ind}",
             title=f"MFDS baseline 회귀 — {ind}",
             detail=f"expected {m.get('expected')} / actual {m.get('actual')} ({m.get('reason', '')})\n"
                    "런북 없음 — `python -m scripts.apply_mfds_official_dates --all --apply` 후 "
                    "`agents/rules/kr_mfds_approval_agent_rules.md` §2 LayerSpec 확인",
-            priority=1, actor="quality_guard", dedup_statuses=DEDUP_STATUSES, db_path=db_path))
+            priority=1, actor="quality_guard", db_path=db_path)[0])
     for d in result.get("rule_drifts") or []:
         text = f"{d.get('rule')} — {d.get('file')}"
-        ids["incident"].append(create_task(
+        ids["incident"].append(record_recurring(
             kind="ops_incident", source="quality_guard", source_ref=f"qg:drift:{_content_key(text)}",
             title=f"규칙↔코드 drift — {d.get('rule')}", detail=f"{text}\n{runbook_line(None)}",
-            priority=2 if d.get("severity") == "ERROR" else 3, actor="quality_guard",
-            dedup_statuses=DEDUP_STATUSES, db_path=db_path))
+            priority=2 if d.get("severity") == "ERROR" else 3, actor="quality_guard", db_path=db_path)[0])
     groups: dict[str, list[str]] = {}
     for text in result.get("code_issues") or []:
         groups.setdefault(f"qg:issue:{_issue_group(text)}", []).append(str(text))
@@ -250,12 +287,12 @@ def record_compliance_results(results, *, db_path: str | Path = DEFAULT_DB_PATH)
     for r in results:
         if r.status != "fail":
             continue
-        ids.append(create_task(
+        ids.append(record_recurring(
             kind="ops_incident", source="rule_compliance", source_ref=f"rc:{r.memory}",
             title=f"Rule Compliance FAIL — {r.memory}",
             detail=f"{r.detail}\n수치: {json.dumps(r.metrics, ensure_ascii=False, default=str)[:800]}\n"
                    f"{runbook_line(RC_RUNBOOK.get(r.memory))}",
-            priority=2, actor="rule_compliance", dedup_statuses=DEDUP_STATUSES, db_path=db_path))
+            priority=2, actor="rule_compliance", db_path=db_path)[0])
     return ids
 
 

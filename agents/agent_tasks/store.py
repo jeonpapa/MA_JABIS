@@ -17,7 +17,8 @@ STATUSES = ("new", "triaged", "in_progress", "verified", "awaiting_approval",
             "deploying", "deployed", "closed", "blocked", "rejected")
 OPEN_STATUSES = ("new", "triaged", "in_progress", "verified", "awaiting_approval", "deploying")
 TERMINAL_STATUSES = ("closed", "rejected")
-# 허용된 전이만 통과시킨다 (설계 §5 상태 기계)
+# 허용된 전이만 통과시킨다 (설계 §5 상태 기계). closed/rejected 는 종단 — update_task(API·사람·디스패처 경로)는 되돌리지
+# 못한다. 유일한 예외는 reopen_task: 같은 (source, source_ref) 신호가 재발했을 때만 종단 행을 다시 연다(아래 근거).
 ALLOWED_TRANSITIONS = {
     "new": ("triaged", "rejected", "blocked"),
     "triaged": ("in_progress", "rejected", "blocked"),
@@ -284,5 +285,51 @@ def claim_task(task_id: int, *, actor: str, db_path: str | Path = DEFAULT_DB_PAT
             return "exhausted"
         conn.commit()
         return "not_claimable"
+    finally:
+        conn.close()
+
+
+def reopen_task(task_id: int, *, actor: str, detail: str | None = None,
+                db_path: str | Path = DEFAULT_DB_PATH) -> str:
+    """종단(closed/rejected) 과제를 **같은 신호가 재발했을 때** 다시 연다 — ALLOWED_TRANSITIONS 밖의 유일한 역방향 전이.
+
+    근거(P1.5 검증 결함 B): 반복 조건 신호(신선도·RC FAIL·QG·잡 실패)는 디스패처가 런북 '접수' 만으로 closed 로 닫은 뒤에도
+    다음 날 다시 난다. 그때 새 행을 만들면 attempts=0 으로 시작해 설계 §5 의 재시도 한도(MAX_ATTEMPTS → blocked)가 영원히
+    걸리지 않고 원장에 같은 도메인 행이 날마다 쌓인다. 같은 행을 다시 열어야 attempts 가 누적된다. 상태 기계는 건드리지 않는다:
+    update_task 는 여전히 closed/rejected 를 되돌리지 못하고(사람·API·디스패처), 이 함수는 신호 모듈(signals.record_recurring)만 부른다.
+
+    결과 — 각각 단일 트랜잭션 안의 조건부 UPDATE 1회(triage_task·claim_task 와 같은 이유):
+    - "reopened":       attempts < MAX_ATTEMPTS → triaged. claimed_by/claimed_at/resolution 을 비우고(이전 결과는 status:closed
+                        이벤트가 보존) attempts 는 보존. detail 이 주어지면 최신 증거로 갱신. 이벤트 reopened + status:triaged.
+    - "exhausted":      attempts >= MAX_ATTEMPTS → 다시 열지 않고 blocked + EXHAUSTED_RESOLUTION — 사람 확인. 이벤트 exhausted + status:blocked.
+    - "not_reopenable": closed/rejected 가 아니거나(열려 있음·blocked) 없는 과제 — 호출자가 recurred 이벤트로 처리한다.
+    """
+    conn = connect(db_path)
+    try:
+        now = _now()
+        sets = "status='triaged', claimed_by=NULL, claimed_at=NULL, resolution=NULL, updated_at=?"
+        params: list = [now]
+        if detail is not None:
+            sets += ", detail=?"
+            params.append(detail)
+        cur = conn.execute(
+            f"UPDATE agent_task SET {sets} WHERE id=? AND status IN ('closed','rejected') AND attempts < ?",
+            (*params, task_id, MAX_ATTEMPTS))
+        if cur.rowcount == 1:
+            add_event(task_id, actor=actor, event="reopened", detail=(detail or "")[:500] or None, conn=conn)
+            add_event(task_id, actor=actor, event="status:triaged", conn=conn)
+            conn.commit()
+            return "reopened"
+        cur = conn.execute(
+            "UPDATE agent_task SET status='blocked', resolution=?, updated_at=? "
+            "WHERE id=? AND status IN ('closed','rejected') AND attempts >= ?",
+            (EXHAUSTED_RESOLUTION, now, task_id, MAX_ATTEMPTS))
+        if cur.rowcount == 1:
+            add_event(task_id, actor=actor, event="exhausted", detail=EXHAUSTED_RESOLUTION, conn=conn)
+            add_event(task_id, actor=actor, event="status:blocked", detail=EXHAUSTED_RESOLUTION, conn=conn)
+            conn.commit()
+            return "exhausted"
+        conn.commit()
+        return "not_reopenable"
     finally:
         conn.close()
