@@ -38,11 +38,9 @@ def test_canonical_daily_mg():
     assert abs(v2 - 2 * 60 / 7) < 1e-6
 
 
-def test_resolve_regex_and_cache(tmp_path=None):
-    db = DrugPriceDB(Path("data/db/drug_prices.db"))
-    import sqlite3
-    sqlite3.connect("data/db/drug_prices.db").execute(
-        "DELETE FROM dosing_resolved WHERE cache_key LIKE 'TEST_%'").connection.commit()
+def test_resolve_regex_and_cache(tmp_path):
+    """캐시-DB-first 경로 — 실제 플랫폼 DB 가 아니라 스키마만 만든 임시 DB 에 쓴다 (P1.5 fix D: 실제 DB 에 TEST_* 행을 남겼었다)."""
+    db = DrugPriceDB(tmp_path / "dosing.db")
 
     r = resolve_dosing("성인 1일 1회 100mg을 경구투여", cache_key="TEST_sita", db=db, use_llm=False)
     assert r["schedule"] == "continuous" and r["daily_dose_mg"] == 100.0 and r["source"] == "regex"
@@ -61,8 +59,10 @@ def test_resolve_regex_and_cache(tmp_path=None):
 
 
 if __name__ == "__main__":
+    import tempfile
     test_parse_orderings()
     test_weight_bsa()
     test_canonical_daily_mg()
-    test_resolve_regex_and_cache()
+    with tempfile.TemporaryDirectory() as d:
+        test_resolve_regex_and_cache(Path(d))
     print("OK — dosing resolver tests passed")

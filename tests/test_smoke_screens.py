@@ -1,7 +1,9 @@
 """화면별 스모크 (P1.5 Task 4) — 화면 테이블 커버리지, 체크 단위 실패 보고, 토큰 부재 skipped, 하루 1건 과제.
 
-네트워크 금지: HTTP 는 전부 가짜 opener 또는 Flask test_client 어댑터로 간다. 이 worktree 의 플랫폼 DB 는 빈 stub 이라
-"데이터가 있다" 는 단정할 수 없다 — 검사기의 논리(집계·형식·권한 게이트·로그인 게이트)만 실제 라우트로 확인한다.
+네트워크 금지: HTTP 는 전부 가짜 opener 또는 Flask test_client 어댑터로 간다. 플랫폼 DB 의 내용에 "데이터가 있다" 는
+단정하지 않는다 — 검사기의 논리(집계·형식·권한 게이트·로그인 게이트)만 실제 라우트로 확인한다.
+실제 DB 쓰기 금지(P1.5 fix D): Flask 한 바퀴는 server.db 를 임시 스키마 DB 로 바꾸고 스모크 헤더로 부수효과를 끈다 —
+conftest 의 읽기 전용 가드가 그 밖의 쓰기를 막는다.
 """
 from __future__ import annotations
 
@@ -183,16 +185,25 @@ def _flask_opener(app):
 
 
 def test_smoke_against_flask_test_client(monkeypatch, tmp_path):
-    """실제 Flask 앱(빈 stub DB)으로 한 바퀴: 집계가 맞고, 로그인·권한 게이트가 통과하며, 같은 프로세스 토큰이 거부되지 않는다.
-    데이터 의존 화면의 200/500 은 stub DB 의 사실이라 단정하지 않는다(프로덕션 첫 실행 예측은 계획 §T4)."""
+    """실제 Flask 앱(임시 스키마 DB)으로 한 바퀴: 집계가 맞고, 로그인·권한 게이트가 통과하며, 같은 프로세스 토큰이 거부되지 않는다.
+    데이터 의존 화면의 200/500 은 임시 DB 의 사실이라 단정하지 않는다(프로덕션 첫 실행 예측은 계획 §T4).
+    부수효과 0: 스모크 헤더 덕에 임시 DB 의 search_log 도 비어 있어야 한다(실제 DB 에 'keytruda' 행을 남기던 사고)."""
+    import sqlite3
     import api.server as s
     import agents.gov_agency_clouds as _clouds
     import agents.government_keyword_summary as _gov
+    from agents.daily_mailing import storage as _dm_storage
+    from agents.db import DrugPriceDB
+    api_db = tmp_path / "api.db"
+    monkeypatch.setattr(s, "db", DrugPriceDB(api_db))         # 스키마만 있는 임시 DB — 실제 플랫폼 DB 에 쓰지 않는다
     monkeypatch.setattr(s, "_AGENT_TASK_DB_PATH", tmp_path / "a.db")
+    monkeypatch.setattr(s, "_daily_mailing_admin_kanban",     # 기본 db_path 가 정의 시점에 실제 DB 로 묶여 있다
+                        lambda limit_runs=20, purge=True: _dm_storage.load_admin_kanban(tmp_path / "dm.db", limit_runs=limit_runs, purge=purge))
     monkeypatch.setattr(_gov, "CACHE_DIR", tmp_path)        # 두 Home 라우트의 일자 캐시는 git 추적 디렉터리 — 작업트리에 쓰지 않는다
     monkeypatch.setattr(_clouds, "CACHE_DIR", tmp_path)
     opener = _flask_opener(s.app)
     res = smoke.run_smoke("http://test", smoke.mint_token_factory("http://test", opener=opener), opener=opener)
+    assert sqlite3.connect(api_db).execute("SELECT COUNT(*) FROM search_log").fetchone()[0] == 0
     total = sum(len(sc.checks) for sc in smoke.SCREENS)
     assert res["counts"]["skipped"] == 0                               # 같은 프로세스 → 비밀 공유 → 토큰 발급됨
     assert res["counts"]["passed"] + res["counts"]["failed"] == total
