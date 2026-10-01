@@ -25,6 +25,16 @@ primary_region = "nrt"   # Tokyo — 한국 최저 레이턴시 리전
   auto_start_machines = true
   min_machines_running = 1
 
+  # /api/health 는 DB 불가·스케줄러 heartbeat 15분 초과(웹 기동 5분 유예) 에만 503 → check 실패 → Fly 가 머신을 unhealthy 로
+  # 처리(라우팅 중단·배포 대기 실패·재시작). start_production.sh 가 재기동 시 web+scheduler 둘 다 다시 띄운다.
+  # grace 120s: 부팅 sync(reimb --amjilsim-daily-crawl-now) + 스케줄러 기동 시간 동안의 실패는 무시.
+  [[http_service.checks]]
+    grace_period = "120s"
+    interval = "30s"
+    timeout = "5s"
+    method = "GET"
+    path = "/api/health"
+
 [mounts]
   source = "ma_data"
   destination = "/app/data"

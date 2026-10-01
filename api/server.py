@@ -12,6 +12,7 @@ import logging
 import re
 import sqlite3
 import sys
+import time
 from pathlib import Path
 
 from flask import Flask, jsonify, request, send_file, send_from_directory
@@ -7306,9 +7307,65 @@ def competitor_news_crawl():
 # 헬스체크
 # ──────────────────────────────────────────────────────────────────────────────
 
+_PROCESS_STARTED_AT = time.time()
+
+
+def _health_db_ok() -> bool:
+    try:
+        conn = db._connect()
+        try:
+            conn.execute("SELECT 1").fetchone()
+        finally:
+            conn.close()
+        return True
+    except Exception as e:
+        logger.error("health: DB 접근 실패: %s", e)
+        return False
+
+
+def _health_record_scheduler_stale(status: dict) -> None:
+    """heartbeat stale 을 원장에 하루 1건 남긴다 — Fly 가 재시작해도 '그런 일이 있었다' 가 원장에 보이게. 실패는 삼킨다."""
+    try:
+        from agents.agent_tasks import heartbeat as _hb
+        from agents.agent_tasks.jobs import resolve_db_path
+        from agents.agent_tasks.signals import record_job_failure
+        age = status.get("age_s")
+        seen = f"age={age}s (>{_hb.STALE_AFTER_S}s)" if age is not None else "파일 없음 (부팅 유예 경과)"
+        record_job_failure("scheduler_heartbeat", f"heartbeat {seen} — 스케줄러 정지/hang 의심",
+                           db_path=resolve_db_path())
+    except Exception as e:
+        logger.warning("health: heartbeat stale 신호 기록 실패: %s", e)
+
+
 @app.get("/api/health")
 def health():
-    return jsonify({"status": "ok", "available_countries": AVAILABLE_COUNTRIES})
+    """생존 헬스 (fly.toml [[http_service.checks]] 가 30초마다 친다).
+
+    503 은 두 경우뿐: DB 접근 불가, 또는 부팅 유예(BOOT_GRACE_S=5분) 뒤 스케줄러 heartbeat 가 없거나 STALE_AFTER_S(15분)
+    넘게 오래됐을 때. 부팅 유예 안에는 heartbeat 가 없거나 옛것이어도 200 — 배포 직후 Fly check 가 새 머신을 죽이지 않게.
+    원장 기록·job run 조회 실패는 응답을 바꾸지 않는다(신호 경계).
+    """
+    from agents.agent_tasks import heartbeat as _hb
+    from agents.agent_tasks.jobs import recent_job_runs
+    db_ok = _health_db_ok()
+    st = _hb.heartbeat_status(now=time.time(), process_started_at=_PROCESS_STARTED_AT, path=_hb.HEARTBEAT_PATH)
+    failed: list[str] = []
+    try:
+        failed = [r["job_id"] for r in recent_job_runs(hours=24) if not r["ok"]]
+    except Exception as e:
+        logger.warning("health: job run 조회 실패: %s", e)
+    body = {
+        "status": "ok" if (db_ok and not st["stale"]) else "degraded",
+        "db_ok": db_ok,
+        "scheduler_heartbeat_age_s": st["age_s"],
+        "scheduler_stale": st["stale"],
+        "frontend_build": (_SPA_DIR / "index.html").exists(),
+        "jobs_failed_24h": failed,
+        "available_countries": AVAILABLE_COUNTRIES,
+    }
+    if st["stale"]:
+        _health_record_scheduler_stale(st)
+    return jsonify(body), (200 if body["status"] == "ok" else 503)
 
 
 if __name__ == "__main__":

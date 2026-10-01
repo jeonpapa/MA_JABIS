@@ -774,6 +774,17 @@ def policy_analysis_sync_job():
     return res
 
 
+@guarded_job("scheduler_heartbeat", record_runs=False)
+def scheduler_heartbeat_job():
+    """60초 — 생존 파일 갱신(atomic rename). /api/health 가 mtime 으로 판정(웹 기동 5분 유예 뒤 15분 초과 → 503 → Fly check 실패).
+
+    record_runs=False: 분 단위 잡이라 scheduler_job_run 을 채우지 않는다. 쓰기 실패(볼륨·디스크)는 guarded_job 이 과제로 남긴다(하루 1건).
+    """
+    from agents.agent_tasks.heartbeat import write_heartbeat
+    write_heartbeat(pid=os.getpid())
+    return None
+
+
 # ── 등록부 ──────────────────────────────────────────────────────────────────
 # 잡 전부를 데이터(JobSpec)로 둔다 — tests/test_scheduler_job_specs.py 가 guarded·misfire·JOB_RUNBOOK 일치를 대조한다.
 
@@ -846,6 +857,8 @@ def build_job_specs(sched_cfg: dict) -> list[JobSpec]:
                 amjilsim_monthly_trend_job, _cron(hour=9, minute=0)),
         JobSpec("hira_schedule_fetcher_annual", "HIRA 공식 일정 매년 1/1 자동 갱신", hira_schedule_fetcher_job,
                 _cron(month=1, day=1, hour=9, minute=0), misfire_grace_time=PERIODIC_GRACE),
+        JobSpec("scheduler_heartbeat", "스케줄러 heartbeat (60초, /api/health 생존 판정)", scheduler_heartbeat_job,
+                IntervalTrigger(seconds=60, timezone="Asia/Seoul"), misfire_grace_time=30),
     ]
 
 # ── 진입점 ─────────────────────────────────────────────────────────────────
