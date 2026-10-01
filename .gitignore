@@ -25,6 +25,9 @@ data/db/*.db.bak.*
 
 # QualityGuard·RuleCompliance 산출물 (볼륨 경로 — P1.5 Task 6). 구 quality_guard/ 는 git 추적 역사로만 남는다
 data/quality_guard/
+# 스케줄러 생존 heartbeat — 로컬 스케줄러가 60초마다 바꿔 쓴다(매일 백업 커밋에 섞이지 않게)
+data/scheduler_heartbeat.json
+data/scheduler_heartbeat.tmp
 
 # 캐시 (대용량, 별도 백업)
 data/hta_cache/
