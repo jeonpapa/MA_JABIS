@@ -5,7 +5,9 @@ in-process(스케줄러 잡 platform_smoke, 매일 07:50): base=http://127.0.0.1
 외부(VPS·로컬 수동): python scripts/smoke.py --base https://ma-ai-dossier.fly.dev --login-email ... --login-password ...
   (관리자가 만든 admin 계정 — admin 은 user 라우트도 통과한다. 새 계정 생성은 사용자 몫: VPS_SETUP.md §1 과 같은 절차)
 기대 조건은 '200 + JSON' 이 기본이고 화면별로 키 존재·상태코드를 덧붙인다. 데이터 내용은 검사하지 않는다(신선도는 Task 3).
-반환은 잡 규약 {ok, counts, errors} — guarded_job 이 실패를 platform_smoke:{날짜} 과제로 하루 1건 남긴다.
+반환은 잡 규약 {ok, counts, errors} — guarded_job 이 실패를 platform_smoke:<실패 집합 해시> 과제로 남긴다(같은 실패면 1건).
+체크별 타임아웃: 기본 10초. 캐시 미스에 LLM·외부 수집이 끼는 Home 라우트는 Check(timeout=...) 로 넉넉히 준다 — 07:50 첫 호출
+(일자 캐시 미스)이 10초를 넘겨 거짓 platform_smoke 과제가 생기지 않게(P1.5 fix F).
 """
 from __future__ import annotations
 
@@ -43,10 +45,16 @@ def _status(code: int) -> Expect:
     return lambda status, body: None if status == code else f"HTTP {status} (기대 {code})"
 
 
+# 캐시 미스 시 무거운 라우트: 정부요약은 OpenAI+Gemini(각 45초) 순차 호출, 나머지는 외부 수집/집계. 기본값은 run_smoke(timeout=).
+HEAVY_TIMEOUT = 90.0      # /api/home/government-keyword-summary — LLM 2회
+SLOW_TIMEOUT = 30.0       # media-intelligence(Naver 트래픽)·gov-agency-clouds(아카이브 집계)·hta/approvals(캐시 미스 시 HTA 스크레이프)
+
+
 @dataclass(frozen=True)
 class Check:
     path: str
     expect: Expect = _json_ok
+    timeout: float | None = None       # None = run_smoke 의 기본값
 
 
 @dataclass(frozen=True)
@@ -62,14 +70,15 @@ SCREENS: tuple[Screen, ...] = (
                            Check("/api/competitor-trends", _status(401)),                # 토큰 없이 user 라우트 → 401
                            Check("/api/admin/agent-tasks", _status(401)))),              # 토큰 없이 admin 라우트 → 401
     Screen("home", None, (Check("/api/home/top-price-changes?limit=5"), Check("/api/msd/summary"),
-                          Check("/api/home/media-intelligence"), Check("/api/home/government-keyword-summary"),
-                          Check("/api/home/gov-agency-clouds"))),
+                          Check("/api/home/media-intelligence", timeout=SLOW_TIMEOUT),
+                          Check("/api/home/government-keyword-summary", timeout=HEAVY_TIMEOUT),
+                          Check("/api/home/gov-agency-clouds", timeout=SLOW_TIMEOUT))),
     Screen("domestic-pricing", None, (Check("/api/domestic/price-changes?q=키트루다"), Check("/api/domestic/search?q=키트루다"),
                                       Check("/api/domestic/stats"))),
     Screen("regimen-cost", "user", (Check("/api/regimen/onco/search?q=pembrolizumab"), Check("/api/regimen-comparisons"))),
     Screen("international-pricing", None, (Check("/api/foreign/drugs"), Check("/api/foreign/cached?q=keytruda"),
                                            Check("/api/foreign/available_countries"),
-                                           Check("/api/hta/approvals?drug=pembrolizumab"))),
+                                           Check("/api/hta/approvals?drug=pembrolizumab", timeout=SLOW_TIMEOUT))),
     Screen("market-share", None, (Check("/api/market-share/search?q=키트루다"),)),
     Screen("competitor-trends", "user", (Check("/api/competitor-trends"), Check("/api/competitor-news?limit=5"),
                                          Check("/api/access-insight/drugs"))),
@@ -126,7 +135,7 @@ def run_smoke(base: str, token_for: TokenFor, *, opener=urllib.request.urlopen, 
             continue
         for check in screen.checks:
             try:
-                status, body = _get(base, check.path, token, opener, timeout)
+                status, body = _get(base, check.path, token, opener, check.timeout or timeout)
                 why = check.expect(status, body)
             except Exception as exc:
                 why = f"{type(exc).__name__}: {exc}"[:200]
