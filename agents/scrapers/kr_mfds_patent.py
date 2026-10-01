@@ -16,10 +16,11 @@ import logging
 import os
 import sqlite3
 import urllib.parse
-import urllib.request
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
+from agents.scrapers.mfds_api import MfdsApiError, request_items
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,8 @@ API_BASE = "https://apis.data.go.kr/1471000/MdcinPatentInfoService2/getMdcinPate
 
 # 캐시 TTL — 특허 상태/만료일은 거의 변동 없음. 90일 유지.
 CACHE_TTL_DAYS = 90
+# 부정 캐시 행(API 가 답했고 0건)의 patent_no. 실패(MfdsApiError) 경로에서는 절대 쓰지 않는다 — kr_mfds_permit 과 같은 규칙.
+SENTINEL_PATENT_NO = "__EMPTY__"
 
 
 def _load_env() -> None:
@@ -71,7 +74,8 @@ def fetch_raw(
 ) -> list[dict]:
     """
     data.go.kr API 직접 호출 (캐시 미경유). 모든 검색조건은 None 가능, 최소 1개 필요.
-    Returns: API items 리스트 (없으면 빈 리스트).
+    Returns: API items 리스트 — 빈 리스트는 **API 가 답했고 0건** 만을 뜻한다.
+    Raises: MfdsApiError — 전송 실패·JSON 파싱 실패·resultCode 비정상 ('0건' 과 절대 혼동하지 않는다).
     """
     if not any([item_name, ingr_name, ingr_eng_name, item_eng_name, item_seq]):
         raise ValueError("최소 하나의 검색조건이 필요합니다.")
@@ -90,28 +94,7 @@ def fetch_raw(
 
     qs = urllib.parse.urlencode(params, doseq=True)
     url = f"{API_BASE}?{qs}"
-    try:
-        with urllib.request.urlopen(url, timeout=timeout) as r:
-            body = r.read().decode("utf-8", errors="replace")
-    except Exception as e:
-        logger.warning("MFDS 특허 API 호출 실패: %s", e)
-        return []
-
-    try:
-        data = json.loads(body)
-    except json.JSONDecodeError:
-        logger.warning("MFDS 응답 JSON 파싱 실패: %s", body[:200])
-        return []
-
-    header = data.get("header") or {}
-    if header.get("resultCode") and header.get("resultCode") != "00":
-        logger.info("MFDS 특허 응답 비정상: %s — %s", header.get("resultCode"), header.get("resultMsg"))
-        return []
-    body_obj = data.get("body") or {}
-    items = body_obj.get("items") or []
-    if isinstance(items, dict):  # 단일 결과는 dict 로 옴
-        items = [items]
-    return items
+    return request_items(url, timeout=timeout, label="특허")
 
 
 # ── 캐시 (sqlite) ───────────────────────────────────────────────────────────
@@ -143,40 +126,64 @@ def _ensure_table() -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_patent_item_seq ON mfds_patent_cache(item_seq)")
 
 
-def _cache_read(item_name: str) -> tuple[list[dict], Optional[datetime]]:
-    """item_name 기준으로 캐시 조회. (rows, fetched_at) 반환."""
+def _parse_dt(s: str | None) -> Optional[datetime]:
+    try:
+        return datetime.fromisoformat(s) if s else None
+    except ValueError:
+        return None
+
+
+def _cache_read(item_name: str) -> tuple[list[dict], Optional[datetime], Optional[str]]:
+    """item_name 기준 캐시 조회 → (items, fetched_at, kind).
+
+    kind 'items'        실측 행 — sentinel 이 더 새로 쓰였어도 실측이 이긴다 (fetched_at 은 실측 행 기준 최신)
+         'negative'     부정 캐시(API 가 답했고 0건) 만 있음 — items=[]
+         'legacy_empty' 구 포맷 sentinel(raw_json='{}') 만 있음 — 실패/빈결과 구분 불가라 캐시로 인정하지 않는다 → 재조회
+         None           행 없음
+    """
     _ensure_table()
     with sqlite3.connect(str(DB_PATH)) as conn:
-        cur = conn.execute(
-            "SELECT raw_json, fetched_at FROM mfds_patent_cache WHERE item_name = ?",
+        rows = conn.execute(
+            "SELECT raw_json, fetched_at, patent_no FROM mfds_patent_cache WHERE item_name = ?",
             (item_name,),
-        )
-        rows = cur.fetchall()
+        ).fetchall()
     if not rows:
-        return [], None
-    items = []
-    fetched_at = None
-    for raw, fa in rows:
+        return [], None, None
+
+    items: list[dict] = []
+    fetched_at: Optional[str] = None
+    sentinel: tuple[dict, Optional[str]] | None = None
+    for raw, fa, patent_no in rows:
         try:
-            items.append(json.loads(raw))
+            parsed = json.loads(raw) if raw else {}
         except Exception:
             continue
+        if not isinstance(parsed, dict):
+            continue
+        if patent_no == SENTINEL_PATENT_NO:
+            if sentinel is None or (fa and (sentinel[1] is None or fa > sentinel[1])):
+                sentinel = (parsed, fa)
+            continue
+        if not parsed:
+            continue
+        items.append(parsed)
         if fetched_at is None or (fa and fa > fetched_at):
             fetched_at = fa
-    fa_dt = None
-    if fetched_at:
-        try:
-            fa_dt = datetime.fromisoformat(fetched_at)
-        except ValueError:
-            pass
-    return items, fa_dt
+    if items:
+        return items, _parse_dt(fetched_at), "items"
+    if sentinel is not None:
+        marker, fa = sentinel
+        return [], _parse_dt(fa), "negative" if marker.get("negative") is True else "legacy_empty"
+    return [], None, None
 
 
 def _cache_write(item_name: str, ingredient: str | None, items: list[dict]) -> None:
+    """실측 적재 또는 부정 캐시. **API 가 답한 결과만** 받는다 — 실패(MfdsApiError) 경로에서는 호출하지 않는다."""
     _ensure_table()
     if not items:
-        # 빈 결과도 캐시 — sentinel row 로 fetched_at 만 기록
+        # API 가 답했고 0건 → 부정 캐시. raw_json 의 negative 마커로 구 포맷('{}') 과 구별한다.
         now = datetime.now().isoformat(timespec="seconds")
+        marker = {"negative": True, "written_at": now}
         with sqlite3.connect(str(DB_PATH)) as conn:
             conn.execute(
                 """
@@ -184,9 +191,9 @@ def _cache_write(item_name: str, ingredient: str | None, items: list[dict]) -> N
                   (item_seq, item_name, ingredient, page_gb_nm, patent_gb_code,
                    patent_no, patent_status, patent_end_date, invn_name, patentee,
                    fetched_at, raw_json)
-                VALUES (?, ?, ?, '', '', '__EMPTY__', '', '', '', '', ?, ?)
+                VALUES (?, ?, ?, '', '', ?, '', '', '', '', ?, ?)
                 """,
-                (None, item_name, ingredient, now, json.dumps({}, ensure_ascii=False)),
+                (None, item_name, ingredient, SENTINEL_PATENT_NO, now, json.dumps(marker, ensure_ascii=False)),
             )
         return
 
@@ -550,6 +557,10 @@ def lookup_patent(
       refresh: True 면 캐시 무시하고 API 강제 재호출
     Returns:
       summarize() 결과 + {'item_name', 'fetched_at', 'source'}
+      source 'cache'       신선한 캐시 (실측 또는 부정 캐시)
+             'api'         방금 API 가 답함 (0건이면 status=unknown 으로 부정 캐시 기록)
+             'cache_stale' API 실패 — TTL 지난 마지막 실측으로 판정 (+ 'error', 'error_kind')
+             'error'       API 실패 — 실측 없음, status=unknown / judgment_basis='api_error'. **캐시에 아무것도 쓰지 않는다.**
     """
     item_name = (item_name or "").strip()
     if not item_name:
@@ -559,21 +570,40 @@ def lookup_patent(
                 "other_patents_count": 0, "judgment_basis": "skip_empty",
                 "fetched_at": None, "source": "skip_empty"}
 
-    if use_cache and not refresh:
-        cached_items, fetched_at = _cache_read(item_name)
-        if cached_items and _cache_fresh(fetched_at):
-            # 빈 sentinel ('__EMPTY__') 만 있는 경우는 빈 응답 캐시 → status=unknown
-            non_empty = [it for it in cached_items if it]
-            summary = summarize(non_empty)
+    cached_items: list[dict] = []
+    fetched_at: Optional[datetime] = None
+    kind: Optional[str] = None
+    if use_cache:
+        cached_items, fetched_at, kind = _cache_read(item_name)
+        if not refresh and kind in ("items", "negative") and _cache_fresh(fetched_at):
+            summary = summarize(cached_items)
             summary.update({
                 "item_name": item_name,
                 "fetched_at": fetched_at.isoformat() if fetched_at else None,
                 "source": "cache",
             })
             return summary
+        # 'legacy_empty' 는 실패/빈결과 구분 불가 → 재조회
 
     # API 호출 — 한글 표기 변형 + prefix 축약 + ingredient fallback 다단계
-    items = _try_variants(item_name, ingredient)
+    try:
+        items = _try_variants(item_name, ingredient)
+    except MfdsApiError as e:
+        # 실패는 '특허 없음' 이 아니다 — sentinel 을 쓰지 않는다. 마지막 실측이 있으면 그것으로 판정한다.
+        if kind == "items":
+            logger.warning("MFDS 특허 조회 실패 — 캐시 미기록, 마지막 실측(%s) 으로 판정 [%s]: %s",
+                           fetched_at.isoformat(timespec="seconds") if fetched_at else "?", item_name, e)
+            summary = summarize(cached_items)
+            summary.update({"item_name": item_name, "source": "cache_stale",
+                            "fetched_at": fetched_at.isoformat() if fetched_at else None})
+        else:
+            logger.warning("MFDS 특허 조회 실패 — 캐시 미기록, 실측 없음 [%s]: %s", item_name, e)
+            summary = summarize([])
+            summary.update({"item_name": item_name, "source": "error", "fetched_at": None,
+                            "judgment_basis": "api_error"})
+        summary["error"] = str(e)
+        summary["error_kind"] = e.kind
+        return summary
 
     _cache_write(item_name, ingredient, items)
     summary = summarize(items)

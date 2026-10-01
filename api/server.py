@@ -712,19 +712,24 @@ def _enrich_products(products: list[dict]) -> None:
         # 결과 있으면 approval_date / usage_text 를 MFDS 실측으로 override.
         # drug_enrichment(Perplexity) 는 보조 소스로 dose_schedule/daily_dose_units 등 산출에만 활용.
         mfds_permit = None
+        # ok | stale | miss | error — 'miss'(API 가 답했고 품목 없음) 와 'error'(API 실패) 는 다른 뜻. UI 가 '허가 없음' 으로
+        # 오해하지 않도록 product 에 mfds_permit_status 로 올린다. 실패는 캐시에 기록되지 않는다(kr_mfds_permit 규칙).
+        mfds_permit_status = "error"
         try:
-            from agents.scrapers.kr_mfds_permit import lookup_permit
+            from agents.scrapers.kr_mfds_permit import has_permit_data, lookup_permit, permit_status
             mfds_query = p.get("product_name") or p.get("brand_name") or ""
             mfds_permit = lookup_permit(
                 mfds_query,
                 ingredient=p.get("ingredient"),
                 edi_code=p.get("insurance_code"),
             )
-            if mfds_permit.get("source") == "miss":
+            mfds_permit_status = permit_status(mfds_permit)
+            if not has_permit_data(mfds_permit):
                 mfds_permit = None
         except Exception as ex:
             logger.debug("MFDS 허가 API 실패 [%s]: %s", p.get("insurance_code"), ex)
             mfds_permit = None
+            mfds_permit_status = "error"
 
         # 기본은 drug_enrichment 결과 → MFDS permit 가 있으면 우선
         approval_date = e["approval_date"] if e else None
@@ -890,6 +895,7 @@ def _enrich_products(products: list[dict]) -> None:
                 p["enrichment_source"] = f"mfds_permit + {existing_src}"
         else:
             p["mfds_permit"] = None
+        p["mfds_permit_status"] = mfds_permit_status
 
         # ── 특허 상태 — 1차: MFDS 공공데이터 API (실측), 2차: loe_pattern 가격 history 추정 ──
         # 권위 소스: 식약처 의약품 특허정보 (data.go.kr MdcinPatentInfoService2)
@@ -4752,11 +4758,11 @@ _COUNT_UNITS = {"정", "tab", "tablet", "캡슐", "cap", "capsule", "포", "환"
 def _label_dosing_to_row(inn: str) -> dict | None:
     """MFDS 허가사항 usage_text → dosing_resolver → 테이블 행 dosing(일 단위 cycle_days=1)."""
     from agents.dosing_resolver import resolve_dosing
-    from agents.scrapers.kr_mfds_permit import lookup_permit
+    from agents.scrapers.kr_mfds_permit import has_permit_data, lookup_permit
     usage_text = ""
     try:
         permit = lookup_permit(inn, ingredient=inn, edi_code="")
-        if permit and permit.get("source") != "miss":
+        if has_permit_data(permit):       # 'miss'·'error' 모두 usage_text 없음 — error 는 캐시 미기록이라 다음 호출에 재시도
             usage_text = permit.get("usage_text") or ""
     except Exception:
         pass
@@ -5007,7 +5013,7 @@ def regimen_price_as_of():
     items = items[:40]
 
     from agents.dosing_resolver import resolve_dosing
-    from agents.scrapers.kr_mfds_permit import lookup_permit
+    from agents.scrapers.kr_mfds_permit import has_permit_data, lookup_permit
     use_llm = os.environ.get("REGIMEN_DOSING_LLM", "1") != "0"
 
     def _resolve_cost(*, cache_key, name, ingredient, edi, price, strength_text,
@@ -5019,7 +5025,7 @@ def regimen_price_as_of():
         usage_text = ""
         try:
             permit = lookup_permit(name or "", ingredient=ingredient or "", edi_code=edi or "")
-            if permit and permit.get("source") != "miss":
+            if has_permit_data(permit):   # 'miss'·'error' 모두 usage_text 없음
                 usage_text = permit.get("usage_text") or ""
         except Exception as e:
             logger.debug("[price-as-of] permit %s 실패: %s", name, e)

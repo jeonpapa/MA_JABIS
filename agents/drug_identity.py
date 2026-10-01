@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 
 from agents.db import drug_aliases
-from agents.scrapers.kr_mfds_permit import lookup_permit
+from agents.scrapers.kr_mfds_permit import has_permit_data, lookup_permit
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,7 @@ def _mfds_candidate(q: str) -> list[dict]:
     except Exception as e:            # 키 미설정·네트워크 실패 → 후보 없음(호출측이 raw 폴백)
         logger.info("[identity] MFDS 폴백 실패: %s", e)
         return []
-    if res.get("source") == "miss":
+    if not has_permit_data(res):      # 'miss'(품목 없음)·'error'(API 실패, 캐시 미기록) 모두 후보 없음 — 호출측이 raw 폴백
         return []
     # lookup_permit 은 summary 를 flat dict 로 반환 — 래핑 형태도 함께 수용
     summary = res.get("summary") or res

@@ -453,15 +453,19 @@ def enrich_mfds(limit: int = None) -> dict:
     if limit:
         drugs = drugs[:limit]
 
-    found = miss = 0
+    found = miss = error = 0
     for brand, generic in drugs:
         try:
             res = lookup_permit(brand, ingredient=generic)
         except Exception as e:
             logger.warning("[analog.enrich] MFDS %s 실패: %s", brand, e)
             res = None
-        permit_date = (res or {}).get("permit_date")
-        effect = (res or {}).get("effect_text")
+        if res is None or res.get("source") == "error":
+            # API 실패 — '허가 없음' 이 아니다. miss 로 세지 않고 다음 실행에서 재시도 (캐시에도 기록되지 않음)
+            error += 1
+            continue
+        permit_date = res.get("permit_date")
+        effect = res.get("effect_text")
         if permit_date:
             found += 1
         else:
@@ -475,7 +479,7 @@ def enrich_mfds(limit: int = None) -> dict:
                 (permit_date, effect, brand),
             )
             conn.commit()
-    return {"drugs": len(drugs), "found": found, "miss": miss}
+    return {"drugs": len(drugs), "found": found, "miss": miss, "error": error}
 
 
 # ── ⑤ 허가↔급여 갭 분류 ──────────────────────────────────────────────────────

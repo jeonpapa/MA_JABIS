@@ -479,6 +479,10 @@ def check_patent_classification_policy(name: str, root: Path) -> CheckResult:
             errors.append(f"{name_kr}: {e}")
             continue
         sources[r.get("source", "miss")] = sources.get(r.get("source", "miss"), 0) + 1
+        if r.get("source") == "error":
+            # API 실패(캐시 미기록) — 분류 로직 회귀가 아니라 호출 실패로 보고한다
+            errors.append(f"{name_kr}: MFDS API 실패 ({r.get('error')})")
+            continue
         if r.get("status") != exp_status:
             mismatches.append(f"{name_kr}: 기대={exp_status}, 실제={r.get('status')} ({r.get('judgment_basis')})")
 

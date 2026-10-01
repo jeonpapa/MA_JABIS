@@ -61,6 +61,26 @@ MFDS API 는 정확매칭 — DB product_name 과 MFDS ITEM_NAME 사이 표기 �
 
 **EDI 코드** (insurance_code) 가 있으면 1순위로 시도 — 가장 정확한 매칭.
 
+## 캐시 의미론 — 실패 vs 빈 결과 (2026-10-01)
+
+**사고**: `fetch_raw` 가 전송 실패·JSON 파싱 실패·resultCode≠00 을 모두 `[]` 로 돌려 '품목 없음' 과 구분이 없었다. `lookup_permit` 은 그 `[]` 에 30일 부정 sentinel(`__EMPTY__:<이름>`) 을 썼고, 읽기는 ORDER BY 없는 `LIMIT 1` 이라 sentinel 이 실측 행을 가릴 수 있었다 (키트루다 `201501487` 2026-06-24 실측 ↔ 2026-10-01 13:00 실패 실행이 쓴 sentinel 이 같은 item_name 으로 공존). 특허 모듈도 같은 패턴(`patent_no='__EMPTY__'`, 90일). 07:50 스모크가 `/api/domestic/price-changes?q=키트루다` 로 매일 이 경로를 밟는다.
+
+**규칙** — 두 모듈이 공통 `agents/scrapers/mfds_api.py::request_items` 를 쓴다:
+
+| 응답 | 의미 | 처리 |
+|---|---|---|
+| resultCode `00` + items | 실측 | 적재 (`source='mfds_api'`) |
+| resultCode `00` + items 없음, 또는 `03`(포털 표준 NODATA_ERROR) | **API 가 답했고 0건** | 부정 캐시 기록 (`source='miss'`) |
+| 전송 실패 / 본문이 JSON 아님(게이트웨이 XML 오류 봉투·HTML) / `header.resultCode` 없음 / 그 외 코드 | **실패** | `MfdsApiError(kind=transport\|parse\|gateway\|result_code)` — **캐시에 아무것도 쓰지 않는다** |
+
+- `lookup_permit` 실패 시: TTL 지난 실측 행이 있으면 `source='cache_stale'` (+`error`, `error_kind`) 로 그 행을 돌려준다 — 허가일은 불변인 권위 데이터라 추정값보다 낫다. 없으면 `source='error'`. **`miss` 와 `error` 는 다른 뜻** — 호출자는 `has_permit_data()` / `permit_status()` 로 구분하고, `/api/domestic/price-changes` 는 product 에 `mfds_permit_status` (`ok|stale|miss|error`) 를 올린다. `error` 를 '허가 없음' 으로 표시하지 않는다.
+- `lookup_patent` 실패 시: 실측 행 있으면 `source='cache_stale'` 로 판정, 없으면 `source='error'`, `status='unknown'`, `judgment_basis='api_error'`.
+- 변형 체인은 **첫 실패에서 중단** — 전송 실패는 나머지 변형도 실패하고(스모크 타임아웃 보호), 실패 뒤의 0건은 '품목 없음' 의 근거가 못 된다.
+- 부정 캐시 행은 `raw_json={"negative": true, "tried": [...]}` 마커를 가진다. 구 포맷(`'{}'`) sentinel 은 실패/빈결과 구분이 불가하므로 **부정 캐시로 인정하지 않고 재조회** (`kind='legacy_empty'`). 라이브 DB 의 기존 sentinel(permit 186 / patent 430) 은 정리 전까지 무해하다.
+- 읽기 순서 (permit): `ORDER BY (item_seq 가 sentinel 접두사) ASC, fetched_at DESC LIMIT 1` — **실측 행 > sentinel, 같은 급이면 최신**. patent: 실측 행이 하나라도 있으면 sentinel 무시.
+- 부정 캐시 TTL = 실측과 같은 30일 (`NEGATIVE_CACHE_TTL_DAYS`). 0건의 주된 원인은 HIRA 표기 ↔ MFDS ITEM_NAME 차이라 시간이 풀어주지 않고, 재조회 1회 = 변형 최대 7회 호출이라 짧게 잡으면 포털 일일 쿼터만 소모한다. 뒤늦게 MFDS DB 에 실리는 신규 허가 품목은 `refresh=True`. 값을 바꾸려면 이 표부터 고친다.
+- 검증: `tests/test_mfds_permit_cache.py` (키트루다 실측+sentinel 공존 픽스처 — 네트워크 없음) / `tests/test_mfds_patent_cache.py`. 라이브 확인은 네트워크 + `MFDS_PATENT_API_KEY` 필요: `python -m agents.scrapers.kr_mfds_permit "키트루다주(펨브롤리주맙,유전자재조합)_(0.1g/4mL)" --refresh` → `item_seq=201501487`, `permit_date=2015.03.20`, `source=mfds_api`; 그리고 존재하지 않는 이름으로 `source=miss` + `{"negative": true}` 행이 쓰이는지, 실제 0건 응답이 `00`/`03` 중 무엇인지 로그로 확인.
+
 ## 특허 분류 규칙 (LOE 판정용)
 
 ### Core Substance (LOE 결정)
@@ -166,3 +186,6 @@ python -m agents.scrapers.kr_mfds_permit "자누비아정100밀리그램" --raw 
 - `_is_core_substance` 에서 `_SECONDARY_MODIFIERS` 기반 키워드 검출 무시 (false positive 발생)
 - 정확매칭 실패 시 즉시 unknown 처리 (variant fallback 6단계 모두 시도 필수)
 - MFDS API 미매칭 시 approval_date / usage_text 를 추정값으로 채움
+- API 실패(전송/파싱/resultCode≠00·03)를 0건으로 취급해 부정 sentinel 기록 — 실패는 `MfdsApiError`, 캐시 미기록
+- 캐시 읽기에서 sentinel 이 실측 행을 가리게 두기 (ORDER BY 없는 `LIMIT 1`)
+- `source='error'` 를 `'miss'` 와 같은 뜻('허가 없음') 으로 소비
