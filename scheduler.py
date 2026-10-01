@@ -117,6 +117,18 @@ def _agent_record_compliance_results(results) -> dict:
         return {}
 
 
+def _agent_record_known_debts() -> None:
+    """구현 대기 기능 부채(signals.KNOWN_DEBTS)를 원장에 남긴다. 신호 경계 — 실패는 여기서 삼킨다.
+
+    스케줄러 기동 시 1회 + `--record-debts-now`. 이미 열려 있거나 blocked 면 같은 id 를 돌려받을 뿐 새 행은 없다."""
+    try:
+        from agents.agent_tasks.signals import record_known_debts
+        ids = record_known_debts(db_path=resolve_db_path())
+        logger.info("구현 대기 부채 과제 %d건 확인: %s", len(ids), ids)
+    except Exception as signal_err:                        # noqa: BLE001 — 신호 실패가 기동을 막으면 안 된다
+        logger.warning("부채 과제 기록 실패(무시): %s", signal_err)
+
+
 def _on_job_event(event) -> None:
     """APScheduler 리스너. guarded_job 이 예외를 삼키므로 EVENT_JOB_ERROR 는 데코레이터 없는 잡의 안전망이고,
     EVENT_JOB_MISSED 는 misfire grace 초과(스케줄러 정지·재기동 지연)의 유일한 신호다."""
@@ -700,7 +712,12 @@ def domain_freshness_job(data_db_path: str | None = None):
     return res
 
 
-@guarded_job("amjilsim_d_minus_2_reporter")  # Task 7 이 스케줄에서 내림(함수·CLI 는 보존)
+# ── 구현 대기(placeholder) — 스케줄 등록 해제됨 (P1.5 Task 7) ──────────────────────
+# 아래 네 함수는 backend 미구현 상태로 매일 '성공' 로그만 남겼다. 거짓 성공이 관측을 오염시키므로
+# build_job_specs 에서 내렸고, 미구현 사실은 signals.KNOWN_DEBTS → 원장 improvement 과제로 남는다.
+# 구현이 끝나면 build_job_specs 와 JOB_RUNBOOK 에 다시 넣고 KNOWN_DEBTS 에서 해당 항목을 지운다.
+# 함수·docstring·CLI(--amjilsim-d-minus-2-now 등)는 후속 구현 자리로 보존한다.
+@guarded_job("amjilsim_d_minus_2_reporter")
 def amjilsim_d_minus_2_reporter_job():
     """매일 16:00 Seoul — 오늘이 어느 위원회 D-2이면 사전 예측 보고서 발사 (17:00 마감).
 
@@ -884,6 +901,8 @@ def build_job_specs(sched_cfg: dict) -> list[JobSpec]:
     ForeignPrice 주간 백필은 **비활성화**(2026-07-24) — 전체 indications_master 세트를 매주 재스크레이프해
     append 하면서 검색 히스토리 고정 노출·행 무한 누적 문제. 수동 `--price-backfill-now` 만 보존.
     Daily Mailing 헤르메스 git 버스(runs_sync 07:30 · scope_export 15분)는 retire — 함수/CLI 는 롤백용 보존, 잡 미등록.
+    placeholder 4개(amjilsim D-2/D+1/월간 트렌드 · HIRA 일정 fetcher)는 P1.5 Task 7 에서 등록 해제 — backend 미구현으로
+    매일 거짓 '성공' 만 남겼다. 함수/CLI 보존, 미구현 사실은 signals.KNOWN_DEBTS 가 원장 improvement 과제로 유지한다.
     """
     return [
         # 매월 1~7일 09:00 (config day="1-7" cron 범위 — 첫 주 매일 재시도. catch_up 이 당월 적재 확인 시 즉시 종료)
@@ -926,14 +945,6 @@ def build_job_specs(sched_cfg: dict) -> list[JobSpec]:
                 misfire_grace_time=PERIODIC_GRACE),
         JobSpec("domain_freshness", "데이터 도메인 신선도 판정 (매일 07:45, stale → 원장)", domain_freshness_job,
                 _cron(hour=7, minute=45)),
-        JobSpec("amjilsim_d_minus_2_reporter", "amjilsim·약평위 D-2 사전 예측 보고서 발사 (16:00, 17:00 마감)",
-                amjilsim_d_minus_2_reporter_job, _cron(hour=16, minute=0)),
-        JobSpec("amjilsim_d_plus_1_reporter", "amjilsim·약평위 D+1 결과 리뷰 + 예측 룰 자가 학습 (08:00, 09:00 마감)",
-                amjilsim_d_plus_1_reporter_job, _cron(hour=8, minute=0)),
-        JobSpec("amjilsim_monthly_trend", "amjilsim·약평위 월간 트렌드 진단 (매월 마지막 약평위 D+7)",
-                amjilsim_monthly_trend_job, _cron(hour=9, minute=0)),
-        JobSpec("hira_schedule_fetcher_annual", "HIRA 공식 일정 매년 1/1 자동 갱신", hira_schedule_fetcher_job,
-                _cron(month=1, day=1, hour=9, minute=0), misfire_grace_time=PERIODIC_GRACE),
         JobSpec("scheduler_heartbeat", "스케줄러 heartbeat (60초, /api/health 생존 판정)", scheduler_heartbeat_job,
                 IntervalTrigger(seconds=60, timezone="Asia/Seoul"), misfire_grace_time=30),
         JobSpec("platform_smoke", "화면별 API 스모크 (매일 07:50, 21 화면 + 권한 게이트)", platform_smoke_job,
@@ -963,6 +974,11 @@ def main():
         "--compliance-now",
         action="store_true",
         help="Rule Compliance 감사만 즉시 실행",
+    )
+    parser.add_argument(
+        "--record-debts-now",
+        action="store_true",
+        help="구현 대기 부채(signals.KNOWN_DEBTS)를 원장 improvement 과제로 즉시 기록 (멱등 — 열려 있으면 추가 없음)",
     )
     parser.add_argument(
         "--approval-sync-now",
@@ -1089,6 +1105,11 @@ def main():
     if args.compliance_now:
         logger.info("Rule Compliance 감사 즉시 실행")
         rule_compliance_audit_job()
+        return
+
+    if args.record_debts_now:
+        logger.info("구현 대기 부채 과제 즉시 기록 (원장=%s)", resolve_db_path())
+        _agent_record_known_debts()
         return
 
     if args.approval_sync_now:
@@ -1242,6 +1263,7 @@ def main():
                           misfire_grace_time=spec.misfire_grace_time, coalesce=spec.coalesce,
                           max_instances=spec.max_instances)
     scheduler.add_listener(_on_job_event, EVENT_JOB_ERROR | EVENT_JOB_MISSED)
+    _agent_record_known_debts()          # 구현 대기 부채 → 원장 (기동 시 1회, 멱등 — 열려 있으면 0건 추가)
 
     logger.info("%s", _schedule_banner(sched_cfg))
     try:

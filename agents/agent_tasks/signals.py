@@ -48,10 +48,6 @@ JOB_RUNBOOK: dict[str, str | None] = {
     "nhis_negotiation_sync": "nhis_negotiation_sync",
     "home_brand_related_refresh": None,
     "domain_freshness": None,                 # 판정기 자체의 실패용. stale 도메인 과제는 freshness.py 가 도메인별 런북 힌트로 만든다
-    "amjilsim_d_minus_2_reporter": None,
-    "amjilsim_d_plus_1_reporter": None,
-    "amjilsim_monthly_trend": None,
-    "hira_schedule_fetcher_annual": None,
     "scheduler_heartbeat": None,     # T4: /api/health 가 stale 을 보면 같은 source_ref 로 기록(하루 1건) — 사람 확인
     "platform_smoke": None,          # T4: 화면 깨짐(라우트 5xx·키 부재·권한 게이트 붕괴) — 사람 확인
 }
@@ -247,4 +243,51 @@ def record_compliance_results(results, *, db_path: str | Path = DEFAULT_DB_PATH)
             detail=f"{r.detail}\n수치: {json.dumps(r.metrics, ensure_ascii=False, default=str)[:800]}\n"
                    f"{runbook_line(RC_RUNBOOK.get(r.memory))}",
             priority=2, actor="rule_compliance", dedup_statuses=DEDUP_STATUSES, db_path=db_path))
+    return ids
+
+
+# ── 구현 대기 기능 부채 (P1.5 Task 7) ─────────────────────────────────────────
+# placeholder 잡은 매일 '성공' 으로 집계돼 관측에 거짓 신호를 섞는다. 스케줄에서 내리고(scheduler.build_job_specs)
+# 미구현 사실만 원장에 남긴다. source_ref 에 날짜가 없으므로 사람이 닫을 때까지 1건이고,
+# DEDUP_STATUSES(=OPEN_STATUSES + blocked) 때문에 blocked 로 끝난 부채도 재기동마다 새로 생기지 않는다.
+# closed 로 닫힌 뒤 다시 호출되면(placeholder 회귀) 새로 열린다 — 구현이 끝나면 여기서 항목을 지운다.
+KNOWN_DEBTS: tuple[dict[str, str], ...] = (
+    {
+        "slug": "amjilsim_reporters",
+        "title": "암질심·약평위 리포터 3종 백엔드 미구현 (D-2 예측 / D+1 리뷰 / 월간 트렌드)",
+        "detail": (
+            "scheduler.py 의 amjilsim_d_minus_2_reporter_job(:721) · amjilsim_d_plus_1_reporter_job(:748) · "
+            "amjilsim_monthly_trend_job(:775) 은 calendar 조회 뒤 'TODO: backend 호출' 주석만 남기고 끝난다 — "
+            "매일 성공으로 집계되지만 보고서는 생성되지 않는다. P1.5 Task 7 에서 스케줄 등록을 해제했다(함수는 보존).\n"
+            "필요한 것: agents/amjilsim_tracker/agent.py 의 run_d_minus_2 / run_d_plus_1 / run_monthly_trend 구현. "
+            "구현 후 build_job_specs 에 다시 등록하고 JOB_RUNBOOK 에 런북을 매핑한다."
+        ),
+    },
+    {
+        "slug": "hira_schedule_fetcher",
+        "title": "HIRA 차수 일정 fetcher 미구현 — 2026-12-03 이후 위원회 일정 공백",
+        "detail": (
+            "scheduler.py 의 hira_schedule_fetcher_job(:798) 은 본문 전체가 placeholder 다. amjilsim_sessions 의 "
+            "SCHEDULED 는 약평위 2026-12-03 · 암질심 2026-12-23 까지만 있어 그 뒤로는 D-2/D+1 게이팅과 "
+            "위원회 보드가 영구 idle 이 된다.\n"
+            "필요한 것: agents/amjilsim_tracker/schedule_fetcher.py (HIRA 공식 일정 페이지 파싱 + 실패 시 검색 fallback) "
+            "+ amjilsim_sessions 적재. 공백 자체는 Task 3 의 committee_schedule 신선도 판정이 "
+            "'향후 60일 SCHEDULED 0건' 으로 먼저 경고한다."
+        ),
+    },
+)
+
+
+def record_known_debts(*, db_path: str | Path = DEFAULT_DB_PATH) -> list[int]:
+    """구현 대기 기능을 improvement 과제로 등록한다(이미 열려 있으면 그 id 를 돌려준다). 스케줄러 기동 시 1회.
+
+    kind=improvement 라 디스패처(CLAIMABLE_KINDS='ops_incident')는 집지 않는다 — P3 개선자의 입력이다.
+    """
+    ids: list[int] = []
+    for debt in KNOWN_DEBTS:
+        ids.append(create_task(
+            kind="improvement", source="known_debt", source_ref=f"debt:{debt['slug']}",
+            title=debt["title"], detail=f"{debt['detail']}\n\n{runbook_line(None)}",
+            priority=3, dedup_statuses=DEDUP_STATUSES, db_path=db_path,
+        ))
     return ids
