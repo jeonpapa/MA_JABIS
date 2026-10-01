@@ -159,31 +159,26 @@ import subprocess
 from datetime import datetime
 
 
-@guarded_job("foreign_approval_sync")       # 본문 전환은 Task 2
+@guarded_job("foreign_approval_sync")
 def foreign_approval_sync_job():
     """ForeignApprovalAgent auto-sync — 매일 04:30 Seoul (compliance 감사 전).
 
-    foreign_drug_prices 에 있으나 indications_master 에 없는 제품을 자동 build.
+    foreign_drug_prices 에 있으나 indications_master 에 없는 제품을 자동 build. 실패 slug 는 failed 로 반환 → 과제.
     """
     from agents.foreign_approval.agent import ForeignApprovalAgent
-
     logger.info("━━━ ForeignApproval auto-sync 시작 ━━━")
-    try:
-        agent = ForeignApprovalAgent()
-        gaps = agent.list_coverage_gaps()
-        if not gaps:
-            logger.info("ForeignApproval: gap 0건 — 이미 동기화됨")
-            return
-        logger.info("ForeignApproval: gap %d건 — %s", len(gaps), gaps)
-        result = agent.sync_from_prices()
-        logger.info(
-            "ForeignApproval: built=%d failed=%d",
-            len(result["built"]), len(result["failed"]),
-        )
-        for f in result["failed"]:
-            logger.warning("  ✗ %s: %s", f["slug"], f["reason"])
-    except Exception as e:
-        logger.exception("ForeignApproval auto-sync 실패: %s", e)
+    agent = ForeignApprovalAgent()
+    gaps = agent.list_coverage_gaps()
+    if not gaps:
+        logger.info("ForeignApproval: gap 0건 — 이미 동기화됨")
+        return {"counts": {"gaps": 0, "built": 0, "failed": 0}}
+    logger.info("ForeignApproval: gap %d건 — %s", len(gaps), gaps)
+    result = agent.sync_from_prices()
+    logger.info("ForeignApproval: built=%d failed=%d", len(result["built"]), len(result["failed"]))
+    for f in result["failed"]:
+        logger.warning("  ✗ %s: %s", f["slug"], f["reason"])
+    return {"counts": {"gaps": len(gaps), "built": len(result["built"]), "failed": len(result["failed"])},
+            "failed": result["failed"]}
 
 
 @guarded_job("rule_compliance_audit")       # 본문 전환은 Task 6
@@ -474,19 +469,20 @@ def competitor_trend_promote_job():
     return {"counts": {k: t.get(k, 0) for k in ("archive", "accepted", "upserted")}}
 
 
-def _reimb_committee_data_sync():
-    """위원회 데이터(JSON) git-sync — 멱등. 데이터 변경 없으면 skip."""
+def _reimb_committee_data_sync() -> dict:
+    """위원회 데이터(JSON) git-sync — 멱등. 반환: {counts, fallback}. fallback 은 원격 실패 사유(없으면 None)."""
     from agents.ingest import reimb_committee_import as imp
     from agents import reimb_reports as rr
 
     source = os.environ.get("REIMB_DATA_URL") or None
-    if source:  # git URL 우선, 실패 시 이미지 로컬 JSON 폴백
+    fallback = None
+    if source:  # git URL 우선, 실패 시 이미지 로컬 JSON 폴백 — 폴백 사실은 반환값으로 올려 과제가 된다
         try:
             payload = imp.load_payload(source)
         except Exception as e:
             logger.warning("데이터 sync: REIMB_DATA_URL fetch 실패(%s) → 로컬 폴백", e)
             payload = imp.load_payload(None)
-            source = f"{source} (폴백:local)"
+            fallback = f"{type(e).__name__}: {e}"
     else:
         payload = imp.load_payload(None)
     new_hash = imp.payload_hash(payload)
@@ -495,7 +491,7 @@ def _reimb_committee_data_sync():
     prev_hash = hash_file.read_text().strip() if hash_file.exists() else ""
     if new_hash == prev_hash:
         logger.info("데이터 sync: 변경 없음 (hash %s) — skip", new_hash[:12])
-        return
+        return {"counts": {"changed": 0}, "fallback": fallback}
 
     result = imp.run(payload)
     try:
@@ -505,12 +501,13 @@ def _reimb_committee_data_sync():
     hash_file.parent.mkdir(parents=True, exist_ok=True)
     hash_file.write_text(new_hash)
     logger.info("데이터 sync 완료: 약제 %d · 이벤트 %d (신규 %d) · hash %s · source=%s",
-                result["drugs_after"], result["events_total"], result["events_added"],
-                new_hash[:12], source or "local")
+                result["drugs_after"], result["events_total"], result["events_added"], new_hash[:12],
+                f"{source} (폴백:local)" if fallback else (source or "local"))
+    return {"counts": {k: result[k] for k in ("drugs_after", "events_total", "events_added")}, "fallback": fallback}
 
 
-def _reimb_reports_sync():
-    """위원회 전후 보고서 git-sync (매니페스트 → Intelligence Reports) — 멱등."""
+def _reimb_reports_sync() -> dict:
+    """위원회 전후 보고서 git-sync (매니페스트 → Intelligence Reports) — 멱등. 반환: {counts, fallback, errors}."""
     import hashlib as _hl
     import json as _j
     from agents import reimb_reports as rr
@@ -518,26 +515,31 @@ def _reimb_reports_sync():
     rsrc = os.environ.get("REPORTS_DATA_URL") or None
     rhash_file = BASE_DIR / "data" / "reimb" / ".last_reports_hash"
     prev_rhash = rhash_file.read_text().strip() if rhash_file.exists() else ""
-    try:  # 매니페스트 URL 우선, 실패 시 이미지 로컬 폴백
-        manifest = rr.load_reports_manifest(rsrc)
-    except Exception as e:
-        logger.warning("보고서 sync: REPORTS_DATA_URL fetch 실패(%s) → 로컬 매니페스트 폴백", e)
+    fallback = None
+    if rsrc:  # 매니페스트 URL 우선, 실패 시 이미지 로컬 폴백 — 폴백 사실은 반환값으로 올려 과제가 된다
+        try:
+            manifest = rr.load_reports_manifest(rsrc)
+        except Exception as e:
+            logger.warning("보고서 sync: REPORTS_DATA_URL fetch 실패(%s) → 로컬 매니페스트 폴백", e)
+            manifest = rr.load_reports_manifest(None)
+            fallback = f"{type(e).__name__}: {e}"
+    else:
         manifest = rr.load_reports_manifest(None)
     m_hash = _hl.sha256(_j.dumps(manifest, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
     if m_hash == prev_rhash:
         logger.info("보고서 sync: 매니페스트 변경 없음 (hash %s) — skip", m_hash[:12])
-        return
+        return {"counts": {"changed": 0}, "fallback": fallback, "errors": []}
     rres = rr.sync_reports(manifest)
     rhash_file.parent.mkdir(parents=True, exist_ok=True)
     rhash_file.write_text(m_hash)
     logger.info("보고서 sync 완료: 매니페스트 %d · 신규적재 %d · skip %d · 오류 %d · hash %s",
-                rres["reports_in_manifest"], len(rres["ingested"]), rres["skipped"],
-                len(rres["errors"]), m_hash[:12])
-    if rres["errors"]:
-        logger.warning("보고서 sync 오류: %s", rres["errors"])
+                rres["reports_in_manifest"], len(rres["ingested"]), rres["skipped"], len(rres["errors"]), m_hash[:12])
+    return {"counts": {"manifest": rres["reports_in_manifest"], "ingested": len(rres["ingested"]),
+                       "skipped": rres["skipped"]},
+            "fallback": fallback, "errors": [str(e)[:200] for e in rres["errors"]]}
 
 
-@guarded_job("reimb_data_sync")             # 본문 전환은 Task 2
+@guarded_job("reimb_data_sync")
 def reimb_data_sync_job():
     """매일 02:00 Seoul + 부팅 1회 — 헤르메스(또는 사람)가 git 에 커밋한
     위원회 **데이터**(committee_results.json) + **보고서**(reports_manifest.json) 를
@@ -545,16 +547,29 @@ def reimb_data_sync_job():
 
     데이터/보고서는 독립 실행 (한쪽 변경 없음·실패가 다른쪽을 막지 않음).
     소스: REIMB_DATA_URL / REPORTS_DATA_URL (git raw). 미설정 시 이미지 로컬 폴백.
+    원격 fetch 실패 시 로컬 이미지 폴백을 **적용하되** 그 사실을 errors 로 반환한다 —
+    '변경 없음 skip' 처럼 보이던 문제(감사 #3)를 과제로 드러낸다.
     """
     logger.info("━━━ Reimbursement 데이터·보고서 sync 시작 ━━━")
+    counts, errors = {}, []
     try:
-        _reimb_committee_data_sync()
+        d = _reimb_committee_data_sync()
+        counts["data"] = d["counts"]
+        if d["fallback"]:
+            errors.append(f"위원회 데이터 원격 fetch 실패 → 로컬 이미지 폴백 적용 (데이터는 적용됨): {d['fallback']}")
     except Exception as e:
         logger.exception("Reimbursement 데이터 sync 실패: %s", e)
+        errors.append(f"데이터 sync: {type(e).__name__}: {e}")
     try:
-        _reimb_reports_sync()
+        r = _reimb_reports_sync()
+        counts["reports"] = r["counts"]
+        if r["fallback"]:
+            errors.append(f"보고서 매니페스트 원격 fetch 실패 → 로컬 폴백 적용: {r['fallback']}")
+        errors += [f"보고서 적재 오류: {e}" for e in r["errors"]]
     except Exception as e:
         logger.exception("Reimbursement 보고서 sync 실패: %s", e)
+        errors.append(f"보고서 sync: {type(e).__name__}: {e}")
+    return {"ok": not errors, "counts": counts, "errors": errors}
 
 
 def daily_mailing_scope_export_job():
@@ -573,16 +588,22 @@ def daily_mailing_scope_export_job():
         logger.warning("daily mailing scope export 실패: %s", e)
 
 
-@guarded_job("daily_mailing_dispatch")      # 본문 전환은 Task 2
+def _n(x) -> int:
+    return len(x) if isinstance(x, (list, tuple, set, dict)) else int(x or 0)
+
+
+@guarded_job("daily_mailing_dispatch")
 def daily_mailing_dispatch_job():
-    """10분 주기 — 발송 시각이 된 구독 브리핑 생성 → 승인 대기/자동 발송 + 실패 재시도 (설계 §6)."""
-    try:
-        from agents.daily_mailing.dispatch import DispatchDeps, dispatch_due_subscriptions
-        res = dispatch_due_subscriptions(DispatchDeps.production())
-        if res.get("generated") or res.get("errors") or res.get("expired") or res.get("retried"):
-            logger.info("daily mailing dispatch: %s", res)
-    except Exception as e:
-        logger.error("daily mailing dispatch 실패: %s", e, exc_info=True)
+    """10분 주기 — 발송 시각이 된 구독 브리핑 생성 → 승인 대기/자동 발송 + 실패 재시도 (설계 §6).
+    생성 실패 구독(errors)은 과제로 — 하루 1건(ref 에 날짜), 다음 tick 에 성공하면 런북이 닫는다."""
+    from agents.daily_mailing.dispatch import DispatchDeps, dispatch_due_subscriptions
+    res = dispatch_due_subscriptions(DispatchDeps.production())
+    if res.get("generated") or res.get("errors") or res.get("expired") or res.get("retried"):
+        logger.info("daily mailing dispatch: %s", res)
+    return {"ok": not res.get("errors"),
+            "counts": {"generated": _n(res.get("generated")), "expired": _n(res.get("expired")),
+                       "retried": _n(res.get("retried")), "skipped": _n(res.get("skipped"))},
+            "errors": [f"구독 {sid} 생성 실패" for sid in (res.get("errors") or [])]}
 
 
 @guarded_job("daily_mailing_top_news")
@@ -766,12 +787,20 @@ def git_backup_job():
         return {"errors": [f"git exit {e.returncode}: {(e.stderr or e.output or '')[:200]}"]}
 
 
-@guarded_job("policy_intel_analysis_sync")          # main() 안의 중첩 함수 _policy_analysis_sync_job 을 모듈 수준으로 끌어올림(본문 의미는 Task 2)
+@guarded_job("policy_intel_analysis_sync")
 def policy_analysis_sync_job():
-    """매일 02:10 — Policy Intelligence 큐레이션 사이드카 git sync."""
+    """매일 02:10 — Policy Intelligence 큐레이션 사이드카 git sync. 반환 dict 의 error 키를 실패로 해석한다.
+
+    `auth required`(토큰 부재, 프로덕션 fail-closed)는 재실행으로 안 풀리므로 error_class="config" —
+    ref 가 `policy_intel_analysis_sync:config` 로 고정돼 사람이 닫을 때까지 과제 1건만 유지된다."""
     res = _sync_policy_analysis()
+    counts = {k: res.get(k, 0) for k in ("copied", "skipped", "rejected")}
+    if res.get("error"):
+        logger.warning("policy analysis sync 실패: %s", res["error"])
+        cls = "config" if str(res["error"]).startswith("auth required") else "transient"
+        return {"ok": False, "counts": counts, "errors": [str(res["error"])], "error_class": cls}
     logger.info("policy analysis sync: %s", res)
-    return res
+    return {"ok": True, "counts": counts, "errors": []}
 
 
 # ── 등록부 ──────────────────────────────────────────────────────────────────
