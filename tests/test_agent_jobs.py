@@ -117,7 +117,9 @@ def test_blocked_task_suppresses_new_task_until_closed(monkeypatch, tmp_path):
     assert len(list_tasks(db_path=db, statuses=("new", "blocked"))) == 1     # blocked 도 중복 억제
     update_task(tid, db_path=db, status="closed", actor="admin", resolution="처리")
     failing()
-    assert len(list_tasks(db_path=db, statuses=("new",))) == 1               # 닫힌 뒤에는 새 과제
+    # P1.5 fix B: 닫힌 뒤 같은 날 다시 실패하면 새 행이 아니라 같은 행을 triaged 로 다시 연다(attempts 보존)
+    reopened = list_tasks(db_path=db, statuses=("new", "triaged"))
+    assert [t["id"] for t in reopened] == [tid] and reopened[0]["status"] == "triaged"
 
 
 def test_recurrence_event_once_per_day(monkeypatch, tmp_path):
