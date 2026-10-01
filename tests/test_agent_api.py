@@ -209,7 +209,9 @@ def test_admin_ledger_endpoint(monkeypatch, tmp_path):
     data = c.get("/api/admin/agent-tasks", headers=_h("admin", "admin@msd.com")).get_json()
     assert data["policy"]["enabled"] is True
     assert [t["id"] for t in data["tasks"]] == [tid]
-    assert data["runbooks"] == ["daily_mailing_dispatch", "daily_mailing_top_news", "domestic_price_catchup"]
+    # 엔드포인트는 레지스트리를 그대로 돌려준다 — 목록 내용은 tests/test_agent_runbooks.py 가 고정한다
+    assert data["runbooks"] == s._agent_runbooks.list_runbooks()
+    assert {"daily_mailing_dispatch", "daily_mailing_top_news", "domestic_price_catchup"} <= set(data["runbooks"])
     detail = c.get(f"/api/admin/agent-tasks/{tid}", headers=_h("admin", "admin@msd.com")).get_json()
     assert [e["event"] for e in detail["events"]] == ["created"]
     assert detail["task"]["id"] == tid

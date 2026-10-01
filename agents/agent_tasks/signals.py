@@ -18,25 +18,26 @@ KST = timezone(timedelta(hours=9))
 DEDUP_STATUSES = OPEN_STATUSES + ("blocked",)
 
 # 잡 id → 런북 (None = 런북 없음, 사람 확인). 키 집합은 scheduler.build_job_specs() 의 id 전체와 같아야 한다
-# (tests/test_scheduler_job_specs.py 가 대조). Task 5 가 None 을 등록된 런북 이름으로 바꾼다.
+# (tests/test_scheduler_job_specs.py 가 대조). 값은 runbooks.list_runbooks() 의 이름이어야 한다
+# (tests/test_agent_runbooks.py 가 대조). None = 재실행이 답이 아니거나 그 자체가 관측 잡.
 JOB_RUNBOOK: dict[str, str | None] = {
     "domestic_price_pipeline": "domestic_price_catchup",
     "git_auto_backup": None,
-    "foreign_approval_sync": None,
+    "foreign_approval_sync": "foreign_approval_sync",
     "rule_compliance_audit": None,
     "quality_guard_review": None,
-    "competitor_news_weekly": None,
-    "competitor_news_daily": None,
-    "competitor_trend_promote": None,
-    "access_insight_fresh_signals": None,
-    "reimbursement_xnational_sync": None,
-    "exchange_rate_refresh": None,
-    "reimb_data_sync": None,
-    "policy_intel_analysis_sync": None,
+    "competitor_news_weekly": "news_weekly_crawl",
+    "competitor_news_daily": "news_daily_fetch",
+    "competitor_trend_promote": "competitor_trend_promote",
+    "access_insight_fresh_signals": "access_insight_fresh_signals",
+    "reimbursement_xnational_sync": "reimbursement_xnational_sync",
+    "exchange_rate_refresh": "exchange_rate_refresh",
+    "reimb_data_sync": "reimb_data_sync",
+    "policy_intel_analysis_sync": "policy_intel_analysis_sync",
     "daily_mailing_dispatch": "daily_mailing_dispatch",
     "daily_mailing_top_news": "daily_mailing_top_news",
     "daily_mailing_health": None,
-    "nhis_negotiation_sync": None,
+    "nhis_negotiation_sync": "nhis_negotiation_sync",
     "home_brand_related_refresh": None,
     "domain_freshness": None,                 # 판정기 자체의 실패용. stale 도메인 과제는 freshness.py 가 도메인별 런북 힌트로 만든다
     "amjilsim_d_minus_2_reporter": None,

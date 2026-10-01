@@ -55,4 +55,5 @@ def test_missed_runs_collapse_into_one_task_per_day(tmp_path):
 
 def test_job_runbook_covers_none_for_unmapped_jobs():
     from agents.agent_tasks.signals import JOB_RUNBOOK
-    assert JOB_RUNBOOK["reimb_data_sync"] is None and JOB_RUNBOOK["domestic_price_pipeline"] == "domestic_price_catchup"
+    # git_auto_backup 은 재실행이 답이 아니라 None 유지(계획 Task 5). reimb_data_sync 등은 Task 5 가 런북 이름으로 채웠다.
+    assert JOB_RUNBOOK["git_auto_backup"] is None and JOB_RUNBOOK["domestic_price_pipeline"] == "domestic_price_catchup"
