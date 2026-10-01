@@ -33,7 +33,7 @@ def test_health_problems_create_one_task_per_subscription(tmp_path):
     tasks = {t["source_ref"]: t for t in list_tasks(db_path=db)}
     assert "daily_mailing:2026-09-30:14:not_generated" in tasks
     assert tasks["daily_mailing:2026-09-30:14:not_generated"]["detail"].count("daily_mailing_dispatch") == 1
-    gmail = tasks["daily_mailing:2026-09-30:gmail_token_invalid"]
+    gmail = tasks["daily_mailing:gmail_token_invalid"]          # 설정 문제 — 날짜 없는 ref
     assert gmail["priority"] == 1 and "런북 없음" in gmail["detail"]
 
 
@@ -41,3 +41,18 @@ def test_healthy_report_creates_nothing(tmp_path):
     db = tmp_path / "a.db"
     assert record_health_problems({"run_date": "2026-09-30", "ok": True, "problems": []}, db_path=db) == []
     assert list_tasks(db_path=db) == []
+
+
+def test_missed_runs_collapse_into_one_task_per_day(tmp_path):
+    from agents.agent_tasks.signals import record_job_missed
+    from agents.agent_tasks.store import list_events
+    db = tmp_path / "a.db"
+    a = record_job_missed("competitor_news_daily", "2026-09-30 06:30:00+09:00", db_path=db)
+    b = record_job_missed("competitor_trend_promote", "2026-09-30 07:00:00+09:00", db_path=db)
+    assert a == b
+    assert [e["event"] for e in list_events(a, db_path=db)] == ["created", "missed", "missed"]
+
+
+def test_job_runbook_covers_none_for_unmapped_jobs():
+    from agents.agent_tasks.signals import JOB_RUNBOOK
+    assert JOB_RUNBOOK["reimb_data_sync"] is None and JOB_RUNBOOK["domestic_price_pipeline"] == "domestic_price_catchup"

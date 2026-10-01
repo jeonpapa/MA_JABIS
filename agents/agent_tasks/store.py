@@ -111,17 +111,22 @@ def add_event(task_id: int, *, actor: str, event: str, detail: str | None = None
 
 def create_task(*, kind: str, source: str, title: str, detail: str = "", priority: int = 3,
                 source_ref: str | None = None, actor: str = "system",
+                dedup_statuses: tuple[str, ...] = OPEN_STATUSES,
                 db_path: str | Path = DEFAULT_DB_PATH) -> int:
-    """과제 생성. 같은 (source, source_ref) 가 아직 열려 있으면 그 과제 id 를 그대로 돌려준다."""
+    """과제 생성. 같은 (source, source_ref) 가 dedup_statuses 중 하나로 남아 있으면 그 과제 id 를 그대로 돌려준다.
+
+    기본은 열린 상태만. 신호(signals.py)는 blocked 도 포함한다 — '런북 없음 → blocked' 로 끝난 과제가 매일 다시
+    생기지 않게. 닫히거나(closed) 반려(rejected)되면 다시 만든다.
+    """
     if kind not in KINDS:
         raise AgentTaskError(f"알 수 없는 kind: {kind}")
     conn = connect(db_path)
     try:
         if source_ref:
-            placeholders = ",".join("?" for _ in OPEN_STATUSES)
+            placeholders = ",".join("?" for _ in dedup_statuses)
             row = conn.execute(
                 f"SELECT id FROM agent_task WHERE source=? AND source_ref=? AND status IN ({placeholders})"
-                " ORDER BY id LIMIT 1", (source, source_ref, *OPEN_STATUSES)).fetchone()
+                " ORDER BY id LIMIT 1", (source, source_ref, *dedup_statuses)).fetchone()
             if row:
                 return int(row["id"])
         now = _now()
@@ -141,6 +146,17 @@ def get_task(task_id: int, *, db_path: str | Path = DEFAULT_DB_PATH) -> dict | N
     conn = connect(db_path)
     try:
         row = conn.execute("SELECT * FROM agent_task WHERE id=?", (task_id,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def find_task(source: str, source_ref: str, *, db_path: str | Path = DEFAULT_DB_PATH) -> dict | None:
+    """상태와 무관하게 같은 (source, source_ref) 의 최신 과제. 한 번만 만들 과제(알려진 부채)의 존재 확인용."""
+    conn = connect(db_path)
+    try:
+        row = conn.execute("SELECT * FROM agent_task WHERE source=? AND source_ref=? ORDER BY id DESC LIMIT 1",
+                           (source, source_ref)).fetchone()
         return dict(row) if row else None
     finally:
         conn.close()

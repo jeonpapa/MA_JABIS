@@ -343,6 +343,8 @@ def test_scheduler_job_defined_and_registered():
     import scheduler as sched
 
     assert callable(getattr(sched, "access_insight_fresh_signal_job", None))
+    # P1.5 T1: 등록부가 JobSpec 데이터로 바뀌어 소스 텍스트 대신 build_job_specs 로 등록을 확인한다.
+    specs = {s.id: s for s in sched.build_job_specs({"day": "1-7", "hour": 9, "minute": 0})}
+    assert specs["access_insight_fresh_signals"].fn is sched.access_insight_fresh_signal_job
     src = Path(sched.__file__).read_text(encoding="utf-8")
-    assert 'id="access_insight_fresh_signals"' in src
     assert 'day_of_week="mon"' in src

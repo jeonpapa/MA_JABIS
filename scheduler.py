@@ -16,16 +16,26 @@ import shutil
 import sys
 from pathlib import Path
 
+from dataclasses import dataclass
+from typing import Callable
+
+from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
+from agents.agent_tasks.jobs import guarded_job, resolve_db_path
 from agents.domestic_price_agent import DomesticPriceAgent
 from agents.dashboard_agent import DashboardAgent
 from agents.ingest.policy_analysis_sync import sync_analysis as _sync_policy_analysis
 from agents.ingest.daily_mailing_sync import sync_daily_mailing_runs as _sync_daily_mailing_runs  # noqa: F401  (헤르메스 버스 retire — 롤백용 보존)
 from agents.ingest.daily_mailing_scope_export import export_scopes as _export_daily_mailing_scopes
 from agents.runtime_env import is_production
+
+# misfire 정책(초). 재기동이 잦아 기본 1초로는 놓친 실행이 조용히 폐기됐다(로컬 로그 'was missed by' 611건).
+DAILY_GRACE = 6 * 3600        # 일간 cron: 6시간 안에 재기동하면 1회 실행(coalesce)
+PERIODIC_GRACE = 24 * 3600    # 주간·월간·분기: 하루 안에 재기동하면 1회 실행
+INTERVAL_GRACE = 300          # 10분 interval: 다음 tick 이 곧 오므로 5분
 
 # ── 로깅 설정 ──────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).parent
@@ -52,7 +62,7 @@ def _agent_record_health_problems(report: dict) -> None:
     """헬스 문제를 에이전트 작업 원장에 남긴다 (실패해도 잡을 막지 않는다)."""
     try:
         from agents.agent_tasks.signals import record_health_problems
-        record_health_problems(report)
+        record_health_problems(report, db_path=resolve_db_path())
     except Exception as signal_err:
         logger.warning("daily mailing health 신호 기록 실패: %s", signal_err)
 
@@ -61,9 +71,29 @@ def _agent_record_job_failure(job_id: str, error: str) -> None:
     """잡 실패를 에이전트 작업 원장에 남긴다 (실패해도 잡을 막지 않는다)."""
     try:
         from agents.agent_tasks.signals import record_job_failure
-        record_job_failure(job_id, error)
+        record_job_failure(job_id, error, db_path=resolve_db_path())
     except Exception as signal_err:
         logger.warning("%s 실패 신호 기록 실패: %s", job_id, signal_err)
+
+
+def _agent_record_job_missed(job_id: str, scheduled_run_time) -> None:
+    """놓친 실행(misfire grace 초과)을 에이전트 작업 원장에 남긴다 (실패해도 리스너를 죽이지 않는다)."""
+    try:
+        from agents.agent_tasks.signals import record_job_missed
+        record_job_missed(job_id, scheduled_run_time, db_path=resolve_db_path())
+    except Exception as signal_err:
+        logger.warning("%s 놓친 실행 신호 기록 실패: %s", job_id, signal_err)
+
+
+def _on_job_event(event) -> None:
+    """APScheduler 리스너. guarded_job 이 예외를 삼키므로 EVENT_JOB_ERROR 는 데코레이터 없는 잡의 안전망이고,
+    EVENT_JOB_MISSED 는 misfire grace 초과(스케줄러 정지·재기동 지연)의 유일한 신호다."""
+    if event.code == EVENT_JOB_MISSED:
+        logger.warning("놓친 실행: %s @ %s", event.job_id, event.scheduled_run_time)
+        _agent_record_job_missed(event.job_id, event.scheduled_run_time)
+    elif event.code == EVENT_JOB_ERROR:
+        exc = event.exception
+        _agent_record_job_failure(event.job_id, f"{type(exc).__name__}: {exc}"[:300])
 
 
 # ── 파이프라인 ──────────────────────────────────────────────────────────────
@@ -86,8 +116,11 @@ async def run_pipeline():
 
     # 1) 국내 약가 월별 catch-up (누락 월 자동 복구 적재)
     from agents.domestic_catchup import catch_up
+    counts = {"ingested": 0, "catchup_errors": 0}
     try:
         result = await catch_up(config, BASE_DIR)
+        counts["ingested"] = len(result.get("ingested") or [])
+        counts["catchup_errors"] = len(result.get("errors") or [])
         logger.info("국내 약가 catch-up: 신규 적재 %s · 오류 %s",
                     result.get("ingested"), result.get("errors"))
         if result.get("skipped"):
@@ -106,23 +139,27 @@ async def run_pipeline():
         _agent_record_job_failure("domestic_price_pipeline", f"{type(e).__name__}: {e}"[:300])
         # 적재 실패해도 대쉬보드는 기존 데이터로 갱신
 
-    # 2) 대쉬보드 에이전트
+    # 2) 대쉬보드 에이전트 — 예외는 guarded_job(job) 이 받는다
     dashboard_agent = DashboardAgent(config, BASE_DIR)
     html_path = dashboard_agent.run()
 
     logger.info("━━━ 파이프라인 완료 ━━━")
     logger.info("대쉬보드: file://%s", html_path.resolve())
+    counts["dashboard"] = str(html_path)
+    return {"ok": True, "counts": counts}
 
 
+@guarded_job("domestic_price_pipeline")
 def job():
     """APScheduler 콜백 — 비동기 파이프라인 실행"""
-    asyncio.run(run_pipeline())
+    return asyncio.run(run_pipeline())
 
 
 import subprocess
 from datetime import datetime
 
 
+@guarded_job("foreign_approval_sync")       # 본문 전환은 Task 2
 def foreign_approval_sync_job():
     """ForeignApprovalAgent auto-sync — 매일 04:30 Seoul (compliance 감사 전).
 
@@ -149,6 +186,7 @@ def foreign_approval_sync_job():
         logger.exception("ForeignApproval auto-sync 실패: %s", e)
 
 
+@guarded_job("rule_compliance_audit")       # 본문 전환은 Task 6
 def rule_compliance_audit_job():
     """RuleComplianceAgent — 매일 05:30 Seoul (QG 06:00 리뷰 직전).
 
@@ -185,6 +223,7 @@ def rule_compliance_audit_job():
         logger.exception("Rule Compliance 감사 실패: %s", e)
 
 
+@guarded_job("quality_guard_review")        # 본문 전환은 Task 6
 def quality_guard_review_job():
     """QualityGuardAgent 지속 리뷰 — 매일 06:00 Seoul.
 
@@ -251,6 +290,7 @@ def foreign_price_backfill_job():
         logger.exception("ForeignPrice backfill 실패: %s", e)
 
 
+@guarded_job("exchange_rate_refresh")
 def exchange_rate_refresh_job():
     """KEB 36개월 평균환율 갱신 — 매월 2일 04:00 Seoul.
 
@@ -260,32 +300,31 @@ def exchange_rate_refresh_job():
 
     이전에는 정기 갱신 잡이 없어 누군가 refresh() 를 호출하기 전까지 마지막 xlsx 가
     계속 쓰였음(KEB 36mo 창 drift 의 원인). chromium 은 Dockerfile 에 이미 설치됨.
-    배포 안전: 네트워크/Playwright 실패가 전체 스케줄러를 막지 않도록 try/except 격리.
+    배포 안전: 네트워크/Playwright 실패는 guarded_job 이 받아 원장 과제로 남긴다.
     """
     logger.info("━━━ KEB 36개월 평균환율 갱신 시작 ━━━")
+    from agents.exchange_rate import ExchangeRateFetcher
+    fetcher = ExchangeRateFetcher()
+    rates = asyncio.run(fetcher.refresh(headless=True))
+    meta = fetcher._rate_meta
+    logger.info("환율 갱신 완료: %d개 통화 (기간 %s~%s) — %s", len(rates), meta.get("from", "?"), meta.get("to", "?"),
+                {k: rates.get(k) for k in ("USD", "EUR", "JPY", "GBP", "CHF") if k in rates})
+    counts = {"currencies": len(rates), "to": meta.get("to")}
+    errors = []
+    # 갱신 직후 기존 최신 해외약가 행도 최종환율로 재계산 (주간 백필 대기 없이 즉시 반영)
     try:
-        from agents.exchange_rate import ExchangeRateFetcher
-        fetcher = ExchangeRateFetcher()
-        rates = asyncio.run(fetcher.refresh(headless=True))
-        meta = fetcher._rate_meta
-        logger.info(
-            "환율 갱신 완료: %d개 통화 (기간 %s~%s) — %s",
-            len(rates), meta.get("from", "?"), meta.get("to", "?"),
-            {k: rates.get(k) for k in ("USD", "EUR", "JPY", "GBP", "CHF") if k in rates},
-        )
-        # 갱신 직후 기존 최신 해외약가 행도 최종환율로 재계산 (주간 백필 대기 없이 즉시 반영)
-        try:
-            from agents.db import DrugPriceDB
-            db = DrugPriceDB(BASE_DIR / "data" / "db" / "drug_prices.db")
-            rc = db.recompute_foreign_fx(rates, meta)
-            logger.info("환율 갱신 후 기존행 재계산: 대상 %d · 갱신 %d · skip %d",
-                        rc["candidates"], rc["updated"], rc["skipped"])
-        except Exception as e:
-            logger.exception("환율 갱신 후 재계산 실패(캐시는 갱신됨): %s", e)
+        from agents.db import DrugPriceDB
+        db = DrugPriceDB(BASE_DIR / "data" / "db" / "drug_prices.db")
+        rc = db.recompute_foreign_fx(rates, meta)
+        logger.info("환율 갱신 후 기존행 재계산: 대상 %d · 갱신 %d · skip %d", rc["candidates"], rc["updated"], rc["skipped"])
+        counts.update({"recompute_candidates": rc["candidates"], "recompute_updated": rc["updated"]})
     except Exception as e:
-        logger.exception("KEB 환율 갱신 실패: %s", e)
+        logger.exception("환율 갱신 후 재계산 실패(캐시는 갱신됨): %s", e)
+        errors.append(f"재계산 실패(캐시는 갱신됨): {type(e).__name__}: {e}")
+    return {"ok": not errors, "counts": counts, "errors": errors}
 
 
+@guarded_job("exchange_rate_recompute")     # 수동 전용(스케줄 미등록) — 런북(Task 5)이 부르므로 기록은 남긴다
 def exchange_rate_recompute_job():
     """기존 최신 해외약가 행을 현재 캐시 환율(최종)로 재계산 — 재스크레이프 없음.
 
@@ -310,6 +349,7 @@ def exchange_rate_recompute_job():
         logger.exception("FX 재계산 실패: %s", e)
 
 
+@guarded_job("reimbursement_xnational_sync")
 def reimbursement_xnational_sync_job():
     """Cross-national reimbursement sync — 분기 1회 (1·4·7·10월 1일 02:00 Seoul).
 
@@ -317,18 +357,54 @@ def reimbursement_xnational_sync_job():
     pure-napping-goose plan Phase 6.
     """
     logger.info("━━━ Reimbursement xnational sync 시작 ━━━")
-    try:
-        from agents.foreign_approval.reimbursement_sync import sync_all
-        summary = sync_all()
-        logger.info("Reimbursement sync 완료:")
-        for slug, counts in summary.items():
-            logger.info("  %s: %s", slug, counts)
-    except Exception as e:
-        logger.exception("Reimbursement sync 실패: %s", e)
+    from agents.foreign_approval.reimbursement_sync import sync_all
+    summary = sync_all()
+    logger.info("Reimbursement sync 완료:")
+    total = 0
+    for slug, counts in summary.items():
+        logger.info("  %s: %s", slug, counts)
+        total += sum(int(v or 0) for v in counts.values())
+    errors = [] if total > 0 else ["4개 사이트 모두 0행 — 스크레이퍼/셀렉터 확인"]
+    return {"ok": not errors, "counts": {"products": len(summary), "rows": total}, "errors": errors}
 
 
 # ── HIRA Pipeline Tracker (암질심 + 약평위) — hira-pipeline-tracker skill backend ──
 
+def _crawl_news(lookback_competitor: int, lookback_gov: int) -> dict:
+    """경쟁사·정부 두 크롤을 독립 실행 — 한쪽 실패가 다른 쪽을 막지 않고, 둘 다 errors 로 반환.
+
+    정부·보건당국 정책 뉴스는 같은 competitor_news 테이블(kind='gov_policy')에 누적 → 키워드↔근거기사 보장.
+    Naver 키 미설정(error 에 '미설정')은 재실행으로 안 풀리므로 error_class='config'.
+    """
+    counts, errors, error_class = {}, [], "transient"
+    try:
+        from agents import competitor_news_agent as cn
+        r = cn.crawl(lookback_days=lookback_competitor, t1_only=True)
+        if r.get("error"):
+            errors.append(f"competitor: {r['error']}")
+            if "미설정" in str(r["error"]):
+                error_class = "config"
+        else:
+            counts["competitor"] = r.get("total_stored", 0)
+            if r.get("expired_removed") is not None:
+                counts["expired_removed"] = r.get("expired_removed", 0)
+    except Exception as e:
+        logger.exception("Competitor News 크롤 실패: %s", e)
+        errors.append(f"competitor: {type(e).__name__}: {e}")
+    try:
+        from agents import gov_policy_news as gpn
+        g = gpn.crawl(lookback_days=lookback_gov)
+        if g.get("error"):
+            errors.append(f"gov_policy: {g['error']}")
+        else:
+            counts["gov_policy"] = g.get("total_stored", 0)
+    except Exception as e:
+        logger.exception("Gov Policy News 크롤 실패: %s", e)
+        errors.append(f"gov_policy: {type(e).__name__}: {e}")
+    return {"ok": not errors, "counts": counts, "errors": errors, "error_class": error_class}
+
+
+@guarded_job("competitor_news_weekly")
 def competitor_news_weekly_job():
     """매주 월요일 03:30 Seoul — 경쟁사 Tier 1 뉴스 하이브리드 수집 + 1년 보존 정리.
 
@@ -339,26 +415,15 @@ def competitor_news_weekly_job():
     competitor_news 테이블 누적, expires_at(발행일+365)<오늘 자동 삭제. Naver 키 필요(사이트축은 키 불필요).
     배포 안전: 사이트별/페이지별 try/except·timeout·정중딜레이, 한 소스 실패가 전체를 막지 않음.
     """
-    logger.info("━━━ Competitor News (Tier1) 주간 크롤 시작 ━━━")
-    try:
-        from agents import competitor_news_agent as cn
-        result = cn.crawl(lookback_days=cn.DEFAULT_LOOKBACK_DAYS, t1_only=True)
-        logger.info("Competitor News 크롤 완료: 신규 %d건, 만료정리 %d건",
-                    result.get("total_stored", 0), result.get("expired_removed", 0))
-    except Exception as e:
-        logger.exception("Competitor News 주간 크롤 실패: %s", e)
-
-    # ── 정부·보건당국 정책 뉴스 아카이브 (Home 키워드 클라우드 소스) ──
-    # 같은 competitor_news 테이블(kind='gov_policy')에 누적 → 키워드↔근거기사 보장.
-    logger.info("━━━ Gov Policy News 주간 크롤 시작 ━━━")
-    try:
-        from agents import gov_policy_news as gpn
-        gov_result = gpn.crawl(lookback_days=gpn.DEFAULT_LOOKBACK_DAYS)
-        logger.info("Gov Policy News 크롤 완료: 신규 %d건", gov_result.get("total_stored", 0))
-    except Exception as e:
-        logger.exception("Gov Policy News 주간 크롤 실패: %s", e)
+    logger.info("━━━ Competitor/Gov News 주간 크롤 시작 ━━━")
+    from agents import competitor_news_agent as cn
+    from agents import gov_policy_news as gpn
+    res = _crawl_news(cn.DEFAULT_LOOKBACK_DAYS, gpn.DEFAULT_LOOKBACK_DAYS)
+    logger.info("주간 크롤 완료: %s", res["counts"])
+    return res
 
 
+@guarded_job("competitor_news_daily")
 def competitor_news_daily_job():
     """매일 06:30 Seoul — 경쟁사 Tier1 + 정부정책 뉴스 소규모(최근 3일) fetch.
 
@@ -366,20 +431,12 @@ def competitor_news_daily_job():
     수집 → 07:00 promote 가 동향 카드/홈 대쉬보드에 반영. dedup(link)으로 중복 저장 없음.
     """
     logger.info("━━━ Competitor/Gov News 매일 fetch 시작 ━━━")
-    try:
-        from agents import competitor_news_agent as cn
-        r = cn.crawl(lookback_days=3, t1_only=True)
-        logger.info("Competitor News 매일 fetch: 신규 %d건", r.get("total_stored", 0))
-    except Exception as e:
-        logger.exception("Competitor News 매일 fetch 실패: %s", e)
-    try:
-        from agents import gov_policy_news as gpn
-        g = gpn.crawl(lookback_days=3)
-        logger.info("Gov Policy News 매일 fetch: 신규 %d건", g.get("total_stored", 0))
-    except Exception as e:
-        logger.exception("Gov Policy News 매일 fetch 실패: %s", e)
+    res = _crawl_news(3, 3)
+    logger.info("매일 fetch 완료: %s", res["counts"])
+    return res
 
 
+@guarded_job("access_insight_fresh_signals")
 def access_insight_fresh_signal_job():
     """매주 월요일 04:00 Seoul — Access Insight 신선 신호 크롤 (S5).
 
@@ -393,19 +450,15 @@ def access_insight_fresh_signal_job():
     Naver 키 미설정 시 Naver 축만 skip (사이트 축은 진행).
     """
     logger.info("━━━ Access Insight 신선 신호 주간 크롤 시작 ━━━")
-    try:
-        from agents.amjilsim_tracker.signal_extractor import run_fresh_crawl
-        res = run_fresh_crawl()
-        logger.info(
-            "신선 신호 크롤 완료: articles=%d matched=%d inserted=%d dup=%d (tier별 %s)",
-            res.get("articles", 0), res.get("matched", 0),
-            res.get("inserted", 0), res.get("duplicate_skipped", 0),
-            res.get("by_tier", {}),
-        )
-    except Exception as e:
-        logger.exception("Access Insight 신선 신호 크롤 실패: %s", e)
+    from agents.amjilsim_tracker.signal_extractor import run_fresh_crawl
+    res = run_fresh_crawl()
+    logger.info("신선 신호 크롤 완료: articles=%d matched=%d inserted=%d dup=%d (tier별 %s)",
+                res.get("articles", 0), res.get("matched", 0), res.get("inserted", 0),
+                res.get("duplicate_skipped", 0), res.get("by_tier", {}))
+    return {"counts": {k: res.get(k, 0) for k in ("articles", "matched", "inserted", "duplicate_skipped")}}
 
 
+@guarded_job("competitor_trend_promote")
 def competitor_trend_promote_job():
     """매일 07:00 Seoul — 아카이브(competitor_news) 최근 2일 뉴스 → 동향 카드 승격.
 
@@ -414,14 +467,11 @@ def competitor_trend_promote_job():
     보존. 윈도우 2일은 Naver 인덱싱/수집 지연을 흡수(UPSERT 라 재승격 멱등).
     """
     logger.info("━━━ Competitor Trend 승격 (아카이브→카드) 시작 ━━━")
-    try:
-        from agents import competitor_trends_agent as ct
-        res = ct.promote_from_archive(days=2)
-        t = res.get("totals", {})
-        logger.info("Trend 승격 완료: archive=%s accepted=%s upserted=%s",
-                    t.get("archive"), t.get("accepted"), t.get("upserted"))
-    except Exception as e:
-        logger.exception("Competitor Trend 승격 실패: %s", e)
+    from agents import competitor_trends_agent as ct
+    res = ct.promote_from_archive(days=2)
+    t = res.get("totals", {})
+    logger.info("Trend 승격 완료: archive=%s accepted=%s upserted=%s", t.get("archive"), t.get("accepted"), t.get("upserted"))
+    return {"counts": {k: t.get(k, 0) for k in ("archive", "accepted", "upserted")}}
 
 
 def _reimb_committee_data_sync():
@@ -487,6 +537,7 @@ def _reimb_reports_sync():
         logger.warning("보고서 sync 오류: %s", rres["errors"])
 
 
+@guarded_job("reimb_data_sync")             # 본문 전환은 Task 2
 def reimb_data_sync_job():
     """매일 02:00 Seoul + 부팅 1회 — 헤르메스(또는 사람)가 git 에 커밋한
     위원회 **데이터**(committee_results.json) + **보고서**(reports_manifest.json) 를
@@ -522,6 +573,7 @@ def daily_mailing_scope_export_job():
         logger.warning("daily mailing scope export 실패: %s", e)
 
 
+@guarded_job("daily_mailing_dispatch")      # 본문 전환은 Task 2
 def daily_mailing_dispatch_job():
     """10분 주기 — 발송 시각이 된 구독 브리핑 생성 → 승인 대기/자동 발송 + 실패 재시도 (설계 §6)."""
     try:
@@ -533,34 +585,31 @@ def daily_mailing_dispatch_job():
         logger.error("daily mailing dispatch 실패: %s", e, exc_info=True)
 
 
+@guarded_job("daily_mailing_top_news")
 def daily_mailing_top_news_job():
     """매일 06:40 — '오늘의 주요 MA 뉴스' 산출·캐시 (06:30 뉴스 수집 직후, 구독 공통)."""
-    try:
-        from datetime import datetime
-        from agents.daily_mailing.dispatch import DispatchDeps
-        from agents.daily_mailing.schedule import KST
-        # retry_failed=True — 앞선 10분 tick 이 실패해 음성 캐시가 남아도 06:40 정기 잡은 1회 재시도.
-        items = DispatchDeps.production().load_top_ma_news(
-            datetime.now(KST).date().isoformat(), retry_failed=True)
-        logger.info("daily mailing 주요 MA 뉴스: %d건", len(items))
-    except Exception as e:
-        logger.error("daily mailing 주요 MA 뉴스 실패: %s", e, exc_info=True)
+    from agents.daily_mailing.dispatch import DispatchDeps
+    from agents.daily_mailing.schedule import KST
+    # retry_failed=True — 앞선 10분 tick 이 실패해 음성 캐시가 남아도 06:40 정기 잡은 1회 재시도.
+    items = DispatchDeps.production().load_top_ma_news(datetime.now(KST).date().isoformat(), retry_failed=True)
+    logger.info("daily mailing 주요 MA 뉴스: %d건", len(items))
+    return {"counts": {"items": len(items)}}
 
 
+@guarded_job("daily_mailing_health")
 def daily_mailing_health_job():
-    """매일 09:30 — 오늘 예정 구독의 미생성·보류·발송실패·Gmail 토큰 상태 점검."""
-    try:
-        from agents.daily_mailing.dispatch import DispatchDeps, health_check
-        res = health_check(DispatchDeps.production())
-        if res["ok"]:
-            logger.info("daily mailing health OK (%s)", res["run_date"])
-        else:
-            logger.error("daily mailing health 문제 %d건: %s", len(res["problems"]), res["problems"])
-            _agent_record_health_problems(res)
-    except Exception as e:
-        logger.error("daily mailing health 실패: %s", e, exc_info=True)
+    """매일 09:30 — 오늘 예정 구독의 미생성·보류·발송실패·Gmail 토큰 상태 점검. 문제는 헬스 신호로(잡 실패 아님)."""
+    from agents.daily_mailing.dispatch import DispatchDeps, health_check
+    res = health_check(DispatchDeps.production())
+    if res["ok"]:
+        logger.info("daily mailing health OK (%s)", res["run_date"])
+    else:
+        logger.error("daily mailing health 문제 %d건: %s", len(res["problems"]), res["problems"])
+        _agent_record_health_problems(res)
+    return {"counts": {"problems": len(res.get("problems") or [])}}
 
 
+@guarded_job("nhis_negotiation_sync")
 def nhis_negotiation_sync_job():
     """매주 월요일 02:30 Seoul — 건강보험공단 약가협상 공개자료(신규·확대) 크롤 →
     nhis_negotiations 멱등 아카이브 + amjilsim_drugs 매칭 교체(NHIS 공식 우선).
@@ -568,20 +617,19 @@ def nhis_negotiation_sync_job():
     소스(공개, 자격증명 불필요): retrieveMediList.do(신약)·retrieveMediList2.do(확대).
     - content_hash 멱등 UPSERT(삭제 금지 — 등록 후 1년만 공개되므로 영구 아카이브).
     - 매칭 시 negotiation_status/완료일을 nhis_official 로 자동 교체, 미매칭은 audit(drug_id NULL).
-    배포 안전: 네트워크/파싱 실패가 전체 스케줄러를 막지 않도록 try/except 격리.
+    배포 안전: 네트워크/파싱 실패는 guarded_job 이 받아 원장 과제로 남긴다.
     """
     logger.info("━━━ NHIS 약가협상 공개자료 주간 sync 시작 ━━━")
-    try:
-        from agents.ingest import nhis_negotiation_import as imp
-        res = imp.run()
-        logger.info(
-            "NHIS sync 완료: 수집 %d · 신규아카이브 %d · 매칭 drug %d/row %d · 미매칭 %d",
-            res["fetched"], res["inserted"], res["matched_drugs"],
-            res["matched_rows"], res["unmatched_count"])
-    except Exception as e:
-        logger.exception("NHIS 약가협상 sync 실패: %s", e)
+    from agents.ingest import nhis_negotiation_import as imp
+    res = imp.run()
+    logger.info("NHIS sync 완료: 수집 %d · 신규아카이브 %d · 매칭 drug %d/row %d · 미매칭 %d",
+                res["fetched"], res["inserted"], res["matched_drugs"], res["matched_rows"], res["unmatched_count"])
+    errors = [] if res["fetched"] > 0 else ["NHIS 수집 0건 — 사이트/파서 확인"]
+    return {"ok": not errors, "counts": {k: res[k] for k in ("fetched", "inserted", "matched_drugs", "unmatched_count")},
+            "errors": errors}
 
 
+@guarded_job("home_brand_related_refresh")
 def home_brand_related_refresh_job():
     """매주 월요일 05:00 Seoul — Home 브랜드 목록(home_brand) 활성 브랜드마다 Naver
     연관검색어(자동완성, 크레덴셜 불필요)를 조회해 신규 브랜드 후보를 제안.
@@ -589,20 +637,17 @@ def home_brand_related_refresh_job():
     agents.naver_related.expand_home_brands() 가 후보를 필터링해
     home_brand 에 source='related', active=0 으로 추가 — Home 브랜드 트래픽 집계에는
     반영되지 않고 admin 이 /api/admin/home-brands 에서 검토 후 활성화해야 반영된다.
-    배포 안전: 네트워크/파싱 실패가 전체 스케줄러를 막지 않도록 try/except 격리.
+    배포 안전: 네트워크/파싱 실패는 guarded_job 이 받아 원장 과제로 남긴다.
     """
     logger.info("━━━ Home 브랜드 연관검색어 확장 주간 sync 시작 ━━━")
-    try:
-        from agents import naver_related
-        res = naver_related.expand_home_brands()
-        logger.info(
-            "Home 브랜드 연관검색어 확장 완료: seeds_processed=%d candidates_added=%d",
-            res.get("seeds_processed", 0), res.get("candidates_added", 0),
-        )
-    except Exception as e:
-        logger.exception("Home 브랜드 연관검색어 확장 실패: %s", e)
+    from agents import naver_related
+    res = naver_related.expand_home_brands()
+    logger.info("Home 브랜드 연관검색어 확장 완료: seeds_processed=%d candidates_added=%d",
+                res.get("seeds_processed", 0), res.get("candidates_added", 0))
+    return {"counts": {k: res.get(k, 0) for k in ("seeds_processed", "candidates_added")}}
 
 
+@guarded_job("amjilsim_d_minus_2_reporter")  # Task 7 이 스케줄에서 내림(함수·CLI 는 보존)
 def amjilsim_d_minus_2_reporter_job():
     """매일 16:00 Seoul — 오늘이 어느 위원회 D-2이면 사전 예측 보고서 발사 (17:00 마감).
 
@@ -629,6 +674,7 @@ def amjilsim_d_minus_2_reporter_job():
         logger.exception("amjilsim D-2 reporter 실패: %s", e)
 
 
+@guarded_job("amjilsim_d_plus_1_reporter")
 def amjilsim_d_plus_1_reporter_job():
     """매일 08:00 Seoul — 전일이 차수일이면 결과 리뷰 + 자가 학습 audit (09:00 마감).
 
@@ -655,6 +701,7 @@ def amjilsim_d_plus_1_reporter_job():
         logger.exception("amjilsim D+1 reporter 실패: %s", e)
 
 
+@guarded_job("amjilsim_monthly_trend")
 def amjilsim_monthly_trend_job():
     """매일 09:00 Seoul — 오늘이 그 달 마지막 약평위 D+7이면 월간 트렌드 진단 발사.
 
@@ -677,6 +724,7 @@ def amjilsim_monthly_trend_job():
         logger.exception("amjilsim monthly trend 실패: %s", e)
 
 
+@guarded_job("hira_schedule_fetcher_annual")
 def hira_schedule_fetcher_job():
     """매년 1월 1일 09:00 + 각 차수 D-30 06:00 — HIRA 공식 일정 자동 갱신.
 
@@ -696,37 +744,109 @@ def hira_schedule_fetcher_job():
         logger.exception("HIRA schedule fetcher 실패: %s", e)
 
 
+@guarded_job("git_auto_backup")
 def git_backup_job():
     """Git 자정 자동 백업 — 로컬 전용 (프로덕션 컨테이너는 git 없음 → 매일 ERROR 방지)"""
     if is_production() or shutil.which("git") is None:
         logger.info("Git 자동 백업 skip — 로컬 전용 잡 (프로덕션 컨테이너 또는 git 미설치)")
-        return
-
+        return None
     logger.info("━━━ 자정 Git 자동 백업 시작 ━━━")
     try:
         subprocess.run(["git", "add", "."], cwd=BASE_DIR, check=True)
-        
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        res_commit = subprocess.run(
-            ["git", "commit", "-m", f"Auto backup: {now_str}"], 
-            cwd=BASE_DIR, capture_output=True, text=True
-        )
-        
+        res_commit = subprocess.run(["git", "commit", "-m", f"Auto backup: {now_str}"],
+                                    cwd=BASE_DIR, capture_output=True, text=True)
         if "nothing to commit" in res_commit.stdout or "nothing to commit" in res_commit.stderr:
             logger.info("변경된 파일이 없어 백업(Commit)을 건너뜁니다.")
-            return
-
-        res_push = subprocess.run(
-            ["git", "push"], 
-            cwd=BASE_DIR, capture_output=True, text=True, check=True
-        )
+            return {"counts": {"committed": 0}}
+        subprocess.run(["git", "push"], cwd=BASE_DIR, capture_output=True, text=True, check=True)
         logger.info("Git 백업 성공")
-        
+        return {"counts": {"committed": 1}}
     except subprocess.CalledProcessError as e:
-        logger.error(f"Git 명령어 실행 실패 (exit code: {e.returncode}): {e.stderr or e.output}")
-    except Exception as e:
-        logger.error(f"Git 백업 중 오류 발생: {e}")
+        return {"errors": [f"git exit {e.returncode}: {(e.stderr or e.output or '')[:200]}"]}
 
+
+@guarded_job("policy_intel_analysis_sync")          # main() 안의 중첩 함수 _policy_analysis_sync_job 을 모듈 수준으로 끌어올림(본문 의미는 Task 2)
+def policy_analysis_sync_job():
+    """매일 02:10 — Policy Intelligence 큐레이션 사이드카 git sync."""
+    res = _sync_policy_analysis()
+    logger.info("policy analysis sync: %s", res)
+    return res
+
+
+# ── 등록부 ──────────────────────────────────────────────────────────────────
+# 잡 전부를 데이터(JobSpec)로 둔다 — tests/test_scheduler_job_specs.py 가 guarded·misfire·JOB_RUNBOOK 일치를 대조한다.
+
+@dataclass(frozen=True)
+class JobSpec:
+    id: str
+    name: str
+    fn: Callable
+    trigger: object
+    misfire_grace_time: int = DAILY_GRACE
+    coalesce: bool = True
+    max_instances: int = 1
+
+
+def _cron(**kw) -> CronTrigger:
+    return CronTrigger(timezone="Asia/Seoul", **kw)
+
+
+def build_job_specs(sched_cfg: dict) -> list[JobSpec]:
+    """등록할 잡 전부. 테스트가 이 목록으로 guarded·misfire·JOB_RUNBOOK 일치를 대조한다.
+
+    ForeignPrice 주간 백필은 **비활성화**(2026-07-24) — 전체 indications_master 세트를 매주 재스크레이프해
+    append 하면서 검색 히스토리 고정 노출·행 무한 누적 문제. 수동 `--price-backfill-now` 만 보존.
+    Daily Mailing 헤르메스 git 버스(runs_sync 07:30 · scope_export 15분)는 retire — 함수/CLI 는 롤백용 보존, 잡 미등록.
+    """
+    return [
+        # 매월 1~7일 09:00 (config day="1-7" cron 범위 — 첫 주 매일 재시도. catch_up 이 당월 적재 확인 시 즉시 종료)
+        JobSpec("domestic_price_pipeline", "국내 약가 모니터링 파이프라인", job,
+                _cron(day=sched_cfg["day"], hour=sched_cfg["hour"], minute=sched_cfg["minute"]),
+                misfire_grace_time=86400),                                   # 기존 정책(7/1·6/1 미실행 원인) 유지
+        JobSpec("git_auto_backup", "Git 자동 백업", git_backup_job, _cron(hour=0, minute=0)),
+        JobSpec("foreign_approval_sync", "ForeignApproval 가격↔허가 auto-sync", foreign_approval_sync_job,
+                _cron(hour=4, minute=30)),
+        JobSpec("rule_compliance_audit", "Rule Compliance 일일 감사", rule_compliance_audit_job, _cron(hour=5, minute=30)),
+        JobSpec("quality_guard_review", "QualityGuard 코드베이스 일일 리뷰", quality_guard_review_job, _cron(hour=6, minute=0)),
+        JobSpec("competitor_news_weekly", "경쟁사 뉴스 주간 크롤 (Tier 1, 13 브랜드)", competitor_news_weekly_job,
+                _cron(day_of_week="mon", hour=3, minute=30), misfire_grace_time=PERIODIC_GRACE),
+        JobSpec("competitor_news_daily", "Competitor/Gov News 매일 06:30 fetch (신선분)", competitor_news_daily_job,
+                _cron(hour=6, minute=30)),
+        JobSpec("competitor_trend_promote", "경쟁사 동향 카드 일일 승격 (아카이브→카드)", competitor_trend_promote_job,
+                _cron(hour=7, minute=0)),
+        JobSpec("access_insight_fresh_signals", "Access Insight 신선 신호 주간 크롤 (tier A/B/D → media signals)",
+                access_insight_fresh_signal_job, _cron(day_of_week="mon", hour=4, minute=0),
+                misfire_grace_time=PERIODIC_GRACE),
+        JobSpec("reimbursement_xnational_sync", "Reimbursement cross-national 분기 sync (NICE/PBAC/CMS/CHUIKYO)",
+                reimbursement_xnational_sync_job, _cron(month="1,4,7,10", day=1, hour=2, minute=0),
+                misfire_grace_time=PERIODIC_GRACE),
+        JobSpec("exchange_rate_refresh", "KEB 36개월 평균환율 월간 갱신 (매월 2일 04:00)", exchange_rate_refresh_job,
+                _cron(day=2, hour=4, minute=0), misfire_grace_time=PERIODIC_GRACE),
+        JobSpec("reimb_data_sync", "Reimbursement 위원회 데이터 매일 02:00 git sync", reimb_data_sync_job,
+                _cron(hour=2, minute=0)),
+        JobSpec("policy_intel_analysis_sync", "Policy Intelligence 큐레이션 사이드카 매일 02:10 git sync",
+                policy_analysis_sync_job, _cron(hour=2, minute=10)),
+        JobSpec("daily_mailing_dispatch", "Daily Mailing 10분 주기 발송 판정 (생성→승인대기/자동발송·재시도)",
+                daily_mailing_dispatch_job, IntervalTrigger(minutes=10, timezone="Asia/Seoul"),
+                misfire_grace_time=INTERVAL_GRACE),
+        JobSpec("daily_mailing_top_news", "Daily Mailing 주요 MA 뉴스 매일 06:40", daily_mailing_top_news_job,
+                _cron(hour=6, minute=40)),
+        JobSpec("daily_mailing_health", "Daily Mailing 헬스체크 매일 09:30", daily_mailing_health_job, _cron(hour=9, minute=30)),
+        JobSpec("nhis_negotiation_sync", "NHIS 약가협상 공개자료 주간 sync (신규/확대 → 매칭 교체)", nhis_negotiation_sync_job,
+                _cron(day_of_week="mon", hour=2, minute=30), misfire_grace_time=PERIODIC_GRACE),
+        JobSpec("home_brand_related_refresh", "Home 브랜드 Naver 연관검색어 확장 (주간, 후보 제안 → admin 승인 대기)",
+                home_brand_related_refresh_job, _cron(day_of_week="mon", hour=5, minute=0),
+                misfire_grace_time=PERIODIC_GRACE),
+        JobSpec("amjilsim_d_minus_2_reporter", "amjilsim·약평위 D-2 사전 예측 보고서 발사 (16:00, 17:00 마감)",
+                amjilsim_d_minus_2_reporter_job, _cron(hour=16, minute=0)),
+        JobSpec("amjilsim_d_plus_1_reporter", "amjilsim·약평위 D+1 결과 리뷰 + 예측 룰 자가 학습 (08:00, 09:00 마감)",
+                amjilsim_d_plus_1_reporter_job, _cron(hour=8, minute=0)),
+        JobSpec("amjilsim_monthly_trend", "amjilsim·약평위 월간 트렌드 진단 (매월 마지막 약평위 D+7)",
+                amjilsim_monthly_trend_job, _cron(hour=9, minute=0)),
+        JobSpec("hira_schedule_fetcher_annual", "HIRA 공식 일정 매년 1/1 자동 갱신", hira_schedule_fetcher_job,
+                _cron(month=1, day=1, hour=9, minute=0), misfire_grace_time=PERIODIC_GRACE),
+    ]
 
 # ── 진입점 ─────────────────────────────────────────────────────────────────
 
@@ -897,10 +1017,7 @@ def main():
     if args.amjilsim_daily_crawl_now:
         logger.info("Reimbursement 데이터 sync 즉시 실행 (위원회 데이터 git→DB)")
         reimb_data_sync_job()
-        try:
-            _sync_policy_analysis()
-        except Exception as _e:
-            logger.warning("policy analysis 부팅 sync 실패: %s", _e)
+        policy_analysis_sync_job()          # 래퍼 경유 — 실패는 원장 과제로
         # Daily Mailing 헤르메스 버스 retire (2026-09-18) — 부팅 sync/export 제거
         return
 
@@ -997,270 +1114,13 @@ def main():
     # 확인 시 브라우저/프록시 없이 즉시 종료하므로 2~7일 실행은 사실상 무비용)
     sched_cfg = config["domestic_agent"]["schedule"]
     scheduler = BlockingScheduler(timezone="Asia/Seoul")
-    scheduler.add_job(
-        job,
-        trigger=CronTrigger(
-            day=sched_cfg["day"],
-            hour=sched_cfg["hour"],
-            minute=sched_cfg["minute"],
-            timezone="Asia/Seoul",
-        ),
-        id="domestic_price_pipeline",
-        name="국내 약가 모니터링 파이프라인",
-        replace_existing=True,
-        # 발화 시점에 스케줄러가 다운돼 있으면 놓친 실행이 폐기됨
-        # (7/1·6/1 미실행 원인). 재시작이 잦으므로 grace 24h + coalesce 로
-        # 창 안에서 재기동 시 놓친 잡을 1회 실행. catch_up 은 멱등이라 안전.
-        misfire_grace_time=86400,
-        coalesce=True,
-    )
-
-    # Git 자정 자동 백업 스케줄 추가
-    scheduler.add_job(
-        git_backup_job,
-        trigger=CronTrigger(
-            hour=0,
-            minute=0,
-            timezone="Asia/Seoul",
-        ),
-        id="git_auto_backup",
-        name="Git 자동 백업",
-        replace_existing=True,
-    )
-
-    # ForeignApproval auto-sync — 매일 04:30 Seoul (compliance 감사 전, 가격↔허가 비대칭 해소)
-    scheduler.add_job(
-        foreign_approval_sync_job,
-        trigger=CronTrigger(
-            hour=4,
-            minute=30,
-            timezone="Asia/Seoul",
-        ),
-        id="foreign_approval_sync",
-        name="ForeignApproval 가격↔허가 auto-sync",
-        replace_existing=True,
-    )
-
-    # Rule Compliance 감사 — 매일 05:30 Seoul (QG 06:00 직전, 합의 룰 ↔ 런타임 대조)
-    scheduler.add_job(
-        rule_compliance_audit_job,
-        trigger=CronTrigger(
-            hour=5,
-            minute=30,
-            timezone="Asia/Seoul",
-        ),
-        id="rule_compliance_audit",
-        name="Rule Compliance 일일 감사",
-        replace_existing=True,
-    )
-
-    # QualityGuard 지속 리뷰 — 매일 06:00 Seoul (업무 시작 전)
-    scheduler.add_job(
-        quality_guard_review_job,
-        trigger=CronTrigger(
-            hour=6,
-            minute=0,
-            timezone="Asia/Seoul",
-        ),
-        id="quality_guard_review",
-        name="QualityGuard 코드베이스 일일 리뷰",
-        replace_existing=True,
-    )
-
-    # ForeignPrice 주간 백필 — **비활성화** (2026-07-24).
-    # 이유: 전체 indications_master 세트를 매주 재스크레이프해 append 하면서, 사용자가
-    # 검색하지 않은 MSD 자산 세트(januvia/lenvima 등)가 검색 히스토리에 고정 노출되고
-    # append-only 로 행이 무한 누적되는 문제(sitagliptin 511행). 해외약가는 이제
-    # **사용자 '실시간 검색 실행' 만** 캐시를 채우고, search_all 직후 compact_foreign_prices
-    # 가 약제당 최신 1세션만 유지한다. 수동 실행은 `python scheduler.py --price-backfill-now`.
-    # (foreign_price_backfill_job 함수 + CLI 플래그는 수동용으로 보존)
-
-    # Competitor News — 매주 월요일 03:30 Seoul (Tier 1 전문지 6개월 크롤 + 1년 보존)
-    scheduler.add_job(
-        competitor_news_weekly_job,
-        trigger=CronTrigger(
-            day_of_week="mon",
-            hour=3,
-            minute=30,
-            timezone="Asia/Seoul",
-        ),
-        id="competitor_news_weekly",
-        name="경쟁사 뉴스 주간 크롤 (Tier 1, 13 브랜드)",
-        replace_existing=True,
-    )
-
-    # Competitor/Gov News — 매일 06:30 Seoul 소규모 fetch (신선분, promote 직전)
-    scheduler.add_job(
-        competitor_news_daily_job,
-        trigger=CronTrigger(hour=6, minute=30, timezone="Asia/Seoul"),
-        id="competitor_news_daily",
-        name="Competitor/Gov News 매일 06:30 fetch (신선분)",
-        replace_existing=True,
-    )
-
-    # Competitor Trend 승격 — 매일 07:00 Seoul (아카이브→동향 카드, LLM badge 분류)
-    scheduler.add_job(
-        competitor_trend_promote_job,
-        trigger=CronTrigger(hour=7, minute=0, timezone="Asia/Seoul"),
-        id="competitor_trend_promote",
-        name="경쟁사 동향 카드 일일 승격 (아카이브→카드)",
-        replace_existing=True,
-    )
-
-    # Access Insight 신선 신호 — 매주 월요일 04:00 Seoul (S5: tier A/B/D 크롤 →
-    # signal_extractor → amjilsim_media_signals 멱등 INSERT. competitor_news
-    # 주간 크롤(03:30)과 같은 소스 패밀리·주간 cadence, 30분 후행)
-    scheduler.add_job(
-        access_insight_fresh_signal_job,
-        trigger=CronTrigger(
-            day_of_week="mon",
-            hour=4,
-            minute=0,
-            timezone="Asia/Seoul",
-        ),
-        id="access_insight_fresh_signals",
-        name="Access Insight 신선 신호 주간 크롤 (tier A/B/D → media signals)",
-        replace_existing=True,
-    )
-
-    # Reimbursement xnational sync — 분기 1회 (1·4·7·10월 1일 02:00 Seoul)
-    scheduler.add_job(
-        reimbursement_xnational_sync_job,
-        trigger=CronTrigger(
-            month="1,4,7,10",
-            day=1,
-            hour=2,
-            minute=0,
-            timezone="Asia/Seoul",
-        ),
-        id="reimbursement_xnational_sync",
-        name="Reimbursement cross-national 분기 sync (NICE/PBAC/CMS/CHUIKYO)",
-        replace_existing=True,
-    )
-
-    # KEB 36개월 평균환율 갱신 — 매월 2일 04:00 Seoul (전월 말일 확정 직후)
-    scheduler.add_job(
-        exchange_rate_refresh_job,
-        trigger=CronTrigger(
-            day=2,
-            hour=4,
-            minute=0,
-            timezone="Asia/Seoul",
-        ),
-        id="exchange_rate_refresh",
-        name="KEB 36개월 평균환율 월간 갱신 (매월 2일 04:00)",
-        replace_existing=True,
-    )
-
-    # ─── HIRA Pipeline Tracker (암질심·약평위) ────────────────────────────────
-
-    # 매일 02:00 — Reimbursement 위원회 데이터 git→DB sync (헤르메스 커밋 자동 반영)
-    scheduler.add_job(
-        reimb_data_sync_job,
-        trigger=CronTrigger(hour=2, minute=0, timezone="Asia/Seoul"),
-        id="reimb_data_sync",
-        name="Reimbursement 위원회 데이터 매일 02:00 git sync",
-        replace_existing=True,
-    )
-
-    # 매일 02:10 — Policy Intelligence 큐레이션 사이드카 git sync (헤르메스 커밋 자동 반영)
-    def _policy_analysis_sync_job():
-        try:
-            res = _sync_policy_analysis()
-            logger.info("policy analysis sync: %s", res)
-        except Exception as e:
-            logger.warning("policy analysis sync 실패: %s", e)
-
-    scheduler.add_job(
-        _policy_analysis_sync_job,
-        trigger=CronTrigger(hour=2, minute=10, timezone="Asia/Seoul"),
-        id="policy_intel_analysis_sync",
-        name="Policy Intelligence 큐레이션 사이드카 매일 02:10 git sync",
-        replace_existing=True,
-    )
-
-    # ── Daily Mailing (2026-09-18 프로덕션 생성·발송) ──
-    # 헤르메스 git 버스(runs_sync 07:30 · scope_export 15분)는 retire — 함수/CLI 는 롤백용 보존, 잡 미등록.
-    scheduler.add_job(
-        daily_mailing_dispatch_job,
-        trigger=IntervalTrigger(minutes=10, timezone="Asia/Seoul"),
-        id="daily_mailing_dispatch",
-        name="Daily Mailing 10분 주기 발송 판정 (생성→승인대기/자동발송·재시도)",
-        replace_existing=True,
-        max_instances=1,
-        coalesce=True,
-    )
-    scheduler.add_job(
-        daily_mailing_top_news_job,
-        trigger=CronTrigger(hour=6, minute=40, timezone="Asia/Seoul"),
-        id="daily_mailing_top_news",
-        name="Daily Mailing 주요 MA 뉴스 매일 06:40",
-        replace_existing=True,
-    )
-    scheduler.add_job(
-        daily_mailing_health_job,
-        trigger=CronTrigger(hour=9, minute=30, timezone="Asia/Seoul"),
-        id="daily_mailing_health",
-        name="Daily Mailing 헬스체크 매일 09:30",
-        replace_existing=True,
-    )
-
-    # 매주 월요일 02:30 — NHIS 약가협상 공개자료(신규·확대) 크롤 + 매칭 교체
-    scheduler.add_job(
-        nhis_negotiation_sync_job,
-        trigger=CronTrigger(day_of_week="mon", hour=2, minute=30, timezone="Asia/Seoul"),
-        id="nhis_negotiation_sync",
-        name="NHIS 약가협상 공개자료 주간 sync (신규/확대 → 매칭 교체)",
-        replace_existing=True,
-    )
-
-    # 매주 월요일 05:00 — Home 브랜드 목록 Naver 연관검색어 확장(신규 후보 제안, admin 검토용)
-    scheduler.add_job(
-        home_brand_related_refresh_job,
-        trigger=CronTrigger(day_of_week="mon", hour=5, minute=0, timezone="Asia/Seoul"),
-        id="home_brand_related_refresh",
-        name="Home 브랜드 Naver 연관검색어 확장 (주간, 후보 제안 → admin 승인 대기)",
-        replace_existing=True,
-    )
-
-    # 매일 16:00 — D-2 사전 예측 보고서 (calendar gating)
-    scheduler.add_job(
-        amjilsim_d_minus_2_reporter_job,
-        trigger=CronTrigger(hour=16, minute=0, timezone="Asia/Seoul"),
-        id="amjilsim_d_minus_2_reporter",
-        name="amjilsim·약평위 D-2 사전 예측 보고서 발사 (16:00, 17:00 마감)",
-        replace_existing=True,
-    )
-
-    # 매일 08:00 — D+1 결과 리뷰 + 자가 학습 audit (calendar gating)
-    scheduler.add_job(
-        amjilsim_d_plus_1_reporter_job,
-        trigger=CronTrigger(hour=8, minute=0, timezone="Asia/Seoul"),
-        id="amjilsim_d_plus_1_reporter",
-        name="amjilsim·약평위 D+1 결과 리뷰 + 예측 룰 자가 학습 (08:00, 09:00 마감)",
-        replace_existing=True,
-    )
-
-    # 매일 09:00 — 월간 트렌드 진단 (매월 마지막 약평위 D+7 gating)
-    scheduler.add_job(
-        amjilsim_monthly_trend_job,
-        trigger=CronTrigger(hour=9, minute=0, timezone="Asia/Seoul"),
-        id="amjilsim_monthly_trend",
-        name="amjilsim·약평위 월간 트렌드 진단 (매월 마지막 약평위 D+7)",
-        replace_existing=True,
-    )
-
-    # 매년 1월 1일 09:00 + 각 차수 D-30 06:00 — HIRA 공식 일정 자동 갱신
-    scheduler.add_job(
-        hira_schedule_fetcher_job,
-        trigger=CronTrigger(month=1, day=1, hour=9, minute=0, timezone="Asia/Seoul"),
-        id="hira_schedule_fetcher_annual",
-        name="HIRA 공식 일정 매년 1/1 자동 갱신",
-        replace_existing=True,
-    )
+    for spec in build_job_specs(sched_cfg):
+        scheduler.add_job(spec.fn, trigger=spec.trigger, id=spec.id, name=spec.name, replace_existing=True,
+                          misfire_grace_time=spec.misfire_grace_time, coalesce=spec.coalesce,
+                          max_instances=spec.max_instances)
+    scheduler.add_listener(_on_job_event, EVENT_JOB_ERROR | EVENT_JOB_MISSED)
 
     logger.info("%s", _schedule_banner(sched_cfg))
-
     try:
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):
