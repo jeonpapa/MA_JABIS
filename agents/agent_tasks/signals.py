@@ -51,6 +51,19 @@ JOB_RUNBOOK: dict[str, str | None] = {
     "scheduler_heartbeat": None,     # T4: /api/health 가 stale 을 보면 같은 source_ref 로 기록(하루 1건) — 사람 확인
     "platform_smoke": None,          # T4: 화면 깨짐(라우트 5xx·키 부재·권한 게이트 붕괴) — 사람 확인
 }
+# 스케줄에 없는 수동 전용 잡(guarded_job 은 있으나 build_job_specs 미등록) → 런북. JOB_RUNBOOK 과 분리하는 이유:
+# tests/test_scheduler_job_specs.py 가 JOB_RUNBOOK 키 집합 == 등록 잡 id 집합을 강제한다. record_job_failure 는
+# JOB_RUNBOOK → MANUAL_JOB_RUNBOOK 순으로 힌트를 찾는다(job_runbook()).
+MANUAL_JOB_RUNBOOK: dict[str, str | None] = {
+    "exchange_rate_recompute": "exchange_rate_recompute",   # 런북이 부르는 FX 재계산 — 실패가 과제가 될 때 같은 런북으로 재시도
+}
+
+
+def job_runbook(job_id: str) -> str | None:
+    """잡 id 의 런북 이름. 등록 잡은 JOB_RUNBOOK(None 포함)이 결정하고, 수동 전용 잡만 MANUAL_JOB_RUNBOOK 을 본다."""
+    if job_id in JOB_RUNBOOK:
+        return JOB_RUNBOOK[job_id]
+    return MANUAL_JOB_RUNBOOK.get(job_id)
 # Daily Mailing 헬스 문제 코드 전부(agents/daily_mailing/dispatch.py:50,490,498,504). None 은 런북으로 안 풀린다:
 # held = 재시도 3회 소진(사람 승인/원인 확인), error = 생성 예외(원인 확인), expired = 승인 기한 경과(사람), gmail_token_invalid = 토큰 재발급(사람).
 HEALTH_RUNBOOK: dict[str, str | None] = {
@@ -92,7 +105,7 @@ def _note_recurrence(task_id: int, error: str, today: str, *, db_path: str | Pat
 
 def record_job_failure(job_id: str, error: str, *, error_class: str = "transient",
                        db_path: str | Path = DEFAULT_DB_PATH) -> int:
-    runbook = JOB_RUNBOOK.get(job_id)
+    runbook = job_runbook(job_id)
     today = _today()
     ref = f"{job_id}:config" if error_class == "config" else f"{job_id}:{today}"
     title = f"스케줄러 잡 실패 — {job_id}" + (" (설정 문제)" if error_class == "config" else "")

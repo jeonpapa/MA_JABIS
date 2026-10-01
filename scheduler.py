@@ -357,22 +357,28 @@ def exchange_rate_recompute_job():
     환율은 adjusted_price_krw 에 선형이라 new/old 비율로 스케일해 새 행을 append.
     환율 잡(매월 2일)에 이미 포함돼 있고, 이 잡은 캐시는 그대로 두고 재계산만
     수동 실행할 때 사용 (예: 고시회차 수정 후 기존행 즉시 반영).
+
+    실패와 '캐시 없음' 은 {"ok": False, "errors": [...]} 다 — 예외를 여기서 삼키고 None 을 돌려주면 normalize_result 가
+    ok=True 로 만들어 런북이 거짓 '복구 완료' 를 내고, 디스패처가 foreign_price_fx_alignment 신선도 과제를 아무것도
+    재계산하지 않은 채 닫는다(P1.5 검증 결함 A). 예외는 guarded_job 이 받아 실패 신호로 남긴다. 스케줄 미등록이라
+    런북 힌트는 signals.MANUAL_JOB_RUNBOOK 이 준다(JOB_RUNBOOK 은 등록 잡 id 집합과 같아야 한다).
     """
     logger.info("━━━ 해외약가 FX 재계산 시작 ━━━")
-    try:
-        from agents.exchange_rate import ExchangeRateFetcher
-        from agents.db import DrugPriceDB
-        fetcher = ExchangeRateFetcher()
-        if not fetcher._load_latest_cache():
-            logger.warning("FX 재계산: 환율 캐시 없음 — --fx-refresh-now 먼저 실행 필요")
-            return
-        db = DrugPriceDB(BASE_DIR / "data" / "db" / "drug_prices.db")
-        res = db.recompute_foreign_fx(fetcher._rates, fetcher._rate_meta)
-        logger.info("FX 재계산 완료: 대상 %d · 갱신 %d · skip %d (기간 %s~%s)",
-                    res["candidates"], res["updated"], res["skipped"],
-                    fetcher._rate_meta.get("from"), fetcher._rate_meta.get("to"))
-    except Exception as e:
-        logger.exception("FX 재계산 실패: %s", e)
+    from agents.exchange_rate import ExchangeRateFetcher
+    from agents.db import DrugPriceDB
+    fetcher = ExchangeRateFetcher()
+    if not fetcher._load_latest_cache():
+        msg = "환율 캐시 없음 — 런북 exchange_rate_refresh(`scheduler.py --fx-refresh-now`) 를 먼저 실행해야 한다"
+        logger.warning("FX 재계산: %s", msg)
+        return {"ok": False, "counts": {}, "errors": [msg]}
+    db = DrugPriceDB(BASE_DIR / "data" / "db" / "drug_prices.db")
+    res = db.recompute_foreign_fx(fetcher._rates, fetcher._rate_meta)
+    logger.info("FX 재계산 완료: 대상 %d · 갱신 %d · skip %d (기간 %s~%s)",
+                res["candidates"], res["updated"], res["skipped"],
+                fetcher._rate_meta.get("from"), fetcher._rate_meta.get("to"))
+    return {"ok": True, "errors": [],
+            "counts": {"candidates": res["candidates"], "updated": res["updated"], "skipped": res["skipped"],
+                       "to": fetcher._rate_meta.get("to")}}
 
 
 @guarded_job("reimbursement_xnational_sync")
