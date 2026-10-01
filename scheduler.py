@@ -873,7 +873,8 @@ def scheduler_heartbeat_job():
 def platform_smoke_job():
     """매일 07:50 — 21개 화면 + 권한 게이트 스모크 (같은 컨테이너의 웹 프로세스, 공유 JWT_SECRET 으로 토큰 직접 발급).
 
-    실패 = 화면 깨짐 → 과제 platform_smoke:{날짜} 하루 1건(guarded_job dedup). 토큰을 못 만들면(비밀 미공유) 그 역할
+    실패 = 화면 깨짐 → 과제 platform_smoke:<실패 집합 해시> 1건(같은 화면이 계속 깨져 있으면 날이 바뀌어도 같은 과제, 집합이
+    바뀌면 새 과제 — signals.CONTENT_KEYED_JOBS). 토큰을 못 만들면(비밀 미공유) 그 역할
     화면은 skipped — 오탐 아님. base 는 MA_SMOKE_BASE 로 바꿀 수 있다(로컬 포트 등).
     """
     from scripts.smoke import DEFAULT_BASE, mint_token_factory, run_smoke

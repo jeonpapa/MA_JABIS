@@ -8,6 +8,8 @@
   - QG 코드패턴/제안(Task 6): source_ref = "qg:issue:<유형>" / "qg:suggestion:<이모지>" — 그룹당 improvement 1건, 내용이
     바뀌면 refreshed 이벤트. QG 회귀/drift 와 RC FAIL 은 내용 키("qg:regression:<indication>", "qg:drift:<해시>",
     "rc:<memory>") 로 ops_incident 1건 — 날짜 키였다면 매일 13건이 쌓여 원장이 일주일 만에 무용지물이 된다.
+  - 플랫폼 스모크(P1.5 fix E): source_ref = "platform_smoke:<실패 체크 집합 내용 해시>" — 같은 화면이 계속 깨져 있으면 1건, 실패 집합이
+    바뀌면 새 과제. 날짜 키였다면 고쳐질 때까지 하루 1건이 ≤3건/일 예산을 먹는다. scheduler_heartbeat 는 날짜 키 유지("그날 멈췄다").
   - 반복 조건 신호는 **같은 행을 다시 연다**(P1.5 fix B, record_recurring): (source, source_ref) 로 찾아 없으면 생성, 열려 있거나
     blocked 면 recurred 이벤트 ≤1/일, closed/rejected 면 같은 행을 triaged 로 다시 연다(store.reopen_task — attempts 보존,
     한도면 blocked). 디스패처가 런북 '접수' 만으로 closed 로 닫아도 다음 날 새 행(attempts=0)이 생기지 않고 재시도 한도가 걸린다.
@@ -53,7 +55,7 @@ JOB_RUNBOOK: dict[str, str | None] = {
     "home_brand_related_refresh": None,
     "domain_freshness": None,                 # 판정기 자체의 실패용. stale 도메인 과제는 freshness.py 가 도메인별 런북 힌트로 만든다
     "scheduler_heartbeat": None,     # T4: /api/health 가 stale 을 보면 같은 source_ref 로 기록(하루 1건) — 사람 확인
-    "platform_smoke": None,          # T4: 화면 깨짐(라우트 5xx·키 부재·권한 게이트 붕괴) — 사람 확인
+    "platform_smoke": None,          # T4: 화면 깨짐(라우트 5xx·키 부재·권한 게이트 붕괴) — 사람 확인. 키는 실패 집합 해시(CONTENT_KEYED_JOBS)
 }
 # 스케줄에 없는 수동 전용 잡(guarded_job 은 있으나 build_job_specs 미등록) → 런북. JOB_RUNBOOK 과 분리하는 이유:
 # tests/test_scheduler_job_specs.py 가 JOB_RUNBOOK 키 집합 == 등록 잡 id 집합을 강제한다. record_job_failure 는
@@ -134,10 +136,22 @@ def record_recurring(*, kind: str, source: str, source_ref: str, title: str, det
     return tid, "recurred" if noted else "unchanged"
 
 
+# 실패 '집합' 이 키인 잡 — 같은 화면이 계속 깨져 있으면 과제 1건, 실패 집합이 바뀌면 새 과제(QG 와 같은 숫자 무시 내용 키라
+# 'HTTP 500'→'HTTP 502' 는 같은 과제). 날짜 키였다면 고쳐질 때까지 하루 1건씩 ≤3건/일 예산을 먹는다(P1.5 fix E).
+# scheduler_heartbeat 는 날짜 키 유지 — "그날 멈췄다" 는 사실이다.
+CONTENT_KEYED_JOBS = frozenset({"platform_smoke"})
+
+
 def record_job_failure(job_id: str, error: str, *, error_class: str = "transient",
-                       db_path: str | Path = DEFAULT_DB_PATH) -> int:
+                       errors: list[str] | None = None, db_path: str | Path = DEFAULT_DB_PATH) -> int:
+    """잡 실패 → ops_incident. error 는 detail 본문(합친 문자열), errors 는 내용 키 계산용 원본 목록(없으면 error)."""
     runbook = job_runbook(job_id)
-    ref = f"{job_id}:config" if error_class == "config" else f"{job_id}:{_today()}"
+    if error_class == "config":
+        ref = f"{job_id}:config"
+    elif job_id in CONTENT_KEYED_JOBS:
+        ref = f"{job_id}:{_content_key(chr(10).join(sorted(errors)) if errors else error)}"
+    else:
+        ref = f"{job_id}:{_today()}"
     title = f"스케줄러 잡 실패 — {job_id}" + (" (설정 문제)" if error_class == "config" else "")
     tid, _ = record_recurring(
         kind="ops_incident", source="scheduler_job", source_ref=ref, title=title,

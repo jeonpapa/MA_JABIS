@@ -113,7 +113,8 @@ def _record(job_id: str, started: datetime, res: dict, *, record_runs: bool) -> 
     logger.error("[job:%s] 실패 — %s", job_id, "; ".join(res["errors"])[:500])
     try:
         from .signals import record_job_failure
-        record_job_failure(job_id, "; ".join(res["errors"])[:300], error_class=res["error_class"], db_path=path)
+        record_job_failure(job_id, "; ".join(res["errors"])[:300], error_class=res["error_class"],
+                           errors=list(res["errors"]), db_path=path)
     except Exception as e:
         logger.warning("[job:%s] 실패 신호 기록 실패: %s", job_id, e)
 
