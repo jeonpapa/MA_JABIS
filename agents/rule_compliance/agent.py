@@ -7,12 +7,17 @@
 - 검증 불가한 메모리(개발 관행·process state)는 SKIP 로 명시 — 묵시적 통과 금지
 
 트리거:
-- 매일 05:30 Asia/Seoul — `scheduler.compliance_audit_job` (QG 06:00 리뷰 직전)
+- 매일 05:30 Asia/Seoul — `scheduler.rule_compliance_audit_job` (QG 06:00 리뷰 직전)
 - 수동: `python -m agents.rule_compliance [--write-report]`
+
+메모리 없는 모드(프로덕션, P1.5 Task 6):
+- 컨테이너에는 메모리 디렉터리가 없다. 14개 체크는 전부 DB/파일 증거라 메모리는 라벨(title)만 준다 —
+  `require_memory=False` 면 CHECKS 레지스트리가 곧 감사 목록(SKIP 메모리는 목록에 없다).
 
 출력:
 - stdout: 요약 테이블
-- `quality_guard/compliance_YYYY-MM-DD.md`: 전체 보고서
+- `data/quality_guard/compliance_YYYY-MM-DD.md`: 전체 보고서 (QG 와 같은 볼륨 경로, QUALITY_GUARD_DIR 오버라이드)
+- FAIL 은 스케줄러가 원장 과제(rc:<memory>, 메모리당 1건)로 남긴다 — agents/agent_tasks/signals.record_compliance_results
 """
 from __future__ import annotations
 
@@ -37,7 +42,8 @@ _DEFAULT_MEMORY_DIR = (
 )
 
 
-def _resolve_memory_dir() -> Path:
+def _resolve_memory_dir(required: bool = True) -> Path | None:
+    """환경변수 > 기본 경로 > ~/.claude/projects/*/memory 순. required=False 면 없을 때 None(메모리 없는 모드)."""
     override = os.environ.get("CLAUDE_MEMORY_DIR")
     if override:
         p = Path(override)
@@ -54,7 +60,9 @@ def _resolve_memory_dir() -> Path:
                 mem = sub / "memory"
                 if mem.exists():
                     return mem
-    raise FileNotFoundError("memory 디렉터리를 찾을 수 없음. CLAUDE_MEMORY_DIR 환경변수로 지정하세요.")
+    if required:
+        raise FileNotFoundError("memory 디렉터리를 찾을 수 없음. CLAUDE_MEMORY_DIR 환경변수로 지정하세요.")
+    return None
 
 
 _INDEX_LINE_RE = re.compile(r"^- \[(?P<title>[^\]]+)\]\((?P<path>[^)]+\.md)\)\s*—\s*(?P<hook>.+)$")
@@ -63,15 +71,20 @@ _INDEX_LINE_RE = re.compile(r"^- \[(?P<title>[^\]]+)\]\((?P<path>[^)]+\.md)\)\s*
 class RuleComplianceAgent:
     """메모리 ↔ 런타임 일치 감사."""
 
-    def __init__(self, memory_dir: Path | None = None, project_root: Path | None = None):
-        self.memory_dir = memory_dir or _resolve_memory_dir()
+    def __init__(self, memory_dir: Path | None = None, project_root: Path | None = None, *,
+                 require_memory: bool = True):
+        self.memory_dir = memory_dir or _resolve_memory_dir(required=require_memory)
         self.project_root = project_root or BASE_DIR
-        self.report_dir = self.project_root / "quality_guard"
+        from agents.quality_guard.deviations import GUARD_DIR
+        self.report_dir = GUARD_DIR                      # QG 와 같은 볼륨 경로(data/quality_guard)
         self.report_dir.mkdir(parents=True, exist_ok=True)
 
     # ── 인덱스 파싱 ────────────────────────────────────────────────────────
     def load_index(self) -> list[dict]:
         """MEMORY.md 를 파싱하여 각 항목 `{name, title, hook, file}` 반환."""
+        if self.memory_dir is None:
+            # 메모리 없는 모드(프로덕션): 체크 레지스트리가 곧 목록 — 판정은 전부 DB/파일 증거라 메모리가 필요 없다
+            return [{"name": n, "title": n, "hook": "", "file": ""} for n in CHECKS]
         idx_path = self.memory_dir / "MEMORY.md"
         if not idx_path.exists():
             return []

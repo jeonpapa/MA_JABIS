@@ -23,6 +23,9 @@ data/db/*.db.bak.*
 /drug_prices.db-shm
 /drug_prices.db-wal
 
+# QualityGuard·RuleCompliance 산출물 (볼륨 경로 — P1.5 Task 6). 구 quality_guard/ 는 git 추적 역사로만 남는다
+data/quality_guard/
+
 # 캐시 (대용량, 별도 백업)
 data/hta_cache/
 
