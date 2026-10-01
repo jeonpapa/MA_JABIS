@@ -24,6 +24,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 logger = logging.getLogger(__name__)
 DEFAULT_BASE = "http://127.0.0.1:5001"
 SMOKE_SUBJECT = "smoke@internal"                    # 토큰 sub — users DB 에 없는 가상 주체(계정 아님)
+# 모든 요청에 붙인다 — 서버(api/server.py:SMOKE_HEADER)가 이 요청에서 GET 라우트의 부수효과(검색 로그 INSERT·만료 purge·
+# 캐시 미스 동기 크롤)만 건너뛴다. 읽기 판정은 그대로다(스모크의 목적). 값은 server 와 같아야 한다(테스트가 대조).
+SMOKE_HEADER = "X-MA-Smoke"
 Expect = Callable[[int, object], "str | None"]     # (status, body) → 실패 사유 | None
 TokenFor = Callable[["str | None"], "str | None"]  # role → 토큰 | None(그 역할 화면은 skipped)
 
@@ -95,6 +98,7 @@ SCREENS: tuple[Screen, ...] = (
 
 def _get(base: str, path: str, token: str | None, opener, timeout: float) -> tuple[int, object]:
     req = urllib.request.Request(f"{base}{path}")
+    req.add_header(SMOKE_HEADER, "1")
     if token:
         req.add_header("Authorization", f"Bearer {token}")
     try:

@@ -459,9 +459,11 @@ def load_latest_run_for_subscription(
     return run
 
 
-def load_admin_kanban(db_path: str | Path = DEFAULT_DB_PATH, *, limit_runs: int = 20) -> dict:
+def load_admin_kanban(db_path: str | Path = DEFAULT_DB_PATH, *, limit_runs: int = 20, purge: bool = True) -> dict:
+    """purge=False 는 읽기 전용 조회(플랫폼 스모크) — 만료 행 DELETE 를 건너뛴다."""
     ensure_daily_mailing_tables(db_path)
-    purge_expired_daily_mailing_rows(db_path)
+    if purge:
+        purge_expired_daily_mailing_rows(db_path)
     with connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         runs = conn.execute(

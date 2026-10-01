@@ -78,14 +78,17 @@ def _load_env() -> None:
         os.environ.setdefault(k.strip(), v.strip())
 
 
-def _load_archive_news(days: int = 31, limit: int = 80) -> list[dict]:
+def _load_archive_news(days: int = 31, limit: int = 80, *, allow_fetch: bool = True) -> list[dict]:
     """gov_policy 아카이브에서 최근 뉴스 로드 (키워드 클라우드 입력).
 
     아카이브가 비어 있으면(최초 구동 등) 1회 크롤 후 재시도, 그래도 없으면
-    구형 live Naver 검색으로 graceful fallback.
+    구형 live Naver 검색으로 graceful fallback. allow_fetch=False(플랫폼 스모크)면 둘 다 하지 않는다 —
+    동기 크롤은 competitor_news 에 쓰고 수 초가 걸려 스모크 타임아웃·DB 쓰기의 원인이었다.
     """
     from agents import gov_policy_news as _gov
     rows = _gov.list_archive(days=days, limit=limit)
+    if not rows and not allow_fetch:
+        return []
     if not rows:
         try:
             logger.info("[GovSummary] 아카이브 비어 있음 → 1회 크롤 시도")
@@ -295,7 +298,11 @@ def _date_recency(date_str: str, window: int = 31) -> float:
     return max(0.3, min(1.0, 1.0 - age / max(1, window)))
 
 
-def get_government_summary(refresh: bool = False) -> dict:
+def get_government_summary(refresh: bool = False, *, allow_fetch: bool = True) -> dict:
+    """일자 캐시 → 아카이브 → LLM 요약. allow_fetch=False 는 스모크용(캐시/아카이브만, 크롤·live 검색 없음).
+
+    실패 결과(error 키)는 캐시하지 않는다 — 한 번의 크롤/리뷰어 실패가 그날 내내 빈 위젯으로 굳던 버그(P1.5 fix C-③).
+    """
     _load_env()
     today = datetime.now().strftime("%Y-%m-%d")
     cache_file = CACHE_DIR / f"gov_summary_{today}.json"
@@ -305,16 +312,14 @@ def get_government_summary(refresh: bool = False) -> dict:
         except Exception:
             pass
 
-    news = _load_archive_news(days=31, limit=80)
+    news = _load_archive_news(days=31, limit=80, allow_fetch=allow_fetch)
     if not news:
-        result = {
+        return {
             "updated_at": datetime.now().isoformat(),
             "markdown": "", "reviewers": [], "sources": [],
             "keywords": [], "newsByKeyword": {},
             "error": "수집된 정부 정책 뉴스 없음 (Naver API 키 또는 크롤 확인)",
         }
-        cache_file.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
-        return result
 
     prompt = _build_user_prompt(news)
     openai_md, openai_kw = _call_openai(prompt, len(news))
@@ -363,6 +368,7 @@ def get_government_summary(refresh: bool = False) -> dict:
     }
     if not markdown and not keywords:
         result["error"] = "OpenAI / Gemini 모두 응답 실패"
+        return result                      # 실패는 캐시하지 않는다 — 다음 호출이 다시 시도한다
     try:
         cache_file.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception as e:

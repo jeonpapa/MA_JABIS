@@ -50,6 +50,15 @@ foreign_agent = ForeignPriceAgent(BASE_DIR)
 users_db = UsersDB(BASE_DIR / "data" / "db" / "users.db")
 app.register_blueprint(build_auth_blueprint(users_db))
 
+# 플랫폼 스모크(scripts/smoke.py, 매일 07:50)가 모든 요청에 붙이는 헤더. 스모크의 목적은 읽기 판정(상태·JSON)이지 데이터 생성이
+# 아니다 — GET 라우트의 부수효과(검색 로그 INSERT·만료 purge·캐시 미스 동기 크롤)만 이 요청에서 건너뛴다(P1.5 fix C).
+# 누구나 붙일 수 있지만 건너뛰는 것이 분석용 로그·정리 작업뿐이라 권한 문제가 아니다. 값은 scripts/smoke.py 와 같아야 한다.
+SMOKE_HEADER = "X-MA-Smoke"
+
+
+def _is_smoke_request() -> bool:
+    return request.headers.get(SMOKE_HEADER) == "1"
+
 
 def _check_calibration_age() -> None:
     """서버 시작 시 마지막 캘리브레이션 경과일 확인. 90일 초과면 경고."""
@@ -1793,12 +1802,13 @@ def foreign_cached():
     # DB에서 최신 데이터 조회 (실시간 검색했으면 방금 저장된 데이터)
     cached = foreign_agent.get_cached_results(query)
 
-    # 검색 이력 기록
-    try:
-        total = sum(len(v) if isinstance(v, list) else 0 for v in cached.values())
-        db.log_search(query, "foreign_price", result_count=total)
-    except Exception:
-        pass
+    # 검색 이력 기록 — 스모크 요청은 남기지 않는다(매일 search_log 에 'keytruda' 행이 쌓였다)
+    if not _is_smoke_request():
+        try:
+            total = sum(len(v) if isinstance(v, list) else 0 for v in cached.values())
+            db.log_search(query, "foreign_price", result_count=total)
+        except Exception:
+            pass
 
     coverage_notes = _compute_coverage_notes(query, AVAILABLE_COUNTRIES, cached)
     # 제형(formulation)별 그룹 — 대시보드 제형 탭용. results(국가별)는 호환 위해 보존.
@@ -2339,15 +2349,16 @@ def hta_indication_matrix():
     refresh = request.args.get("refresh") in ("1", "true", "True")
     try:
         matrix = _hta_agent.get_indication_matrix(drug, force_refresh=refresh)
-        # 검색 이력 + 신선도 기록
-        try:
-            n_ind = len(matrix.get("indications", []))
-            db.log_search(drug, "hta", result_count=n_ind)
-            if n_ind > 0:
-                for body in ["FDA", "PBAC", "CADTH", "NICE", "SMC"]:
-                    db.update_freshness("hta", f"{drug}_{body}")
-        except Exception:
-            pass
+        # 검색 이력 + 신선도 기록 — 스모크 요청은 남기지 않는다
+        if not _is_smoke_request():
+            try:
+                n_ind = len(matrix.get("indications", []))
+                db.log_search(drug, "hta", result_count=n_ind)
+                if n_ind > 0:
+                    for body in ["FDA", "PBAC", "CADTH", "NICE", "SMC"]:
+                        db.update_freshness("hta", f"{drug}_{body}")
+            except Exception:
+                pass
         return jsonify(matrix)
     except Exception as e:
         logger.error("Indication matrix 조회 실패: %s", e, exc_info=True)
@@ -2877,7 +2888,8 @@ def home_government_summary():
     try:
         from agents.government_keyword_summary import get_government_summary
         refresh = request.args.get("refresh", "0") == "1"
-        data = get_government_summary(refresh=refresh)
+        # 스모크는 현재 캐시/아카이브만으로 판정 — 아카이브가 비어도 동기 크롤(competitor_news 쓰기)·live 검색을 돌리지 않는다
+        data = get_government_summary(refresh=refresh, allow_fetch=not _is_smoke_request())
         return jsonify(data)
     except Exception as e:
         logger.error("government summary 실패: %s", e, exc_info=True)
@@ -5307,7 +5319,8 @@ def daily_mailing_admin_kanban():
         return jsonify({"error": "daily_mailing 모듈 미탑재(origin/main 커밋 누락)", "runs": []}), 503
     try:
         limit_runs = min(int(request.args.get("limitRuns", 20)), 100)
-        return jsonify(_daily_mailing_admin_kanban(limit_runs=limit_runs))
+        # 만료 행 purge(DELETE)는 운영 화면 조회의 부수효과 — 스모크 요청은 읽기만
+        return jsonify(_daily_mailing_admin_kanban(limit_runs=limit_runs, purge=not _is_smoke_request()))
     except Exception as e:
         logger.error("daily_mailing_admin_kanban 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
