@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -10,7 +11,19 @@ logger = logging.getLogger(__name__)
 
 # BASE_DIR = repo root (agents/quality_guard/deviations.py → parents[2])
 BASE_DIR = Path(__file__).resolve().parents[2]
-GUARD_DIR = BASE_DIR / "quality_guard"
+
+
+def guard_dir() -> Path:
+    """QG/RC 산출물 경로. 기본 data/quality_guard (Fly 볼륨 — 재배포에 살아남는다). QUALITY_GUARD_DIR 로 오버라이드.
+
+    구 경로 <repo>/quality_guard 는 git 추적 역사(74 파일)로 남긴다 — 컨테이너에서는 재배포마다 지워졌고, 로컬에서는
+    git_backup_job 이 매일 보고서를 커밋하던 원인. 새 산출물은 .gitignore(data/quality_guard/).
+    """
+    override = os.environ.get("QUALITY_GUARD_DIR")
+    return Path(override) if override else BASE_DIR / "data" / "quality_guard"
+
+
+GUARD_DIR = guard_dir()
 DEVIATION_LOG = GUARD_DIR / "deviation_log.jsonl"
 
 

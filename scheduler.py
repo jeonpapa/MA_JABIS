@@ -85,6 +85,38 @@ def _agent_record_job_missed(job_id: str, scheduled_run_time) -> None:
         logger.warning("%s 놓친 실행 신호 기록 실패: %s", job_id, signal_err)
 
 
+def _agent_record_quality_review(result: dict) -> dict:
+    """QG 리뷰 결과를 원장 과제로 (회귀·drift=ops_incident, 코드패턴·제안=improvement 그룹). 잡 counts 에 합칠 수를
+    돌려준다 — tasks_new 는 이번 실행이 새로 만든 행 수(내용 불변이면 0). 실패해도 잡을 막지 않는다."""
+    try:
+        from agents.agent_tasks.signals import count_source_tasks, record_quality_review
+        db = resolve_db_path()
+        before = count_source_tasks("quality_guard", db_path=db)
+        ids = record_quality_review(result, db_path=db)
+        new = count_source_tasks("quality_guard", db_path=db) - before
+        logger.info("QualityGuard → 원장: incident %d · improvement %d (신규 %d)",
+                    len(ids["incident"]), len(ids["improvement"]), new)
+        return {"tasks_incident": len(ids["incident"]), "tasks_improvement": len(ids["improvement"]), "tasks_new": new}
+    except Exception as signal_err:
+        logger.warning("QualityGuard 신호 기록 실패: %s", signal_err)
+        return {}
+
+
+def _agent_record_compliance_results(results) -> dict:
+    """RC FAIL 을 원장 과제로(메모리당 1건). 잡 counts 에 합칠 수를 돌려준다. 실패해도 잡을 막지 않는다."""
+    try:
+        from agents.agent_tasks.signals import count_source_tasks, record_compliance_results
+        db = resolve_db_path()
+        before = count_source_tasks("rule_compliance", db_path=db)
+        ids = record_compliance_results(results, db_path=db)
+        new = count_source_tasks("rule_compliance", db_path=db) - before
+        logger.info("Rule Compliance → 원장: FAIL 과제 %d (신규 %d)", len(ids), new)
+        return {"tasks": len(ids), "tasks_new": new}
+    except Exception as signal_err:
+        logger.warning("Rule Compliance 신호 기록 실패: %s", signal_err)
+        return {}
+
+
 def _on_job_event(event) -> None:
     """APScheduler 리스너. guarded_job 이 예외를 삼키므로 EVENT_JOB_ERROR 는 데코레이터 없는 잡의 안전망이고,
     EVENT_JOB_MISSED 는 misfire grace 초과(스케줄러 정지·재기동 지연)의 유일한 신호다."""
@@ -186,69 +218,56 @@ def foreign_approval_sync_job():
         logger.exception("ForeignApproval auto-sync 실패: %s", e)
 
 
-@guarded_job("rule_compliance_audit")       # 본문 전환은 Task 6
+@guarded_job("rule_compliance_audit")
 def rule_compliance_audit_job():
-    """RuleComplianceAgent — 매일 05:30 Seoul (QG 06:00 리뷰 직전).
+    """RuleComplianceAgent — 매일 05:30 Seoul (QG 06:00 직전).
 
-    사용자와 합의한 메모리 항목(feedback/project/reference)이 실제 런타임에서 지켜지는지
-    자동 감사. 증거 기반 PASS/FAIL/SKIP 보고서를 `quality_guard/compliance_YYYY-MM-DD.md` 로 저장.
-    로컬 전용 — Claude 메모리 파일은 개발 Mac 에만 있으므로 프로덕션에서는 INFO 로 skip.
+    로컬: MEMORY.md 인덱스를 소스로 메모리 ↔ 런타임 대조. 프로덕션: 메모리 디렉터리가 없으므로 CHECKS 레지스트리
+    (전부 DB/파일 증거)만 돈다(require_memory=False). 보고서는 data/quality_guard/compliance_YYYY-MM-DD.md (볼륨).
+    FAIL 은 과제(메모리당 1건, rc:<memory>)이지 잡 실패가 아니다 — ok=True.
     """
-    if is_production():
-        logger.info("Rule Compliance 감사 skip — 로컬 전용 잡 (Claude 메모리 디렉터리는 개발 Mac 에만 존재)")
-        return
-
     from agents.rule_compliance import RuleComplianceAgent
 
-    logger.info("━━━ Rule Compliance 감사 시작 ━━━")
-    try:
-        agent = RuleComplianceAgent()
-        results = agent.audit()
-        path = agent.write_report(results)
-        fails = [r for r in results if r.status == "fail"]
-        passes = [r for r in results if r.status == "pass"]
-        if fails:
-            logger.error(
-                "Rule Compliance: ❌ FAIL %d건 / ✅ PASS %d건 — %s",
-                len(fails), len(passes), path,
-            )
-            for f in fails:
-                logger.error("  • %s: %s", f.memory, f.detail)
-        else:
-            logger.info(
-                "Rule Compliance: ✅ PASS %d건, 회귀 0건 — %s",
-                len(passes), path,
-            )
-    except Exception as e:
-        logger.exception("Rule Compliance 감사 실패: %s", e)
+    prod = is_production()
+    logger.info("━━━ Rule Compliance 감사 시작 (%s) ━━━", "DB 체크만 — 메모리 없음" if prod else "메모리 대조")
+    agent = RuleComplianceAgent(require_memory=not prod)
+    results = agent.audit()
+    path = agent.write_report(results)
+    fails = [r for r in results if r.status == "fail"]
+    passes = [r for r in results if r.status == "pass"]
+    if fails:
+        logger.error("Rule Compliance: ❌ FAIL %d건 / ✅ PASS %d건 — %s", len(fails), len(passes), path)
+        for f in fails:
+            logger.error("  • %s: %s", f.memory, f.detail)
+    else:
+        logger.info("Rule Compliance: ✅ PASS %d건, 회귀 0건 — %s", len(passes), path)
+    counts = {"pass": len(passes), "fail": len(fails), "skip": len(results) - len(passes) - len(fails)}
+    counts.update(_agent_record_compliance_results(results))
+    return {"counts": counts}
 
 
-@guarded_job("quality_guard_review")        # 본문 전환은 Task 6
+@guarded_job("quality_guard_review")
 def quality_guard_review_job():
     """QualityGuardAgent 지속 리뷰 — 매일 06:00 Seoul.
 
-    규칙 drift / MFDS baseline 회귀 / 개선 제안을 점검하고
-    `quality_guard/review_YYYY-MM-DD.md` 를 생성한다. 회귀 발견 시 ERROR 로깅.
+    규칙 drift / MFDS baseline 회귀 / 개선 제안을 점검하고 `data/quality_guard/review_YYYY-MM-DD.md` (볼륨) 를 생성한다.
+    회귀·drift 는 ops_incident 낱개, 코드패턴·제안은 improvement 그룹 과제(내용 키 dedup — 매일 같은 13건이 쌓이지 않는다).
     """
     from agents.quality_guard import QualityGuardAgent
 
     logger.info("━━━ QualityGuard 일일 리뷰 시작 ━━━")
-    try:
-        guard = QualityGuardAgent()
-        result = guard.review_codebase()
-        regressions = result.get("mfds_regressions", [])
-        drifts = result.get("rule_drifts", [])
-        if regressions:
-            logger.error("QualityGuard: MFDS baseline 회귀 %d건 — %s",
-                         len(regressions), result["report_path"])
-        elif drifts:
-            logger.warning("QualityGuard: 규칙↔코드 drift %d건 — %s",
-                           len(drifts), result["report_path"])
-        else:
-            logger.info("QualityGuard: 회귀 0건 / 제안 %d건 — %s",
-                        len(result.get("suggestions", [])), result["report_path"])
-    except Exception as e:
-        logger.exception("QualityGuard 리뷰 실패: %s", e)
+    result = QualityGuardAgent().review_codebase()
+    regressions = result.get("mfds_regressions", [])
+    drifts = result.get("rule_drifts", [])
+    if regressions:
+        logger.error("QualityGuard: MFDS baseline 회귀 %d건 — %s", len(regressions), result["report_path"])
+    elif drifts:
+        logger.warning("QualityGuard: 규칙↔코드 drift %d건 — %s", len(drifts), result["report_path"])
+    else:
+        logger.info("QualityGuard: 회귀 0건 / 제안 %d건 — %s", len(result.get("suggestions", [])), result["report_path"])
+    counts = {k: len(result.get(k) or []) for k in ("code_issues", "rule_drifts", "mfds_regressions", "suggestions")}
+    counts.update(_agent_record_quality_review(result))
+    return {"counts": counts}
 
 
 def foreign_price_backfill_job():
