@@ -47,6 +47,8 @@ MISSING_SESSIONS = [
     (2025, 7, 7, "2025-09-03", "AMJILSIM", "HIRA brdBltNo=11576 — 7차 암질심 (레테브모·리브리반트 단독 설정·린파자 확대)"),
     (2025, 8, 8, "2025-10-29", "AMJILSIM", "HIRA brdBltNo=11643 — 8차 암질심 (텍베일리·엘렉스피오·파드셉·빌로이·옵디보 식도암)"),
     (2025, 9, 9, "2025-12-10", "AMJILSIM", "HIRA brdBltNo=11684 — 9차 암질심 (웰리렉 미설정·뉴베카·옥타이로·테빔브라 5적응증 설정)"),
+    (2026, 10, 10, "2026-10-01", "YAKPYUNGWI", "HIRA brdBltNo=11928 — 10차 약평위 (벨시피티·컬럼비주)"),
+    (2026, 8, 8, "2026-09-30", "AMJILSIM", "HIRA brdBltNo=11927 — 8차 암질심 (카빅티·반플리타·민쥬비·셈블릭스)"),
 ]
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -94,6 +96,10 @@ SESSION_STATUS_UPDATES: list[tuple[str, str, str]] = [
     ("2026-06-04", "COMPLETED",
      "6차 약평위 — 5개 의약품·9개 적응증 전체 통과 (HIRA 보도자료 5034: "
      "지텍 조건부·빌로이·핀테플라·리브리반트 재상정 통과·테빔브라 RSA 확대 5적응증)."),
+    ("2026-10-01", "COMPLETED",
+     "10차 약평위 — 벨시피티는 평가금액 이하 수용 시 급여의 적정성이 있음, 컬럼비주는 급여의 적정성이 있음 (HIRA brdBltNo=11928)."),
+    ("2026-09-30", "COMPLETED",
+     "8차 암질심 — 카빅티는 급여기준 미설정, 반플리타·민쥬비·셈블릭스는 적응증별 급여기준 설정/미설정 (HIRA brdBltNo=11927)."),
 ]
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -811,6 +817,31 @@ def _upsert_event(conn: sqlite3.Connection, drug_id: int, ev: dict,
          ev.get("evidence_url"), committee))
     return True
 
+
+D(brand_kr="벨시피티정 2mg", ingredient_inn="etrasimod", manufacturer="에베레스트메디신코리아", msd_flag=0, tracking_priority="generic_new_drug",
+  yakpyungwi_pass_date="2026-10-01", negotiation_status="IN_PROGRESS", indication="중등증-중증 활동성 궤양성 대장염", listing_type="신규",
+  notes="10차 약평위 평가금액 이하 수용 시 급여의 적정성이 있음. HIRA brdBltNo=11928 공식 verified.",
+  events=[dict(committee="YAKPYUNGWI", state="APPROVED_CONDITIONAL", session_date="2026-10-01", evidence_url="HIRA brdBltNo=11928")])
+D(brand_kr="컬럼비주 2.5·10mg", ingredient_inn="glofitamab", manufacturer="한국로슈", msd_flag=0, tracking_priority="competitor_class",
+  yakpyungwi_pass_date="2026-10-01", negotiation_status="IN_PROGRESS", indication="재발성 또는 불응성 DLBCL", listing_type="신규",
+  notes="10차 약평위 급여의 적정성이 있음. HIRA brdBltNo=11928 공식 verified.",
+  events=[dict(committee="YAKPYUNGWI", state="APPROVED", session_date="2026-10-01", evidence_url="HIRA brdBltNo=11928")])
+D(brand_kr="카빅티주", ingredient_inn="ciltacabtagene autoleucel", manufacturer="한국얀센", msd_flag=0, tracking_priority="competitor_class",
+  amjilsim_pass_date=None, negotiation_status="IN_PROGRESS", indication="레날리도마이드 불응 재발/불응성 다발골수종", listing_type="급여기준 설정 심의",
+  notes="8차 암질심 급여기준 미설정. HIRA brdBltNo=11927 공식 verified.",
+  events=[dict(committee="AMJILSIM", state="REJECTED_REQUEUE", session_date="2026-09-30", evidence_url="HIRA brdBltNo=11927")])
+D(brand_kr="반플리타정", ingredient_inn="quizartinib", manufacturer="한국다이이찌산쿄", msd_flag=0, tracking_priority="generic_new_drug",
+  amjilsim_pass_date="2026-09-30", negotiation_status="IN_PROGRESS", indication="FLT3-ITD 변이 양성 신규 진단 AML", listing_type="급여기준 설정 심의",
+  notes="8차 암질심: 유도·공고 병용 및 공고 후 단독 유지요법은 급여기준 설정, 일부 범위는 미설정. HIRA brdBltNo=11927 공식 verified.",
+  events=[dict(committee="AMJILSIM", state="APPROVED", session_date="2026-09-30", evidence_url="HIRA brdBltNo=11927")])
+D(brand_kr="민쥬비주", ingredient_inn="tafasitamab", manufacturer="한독", msd_flag=0, tracking_priority="competitor_class",
+  amjilsim_pass_date="2026-09-30", negotiation_status="IN_PROGRESS", indication="재발성/불응성 소포성 림프종 및 DLBCL", listing_type="급여기준 설정 심의",
+  notes="8차 암질심: 소포성 림프종 병용은 급여기준 설정, DLBCL 병용·단독은 미설정. HIRA brdBltNo=11927 공식 verified.",
+  events=[dict(committee="AMJILSIM", state="APPROVED_PARTIAL", session_date="2026-09-30", evidence_url="HIRA brdBltNo=11927")])
+D(brand_kr="셈블릭스정", ingredient_inn="asciminib", manufacturer="한국노바티스", msd_flag=0, tracking_priority="competitor_class",
+  amjilsim_pass_date="2026-09-30", negotiation_status="IN_PROGRESS", indication="새로 진단된 Ph+ CML 만성기", listing_type="급여기준 설정 심의",
+  notes="8차 암질심 급여기준 설정. HIRA brdBltNo=11927 공식 verified.",
+  events=[dict(committee="AMJILSIM", state="APPROVED", session_date="2026-09-30", evidence_url="HIRA brdBltNo=11927")])
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 데이터 외부화 — JSON payload (헤르메스/사람이 큐레이션·커밋하는 단일 소스)

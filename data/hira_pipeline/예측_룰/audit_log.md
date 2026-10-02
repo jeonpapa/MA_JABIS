@@ -551,3 +551,28 @@
 | 판정 | **IDLE PASS** — 이메일 발송 없음 |
 | 직전 처리 차수 | 6차 약평위 D+1 보고서 (2026-06-05) 완료 |
 | 다음 트리거 예정 | 2026-07-03 08:00 KST (7차 약평위 D+1) / 2026-07-09 08:00 KST (6차 암질심 D+1) |
+
+---
+
+## 2026-10-02 12:00 KST — D+1 official-result review (10차 약평위 / 8차 암질심)
+
+### 공식 결과 확인
+
+- **약평위**: HIRA brdBltNo=11928, 2026-10-01. 벨시피티정은 평가금액 이하 수용 시 급여의 적정성이 있음; 컬럼비주는 급여의 적정성이 있음.
+- **암질심**: HIRA brdBltNo=11927, 2026-09-30. 카빅티는 급여기준 미설정; 반플리타와 셈블릭스는 설정; 민쥬비는 소포성 림프종 범위 설정·DLBCL 범위 미설정.
+
+### 예측 baseline 대조 결과
+
+- 저장소 내 2026-09-29 약평위 및 2026-09-28 암질심 D-2/D-1 예측 보고서와 private baseline을 찾지 못했다.
+- 따라서 후보별 `predicted_on_agenda`, `rule_id`, `confidence`가 없어 TP/FP/FN 및 precision/recall을 산출하지 않았다. 이번 결과는 **baseline provenance 미확보**로 분류하며 임의의 학습 수치를 만들지 않는다.
+- 다음 차수부터 D-2 산출물에 회차 식별자와 후보별 예측 필드를 필수 보존한다.
+
+### 룰 학습 조치
+
+- 새 룰 가중치 조정은 보류한다. baseline 없는 TP/FP/FN 추정은 학습 데이터 오염 위험이 있다.
+- 운영 보완안: D-2 보고서와 private baseline을 `committee + session_date`로 연결하고 `predicted_on_agenda`, `rule_id`, `confidence`를 구조화한다.
+
+### 공식 출처
+
+- https://www.hira.or.kr/bbsDummy.do?pgmid=HIRAA020041000100&brdScnBltNo=4&brdBltNo=11928&pageIndex=1&pageIndex2=1
+- https://www.hira.or.kr/bbsDummy.do?pgmid=HIRAA020041000100&brdScnBltNo=4&brdBltNo=11927&pageIndex=1&pageIndex2=1
