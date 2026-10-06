@@ -86,3 +86,44 @@ def test_domain_freshness_table_records_kind(tmp_path):
                                fr.Freshness("news_archive", False, "x", "y", "신선", "news_daily_fetch")], db_path=db)
     rows = dict(sqlite3.connect(db).execute("SELECT domain, kind FROM domain_freshness").fetchall())
     assert rows == {"human_backlog": "improvement", "news_archive": "ops_incident"}
+
+
+# ── 1. 파이프라인 경과 예상일 (pipeline_expected_sessions, ops_incident) ─────────
+
+_PIPELINE_SQL = """
+    CREATE TABLE amjilsim_sessions (session_id INTEGER, committee_type TEXT, status TEXT, session_date TEXT);
+    INSERT INTO amjilsim_sessions VALUES (16,'YAKPYUNGWI','SCHEDULED','2026-07-02'), (5,'AMJILSIM','SCHEDULED','2026-07-08'),
+                                         (19,'YAKPYUNGWI','SCHEDULED','2026-10-01'), (20,'YAKPYUNGWI','SCHEDULED','2026-11-05');
+    CREATE TABLE amjilsim_drugs (drug_id INTEGER, brand_kr TEXT, expected_session_id INTEGER, negotiation_status TEXT,
+                                 negotiation_complete_date TEXT);
+    INSERT INTO amjilsim_drugs VALUES
+        (39,'카보메틱스',16,'IN_PROGRESS',NULL),     -- 지난 차수 + 협상 중 → 대상
+        (48,'림카토주',5,NULL,NULL),                 -- 지난 차수 + 협상 미시작 → 대상
+        (60,'마운자로',20,NULL,NULL),                -- 미래 차수 → 제외
+        (61,'스핀라자',16,'AGREED',NULL),            -- 협상 타결 → 제외
+        (62,'결렬약',16,'REJECTED',NULL),            -- 협상 결렬 → 제외
+        (63,'공단완료약',16,'IN_PROGRESS','2026-09-01'),  -- NHIS 완료일 있음 → 제외
+        (64,'최근약',19,'IN_PROGRESS',NULL),         -- 지난 지 14일 이내(유예) → 제외
+        (65,'미지정약',NULL,'IN_PROGRESS',NULL);     -- expected 없음 → 제외
+"""
+
+
+def test_pipeline_expected_sessions_flags_past_sessions_with_open_negotiation(tmp_path):
+    _seed(tmp_path / "d.db", _PIPELINE_SQL)
+    r = fr.check_pipeline_expected_sessions(_ctx(tmp_path))
+    assert r.stale is True and r.kind == "ops_incident" and r.runbook is None
+    assert r.observed == "2026-07-02" and r.deadline == "2026-09-22"
+    assert "카보메틱스" in r.evidence and "림카토주" in r.evidence and "2건" in r.evidence
+    for excluded in ("마운자로", "스핀라자", "결렬약", "공단완료약", "최근약", "미지정약"):
+        assert excluded not in r.evidence
+    # 런북이 없는 이유가 evidence 에 있다: 컬럼을 쓰는 코드는 importer 의 expected_next_session 뿐, sync 는 같은 JSON 재적용
+    assert "expected_next_session" in r.evidence and "reimb_committee_import" in r.evidence and "committee_results.json" in r.evidence
+    assert fr.DOMAIN_CHECKS["pipeline_expected_sessions"] is fr.check_pipeline_expected_sessions
+
+
+def test_pipeline_expected_sessions_fresh_within_grace_or_when_nothing_points_back(tmp_path):
+    _seed(tmp_path / "d.db", _PIPELINE_SQL)
+    assert fr.check_pipeline_expected_sessions(_ctx(tmp_path, today=date(2026, 7, 10))).stale is False     # 8일 — 유예
+    _seed(tmp_path / "d.db", "UPDATE amjilsim_drugs SET expected_session_id = 20;")
+    r = fr.check_pipeline_expected_sessions(_ctx(tmp_path))
+    assert r.stale is False and "0건" in r.evidence

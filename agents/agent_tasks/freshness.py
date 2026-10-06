@@ -55,6 +55,7 @@ SIGNALS_MAX_DAYS = 10
 NHIS_MAX_DAYS = 10
 FOREIGN_PRICE_MAX_DAYS = 45          # 추적 제품마다 '가격 있는' 최신 행이 이보다 오래되면 stale (P1.6 관측)
 FOREIGN_COVERAGE_WINDOW_DAYS = 90    # 이 창 안에 가격 행이 없는 국가는 (제도상 공백이 아니면) 수집 실패
+PIPELINE_EXPECTED_LAG_DAYS = 14      # expected_session_id 가 이보다 오래 지난 차수를 가리키면(협상 미종결) 보드가 '예상일 경과' 를 그린다
 
 KINDS = ("ops_incident", "improvement")
 IMPROVEMENT_REF_SUFFIX = "backlog"   # improvement 의 source_ref "{domain}:backlog" — 월 키 없음(도메인당 1행)
@@ -345,6 +346,36 @@ def check_committee_results(ctx: Ctx) -> Freshness:
                      "reimb_data_sync")
 
 
+# ── 7b 파이프라인 경과 예상일 (P1.6) ───────────────────────────────────────
+# 보드 타임라인은 expected_session_id 차수가 지났는데 결과가 없으면 '예상일 경과'(overdue) 를 그린다(agents/reimb_pipeline._timeline).
+# 그 상태가 14일 넘게 이어지면 데이터가 틀린 것이다. 이 컬럼을 쓰는 코드는 agents/ingest/reimb_committee_import.run() 하나 —
+# JSON 의 expected_next_session(브랜드→회차일)을 그대로 옮긴다. 잡·관리자 API 어디도 다음 차수로 옮기지 않으므로 런북
+# reimb_data_sync 는 같은 JSON 을 다시 적용할 뿐(해시 동일 → '변경 없음 skip')이라 무효 → 런북 None, 사람/헤르메스가 JSON 을 고친다.
+
+NEGOTIATION_CONCLUDED = ("AGREED", "REJECTED")      # amjilsim_drugs.negotiation_status 종결값 (reimb_pipeline._negotiation_phase_status)
+COMMITTEE_KR = {"AMJILSIM": "암질심", "YAKPYUNGWI": "약평위"}
+
+
+def check_pipeline_expected_sessions(ctx: Ctx) -> Freshness:
+    cutoff = _days_ago(ctx, PIPELINE_EXPECTED_LAG_DAYS)
+    rows = _rows(ctx, f"""
+        SELECT d.brand_kr, s.session_date, s.session_id, s.committee_type
+        FROM amjilsim_drugs d JOIN amjilsim_sessions s ON s.session_id = d.expected_session_id
+        WHERE s.session_date < ?
+          AND (d.negotiation_status IS NULL OR d.negotiation_status NOT IN ({",".join("?" * len(NEGOTIATION_CONCLUDED))}))
+          AND (d.negotiation_complete_date IS NULL OR d.negotiation_complete_date = '')
+        ORDER BY s.session_date, d.brand_kr""", (cutoff, *NEGOTIATION_CONCLUDED))
+    listing = ", ".join(f"{b}({d} {COMMITTEE_KR.get(c, c)} #{sid})" for b, d, sid, c in rows)
+    oldest = rows[0][1] if rows else None
+    evidence = (f"expected_session_id 가 {PIPELINE_EXPECTED_LAG_DAYS}일 넘게 지난 차수(<{cutoff})를 가리키는데 협상 미종결"
+                f"(negotiation_status ∉ {list(NEGOTIATION_CONCLUDED)}, negotiation_complete_date 없음)인 약제 {len(rows)}건"
+                + (f"(최초 {oldest}): {listing}. " if rows else ". ")
+                + "이 컬럼을 쓰는 코드는 agents/ingest/reimb_committee_import.run() 의 expected_next_session(브랜드→회차일) 뿐 — "
+                  "런북 reimb_data_sync 는 같은 JSON 을 다시 적용할 뿐(해시 동일 → skip)이라 무효. 조치: 헤르메스/사람이 "
+                  "committee_results.json 의 expected_next_session 을 다음 차수로 옮기거나 결과를 drugs/events 에 기록 → 02:00 sync 가 반영")
+    return Freshness("pipeline_expected_sessions", bool(rows), oldest, cutoff, evidence, None, 2)
+
+
 # ── 8 아날로그 · 9 마켓셰어 ────────────────────────────────────────────────
 
 def check_analog_reports(ctx: Ctx) -> Freshness:
@@ -434,6 +465,7 @@ DOMAIN_CHECKS: dict[str, Callable[[Ctx], Freshness]] = {
     "reimbursement_xnational": check_reimbursement_xnational,
     "committee_schedule": check_committee_schedule,
     "committee_results": check_committee_results,
+    "pipeline_expected_sessions": check_pipeline_expected_sessions,
     "analog_reports": check_analog_reports,
     "market_share": check_market_share,
     "policy_intelligence": check_policy_intelligence,
