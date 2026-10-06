@@ -4,7 +4,11 @@ in-process(스케줄러 잡 platform_smoke, 매일 07:50): base=http://127.0.0.1
   (mint_token_factory — fly secret 이 환경변수라 web·scheduler 두 프로세스가 같은 비밀을 갖는다. 스모크 계정은 없다).
 외부(VPS·로컬 수동): python scripts/smoke.py --base https://ma-ai-dossier.fly.dev --login-email ... --login-password ...
   (관리자가 만든 admin 계정 — admin 은 user 라우트도 통과한다. 새 계정 생성은 사용자 몫: VPS_SETUP.md §1 과 같은 절차)
-기대 조건은 '200 + JSON' 이 기본이고 화면별로 키 존재·상태코드를 덧붙인다. 데이터 내용은 검사하지 않는다(신선도는 Task 3).
+기대 조건은 '200 + JSON' 이 기본이고 화면별로 키 존재·상태코드를 덧붙인다. 데이터 나이는 검사하지 않는다(신선도는 Task 3) —
+다만 합쳐진 플랫폼 수정(P1.6)이 지키는 **불변식**은 본다: 급여 3분할 합계(msd/summary), 지난 예상일은 overdue(pipeline),
+지난 회차가 SCHEDULED 로 남지 않음(meetings), 미디어 집계가 비어 있지 않음(media-intelligence), 칸반 runs 키. 이것들은
+200 + JSON 이어도 화면이 '조용히 틀린' 상태라서다. 실패 문구는 숫자 외 가변 텍스트(약제명·오류 원문)를 넣지 않는다 —
+과제 키가 실패 집합의 숫자 무시 내용 해시라, 건수가 바뀌어도 같은 과제 1건으로 남아야 한다(signals.CONTENT_KEYED_JOBS).
 반환은 잡 규약 {ok, counts, errors} — guarded_job 이 실패를 platform_smoke:<실패 집합 해시> 과제로 남긴다(같은 실패면 1건).
 체크별 타임아웃: 기본 10초. 캐시 미스에 LLM·외부 수집이 끼는 Home 라우트는 Check(timeout=...) 로 넉넉히 준다 — 07:50 첫 호출
 (일자 캐시 미스)이 10초를 넘겨 거짓 platform_smoke 과제가 생기지 않게(P1.5 fix F).
@@ -18,6 +22,7 @@ import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Callable
 
@@ -26,8 +31,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 logger = logging.getLogger(__name__)
 DEFAULT_BASE = "http://127.0.0.1:5001"
 SMOKE_SUBJECT = "smoke@internal"                    # 토큰 sub — users DB 에 없는 가상 주체(계정 아님)
-# 모든 요청에 붙인다 — 서버(api/server.py:SMOKE_HEADER)가 이 요청에서 GET 라우트의 부수효과(검색 로그 INSERT·만료 purge·
+# 모든 요청에 붙인다 — 서버(api/server.py:SMOKE_HEADER)가 이 요청에서 GET 라우트의 부수효과(검색 로그 INSERT·정부요약의
 # 캐시 미스 동기 크롤)만 건너뛴다. 읽기 판정은 그대로다(스모크의 목적). 값은 server 와 같아야 한다(테스트가 대조).
+# 칸반 GET 은 더 이상 아무것도 purge 하지 않는다(헤더와 무관 — 만료 행 DELETE 는 09:30 daily_mailing_health_job 의 일).
 SMOKE_HEADER = "X-MA-Smoke"
 Expect = Callable[[int, object], "str | None"]     # (status, body) → 실패 사유 | None
 TokenFor = Callable[["str | None"], "str | None"]  # role → 토큰 | None(그 역할 화면은 skipped)
@@ -58,6 +64,105 @@ def _priced_country(status: int, body) -> str | None:
     return None if priced else "조정가(adjusted_price_krw) 있는 국가 0 — 캐시 비었거나 수집 중단"
 
 
+# ── P1.6 불변식 — 합쳐진 플랫폼 수정이 되돌아오면 여기서 잡힌다 ──────────────────────────────────────────
+
+TRISTATE_KEYS = ("total_indications", "reimbursed_indications", "not_reimbursed_indications", "unverified_reimbursement",
+                 "checklist_covered")
+
+
+def _msd_summary_tristate(status: int, body) -> str | None:
+    """/api/msd/summary — Keytruda 급여 현황 3분할: 급여 + 미급여 + 미확인 == 전체, checklist_covered == 급여 + 미급여.
+    (56939091: 체크리스트 행 없음 51건을 '미급여' 로 세던 결함 — 키가 사라지거나 합이 안 맞으면 그 회귀다.)"""
+    if status != 200 or not isinstance(body, dict):
+        return f"HTTP {status}"
+    k = body.get("keytruda")
+    if not isinstance(k, dict):
+        return "HTTP 200 / 'keytruda' 없음"
+    missing = [x for x in TRISTATE_KEYS if x not in k]
+    if missing:
+        return f"급여 3분할 키 없음 {missing}"
+    total, a, b, c, covered = (int(k[x] or 0) for x in TRISTATE_KEYS)
+    if a + b + c != total:
+        return f"급여{a}+미급여{b}+미확인{c}={a + b + c} ≠ 전체 {total}"
+    if covered != a + b:
+        return f"checklist_covered {covered} ≠ 급여{a}+미급여{b}"
+    return None
+
+
+def _pipeline_expectations(status: int, body) -> str | None:
+    """/api/reimbursement/pipeline — 지난 expectedDate 는 expectedStatus='overdue' 여야 하고(f86cb0f5: 과거 날짜를 예보처럼
+    그리던 결함), not_applicable 단계(비항암의 암질심)는 날짜를 들고 있으면 안 된다. 서버 date.today() 와 하루 어긋나도 오탐이
+    없게 '어제보다 전' 만 본다. 문구에는 약제명을 넣지 않고 단계 이름 집합만 — 과제 키 안정."""
+    if status != 200 or not isinstance(body, dict):
+        return f"HTTP {status}"
+    stages = body.get("stages")
+    if not isinstance(stages, list):
+        return "HTTP 200 / 'stages' 없음"
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    n_past, n_na = 0, 0
+    past_phases: set[str] = set()
+    na_phases: set[str] = set()
+    for stage in stages:
+        for drug in (stage.get("drugs") or []) if isinstance(stage, dict) else []:
+            for step in (drug.get("timeline") or []) if isinstance(drug, dict) else []:
+                if not isinstance(step, dict):
+                    continue
+                exp = str(step.get("expectedDate") or "")
+                if exp and exp < yesterday and step.get("expectedStatus") != "overdue":
+                    n_past += 1
+                    past_phases.add(str(step.get("phase")))
+                if step.get("status") == "not_applicable" and (step.get("date") or step.get("expectedDate")):
+                    n_na += 1
+                    na_phases.add(str(step.get("phase")))
+    problems = []
+    if n_past:
+        problems.append(f"지난 expectedDate 인데 expectedStatus≠overdue {n_past}건 {sorted(past_phases)}")
+    if n_na:
+        problems.append(f"not_applicable 단계에 날짜 {n_na}건 {sorted(na_phases)}")
+    return "; ".join(problems) or None
+
+
+MEETING_RESULTS_LAG_DAYS = 14
+
+
+def _meetings_results_ingested(status: int, body) -> str | None:
+    """/api/reimbursement/meetings — 14일 넘게 지난 회차가 SCHEDULED 로 남아 있으면 결과 미반영(85c0428d 의 not_ingested 상태).
+    오늘 실패하는 것이 맞다(7건). 문구는 건수와 최초 날짜뿐 — 세션당 과제가 아니라 platform_smoke 과제 1건."""
+    if status != 200 or not isinstance(body, dict):
+        return f"HTTP {status}"
+    items = body.get("items")
+    if not isinstance(items, list):
+        return "HTTP 200 / 'items' 없음"
+    cutoff = (date.today() - timedelta(days=MEETING_RESULTS_LAG_DAYS)).isoformat()
+    late = sorted(str(m.get("date")) for m in items
+                  if isinstance(m, dict) and m.get("status") == "SCHEDULED" and str(m.get("date") or "") < cutoff)
+    if late:
+        return f"{MEETING_RESULTS_LAG_DAYS}일 넘게 지난 SCHEDULED 세션 {len(late)}건 — 결과 미반영(최초 {late[0]})"
+    return None
+
+
+def _media_intelligence_live(status: int, body) -> str | None:
+    """/api/home/media-intelligence — 200 이고 error 없음, 브랜드 ≥1, 기사 합계 > 0 (3ddeb93b: 실패를 '기사 0건' 으로 삼키고 그
+    모양을 캐시하던 결함 — looks_poisoned 모양이 다시 서빙되면 여기서 잡힌다).
+
+    라이브 수집 판단: 이 라우트는 X-MA-Smoke 게이트가 없어 07:50 의 일자 캐시 미스에서 **원래부터** 스모크가 그날 첫 네이버 수집을
+    촉발했다(2026-10-01 의 오염 캐시도 그렇게 생겼다). 그대로 둔다 — ① 합쳐진 수정은 실패/0건 결과를 캐시에 쓰지도 서빙하지도
+    않으므로 스모크의 수집이 하루를 망칠 수 없고, ② 같은 수집은 어차피 첫 Home 방문이 촉발하며(비용 동일), ③ 07:50 에 캐시가
+    데워져 업무 시작 전 카드가 준비된다. 스모크에서 수집을 막으면(allow_fetch=False) 거의 매일인 캐시 미스에서 내용 단언이
+    무의미해진다. 네이버 장애 아침엔 이 체크가 실패 → platform_smoke 과제 1건(내용 키, 런북 없음 → 사람) — 그것이 사실이다."""
+    if status != 200 or not isinstance(body, dict):
+        return f"HTTP {status}"
+    if body.get("error"):
+        return "error 키 있음(네이버 수집 실패 — 캐시 미기록·미서빙 규약대로 실패가 노출됨)"
+    brands = [b for b in (body.get("brands") or []) if isinstance(b, dict)]
+    if not brands:
+        return "브랜드 0개(모니터링 목록 비어 있음)"
+    total = sum(int(b.get("total_count") or 0) for b in brands)
+    if total <= 0:
+        return f"전 브랜드 기사 0건({len(brands)}개 브랜드) — 오염/빈 집계(looks_poisoned 모양)"
+    return None
+
+
 # 캐시 미스 시 무거운 라우트: 정부요약은 OpenAI+Gemini(각 45초) 순차 호출, 나머지는 외부 수집/집계. 기본값은 run_smoke(timeout=).
 HEAVY_TIMEOUT = 90.0      # /api/home/government-keyword-summary — LLM 2회
 SLOW_TIMEOUT = 30.0       # media-intelligence(Naver 트래픽)·gov-agency-clouds(아카이브 집계)·hta/approvals(캐시 미스 시 HTA 스크레이프)
@@ -82,8 +187,8 @@ SCREENS: tuple[Screen, ...] = (
     Screen("login", None, (Check("/api/auth/me", _status(401)),                          # 인증 게이트 생존
                            Check("/api/competitor-trends", _status(401)),                # 토큰 없이 user 라우트 → 401
                            Check("/api/admin/agent-tasks", _status(401)))),              # 토큰 없이 admin 라우트 → 401
-    Screen("home", None, (Check("/api/home/top-price-changes?limit=5"), Check("/api/msd/summary"),
-                          Check("/api/home/media-intelligence", timeout=SLOW_TIMEOUT),
+    Screen("home", None, (Check("/api/home/top-price-changes?limit=5"), Check("/api/msd/summary", _msd_summary_tristate),
+                          Check("/api/home/media-intelligence", _media_intelligence_live, timeout=SLOW_TIMEOUT),
                           Check("/api/home/government-keyword-summary", timeout=HEAVY_TIMEOUT),
                           Check("/api/home/gov-agency-clouds", timeout=SLOW_TIMEOUT))),
     Screen("domestic-pricing", None, (Check("/api/domestic/price-changes?q=키트루다"), Check("/api/domestic/search?q=키트루다"),
@@ -97,7 +202,8 @@ SCREENS: tuple[Screen, ...] = (
     Screen("competitor-trends", "user", (Check("/api/competitor-trends"), Check("/api/competitor-news?limit=5"),
                                          Check("/api/access-insight/drugs"))),
     Screen("daily-mailing", "user", (Check("/api/mail-subscriptions"),)),
-    Screen("reimbursement-status", "user", (Check("/api/reimbursement/meetings"), Check("/api/reimbursement/pipeline"),
+    Screen("reimbursement-status", "user", (Check("/api/reimbursement/meetings", _meetings_results_ingested),
+                                            Check("/api/reimbursement/pipeline", _pipeline_expectations),
                                             Check("/api/reimbursement/reports"), Check("/api/reimbursement/nhis-negotiations"))),
     Screen("policy-intelligence", "user", (Check("/api/policy-intelligence/overview"), Check("/api/policy-intelligence/events"),
                                            Check("/api/policy-intelligence/ingest-status"))),
@@ -110,7 +216,8 @@ SCREENS: tuple[Screen, ...] = (
     Screen("admin/reimbursement", "admin", (Check("/api/admin/reimbursement?product=keytruda"),)),
     Screen("admin/reimbursement-pipeline", "admin", (Check("/api/admin/reimb-pipeline/drugs"),
                                                      Check("/api/admin/reimb-pipeline/nhis-unmatched"))),
-    Screen("admin/daily-mailing-kanban", "admin", (Check("/api/admin/daily-mailing/kanban"), Check("/api/admin/daily-mailing/health"))),
+    Screen("admin/daily-mailing-kanban", "admin", (Check("/api/admin/daily-mailing/kanban", _has_key("runs")),   # 503 은 runs=[] 라도 상태로 걸린다
+                                                   Check("/api/admin/daily-mailing/health"))),
     Screen("admin/home-brands", "admin", (Check("/api/admin/home-brands"),)),
     Screen("admin/service-requests", "admin", (Check("/api/admin/service-requests"), Check("/api/admin/service-requests/outbox/count"))),
     Screen("admin/agent-tasks", "admin", (Check("/api/admin/agent-tasks", _has_key("tasks")),)),

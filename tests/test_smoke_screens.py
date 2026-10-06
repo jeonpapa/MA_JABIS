@@ -72,6 +72,20 @@ def test_screen_table_covers_all_routes():
 # ── run_smoke ───────────────────────────────────────────────────────────────
 
 PRICED_CACHED = {"query": "keytruda", "results": {"JP": [{"local_price": 1, "adjusted_price_krw": 123}], "US": []}}
+# P1.6 불변식을 만족하는 정상 응답 — 3분할 합계, 지난 예상일=overdue, not_applicable 에 날짜 없음, 지난 회차 없음, 미디어 집계 >0
+MSD_SUMMARY_OK = {"reimbursed_product_count": 1, "keytruda": {
+    "total_indications": 66, "mfds_approved": 60, "reimbursed_indications": 10, "not_reimbursed_indications": 5,
+    "unverified_reimbursement": 51, "checklist_covered": 15, "pending_reimbursement": 56, "items": []}}
+PIPELINE_OK = {"stages": [{"id": "cancer", "count": 1, "drugs": [{"name": "카보메틱스", "timeline": [
+    {"phase": "급여 신청(접수)", "date": None, "status": "upcoming"},
+    {"phase": "암질심 통과", "date": None, "expectedDate": "2026-07-02", "expectedStatus": "overdue", "status": "expected"},
+    {"phase": "약평위 통과", "date": None, "expectedDate": "2099-11-05", "expectedStatus": "forecast", "status": "expected"},
+    {"phase": "건보공단 협상", "date": None, "expectedDate": None, "status": "upcoming"}]}]},
+    {"id": "evaluation", "count": 1, "drugs": [{"name": "마운자로", "timeline": [
+        {"phase": "암질심 통과", "date": None, "expectedDate": None, "expectedStatus": None, "status": "not_applicable"}]}]},
+    {"id": "nhis", "count": 0, "drugs": []}], "completedExcluded": 17}
+MEETINGS_OK = {"items": [{"id": 15, "date": "2026-06-04", "status": "COMPLETED"}, {"id": 20, "date": "2099-11-05", "status": "SCHEDULED"}]}
+MEDIA_OK = {"updated_at": "x", "days": 14, "brands": [{"brand": "키트루다", "total_count": 12}, {"brand": "옵디보", "total_count": 0}]}
 
 
 def _ok_routes() -> dict:
@@ -80,6 +94,11 @@ def _ok_routes() -> dict:
     routes["/api/admin/agent-tasks"] = (200, {"tasks": []})
     routes["/api/foreign/cached?q=keytruda"] = (200, PRICED_CACHED)                 # P1.6: 조정가 있는 국가 1개 이상
     routes["/api/foreign/country-overview?query=keytruda"] = (200, {"product": "keytruda", "countries": []})
+    routes["/api/msd/summary"] = (200, MSD_SUMMARY_OK)
+    routes["/api/reimbursement/pipeline"] = (200, PIPELINE_OK)
+    routes["/api/reimbursement/meetings"] = (200, MEETINGS_OK)
+    routes["/api/home/media-intelligence"] = (200, MEDIA_OK)
+    routes["/api/admin/daily-mailing/kanban"] = (200, {"runs": [], "articles": []})
     return routes
 
 
@@ -267,3 +286,93 @@ def test_priced_country_expectation_accepts_one_priced_country():
     assert smoke._priced_country(200, PRICED_CACHED) is None
     assert smoke._priced_country(500, {"error": "x"}) == "HTTP 500"
     assert "조정가" in smoke._priced_country(200, {"results": {"US": []}})
+
+
+# ── P1.6 불변식: 합쳐진 플랫폼 수정이 되돌아오면 스모크가 잡는다 ─────────────────────────────────────
+
+def _only_error(routes: dict) -> list[str]:
+    return smoke.run_smoke("http://test", _token_for, opener=_gated_opener(routes))["errors"]
+
+
+def test_msd_summary_tristate_must_exist_and_sum_to_total():
+    import copy
+    broken = _ok_routes()
+    bad = copy.deepcopy(MSD_SUMMARY_OK)
+    bad["keytruda"]["unverified_reimbursement"] = 0                      # 10+5+0 ≠ 66 — '미확인' 을 다시 삼킨 회귀
+    broken["/api/msd/summary"] = (200, bad)
+    assert _only_error(broken) == ["home /api/msd/summary → 급여10+미급여5+미확인0=15 ≠ 전체 66"]
+    bad2 = copy.deepcopy(MSD_SUMMARY_OK)
+    del bad2["keytruda"]["unverified_reimbursement"]
+    del bad2["keytruda"]["checklist_covered"]
+    broken["/api/msd/summary"] = (200, bad2)
+    assert _only_error(broken) == ["home /api/msd/summary → 급여 3분할 키 없음 ['unverified_reimbursement', 'checklist_covered']"]
+    bad3 = copy.deepcopy(MSD_SUMMARY_OK)
+    bad3["keytruda"]["checklist_covered"] = 66
+    broken["/api/msd/summary"] = (200, bad3)
+    assert _only_error(broken) == ["home /api/msd/summary → checklist_covered 66 ≠ 급여10+미급여5"]
+    assert smoke._msd_summary_tristate(200, {"keytruda": None}) == "HTTP 200 / 'keytruda' 없음"
+    assert smoke._msd_summary_tristate(500, {"error": "x"}) == "HTTP 500"
+
+
+def test_pipeline_past_expected_date_must_be_overdue_and_not_applicable_has_no_date():
+    import copy
+    broken = _ok_routes()
+    bad = copy.deepcopy(PIPELINE_OK)
+    bad["stages"][0]["drugs"][0]["timeline"][1]["expectedStatus"] = "forecast"     # 2026-07-02 를 예보처럼
+    bad["stages"][1]["drugs"][0]["timeline"][0]["expectedDate"] = "2026-11-11"     # 비항암에 암질심 예상일
+    broken["/api/reimbursement/pipeline"] = (200, bad)
+    assert _only_error(broken) == ["reimbursement-status /api/reimbursement/pipeline → "
+                                   "지난 expectedDate 인데 expectedStatus≠overdue 1건 ['암질심 통과']; not_applicable 단계에 날짜 1건 ['암질심 통과']"]
+    # 어제 날짜는 서버 date.today() 와의 하루 어긋남을 허용 — 오탐 없음
+    from datetime import date, timedelta
+    tol = copy.deepcopy(PIPELINE_OK)
+    tol["stages"][0]["drugs"][0]["timeline"][1].update(expectedDate=(date.today() - timedelta(days=1)).isoformat(), expectedStatus="forecast")
+    assert smoke._pipeline_expectations(200, tol) is None
+    assert smoke._pipeline_expectations(200, {"completedExcluded": 0}) == "HTTP 200 / 'stages' 없음"
+
+
+def test_meetings_past_scheduled_fails_with_count_and_yields_one_platform_smoke_task(tmp_path):
+    """오늘 실제 DB 로는 실패하는 것이 맞다(지난 SCHEDULED 7건). 문구는 건수+최초 날짜뿐이라 세션이 늘어도 과제 1건."""
+    from agents.agent_tasks.signals import record_job_failure
+    from agents.agent_tasks.store import list_tasks
+    broken = _ok_routes()
+    broken["/api/reimbursement/meetings"] = (200, {"items": [
+        {"id": 16, "date": "2026-07-02", "status": "SCHEDULED"}, {"id": 5, "date": "2026-07-08", "status": "SCHEDULED"},
+        {"id": 17, "date": "2026-08-06", "status": "SCHEDULED"}, {"id": 15, "date": "2026-06-04", "status": "COMPLETED"},
+        {"id": 20, "date": "2099-11-05", "status": "SCHEDULED"}]})
+    errs = _only_error(broken)
+    assert errs == ["reimbursement-status /api/reimbursement/meetings → 14일 넘게 지난 SCHEDULED 세션 3건 — 결과 미반영(최초 2026-07-02)"]
+    db = tmp_path / "a.db"
+    a = record_job_failure("platform_smoke", "; ".join(errs), errors=errs, db_path=db)
+    more = ["reimbursement-status /api/reimbursement/meetings → 14일 넘게 지난 SCHEDULED 세션 7건 — 결과 미반영(최초 2026-07-02)"]
+    b = record_job_failure("platform_smoke", "; ".join(more), errors=more, db_path=db)
+    assert a == b and len(list_tasks(db_path=db)) == 1                     # 건수만 바뀌면 같은 과제
+    assert smoke._meetings_results_ingested(200, {"items": []}) is None
+    assert smoke._meetings_results_ingested(200, {"meetings": []}) == "HTTP 200 / 'items' 없음"
+
+
+def test_media_intelligence_requires_error_free_nonempty_aggregate():
+    broken = _ok_routes()
+    broken["/api/home/media-intelligence"] = (200, {"brands": [{"brand": "키트루다", "total_count": 3}], "error": "네이버 수집 실패 3/12 브랜드"})
+    assert _only_error(broken) == ["home /api/home/media-intelligence → error 키 있음(네이버 수집 실패 — 캐시 미기록·미서빙 규약대로 실패가 노출됨)"]
+    broken["/api/home/media-intelligence"] = (200, {"brands": [{"brand": "키트루다", "total_count": 0}, {"brand": "옵디보", "total_count": 0}]})
+    assert _only_error(broken) == ["home /api/home/media-intelligence → 전 브랜드 기사 0건(2개 브랜드) — 오염/빈 집계(looks_poisoned 모양)"]
+    broken["/api/home/media-intelligence"] = (200, {"brands": []})
+    assert _only_error(broken) == ["home /api/home/media-intelligence → 브랜드 0개(모니터링 목록 비어 있음)"]
+    from agents.media_intelligence import looks_poisoned
+    assert looks_poisoned({"brands": [{"brand": "a", "total_count": 0}]}) and smoke._media_intelligence_live(200, MEDIA_OK) is None
+
+
+def test_kanban_requires_runs_key():
+    broken = _ok_routes()
+    broken["/api/admin/daily-mailing/kanban"] = (200, {"items": []})
+    assert _only_error(broken) == ["admin/daily-mailing-kanban /api/admin/daily-mailing/kanban → HTTP 200 / 'runs' 없음"]
+    broken["/api/admin/daily-mailing/kanban"] = (503, {"error": "모듈 미탑재", "runs": []})
+    assert _only_error(broken) == ["admin/daily-mailing-kanban /api/admin/daily-mailing/kanban → HTTP 503 / 'runs' 없음"]
+
+
+def test_smoke_source_no_longer_claims_kanban_purge_is_skipped_for_smoke():
+    """칸반 GET 은 헤더와 무관하게 purge 하지 않는다 — 문서·주석이 '만료 purge 를 건너뛴다' 고 말하면 안 된다."""
+    src = Path(smoke.__file__).read_text(encoding="utf-8")
+    assert "INSERT·만료 purge" not in src and "만료 purge·" not in src
+    assert "daily_mailing_health_job" in src                               # 어디로 갔는지 적혀 있다
