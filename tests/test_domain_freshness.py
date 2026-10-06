@@ -150,7 +150,7 @@ def test_policy_intelligence_ingest_and_analysis(tmp_path):
 
 def test_run_all_survives_missing_tables(tmp_path):
     results = fr.run_all(_ctx(tmp_path))
-    assert len(results) == len(fr.DOMAIN_CHECKS) == 15
+    assert len(results) == len(fr.DOMAIN_CHECKS) == 16
     assert [r.domain for r in results] == list(fr.DOMAIN_CHECKS)
     assert all(r.stale is False for r in results if r.evidence.startswith("판정 불가"))
     undeterminable = {r.domain for r in results if r.evidence.startswith("판정 불가")}
@@ -207,7 +207,7 @@ def test_run_and_record_second_run_adds_zero_tasks(tmp_path):
     ledger = tmp_path / "ledger.db"
     res1 = fr.run_and_record(db_path=ledger, data_db_path=data, base_dir=tmp_path, today=TODAY)
     assert res1["ok"] is True
-    assert res1["counts"]["checked"] == 15
+    assert res1["counts"]["checked"] == 16
     assert {"domestic_price", "committee_results"} <= set(res1["stale_domains"])
     assert "nhis_negotiations" not in res1["stale_domains"]
     assert res1["counts"]["tasks_new"] == res1["counts"]["tasks"] == res1["counts"]["stale"] > 0
@@ -216,7 +216,7 @@ def test_run_and_record_second_run_adds_zero_tasks(tmp_path):
     tasks = list_tasks(db_path=ledger)
     assert len(tasks) == res1["counts"]["tasks"] and all(t["source"] == "domain_freshness" for t in tasks)
     # 판정 결과는 원장 DB 의 domain_freshness 에 도메인당 1행, 데이터 DB 에는 아무것도 쓰지 않는다
-    assert sqlite3.connect(ledger).execute("SELECT COUNT(*) FROM domain_freshness").fetchone()[0] == 15
+    assert sqlite3.connect(ledger).execute("SELECT COUNT(*) FROM domain_freshness").fetchone()[0] == 16
     assert sqlite3.connect(data).execute(
         "SELECT COUNT(*) FROM sqlite_master WHERE name IN ('domain_freshness','agent_task')").fetchone()[0] == 0
 
@@ -243,7 +243,7 @@ def test_scheduler_registers_domain_freshness_job(tmp_path, monkeypatch):
     assert fields["hour"] == "7" and fields["minute"] == "45"
     res = sch.domain_freshness_job(data_db_path=_stale_fixture(tmp_path))
     assert res["ok"] is True and res["errors"] == []
-    assert res["counts"]["checked"] == 15 and res["counts"]["stale"] >= 2
+    assert res["counts"]["checked"] == 16 and res["counts"]["stale"] >= 2
     sources = {t["source"] for t in list_tasks(db_path=ledger)}
     assert sources == {"domain_freshness"}
     runs = sqlite3.connect(ledger).execute("SELECT job_id, ok FROM scheduler_job_run").fetchall()

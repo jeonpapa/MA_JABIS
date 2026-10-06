@@ -23,10 +23,12 @@ COVERAGE_POLICY: dict[tuple[str, str], dict] = {
     ("CA", "oncology"): {
         "policy": "Ontario EAP 미등재 시 전국 통합 공개 DB 없음. pCPA 협약가는 비공개.",
         "public_db_has_price": "partial",
+        "structural_absence": True,     # EAP 목록에 추적 제품 미등재 — 빈 결과는 제도상 공백(수집 실패 아님)
     },
     ("CA", "*"): {
         "policy": "캐나다는 연방 통합 공개 가격 DB 없음 — Ontario EAP 가 유일한 공개 소스.",
         "public_db_has_price": "partial",
+        "structural_absence": True,     # 위와 같음 — 신선도 판정(foreign_country_coverage)이 과제 대상에서 뺀다
     },
     ("DE", "*"): {
         "policy": "Rote Liste 는 DocCheck (의료전문가 인증) 로그인 필수",
@@ -105,6 +107,17 @@ def lookup_policy(country: str, product_slug: str | None = None) -> Optional[dic
     if key in COVERAGE_POLICY:
         return dict(COVERAGE_POLICY[key])
     return None
+
+
+def is_structural_absence(country: str, product_slug: str | None = None) -> bool:
+    """빈 결과가 **제도상 사실**인가 — 수집 실패로 보지 않는다.
+
+    True 인 경우: 정책 메타에 structural_absence (CA: EAP 에 추적 제품 없음) 또는 public_db_has_price=False
+    (FR 병원 전용 항암제 PPH 비공개). '구독·로그인 필요'(US/UK/DE) 는 제도상 공백이 아니다 — 거기서 비면 로그인이 깨진 것이다.
+    신선도 판정(agents/agent_tasks/freshness.py:foreign_country_coverage)이 이 한 곳을 기준으로 과제 대상을 가른다.
+    """
+    policy = lookup_policy(country, product_slug) or {}
+    return bool(policy.get("structural_absence")) or policy.get("public_db_has_price") is False
 
 
 def describe_empty_result(country: str, product_slug: str | None = None) -> str:

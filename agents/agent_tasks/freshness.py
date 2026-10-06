@@ -46,6 +46,7 @@ TRENDS_MAX_DAYS = 7
 SIGNALS_MAX_DAYS = 10
 NHIS_MAX_DAYS = 10
 FOREIGN_PRICE_MAX_DAYS = 45          # 추적 제품마다 '가격 있는' 최신 행이 이보다 오래되면 stale (P1.6 관측)
+FOREIGN_COVERAGE_WINDOW_DAYS = 90    # 이 창 안에 가격 행이 없는 국가는 (제도상 공백이 아니면) 수집 실패
 
 DOMAIN_FRESHNESS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS domain_freshness (
@@ -240,6 +241,38 @@ def check_foreign_price_age(ctx: Ctx) -> Freshness:
     return Freshness("foreign_price_age", bool(old or never), observed, deadline, evidence, None, 2)
 
 
+# ── 3c 해외약가 국가 커버리지 (P1.6 관측) ──────────────────────────────────
+# 구현된 국가(AVAILABLE_COUNTRIES) 중 최근 창 안에 가격 행이 없는 국가를 '제도상 공백' 과 '수집 실패' 로 가른다.
+# 그 기준은 agents/scrapers/country_coverage.py:is_structural_absence 한 곳이다 — 추적 제품 전부가 제도상 공백인 국가만
+# 공백(CA: EAP 에 추적 제품 없음, FR: 병원 전용 항암제만 추적할 때). 구독·로그인 국가(US/UK/DE)가 비면 수집 실패다.
+
+def foreign_country_coverage_detail(ctx: Ctx) -> dict:
+    from agents.foreign_price_agent import AVAILABLE_COUNTRIES          # lazy — 스크레이퍼·playwright import
+    from agents.scrapers.country_coverage import is_structural_absence
+    tracked = sorted(_tracked_products(ctx))
+    since = _days_ago(ctx, FOREIGN_COVERAGE_WINDOW_DAYS)
+    last = {cc: (ts or "")[:10] for cc, ts in _rows(ctx, "SELECT country, MAX(searched_at) FROM foreign_drug_prices "
+                                                        "WHERE local_price IS NOT NULL GROUP BY country") if cc}
+    recent = sorted(cc for cc in AVAILABLE_COUNTRIES if last.get(cc, "") >= since)
+    structural, failed = [], []
+    for cc in AVAILABLE_COUNTRIES:
+        if cc in recent:
+            continue
+        (structural if tracked and all(is_structural_absence(cc, p) for p in tracked) else failed).append(cc)
+    return {"since": since, "recent": recent, "failed": sorted(failed), "structural": sorted(structural),
+            "last": last, "tracked": tracked}
+
+
+def check_foreign_country_coverage(ctx: Ctx) -> Freshness:
+    d = foreign_country_coverage_detail(ctx)
+    failed_last = ", ".join(f"{cc}={d['last'].get(cc) or '없음'}" for cc in d["failed"])
+    evidence = (f"최근 {FOREIGN_COVERAGE_WINDOW_DAYS}일(≥{d['since']}) 가격 행 있는 국가 {d['recent']}; "
+                f"수집 실패(기대했으나 창 안 가격 행 0건) {d['failed']} — 마지막 가격 행: {failed_last or '-'}; "
+                f"제도상 공백(과제 아님) {d['structural']} — country_coverage.is_structural_absence(추적 제품 {d['tracked']} 전부). "
+                f"{FOREIGN_PRICE_GUIDANCE}")
+    return Freshness("foreign_country_coverage", bool(d["failed"]), failed_last or None, d["since"], evidence, None, 2)
+
+
 # ── 4 해외 허가 커버리지 ───────────────────────────────────────────────────
 
 def check_foreign_approval_coverage(ctx: Ctx) -> Freshness:
@@ -370,6 +403,7 @@ DOMAIN_CHECKS: dict[str, Callable[[Ctx], Freshness]] = {
     "exchange_rate_cache": check_exchange_rate_cache,
     "foreign_price_fx_alignment": check_foreign_price_fx_alignment,
     "foreign_price_age": check_foreign_price_age,
+    "foreign_country_coverage": check_foreign_country_coverage,
     "foreign_approval_coverage": check_foreign_approval_coverage,
     "reimbursement_xnational": check_reimbursement_xnational,
     "committee_schedule": check_committee_schedule,

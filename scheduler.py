@@ -707,7 +707,7 @@ def home_brand_related_refresh_job():
 
 @guarded_job("domain_freshness")
 def domain_freshness_job(data_db_path: str | None = None):
-    """매일 07:45 Seoul — 14개 데이터 도메인 신선도 판정 → stale 은 원장 과제(도메인당 월 1건). 02:00~07:00 수집 잡 뒤, 업무 전.
+    """매일 07:45 Seoul — 16개 데이터 도메인 신선도 판정 → stale 은 원장 과제(도메인당 월 1건). 02:00~07:00 수집 잡 뒤, 업무 전.
 
     잡 성공 여부와 무관하게 '데이터가 언제 것인가' 를 본다 — 폴백·빈 크롤·수동 업로드 누락은 여기서만 잡힌다.
     stale 은 과제이지 잡 실패가 아니다(ok=True). data_db_path 는 CLI 전용(읽기 전용 URI 로 실제 DB 실측).
@@ -1083,7 +1083,7 @@ def main():
     )
     parser.add_argument(
         "--freshness-now", nargs="?", const="", metavar="DATA_DB",
-        help="14개 도메인 신선도 즉시 판정 + stale 과제 생성 (표 출력). 값을 주면 그 DB 를 판정 "
+        help="16개 도메인 신선도 즉시 판정 + stale 과제 생성 (표 출력). 값을 주면 그 DB 를 판정 "
              "(file:/경로/drug_prices.db?mode=ro 로 실제 DB 읽기 전용 실측; 과제는 AGENT_TASK_DB 로)",
     )
     args = parser.parse_args()

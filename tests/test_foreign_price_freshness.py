@@ -98,3 +98,67 @@ def test_price_age_is_registered_and_dedups_per_month(tmp_path):
     assert fr.record_freshness_problems([r], today=TODAY, db_path=tmp_path / "a.db") == ids
     t = list_tasks(db_path=tmp_path / "a.db")[0]
     assert t["source_ref"] == "foreign_price_age:2026-10" and "런북 없음" in t["detail"]
+
+
+# ── 2 국가 커버리지 (foreign_country_coverage) ───────────────────────────────
+# 빈 국가가 '제도상 공백' 인지 '수집 실패' 인지는 agents/scrapers/country_coverage.py 의 정책 메타 한 곳이 결정한다.
+
+RECENT_SIX = """
+    INSERT INTO foreign_drug_prices VALUES (1, 'keytruda', 'JP', 1, '2026-09-27T21:09:15', '20260831');
+    INSERT INTO foreign_drug_prices VALUES (2, 'keytruda', 'IT', 1, '2026-09-27T21:09:03', '20260831');
+    INSERT INTO foreign_drug_prices VALUES (3, 'keytruda', 'FR', 1, '2026-09-28T10:05:00', '20260831');
+    INSERT INTO foreign_drug_prices VALUES (4, 'welireg', 'CH', 1, '2026-09-27T03:03:45', '20260831');
+    INSERT INTO foreign_drug_prices VALUES (5, 'welireg', 'UK', 1, '2026-09-24T12:41:09', '20260831');
+    INSERT INTO foreign_drug_prices VALUES (6, 'pembrolizumab', 'DE', 1, '2026-09-27T03:04:32', '20260831');
+"""
+
+
+def test_is_structural_absence_comes_from_country_coverage_policy():
+    from agents.scrapers.country_coverage import is_structural_absence
+    assert is_structural_absence("CA", "keytruda") and is_structural_absence("CA", "januvia") and is_structural_absence("CA")
+    assert is_structural_absence("FR", "keytruda")              # 병원 전용 항암제 — BDPM 이 PPH 를 공개하지 않는다
+    assert not is_structural_absence("FR", "januvia")           # BDPM PPC 공시 — 비면 수집 실패
+    assert not is_structural_absence("US", "keytruda")          # '구독 필요' 는 제도상 공백이 아니다 — 로그인 실패는 수집 실패
+    assert not is_structural_absence("JP") and not is_structural_absence("UK") and not is_structural_absence("XX")
+
+
+def test_country_coverage_separates_structural_absence_from_collection_failure(tmp_path):
+    _seed(tmp_path / "d.db", SCHEMA, RECENT_SIX)
+    d = fr.foreign_country_coverage_detail(_ctx(tmp_path))
+    assert d["since"] == "2026-07-08"                                                  # 90일
+    assert d["recent"] == ["CH", "DE", "FR", "IT", "JP", "UK"]
+    assert d["failed"] == ["US"] and d["structural"] == ["CA"]
+    r = fr.check_foreign_country_coverage(_ctx(tmp_path))
+    assert r.domain == "foreign_country_coverage" and r.stale is True and r.runbook is None
+    assert "수집 실패" in r.evidence and "['US']" in r.evidence and "제도상 공백" in r.evidence and "['CA']" in r.evidence
+    assert "재검색" in r.evidence
+
+
+def test_country_coverage_structural_only_when_every_tracked_product_is_structural(tmp_path):
+    """FR: keytruda(병원 전용 항암제)만 추적하면 제도상 공백, januvia(PPC 공시)도 추적하면 기대 국가 → 비면 수집 실패."""
+    _seed(tmp_path / "d.db", """
+        CREATE TABLE foreign_drug_prices (id INTEGER PRIMARY KEY, query_name TEXT, country TEXT, local_price REAL, searched_at TEXT);
+        CREATE TABLE indications_master (product TEXT);
+        INSERT INTO indications_master VALUES ('keytruda');
+    """)
+    d = fr.foreign_country_coverage_detail(_ctx(tmp_path))
+    assert "FR" in d["structural"] and "CA" in d["structural"] and "FR" not in d["failed"]
+    _seed(tmp_path / "d.db", "INSERT INTO indications_master VALUES ('januvia');")
+    d2 = fr.foreign_country_coverage_detail(_ctx(tmp_path))
+    assert "FR" in d2["failed"] and "CA" in d2["structural"]
+
+
+def test_country_coverage_rows_older_than_window_do_not_count(tmp_path):
+    _seed(tmp_path / "d.db", SCHEMA, RECENT_SIX,
+          "UPDATE foreign_drug_prices SET searched_at='2026-06-01T00:00:00' WHERE country='UK';")
+    d = fr.foreign_country_coverage_detail(_ctx(tmp_path))
+    assert "UK" in d["failed"] and "UK" not in d["recent"]
+    r = fr.check_foreign_country_coverage(_ctx(tmp_path))
+    assert "UK=2026-06-01" in r.evidence                       # 실패 국가의 마지막 가격 행 시점
+
+
+def test_country_coverage_fresh_when_only_structural_countries_are_empty(tmp_path):
+    _seed(tmp_path / "d.db", SCHEMA, RECENT_SIX,
+          "INSERT INTO foreign_drug_prices VALUES (7, 'keytruda', 'US', 1, '2026-09-20T00:00:00', '20260831');")
+    r = fr.check_foreign_country_coverage(_ctx(tmp_path))
+    assert r.stale is False and fr.DOMAIN_CHECKS["foreign_country_coverage"] is fr.check_foreign_country_coverage
