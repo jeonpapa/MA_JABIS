@@ -45,6 +45,7 @@ NEWS_MAX_DAYS = 3
 TRENDS_MAX_DAYS = 7
 SIGNALS_MAX_DAYS = 10
 NHIS_MAX_DAYS = 10
+FOREIGN_PRICE_MAX_DAYS = 45          # 추적 제품마다 '가격 있는' 최신 행이 이보다 오래되면 stale (P1.6 관측)
 
 DOMAIN_FRESHNESS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS domain_freshness (
@@ -170,6 +171,73 @@ def check_foreign_price_fx_alignment(ctx: Ctx) -> Freshness:
                       WHERE g.query_name = f.query_name AND g.country = f.country AND g.local_price IS NOT NULL)""", (to,))
     return Freshness("foreign_price_fx_alignment", int(n or 0) > 0, str(n), "0",
                      f"최신 해외약가 행 중 캐시 환율창({to})과 다른 행 {n}건 — 환율 갱신 후 재계산 누락", "exchange_rate_recompute", 3)
+
+
+# ── 3b 해외약가 가격 나이 (P1.6 관측) ──────────────────────────────────────
+# 질문은 하나다: "현 시점에 해당 약제의 가격을 가지고 올 수 있느냐". 잡 성공·세션 수가 아니라 **가격이 있는 행(local_price
+# NOT NULL)의 나이**를 제품마다 본다. 수집은 사용자 검색으로만 일어나므로 런북이 없다 — evidence 가 사람이 할 일을 적는다.
+
+FOREIGN_PRICE_GUIDANCE = ("조치: 수집은 사용자 검색으로만 일어난다 — 해외약가 화면에서 오래된 제품을 재검색(전체 국가)하고, "
+                          "국가 카드가 '수집 실패(로그인·의존성·403·시간 초과)' 면 원장 foreign_search 과제와 "
+                          "foreign_config_probe 결과(config/.env 키·scrapling·프록시)를 본다")
+
+
+def _tracked_products(ctx: Ctx) -> dict[str, set[str]]:
+    """대쉬보드가 추적하는 제품(indications_master.product) → 그 제품의 가격 행이 가질 수 있는 query_name 집합(소문자).
+
+    product_alias_map(slug·inn·brand_aliases)로 확장해 keytruda ↔ pembrolizumab 을 한 제품으로 본다. 제품이 alias 맵의
+    inn 으로 적혀 있어도(human_papillomavirus_vaccine) canonical slug(gardasil)로 합친다. alias 테이블이 없으면 slug 만."""
+    products = {(r[0] or "").strip().lower() for r in _rows(ctx, "SELECT DISTINCT product FROM indications_master") if r[0]}
+    canon_of: dict[str, str] = {}
+    names_of: dict[str, set[str]] = {}
+    try:
+        alias_rows = _rows(ctx, "SELECT product_slug, inn, brand_aliases_json FROM product_alias_map")
+    except sqlite3.OperationalError:
+        alias_rows = []
+    for slug, inn, ba_json in alias_rows:
+        slug = (slug or "").strip().lower()
+        if not slug:
+            continue
+        names = {slug}
+        if inn:
+            names.add(str(inn).strip().lower())
+        try:
+            names |= {str(a).strip().lower() for a in json.loads(ba_json or "[]") if str(a).strip()}
+        except Exception:
+            pass
+        names_of[slug] = names
+        for n in names:
+            canon_of.setdefault(n, slug)
+    out: dict[str, set[str]] = {}
+    for p in products:
+        canon = canon_of.get(p, p)
+        out.setdefault(canon, set()).update(names_of.get(canon, set()) | {canon, p})
+    return out
+
+
+def _last_priced_by_query_name(ctx: Ctx) -> dict[str, str]:
+    """query_name(소문자) → 가격 있는 행의 MAX(searched_at)."""
+    return {n: ts for n, ts in _rows(ctx, "SELECT LOWER(TRIM(query_name)), MAX(searched_at) FROM foreign_drug_prices "
+                                        "WHERE local_price IS NOT NULL AND query_name IS NOT NULL GROUP BY 1") if n}
+
+
+def check_foreign_price_age(ctx: Ctx) -> Freshness:
+    tracked = _tracked_products(ctx)
+    deadline = _days_ago(ctx, FOREIGN_PRICE_MAX_DAYS)
+    if not tracked:
+        return Freshness("foreign_price_age", False, None, deadline, "추적 제품 없음(indications_master 비어 있음)", None)
+    last_by_name = _last_priced_by_query_name(ctx)
+    last: dict[str, str | None] = {}
+    for slug, names in sorted(tracked.items()):
+        dates = [last_by_name[n] for n in names if n in last_by_name]
+        last[slug] = max(dates)[:10] if dates else None
+    old = [s for s, d in last.items() if d and d < deadline]
+    never = [s for s, d in last.items() if d is None]
+    observed = min((d for d in last.values() if d), default=None)
+    listing = ", ".join(f"{s}={d or '미수집'}" for s, d in last.items())
+    evidence = (f"제품별 가격 있는 최신 행: {listing}; 기대≥{deadline} ({FOREIGN_PRICE_MAX_DAYS}일) — "
+                f"오래됨 {len(old)}건 {old}, 미수집 {len(never)}건 {never}. {FOREIGN_PRICE_GUIDANCE}")
+    return Freshness("foreign_price_age", bool(old or never), observed, deadline, evidence, None, 2)
 
 
 # ── 4 해외 허가 커버리지 ───────────────────────────────────────────────────
@@ -301,6 +369,7 @@ DOMAIN_CHECKS: dict[str, Callable[[Ctx], Freshness]] = {
     "domestic_price": check_domestic_price,
     "exchange_rate_cache": check_exchange_rate_cache,
     "foreign_price_fx_alignment": check_foreign_price_fx_alignment,
+    "foreign_price_age": check_foreign_price_age,
     "foreign_approval_coverage": check_foreign_approval_coverage,
     "reimbursement_xnational": check_reimbursement_xnational,
     "committee_schedule": check_committee_schedule,
