@@ -203,3 +203,46 @@ def test_run_and_record_passes_ledger_to_ctx(tmp_path, monkeypatch):
     monkeypatch.setattr(fr, "run_all", lambda ctx: seen.append(ctx) or [])
     fr.run_and_record(db_path=tmp_path / "ledger.db", data_db_path=tmp_path / "d.db", base_dir=tmp_path, today=TODAY)
     assert seen and seen[0].ledger_path == tmp_path / "ledger.db" and seen[0].db_path == tmp_path / "d.db"
+
+
+# ── 3. 위원회 보고서 누락 (committee_reports, improvement — 담당 헤르메스) ─────────
+
+_REPORTS_SQL = _SESSIONS_SQL + """
+    INSERT INTO amjilsim_sessions VALUES (17,'YAKPYUNGWI','SCHEDULED','2026-08-06'), (6,'AMJILSIM','SCHEDULED','2026-08-19'),
+                                         (18,'YAKPYUNGWI','SCHEDULED','2026-09-03');
+    CREATE TABLE reimb_reports (id INTEGER, committee TEXT, report_type TEXT, session_date TEXT, title TEXT);
+    INSERT INTO reimb_reports VALUES (1,'evaluation','pre','2026-06-04','6차 약평위 사전'), (2,'evaluation','post','2026-06-04','6차 약평위 결과'),
+                                     (3,'evaluation','post','2026-09-03','9차 약평위 결과 리뷰');
+"""
+
+
+def test_committee_reports_lists_past_sessions_without_a_report_row(tmp_path):
+    _seed(tmp_path / "d.db", _REPORTS_SQL)
+    r = fr.check_committee_reports(_ctx(tmp_path))
+    assert r.stale is True and r.kind == "improvement" and r.runbook is None and r.priority == 3
+    # 60일 창(≥2026-08-07) 안의 D+2 지난 세션: 08-19·09-03·09-30·10-01 — 09-03 만 보고서 있음 → 누락 3건
+    assert "4건 중" in r.evidence and "없음 3건" in r.evidence
+    missing_part = r.evidence.split("없음")[1].split(";")[0]
+    assert "#6=2026-08-19(암질심)" in missing_part and "#7=2026-09-30(암질심)" in missing_part and "#19=2026-10-01(약평위)" in missing_part
+    assert "#18=2026-09-03" not in missing_part
+    assert "담당: 헤르메스" in r.evidence and "reports_manifest.json" in r.evidence and "session_date" in r.evidence
+    assert "9차 약평위 결과 리뷰" in r.evidence                       # 창 안에 있는 보고서는 보여 준다(combined 보고서 판단용)
+    assert r.observed == "2026-09-03" and r.deadline == "2026-08-07"
+    assert fr.DOMAIN_CHECKS["committee_reports"] is fr.check_committee_reports
+    # D+1 유예: 회차 다음 날 아침엔 아직 묻지 않는다(헤르메스 D+1 발행 → 02:00 sync)
+    r2 = fr.check_committee_reports(_ctx(tmp_path, today=date(2026, 10, 2)))
+    assert "#19=2026-10-01" not in r2.evidence and "#7=2026-09-30" not in r2.evidence
+
+
+def test_committee_reports_fresh_when_every_past_session_has_a_row(tmp_path):
+    _seed(tmp_path / "d.db", _REPORTS_SQL, "INSERT INTO reimb_reports VALUES (4,'cancer','post','2026-08-19','7차 암질심'), "
+                                           "(5,'cancer','post','2026-09-30','8차 암질심'), (6,'evaluation','post','2026-10-01','10차 약평위');")
+    r = fr.check_committee_reports(_ctx(tmp_path))
+    assert r.stale is False and "없음 0건" in r.evidence
+
+
+def test_committee_reports_window_excludes_old_and_future_sessions(tmp_path):
+    _seed(tmp_path / "d.db", _REPORTS_SQL)
+    r = fr.check_committee_reports(_ctx(tmp_path, today=date(2026, 7, 20)))     # 창 05-21~07-18: 06-04(있음)·07-02·07-08
+    assert r.stale is True and "#16=2026-07-02" in r.evidence and "#5=2026-07-08" in r.evidence
+    assert "#6=2026-08-19" not in r.evidence and "#15=2026-06-04" not in r.evidence.split("없음")[1].split(";")[0]

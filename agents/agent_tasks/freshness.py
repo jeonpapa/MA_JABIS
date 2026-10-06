@@ -418,6 +418,32 @@ def check_committee_results(ctx: Ctx) -> Freshness:
     return Freshness("committee_results", True, oldest, cutoff, f"{head}. {cause}", runbook)
 
 
+# ── 7a 위원회 보고서 누락 (P1.6, improvement — 담당 헤르메스) ──────────────
+# 회차마다 D+1 결과 리뷰가 reports_manifest.json → reimb_reports 로 들어와야 한다(session_date 일치). 지난 60일의 지난 세션 중
+# 행이 없는 것을 센다. 회차 당일·다음 날은 유예(REPORT_LAG_DAYS) — D+1 발행 → 02:00 sync 라 07:45 판정은 D+2 부터 의미가 있다.
+
+REPORTS_WINDOW_DAYS = 60
+REPORT_LAG_DAYS = 2
+
+
+def check_committee_reports(ctx: Ctx) -> Freshness:
+    since = _days_ago(ctx, REPORTS_WINDOW_DAYS)
+    due = _days_ago(ctx, REPORT_LAG_DAYS)
+    sessions = _rows(ctx, "SELECT session_id, session_date, committee_type FROM amjilsim_sessions "
+                          "WHERE session_date >= ? AND session_date < ? ORDER BY session_date", (since, due))
+    reports = _rows(ctx, "SELECT session_date, committee, report_type, title FROM reimb_reports "
+                         "WHERE session_date >= ? AND session_date < ? ORDER BY session_date", (since, ctx.today.isoformat()))
+    have = {r[0] for r in reports}
+    missing = [s for s in sessions if s[1] not in have]
+    latest = max((r[0] for r in reports), default=None)
+    present = "; ".join(f"{d} {c}/{t} '{title}'" for d, c, t, title in reports) or "-"
+    evidence = (f"최근 {REPORTS_WINDOW_DAYS}일(≥{since}) 지난 세션(D+{REPORT_LAG_DAYS} 경과) {len(sessions)}건 중 "
+                f"reimb_reports 행(session_date 일치) 없음 {len(missing)}건: {_session_listing(missing)}; "
+                f"창 안 보고서: {present}. 담당: 헤르메스 — D+1 결과 리뷰를 reports_manifest.json 에 발행(session_date 를 회차일에 맞춤) "
+                "→ 02:00 reimb_data_sync 가 적재. 병합 보고서(combined)는 session_date 가 한 회차만 가리키므로 다른 회차는 여기 남는다")
+    return Freshness("committee_reports", bool(missing), latest, since, evidence, None, 3, kind="improvement")
+
+
 # ── 7b 파이프라인 경과 예상일 (P1.6) ───────────────────────────────────────
 # 보드 타임라인은 expected_session_id 차수가 지났는데 결과가 없으면 '예상일 경과'(overdue) 를 그린다(agents/reimb_pipeline._timeline).
 # 그 상태가 14일 넘게 이어지면 데이터가 틀린 것이다. 이 컬럼을 쓰는 코드는 agents/ingest/reimb_committee_import.run() 하나 —
@@ -536,6 +562,7 @@ DOMAIN_CHECKS: dict[str, Callable[[Ctx], Freshness]] = {
     "reimbursement_xnational": check_reimbursement_xnational,
     "committee_schedule": check_committee_schedule,
     "committee_results": check_committee_results,
+    "committee_reports": check_committee_reports,
     "pipeline_expected_sessions": check_pipeline_expected_sessions,
     "analog_reports": check_analog_reports,
     "market_share": check_market_share,
