@@ -2802,7 +2802,12 @@ def msd_summary():
 
         total = len(ind_rows)
         mfds_approved = sum(1 for r in ind_rows if r[5])
+        # 급여 판정은 3분할: 급여(is_reimbursed=1) / 미급여(체크리스트 행이 0 이라고 말함) / 미확인(체크리스트 행 없음).
+        # HIRA 급여 체크리스트는 Keytruda 66개 중 15개만 덮는다 — 행이 없는 51개를 '미급여' 로 세면 과소 표시(감사 지적).
+        # r[7]=r.is_reimbursed 는 LEFT JOIN 이라 행이 없으면 NULL — NULL 과 0 을 구분한다.
         reimbursed_count = sum(1 for r in ind_rows if r[7])
+        not_reimbursed_count = sum(1 for r in ind_rows if r[7] is not None and not r[7])
+        unverified_count = sum(1 for r in ind_rows if r[7] is None)
         items = []
         for r in ind_rows:
             disease = r[1] or ""
@@ -2832,6 +2837,10 @@ def msd_summary():
                 "mfds_date": r[5],
                 "fda_date": r[6],
                 "is_reimbursed": bool(r[7]) if r[7] is not None else False,
+                # 3분할 상태 — 체크리스트 행 없음은 '미급여' 가 아니라 '미확인'
+                "reimbursement_checked": r[7] is not None,
+                "reimbursement_status": ("reimbursed" if r[7] else
+                                         "not_reimbursed" if r[7] is not None else "unverified"),
                 "reimbursement_effective_date": r[8],
                 "reimbursement_criteria": r[9],
                 "reimbursement_notice_date": r[10],
@@ -2846,7 +2855,10 @@ def msd_summary():
                 "mfds_approved": mfds_approved,
                 "pending_mfds": total - mfds_approved,
                 "reimbursed_indications": reimbursed_count,
-                "pending_reimbursement": total - reimbursed_count,
+                "not_reimbursed_indications": not_reimbursed_count,   # 체크리스트가 미급여라고 확인한 것
+                "unverified_reimbursement": unverified_count,         # 체크리스트 행 없음 (미확인)
+                "checklist_covered": reimbursed_count + not_reimbursed_count,
+                "pending_reimbursement": total - reimbursed_count,    # 하위호환: 미급여 + 미확인
                 "items": items,
             },
         })

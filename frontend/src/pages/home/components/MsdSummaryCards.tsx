@@ -107,6 +107,7 @@ export default function MsdSummaryCards({ isDark }: Props) {
   const indentText = isDark ? 'text-[#00E5CC]' : 'text-teal-700';
   const indentBgAmber = isDark ? 'bg-[#F59E0B]/10' : 'bg-amber-100';
   const indentTextAmber = isDark ? 'text-[#F59E0B]' : 'text-amber-700';
+  const indentBgMuted = isDark ? 'bg-[#1E2530]' : 'bg-gray-100';   // 미확인 (체크리스트 미등록)
   const customBorder = isDark ? 'border-[#7C3AED]/40' : 'border-purple-300';
   const customBg = isDark ? 'bg-[#7C3AED]/5' : 'bg-purple-50/50';
 
@@ -183,6 +184,7 @@ export default function MsdSummaryCards({ isDark }: Props) {
           <p className="text-red-500 text-sm mb-3">조회 실패 — {summaryError}</p>
         ) : (
           <>
+            {/* 급여 / 미급여 / 미확인 — HIRA 급여 체크리스트 행이 없는 적응증은 '미급여' 가 아니라 '미확인' */}
             <div className="flex items-center gap-4 mb-3">
               <div>
                 <p className={`text-3xl font-bold ${accentTeal}`}>{summary?.keytruda.reimbursed ?? 0}</p>
@@ -190,8 +192,13 @@ export default function MsdSummaryCards({ isDark }: Props) {
               </div>
               <div className={`w-px h-10 ${divider}`}></div>
               <div>
-                <p className={`text-3xl font-bold ${accentAmber}`}>{summary?.keytruda.nonReimbursedApproved ?? 0}</p>
-                <p className={`${textSub} text-xs mt-0.5`}>비급여 허가</p>
+                <p className={`text-3xl font-bold ${accentAmber}`}>{summary?.keytruda.notReimbursed ?? 0}</p>
+                <p className={`${textSub} text-xs mt-0.5`}>미급여</p>
+              </div>
+              <div className={`w-px h-10 ${divider}`}></div>
+              <div title="HIRA 급여 체크리스트에 아직 등록되지 않은 적응증 — 급여 여부 미확인">
+                <p className={`text-3xl font-bold ${textMuted}`}>{summary?.keytruda.unverified ?? 0}</p>
+                <p className={`${textSub} text-xs mt-0.5`}>미확인</p>
               </div>
             </div>
             <button
@@ -210,7 +217,11 @@ export default function MsdSummaryCards({ isDark }: Props) {
                 )}
                 {(summary?.keytruda.indications ?? []).map((ind, i) => (
                   <div key={i} className="flex items-start gap-2">
-                    <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5 ${ind.type === '급여' ? indentBg + ' ' + indentText : indentBgAmber + ' ' + indentTextAmber}`}>
+                    <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5 ${
+                      ind.type === '급여' ? indentBg + ' ' + indentText
+                      : ind.type === '비급여' ? indentBgAmber + ' ' + indentTextAmber
+                      : indentBgMuted + ' ' + textMuted
+                    }`}>
                       {ind.type}
                     </span>
                     <span className={`${textSub} text-xs leading-relaxed`}>{ind.name}</span>

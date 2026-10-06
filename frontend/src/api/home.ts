@@ -28,6 +28,8 @@ interface RawKeytrudaIndication {
   reimbursement_criteria: string | null;
   reimbursement_notice_date: string | null;
   reimbursement_notice_url: string | null;
+  reimbursement_checked?: boolean;   // 체크리스트 행 존재 여부
+  reimbursement_status?: ReimbStatus;
 }
 
 interface RawMsdSummary {
@@ -38,14 +40,23 @@ interface RawMsdSummary {
     mfds_approved: number;
     pending_mfds: number;
     reimbursed_indications: number;
+    // 3분할 (급여 / 미급여 / 미확인) — HIRA 급여 체크리스트 행이 없는 적응증은 '미급여' 가 아니라 '미확인'
+    not_reimbursed_indications?: number;
+    unverified_reimbursement?: number;
     pending_reimbursement: number;
     items: RawKeytrudaIndication[];
   };
 }
 
+/** 급여 판정 3분할 — 체크리스트 행이 없는 적응증을 '비급여' 로 보이게 하지 않는다 */
+export type ReimbStatus = 'reimbursed' | 'not_reimbursed' | 'unverified';
+export type MsdIndicationType = '급여' | '비급여' | '미확인';
+
+const TYPE_ORDER: Record<MsdIndicationType, number> = { '급여': 0, '비급여': 1, '미확인': 2 };
+
 export interface MsdIndicationView {
   name: string;
-  type: '급여' | '비급여';
+  type: MsdIndicationType;
   date: string; // 급여개시일 또는 MFDS 허가일 (없으면 '')
 }
 
@@ -53,10 +64,16 @@ export interface MsdSummaryView {
   total: number;
   latestApplyDate: string | null;
   keytruda: {
-    reimbursed: number;
-    nonReimbursedApproved: number;
+    reimbursed: number;      // 급여 (is_reimbursed=1)
+    notReimbursed: number;   // 미급여 — 체크리스트가 0 이라고 확인한 것만
+    unverified: number;      // 미확인 — 체크리스트 행 없음
     indications: MsdIndicationView[];
   };
+}
+
+function indicationType(i: RawKeytrudaIndication): MsdIndicationType {
+  const st: ReimbStatus = i.reimbursement_status ?? (i.is_reimbursed ? 'reimbursed' : 'unverified');
+  return st === 'reimbursed' ? '급여' : st === 'not_reimbursed' ? '비급여' : '미확인';
 }
 
 export async function fetchMsdSummary(): Promise<MsdSummaryView> {
@@ -67,16 +84,17 @@ export async function fetchMsdSummary(): Promise<MsdSummaryView> {
   const indications: MsdIndicationView[] = domestic
     .map(i => ({
       name: i.title,
-      type: (i.is_reimbursed ? '급여' : '비급여') as '급여' | '비급여',
+      type: indicationType(i),
       date: i.reimbursement_effective_date || i.mfds_date || '',
     }))
-    .sort((a, b) => (a.type === b.type ? b.date.localeCompare(a.date) : a.type === '급여' ? -1 : 1));
+    .sort((a, b) => (a.type === b.type ? b.date.localeCompare(a.date) : TYPE_ORDER[a.type] - TYPE_ORDER[b.type]));
   return {
     total: raw.reimbursed_product_count ?? 0,
     latestApplyDate: raw.latest_apply_date,
     keytruda: {
       reimbursed: raw.keytruda?.reimbursed_indications ?? 0,
-      nonReimbursedApproved: items.filter(i => i.mfds_approved && !i.is_reimbursed).length,
+      notReimbursed: raw.keytruda?.not_reimbursed_indications ?? 0,
+      unverified: raw.keytruda?.unverified_reimbursement ?? 0,
       indications,
     },
   };
