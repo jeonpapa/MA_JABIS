@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import re
+import sqlite3
 from pathlib import Path
 
 from .deviations import _write_deviation
@@ -126,6 +127,98 @@ def check_db_records(records: list[dict], country: str) -> None:
                 "actual": rec.get("currency"),
                 "corrective_action": "통화코드 수정 필요",
             })
+
+
+def check_foreign_price_data(db_path: Path | str) -> list[dict]:
+    """저장된 해외약가(foreign_drug_prices) **데이터** 검사 — 매일 06:00 `review_codebase` 가 호출한다.
+
+    코드 패턴 grep(`_check_foreign_minimum_unit`) 은 간접 fallback 을 못 잡았다 — 2026-10 감사에서 FR Vidal
+    "25 mg"(per-mL 농도) 가 분모로 들어가 daily_cost 4× 였는데 QG 는 통과시켰다. 그래서 값 자체를 본다.
+
+    항목:
+      - injection_concentration_as_unit: priced injection 행의 unit_strength_mg 가 농도(N mg/ml 의 N)와 같거나
+        form-aware 재계산과 다르거나, per-vial mg 가 불명인데 daily_cost_krw 가 있다 → ERROR
+      - invalid_country_code / invalid_currency_code: 저장 행의 코드가 ISO 집합 밖 → ERROR (구 check_db_records 승계)
+
+    반환 항목은 record_quality_review 가 이해하는 drift 형태 {rule, file, severity} 에 check/country/row_id/detail 을
+    더한 것 (file 의 숫자는 내용 키에서 지워지므로 같은 (국가, 약제) 는 원장에 1건). DB 는 read-only 로 연다.
+    """
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return []
+    try:
+        conn = sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)
+    except sqlite3.Error as e:
+        logger.warning("[QualityGuard] 해외약가 데이터 검사 — DB 열기 실패: %s", e)
+        return []
+    try:
+        conn.row_factory = sqlite3.Row
+        if not conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='foreign_drug_prices'"
+        ).fetchone():
+            return []
+        rows = conn.execute(
+            "SELECT id, query_name, country, currency, product_name, dosage_strength, dosage_form, "
+            "package_unit, form_type, unit_strength_mg, total_pkg_mg, daily_cost_krw, dose_norm_factor "
+            "FROM foreign_drug_prices WHERE local_price IS NOT NULL ORDER BY id"
+        ).fetchall()
+    finally:
+        conn.close()
+    if not rows:
+        return []
+
+    from agents.foreign_price_agent import ForeignPriceAgent   # lazy — 스크레이퍼 import 비용
+
+    findings: list[dict] = []
+
+    def _add(check: str, rule: str, r, detail: str, severity: str = "ERROR") -> None:
+        f = {
+            "kind": "data", "check": check, "severity": severity, "rule": rule,
+            "file": f"foreign_drug_prices id={r['id']} — {r['country']} {r['query_name']}",
+            "country": r["country"], "row_id": r["id"], "detail": detail,
+        }
+        findings.append(f)
+        _write_deviation({
+            "severity": severity, "agent": "QualityGuard", "file": f["file"],
+            "deviation_type": check, "description": f"{rule} → {f['file']}: {detail}",
+            "corrective_action": "해당 행 재수집(스크레이퍼가 volume/포장문 포함) 또는 값 정정 — "
+                                 "foreign_agent_rules.md §최소단위",
+        })
+
+    for r in rows:
+        country = (r["country"] or "").upper()
+        currency = (r["currency"] or "").upper()
+        if country not in VALID_COUNTRIES:
+            _add("invalid_country_code", "scraper_rules.md — country 는 ISO 2자리 코드", r,
+                 f"country={r['country']!r}")
+        if currency not in VALID_CURRENCIES:
+            _add("invalid_currency_code", "scraper_rules.md — currency 는 ISO 3자리 코드", r,
+                 f"currency={r['currency']!r}")
+        if (r["form_type"] or "").lower() != "injection":
+            continue
+        ds, pu = r["dosage_strength"] or "", r["package_unit"] or ""
+        pn, df = r["product_name"] or "", r["dosage_form"] or ""
+        derived = ForeignPriceAgent._extract_per_unit_mg("injection", ds, pu, product_name=pn, dosage_form=df)
+        conc = None
+        for text in (ds, df, pn):
+            m = ForeignPriceAgent._MG_PER_ML.search(text.translate(ForeignPriceAgent._ZENKAKU))
+            if m:
+                conc = float(m.group(1))
+                break
+        stored = r["unit_strength_mg"]
+        reasons = []
+        if stored is not None and conc is not None and abs(float(stored) - conc) < 1e-6:
+            reasons.append(f"unit_strength_mg={stored} 가 농도 {conc} mg/mL 와 같다")
+        if stored is not None and derived is not None and abs(float(stored) - derived) > 0.01:
+            reasons.append(f"unit_strength_mg={stored} ≠ form-aware per-vial {derived}")
+        if derived is None and r["daily_cost_krw"] is not None:
+            reasons.append(f"per-vial mg 불명인데 daily_cost_krw={r['daily_cost_krw']} (total_pkg_mg={r['total_pkg_mg']})")
+        if reasons:
+            _add("injection_concentration_as_unit",
+                 "foreign_agent_rules.md §최소단위 — injection unit_mg 는 per-vial 총량 (per-mL 농도 분모 금지)", r,
+                 "; ".join(reasons) + f" [dosage_strength={ds!r} package_unit={pu!r} product_name={pn[:60]!r}"
+                 f" dose_norm_factor={r['dose_norm_factor']}]")
+    return findings
 
 
 def validate_keytruda(results: list[dict], country: str) -> bool:

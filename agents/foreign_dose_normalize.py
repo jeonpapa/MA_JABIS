@@ -294,6 +294,10 @@ def _strength_of(item: dict) -> float | None:
             return float(v)
         except (ValueError, TypeError):
             pass
+    if item.get("unit_strength_unresolved"):
+        # 에이전트(form-aware)가 per-vial 총량 복원 불가로 판정 — bare "25 mg" 를 regex 로 다시 뽑아 농도를
+        # 강도로 쓰면 보정계수가 틀어진다(FR Vidal #1504: factor 4.0). 강도 불명으로 둔다.
+        return None
     if route_of(item.get("form_type")) == "injection":
         return _vial_total_mg(item.get("dosage_strength"))
     return extract_strength_mg(item.get("dosage_strength"))

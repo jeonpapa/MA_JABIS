@@ -32,7 +32,10 @@ JP, IT, FR, CH, UK, DE, CA (US는 구독 확인 필요)
 **금지사항:**
 - injection 에서 `total_mg / unit_mg` ratio 로 pack_count 추론 금지 — 이 비율은 **농도×volume/농도 = volume** 이라 pack count 와 무관 (예: Keytruda 100mg/4ml 25mg/ml → ratio=4 인데 실제는 1 vial).
 - injection 에서 `_extract_mg()` (per-mL 농도) 를 unit_mg 로 사용 금지 — 분모가 per-mL 이면 daily_cost 가 4× 과대 또는 반대 방향으로 왜곡.
-- **반드시 `_extract_per_unit_mg(form_type, ...)`** 사용: injection 은 "N mg/M mL (M>1)" 또는 "농도 × volume" 으로 per-vial 총량 복원, 복원 불가면 None → daily_cost 계산 skip.
+- **반드시 `_extract_per_unit_mg(form_type, dosage_strength, package_unit, product_name=, dosage_form=)`** 사용: injection 은 "N mg/M mL (M>1)" 또는 "농도 × volume" 으로 per-vial 총량 복원, 복원 불가면 None → daily_cost 계산 skip (`daily_cost_note="unit_mg_unresolved"`, `unit_strength_unresolved=True`).
+  - **bare "N mg" 도 농도일 수 있다** (2026-10 감사, FR Vidal #1504): dosage_strength 가 "25 mg" 인데 product_name/dosage_form 에 "25 mg/ml" 이 있으면 25 는 per-mL. 문맥 어디든 "mg/ml" 표기가 있으면 volume 없이는 None — 예전 `return _extract_mg(s)` fallback 이 4× 왜곡(₩1,083,683 vs ₩270,921)을 만들었다. 농도 표기가 **어디에도 없는** bare "N mg" 만 총량(DE "240 mg", JP "100mg4mL1瓶").
+  - 복원 불가 행은 제형 보정(`foreign_dose_normalize._strength_of`)도 regex fallback 으로 농도를 강도로 쓰지 않는다 (저장된 factor 4.0 은 `get_cached_results` 가 표시 시 미적용). 저장 행 정정은 재수집으로.
+  - QG 데이터 검사 `quality_guard.checks.check_foreign_price_data` 가 매일 06:00 저장 행을 보고 unit_strength_mg 가 농도와 같거나 분모 불명인데 daily_cost 가 있으면 ERROR drift 로 원장에 올린다 (코드 grep 만으로는 간접 fallback 을 못 잡았다).
 
 **injection pack_count 파싱 허용 단서** (scraper 가 직접 못 넣을 때만):
 - `(N x M)`, `N x M`
@@ -186,10 +189,11 @@ scraper 가 pack 가격을 반환하면 pack_count 를 명시해야 per-unit 환
 daily_cost_krw = daily_dose_mg × (adjusted_price_krw / unit_mg)
 ```
 
-- `unit_mg` = `_extract_per_unit_mg(form_type, dosage_strength, package_unit)` — **form-aware**
+- `unit_mg` = `_extract_per_unit_mg(form_type, dosage_strength, package_unit, product_name=, dosage_form=)` — **form-aware**
   - oral: per-tablet mg (`_extract_mg(dosage_strength)` 와 동일, 예: 40)
-  - injection: per-vial **총** mg (예: "100 mg/4 mL" → 100, "25 mg/mL" + "4 mL" → 100)
-  - 농도만 있고 volume 없으면 per-vial 복원 불가 → `unit_mg=None` → daily_cost skip
+  - injection: per-vial **총** mg (예: "100 mg/4 mL" → 100, "25 mg" + "1 flacon(s) de 4 ml" → 100)
+  - 농도만 있고 volume 없으면 per-vial 복원 불가 → `unit_mg=None` → daily_cost skip + `daily_cost_note="unit_mg_unresolved"`
+  - `_populate_daily_cost` 는 **재계산**이다 — 캐시 행의 저장 daily_cost 를 먼저 비우고 계산한다 (skip 시 과거 값이 남지 않게)
 - `adjusted_price_krw` 는 **per-unit KRW** (정 1개 또는 바이알 1개 기준)
 - 분모가 per-mL 농도로 들어가면 daily_cost 가 4×~100× 왜곡됨 — **절대 금지**
 - **회귀 방지**: 과거에는 adj 가 per-pack 이어서 분모도 total_pkg_mg 였음. 이제 둘 다 per-unit 로
