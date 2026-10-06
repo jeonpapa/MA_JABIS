@@ -277,43 +277,45 @@ def quality_guard_review_job():
     return {"counts": counts}
 
 
+@guarded_job("foreign_price_backfill")     # 수동 전용(스케줄 미등록, MANUAL_JOB_RUNBOOK) — 실패는 원장에 남긴다
 def foreign_price_backfill_job():
-    """ForeignPrice backfill — 주 1회 (월요일 03:00 Seoul).
+    """ForeignPrice backfill — `--price-backfill-now` 수동 전용. **스케줄에 올리지 않는다**(build_job_specs 미등록).
 
-    indications_master 의 product slug 별로 ForeignPriceAgent.search_all 실행.
-    foreign_drug_prices 가 Welireg 외 비어있는 케이스 자동 채움.
-    pure-napping-goose plan Phase 6.
+    indications_master 의 product slug 별로 ForeignPriceAgent.search_all 실행(alias inn 우선). 2026-07-24 비활성화 사유
+    (append 누적·검색 히스토리 고정 노출)에 더해 identity 라우팅·IT 채널 문제가 풀리기 전까지 켜지 않는다(P1.6 감사 합의).
+    반환은 잡 규약 {counts, failed} — 제품 단위 예외는 failed 로(guarded_job 이 foreign_price_backfill:{날짜} 과제),
+    국가 단위 스크레이퍼 실패는 search_all 이 이미 foreign_search:{국가}:{분류} 로 남기므로 counts.country_errors 로만 센다.
     """
+    from agents.db import DrugPriceDB
     from agents.foreign_price_agent import ForeignPriceAgent
 
-    logger.info("━━━ ForeignPrice 주간 백필 시작 ━━━")
-    try:
-        # indications_master 의 unique product slug
-        from agents.db import DrugPriceDB
-        db = DrugPriceDB(BASE_DIR / "data" / "db" / "drug_prices.db")
-        with db._connect() as conn:
-            slugs = [r[0] for r in conn.execute(
-                "SELECT DISTINCT product FROM indications_master ORDER BY product"
-            ).fetchall()]
-        logger.info("ForeignPrice backfill: %d 약제 — %s", len(slugs), slugs)
+    logger.info("━━━ ForeignPrice 백필 시작 (수동) ━━━")
+    db = DrugPriceDB(BASE_DIR / "data" / "db" / "drug_prices.db")
+    with db._connect() as conn:
+        slugs = [r[0] for r in conn.execute(
+            "SELECT DISTINCT product FROM indications_master ORDER BY product"
+        ).fetchall()]
+    logger.info("ForeignPrice backfill: %d 약제 — %s", len(slugs), slugs)
 
-        agent = ForeignPriceAgent(BASE_DIR)
-        ok, fail = 0, 0
-        for slug in slugs:
-            # alias 우선 INN 검색 (예: keytruda → pembrolizumab)
-            alias = db.get_product_alias(slug) or {}
-            query = alias.get("inn") or slug
-            try:
-                results = asyncio.run(agent.search_all(query))
-                total = sum(len(v) if isinstance(v, list) else 0 for v in results.values())
-                logger.info("  ✓ %s (query=%s): %d 국가 응답", slug, query, total)
-                ok += 1
-            except Exception as e:
-                logger.warning("  ✗ %s (query=%s): %s", slug, query, e)
-                fail += 1
-        logger.info("ForeignPrice 백필 완료: ok=%d fail=%d", ok, fail)
-    except Exception as e:
-        logger.exception("ForeignPrice backfill 실패: %s", e)
+    agent = ForeignPriceAgent(BASE_DIR)
+    ok, failed, country_errors = 0, [], 0
+    for slug in slugs:
+        # alias 우선 INN 검색 (예: keytruda → pembrolizumab)
+        alias = db.get_product_alias(slug) or {}
+        query = alias.get("inn") or slug
+        try:
+            results = asyncio.run(agent.search_all(query))
+            total = sum(len(v) if isinstance(v, list) else 0 for v in results.values())
+            errs = getattr(results, "errors", None) or {}
+            country_errors += len(errs)
+            logger.info("  ✓ %s (query=%s): %d행, 국가 실패 %s", slug, query, total, sorted(errs) or "-")
+            ok += 1
+        except Exception as e:
+            logger.warning("  ✗ %s (query=%s): %s", slug, query, e)
+            failed.append({"slug": slug, "error": f"{type(e).__name__}: {e}"[:200]})
+    logger.info("ForeignPrice 백필 완료: ok=%d fail=%d 국가실패=%d", ok, len(failed), country_errors)
+    return {"counts": {"products": len(slugs), "ok": ok, "fail": len(failed), "country_errors": country_errors},
+            "failed": failed}
 
 
 @guarded_job("exchange_rate_refresh")

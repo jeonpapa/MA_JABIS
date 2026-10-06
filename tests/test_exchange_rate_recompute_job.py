@@ -82,7 +82,8 @@ def test_recompute_success_reports_counts(monkeypatch, ledger):
 
 def test_manual_job_runbook_is_separate_from_scheduled_map():
     """수동 전용 잡의 런북은 MANUAL_JOB_RUNBOOK — JOB_RUNBOOK 키 집합(== 등록 잡 id)을 건드리지 않는다."""
-    assert MANUAL_JOB_RUNBOOK == {"exchange_rate_recompute": "exchange_rate_recompute"}
+    assert MANUAL_JOB_RUNBOOK == {"exchange_rate_recompute": "exchange_rate_recompute",
+                                  "foreign_price_backfill": None}      # P1.6: guarded 수동 백필, 런북 없음(스케줄 금지)
     assert set(MANUAL_JOB_RUNBOOK).isdisjoint(JOB_RUNBOOK)
     assert {v for v in MANUAL_JOB_RUNBOOK.values() if v} <= set(runbooks.list_runbooks())
     assert job_runbook("exchange_rate_recompute") == "exchange_rate_recompute"

@@ -63,6 +63,7 @@ JOB_RUNBOOK: dict[str, str | None] = {
 # JOB_RUNBOOK → MANUAL_JOB_RUNBOOK 순으로 힌트를 찾는다(job_runbook()).
 MANUAL_JOB_RUNBOOK: dict[str, str | None] = {
     "exchange_rate_recompute": "exchange_rate_recompute",   # 런북이 부르는 FX 재계산 — 실패가 과제가 될 때 같은 런북으로 재시도
+    "foreign_price_backfill": None,    # `--price-backfill-now` 수동 전용. identity 라우팅·IT 채널 문제 해결 전까지 스케줄 금지 — 사람 확인
 }
 
 
