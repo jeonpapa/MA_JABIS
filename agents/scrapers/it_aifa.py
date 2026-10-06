@@ -39,7 +39,9 @@ AIFA 분류 체계:
 import csv
 import io
 import logging
+import os
 import re
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -74,6 +76,10 @@ class ItAifaScraper(BaseScraper):
     SOURCE_TYPE   = "aifa_exfactory"
     SOURCE_LABEL  = "AIFA Lista Classe H (Prezzo Ex-factory)"
     REQUIRES_LOGIN = False
+    # 캐시 CSV 유효기간(일). AIFA 의 Liste farmaci A/H 는 월 단위로 재공시된다(파일명 30-09-2025, Class A 헤더의
+    # "lista di trasparenza 15/9/2025") — 30일이면 한 공시 주기 이상 뒤처지지 않고, 신선도 판정(foreign_price_age, 45일)
+    # 보다 먼저 갱신을 시도한다. 2026-10 감사: TTL 없이 같은 파일이 12개월째 39회 로드됐다("현 시점의 가격" 원칙 위반).
+    CSV_CACHE_TTL_DAYS = 30
 
     def __init__(
         self,
@@ -86,6 +92,7 @@ class ItAifaScraper(BaseScraper):
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.msd_only = msd_only
         self._rows_cache: list[dict] = None   # 전체 CSV 행 캐시
+        self._csv_urls_cache: dict[str, str] = None   # 검색 1회당 AIFA 페이지 조회 1번
 
     # ────────────────────────────────────────────────────────────────────────
     # 1) 페이지에서 최신 Class H by trade name CSV URL 탐색
@@ -163,13 +170,32 @@ class ItAifaScraper(BaseScraper):
         logger.info("[IT] 저장: %s (%d bytes)", save_path.name, save_path.stat().st_size)
         return save_path
 
+    _FNAME_DATE = re.compile(r"(\d{2})-(\d{2})-(\d{4})")
+
+    @classmethod
+    def _published_on(cls, path: Path) -> tuple:
+        """파일명의 공시일 DD-MM-YYYY → (YYYY, MM, DD). 사전순 정렬은 30-09-2025 > 15-10-2025 로 틀린다."""
+        m = cls._FNAME_DATE.search(path.name)
+        return (int(m.group(3)), int(m.group(2)), int(m.group(1))) if m else (0, 0, 0)
+
     def _load_latest_cache(self, cls: str) -> Optional[Path]:
-        """캐시 디렉터리에서 지정 Class(A|H)의 가장 최신 CSV 파일 반환."""
+        """캐시 디렉터리에서 지정 Class(A|H)의 가장 최신 CSV 파일 반환 — 공시일(파일명) 순, 같으면 다운로드 시각 순."""
         files = sorted(
             self.cache_dir.glob(f"Classe_{cls}_per_nome_commerciale*.csv"),
-            reverse=True,
+            key=lambda p: (self._published_on(p), p.stat().st_mtime),
         )
-        return files[0] if files else None
+        return files[-1] if files else None
+
+    @staticmethod
+    def _cache_age_days(path: Path) -> float:
+        """마지막 다운로드(또는 같은 공시 확인 touch) 이후 경과일."""
+        return max(0.0, (time.time() - path.stat().st_mtime) / 86400.0)
+
+    def _csv_urls(self) -> dict[str, str]:
+        """검색 1회당 AIFA 페이지 조회는 한 번 — Class A/H 가 같은 페이지에 있다."""
+        if self._csv_urls_cache is None:
+            self._csv_urls_cache = self._find_csv_urls_requests()
+        return self._csv_urls_cache
 
     # ────────────────────────────────────────────────────────────────────────
     # 3) CSV 파싱
@@ -325,18 +351,46 @@ class ItAifaScraper(BaseScraper):
     # ────────────────────────────────────────────────────────────────────────
 
     def _ensure_class_rows(self, cls: str, page: Optional[Page] = None) -> list[dict]:
-        """Class A 또는 H CSV 를 로드 (캐시 우선, 없으면 다운로드)."""
+        """Class A 또는 H CSV 를 로드 — 캐시가 TTL 안이면 그대로, 지났으면 AIFA 페이지에서 최신 공시를 확인한다.
+
+        갱신 규칙:
+          - 페이지의 파일명이 캐시와 같으면 (같은 공시) touch 만 — 재다운로드 없이 TTL 을 다시 센다.
+          - 파일명이 다르면 (새 공시) 다운로드해 그 파일을 쓴다.
+          - 갱신(페이지 조회·다운로드)이 실패하면 구 파일로 계속 가되 **warnings 에 stale_cache 를 남긴다** — 조용히
+            넘어가면 "12개월째 같은 파일" 이 다시 생긴다. 캐시가 아예 없으면 예외를 올린다(빈 결과가 아니라 수집 실패).
+        """
         cached = self._load_latest_cache(cls)
         if cached:
-            logger.info("[IT] 캐시 로드 (Class %s): %s", cls, cached.name)
+            age = self._cache_age_days(cached)
+            if age <= self.CSV_CACHE_TTL_DAYS:
+                logger.info("[IT] 캐시 로드 (Class %s, %.0f일): %s", cls, age, cached.name)
+                return self._parse_csv(cached, cls)
+            logger.info("[IT] 캐시 만료 (Class %s, %.0f일 > TTL %d일) — AIFA 최신 공시 확인: %s",
+                        cls, age, self.CSV_CACHE_TTL_DAYS, cached.name)
+        else:
+            logger.info("[IT] 캐시 없음 (Class %s) — CSV 다운로드", cls)
+
+        try:
+            urls = self._csv_urls()
+            url = urls.get(cls)
+            if not url:
+                raise RuntimeError(f"AIFA 페이지에 Class {cls} CSV 링크 없음")
+            fname = url.split("/")[-1].split("?")[0]
+            if cached and cached.name == fname:
+                os.utime(cached, None)            # 같은 공시 — 재다운로드 대신 TTL 재시작
+                logger.info("[IT] Class %s 공시 변동 없음 (%s) — 캐시 유지", cls, fname)
+                return self._parse_csv(cached, cls)
+            csv_path = self._download_csv(url)
+            return self._parse_csv(csv_path, cls)
+        except Exception as e:
+            if not cached:
+                raise
+            age = self._cache_age_days(cached)
+            msg = (f"AIFA Class {cls} CSV 갱신 실패({type(e).__name__}: {str(e)[:160]}) — "
+                   f"{age:.0f}일 된 {cached.name} 사용")
+            logger.warning("[IT] %s", msg)
+            self.warnings.append({"warning_class": "stale_cache", "channel": "aifa_csv", "message": msg})
             return self._parse_csv(cached, cls)
-        logger.info("[IT] 캐시 없음 (Class %s) — CSV 다운로드", cls)
-        urls = self._find_csv_urls_requests()
-        if cls not in urls:
-            logger.warning("[IT] Class %s URL 없음 — skip", cls)
-            return []
-        csv_path = self._download_csv(urls[cls])
-        return self._parse_csv(csv_path, cls)
 
     async def search(self, query: str, page: Page) -> list[dict]:
         """

@@ -78,6 +78,13 @@ form_type 주입은 **스크레이퍼 + 에이전트 이중 보장**으로 캐�
 - 결정문 선택: 가격결정문(tipiAtto `A_H` 또는 titolo 에 rimborsabilità/prezzo/classificazione/rinegoziazione) 중 datiFarmaco 가 검색어와 매칭되는 **최신** 1건.
 - **한계**: TNF 는 2025-01 이후 결정문만 보유 → 오래전 등재약(예: Januvia)은 최근 결정문이 없어 TNF 0건(기존 CSV 채널이 커버). 검증: welireg(belzutifan, CSV 미등재)=TNF만 1건 oral pack90, keytruda=CSV+TNF 공존.
 
+## IT AIFA CSV 캐시 TTL + 수집 경고 (2026-10-06, P1.6 수집 가능성)
+
+- **TTL 30일** (`ItAifaScraper.CSV_CACHE_TTL_DAYS`): AIFA Liste farmaci A/H 는 월 단위 재공시(파일명 `30-09-2025`, Class A 헤더 "lista di trasparenza 15/9/2025") — 한 공시 주기 이상 뒤처지지 않고 신선도 판정(`foreign_price_age` 45일)보다 먼저 갱신. 감사: TTL 없이 같은 파일이 12개월째 39회 로드됐다.
+- 만료 시 AIFA 페이지에서 최신 공시 확인(검색당 1회): **같은 파일명이면 touch** 만(재다운로드 없음), 새 파일명이면 다운로드. 캐시 파일 선택은 파일명 공시일(DD-MM-YYYY) 순 — 사전순은 `30-09` > `15-10` 으로 틀린다.
+- **갱신 실패 → 구 파일 사용은 숨기지 않는다**: `scraper.warnings` → `SearchResults.warnings[IT]` → 원장 `foreign_search:IT:stale_cache`(ops_incident, 재발은 같은 행) → `country_results[IT].warnings`(status 는 priced 유지) → 화면 배지 "경고: 캐시 만료(갱신 실패)". 캐시가 아예 없고 갱신도 실패하면 예외(수집 실패) — 빈 결과로 위장하지 않는다.
+- 경고 프로토콜은 공용(`BaseScraper.warnings`, `SCRAPE_WARNING_LABEL_KR`): `stale_cache` · `channel_failed`.
+
 ## 새 국가 추가 시 필수 작업
 1. `agents/scrapers/{cc}_{source}.py` 생성 (BaseScraper 상속)
 2. `foreign_price_agent.py` 에 import + `_build_scraper()` 케이스 추가

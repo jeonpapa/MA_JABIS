@@ -62,6 +62,10 @@ class BaseScraper(ABC):
         self.headless = headless
         self._browser: Browser = None
         self._context: BrowserContext = None
+        # 결과는 돌려줬지만 사람이 알아야 할 사실 — {"warning_class": str, "channel": str, "message": str}.
+        # 예: 캐시 갱신 실패로 구 파일을 썼다(stale_cache). 에이전트(search_one_country)가 읽어 SearchResults.warnings 와
+        # 원장(foreign_search:{국가}:{분류})으로 올린다. 조용히 로그에만 남기지 않는다(P1.6 수집 가능성).
+        self.warnings: list[dict] = []
 
     # ──────────────────────────────────────────────────────────────────────
     # 서브클래스에서 반드시 구현해야 하는 메서드

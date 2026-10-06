@@ -823,6 +823,16 @@ export interface CountryResult {
   /** 서버가 내려주는 한글 라벨 (예: '로그인 오류') — 프론트에 라벨 사본을 두지 않는다 */
   error_label?: string;
   error?: string;
+  /** 결과는 있으나 알아야 할 사실 — 예: stale_cache(IT AIFA CSV 갱신 실패로 구 파일 사용). status 는 그대로 priced. */
+  warnings?: CountryWarning[];
+}
+
+export interface CountryWarning {
+  warning_class: 'stale_cache' | 'channel_failed' | string;
+  /** 서버 라벨 (예: '캐시 만료(갱신 실패)') */
+  warning_label: string;
+  channel?: string | null;
+  message: string;
 }
 
 /** 라이브 검색 완료 결과. 폴링이 done 으로 끝나면 반환(구버전/동기 완료 시 null). */

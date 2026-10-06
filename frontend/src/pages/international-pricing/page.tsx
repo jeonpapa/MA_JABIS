@@ -206,7 +206,11 @@ export default function InternationalPricingPage() {
           // 스크레이퍼 실패(로그인·의존성·403·시간 초과) — 제도상 공백이 아니다. 서버 error_label 을 그대로 쓴다.
           badge = { kind: 'failed', label: `수집 실패(${pend.result.error_label || '오류'})`, reason: pend.result.error || pend.result.reason, at };
         } else if (pend.result?.has_price || cell?.price != null) {
-          badge = { kind: 'updated', at };
+          // 가격은 왔지만 서버 경고(구 캐시 사용·채널 일부 실패)가 있으면 배지에 같이 보인다 — "현 시점 가격" 이 아닐 수 있다
+          const warns = pend.result?.warnings ?? [];
+          badge = warns.length
+            ? { kind: 'updated', at, label: warns.map(w => w.warning_label).join(' · '), reason: warns.map(w => w.message).join(' / ') }
+            : { kind: 'updated', at };
         } else {
           const policy = pend.result?.policy || (!pend.result?.reason && !!pricing.data?.coverageNotes?.[pend.cc]?.policy);
           const reason = pend.result?.reason
@@ -654,8 +658,9 @@ export default function InternationalPricingPage() {
                               {researchingCountry !== country.key && researchResult[country.key] && (() => {
                                 const r = researchResult[country.key];
                                 if (r.kind === 'updated') return (
-                                  <p className="text-[11px] mt-2 flex items-center gap-1 text-emerald-600" title={`재검색 완료 ${r.at}`}>
-                                    <i className="ri-checkbox-circle-fill"></i> 방금 갱신 · {r.at}
+                                  <p className="text-[11px] mt-2 flex items-start gap-1 text-emerald-600" title={r.reason ? `${r.label} — ${r.reason}` : `재검색 완료 ${r.at}`}>
+                                    <i className="ri-checkbox-circle-fill mt-0.5 shrink-0"></i>
+                                    <span className="leading-snug">방금 갱신 · {r.at}{r.label && <><br /><span className="text-amber-600">경고: {r.label}</span></>}</span>
                                   </p>
                                 );
                                 if (r.kind === 'no_result') return (

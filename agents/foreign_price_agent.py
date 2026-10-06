@@ -50,6 +50,10 @@ SCRAPE_ERROR_LABEL_KR = {
     "login": "로그인 오류", "http_403": "접근 차단(403)", "dependency": "의존성 오류",
     "timeout": "시간 초과", "parse": "파싱 오류", "other": "오류",
 }
+# 결과는 있지만 사람이 알아야 할 사실(경고) — 실패(errors)와 분리해 status 는 priced 로 두고 warnings 로 내린다.
+#   stale_cache    : 캐시 갱신 실패로 구 파일을 썼다 (IT AIFA CSV TTL — "현 시점의 가격" 이 아닐 수 있다)
+#   channel_failed : 다채널 국가(IT CSV+TNF, FR BDPM+Vidal)에서 한 채널이 실패했다 (message 에 분류 포함)
+SCRAPE_WARNING_LABEL_KR = {"stale_cache": "캐시 만료(갱신 실패)", "channel_failed": "채널 일부 실패"}
 _LOGIN_HINTS = ("login", "로그인", "credential", "자격증명", "password", "license limit", "please login")
 _FORBIDDEN_HINTS = ("403", "forbidden", "cloudflare", "access denied", "차단")
 _PARSE_HINTS = ("parse", "파싱", "decode", "unexpected token", "expecting value")
@@ -75,11 +79,14 @@ def classify_scrape_error(exc: BaseException) -> str:
 class SearchResults(dict):
     """search_all 의 반환 — {country: [rows]} 그대로에 국가별 실패 분류를 .errors 로 얹는다(dict 호환).
 
-    errors[country] = {"error_class": str, "message": str}. 서버(_compute_country_results)가 읽어 status=scraper_error 로 내린다."""
+    errors[country] = {"error_class": str, "message": str}. 서버(_compute_country_results)가 읽어 status=scraper_error 로 내린다.
+    warnings[country] = [{"warning_class", "channel", "message"}, ...] — 결과는 있으나 알아야 할 사실(stale_cache 등).
+    서버는 status 를 바꾸지 않고 country_results[cc].warnings 로 내린다."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.errors: dict[str, dict] = {}
+        self.warnings: dict[str, list[dict]] = {}
 
 
 def _record_search_failure(query: str, country: str, error_class: str, exc: BaseException) -> None:
@@ -99,6 +106,26 @@ def _record_search_failure(query: str, country: str, error_class: str, exc: Base
             priority=2, actor="foreign_search", db_path=resolve_db_path())
     except Exception as signal_err:
         logger.warning("[%s] 수집 실패 신호 기록 실패: %s", country, signal_err)
+
+
+def _record_search_warning(query: str, country: str, warning: dict) -> None:
+    """국가별 수집 경고(결과는 있음) → 원장 ops_incident 1건/(국가, 분류) — 실패와 같은 키 체계(foreign_search:{국가}:{분류}).
+
+    stale_cache 가 매일 이어지면 같은 행이 recurred 로 쌓여 "구 파일로 버티는 중" 이 원장에서 보인다. 신호 경계 — 예외 삼킴."""
+    try:
+        from agents.agent_tasks.jobs import resolve_db_path
+        from agents.agent_tasks.signals import record_recurring, runbook_line
+        wcls = str(warning.get("warning_class") or "other")
+        label = SCRAPE_WARNING_LABEL_KR.get(wcls, wcls)
+        record_recurring(
+            kind="ops_incident", source="foreign_search", source_ref=f"{country}:{wcls}",
+            title=f"해외약가 수집 경고 — {country} ({label})",
+            detail=(f"검색어: {query}\n분류: {wcls}\n채널: {warning.get('channel') or '-'}\n내용: {str(warning.get('message') or '')[:300]}\n"
+                    f"{runbook_line(None)} — 결과는 구 캐시/남은 채널로 돌려줬다. 소스 접근(인증서·프록시)을 확인한 뒤 "
+                    f"해외약가 화면에서 그 국가를 재검색하면 갱신을 다시 시도한다"),
+            priority=3, actor="foreign_search", db_path=resolve_db_path())
+    except Exception as signal_err:
+        logger.warning("[%s] 수집 경고 신호 기록 실패: %s", country, signal_err)
 
 
 def a8_aggregate_eligibility(country: str, row: dict) -> tuple[bool, Optional[str]]:
@@ -206,6 +233,7 @@ class ForeignPriceAgent:
         search_term = ident.get("brand") or query
         canonical_name = ident.get("slug") or query
         fallback_inn = ident.get("inn")
+        channel_scrapers = [scraper]          # 경고 수집 대상 — 다채널 국가는 보조 채널 인스턴스도 넣는다
         try:
             raw_results = await scraper.run(search_term)
         except Exception as e:
@@ -234,6 +262,7 @@ class ForeignPriceAgent:
                 tnf = ItAifaTnfScraper(
                     cache_dir=self.foreign_data_dir / "it", msd_only=False,
                 )
+                channel_scrapers.append(tnf)
                 tnf_rows = await tnf.run(search_term)
                 if tnf_rows:
                     raw_results.extend(tnf_rows)
@@ -251,6 +280,7 @@ class ForeignPriceAgent:
                 vidal = FrVidalScraper(
                     cache_dir=self.foreign_data_dir / "fr", msd_only=False,
                 )
+                channel_scrapers.append(vidal)
                 vidal_rows = await vidal.run(search_term)
                 if vidal_rows:
                     raw_results.extend(vidal_rows)
@@ -258,6 +288,9 @@ class ForeignPriceAgent:
                                 len(vidal_rows), len(raw_results))
             except Exception as e:
                 logger.warning("[FR] Vidal 채널 실패(BDPM 결과 유지): %s", e)
+
+        # 스크레이퍼 경고(stale_cache 등)는 결과 유무와 무관하게 search_all 로 올린다 — 빈 결과여도 "왜" 가 남아야 한다.
+        self._note_country_warnings(country, [w for s in channel_scrapers for w in (getattr(s, "warnings", None) or [])])
 
         if not raw_results:
             logger.info("[%s] 검색 결과 없음", country)
@@ -326,6 +359,23 @@ class ForeignPriceAgent:
 
         logger.info("[%s] DB 저장 완료: %d건", country, len(saved))
         return saved
+
+    # ── 국가별 수집 경고 전달 (search_one_country → search_all) ───────────────────────────────────
+    # search_one_country 의 반환형(list)을 바꾸지 않으려고 인스턴스에 잠시 둔다. 테스트가 __new__ 로 만든 에이전트도 있어
+    # __init__ 에 의존하지 않는다.
+
+    def _note_country_warnings(self, country: str, warnings: list[dict]) -> None:
+        store = getattr(self, "_country_warnings", None)
+        if store is None:
+            store = self._country_warnings = {}
+        if warnings:
+            store[country] = list(warnings)
+        else:
+            store.pop(country, None)
+
+    def _pop_country_warnings(self, country: str) -> list[dict]:
+        store = getattr(self, "_country_warnings", None) or {}
+        return store.pop(country, []) or []
 
     def _resolve_pack_count(self, country: str, item: dict, dosing: dict) -> int:
         """pack_count 결정 — **form_type 우선 원칙**. 결정 근거를 `item["pack_count_source"]` 에 남긴다.
@@ -511,6 +561,13 @@ class ForeignPriceAgent:
                 results[country] = []
                 results.errors[country] = {"error_class": error_class, "message": f"{type(e).__name__}: {e}"[:300]}
                 _record_search_failure(query, country, error_class, e)
+            # 결과는 있으나 알아야 할 사실(구 캐시 사용·채널 일부 실패) — 실패와 같은 원장 키 체계로 남기고 화면에 내린다
+            warnings = self._pop_country_warnings(country)
+            if warnings:
+                results.warnings[country] = warnings
+                for w in warnings:
+                    logger.warning("[%s] 수집 경고(%s): %s", country, w.get("warning_class"), w.get("message"))
+                    _record_search_warning(query, country, w)
 
         # 데이터 손실 검증
         self._validate_data_integrity(query, results)
