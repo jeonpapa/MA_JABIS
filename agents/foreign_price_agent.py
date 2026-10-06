@@ -683,7 +683,7 @@ class ForeignPriceAgent:
 
         `_resolve_pack_count`(pack_count) 와 `_extract_total_pkg_mg`(pack 총 mg) 가 같이 쓴다.
         단서가 없으면 None — 추정하지 않는다 (호출측이 dosing fallback/default 로 처리하고 출처를 기록).
-        mg·ml 숫자(강도·농도·부피) 는 수량이 아니다: injection 에서 total_mg/unit_mg ratio 로 수량을
+        mg·ml 숫자(강도·농도·부피) 는 수량이 아니다: injection 에서 '총 mg ÷ 단위 mg' 비율로 수량을
         만들면 volume 이 나온다(절대 금지) — 여기엔 그런 경로가 없다.
 
         oral 단서: IT "*28 cpr"/"56 UNITA'", FR "de 30 comprimé(s)"/"28 plaquette(s) … de 1 comprimé",

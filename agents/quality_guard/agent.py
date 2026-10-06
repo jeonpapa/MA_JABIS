@@ -54,8 +54,13 @@ class QualityGuardAgent:
 
     def __init__(self):
         GUARD_DIR.mkdir(parents=True, exist_ok=True)
-        # 데이터 검사 대상 DB — 테스트/수동 실행은 임시 DB 로 바꿔 끼운다
+        # 데이터 검사·회귀·제안이 읽는 DB — 테스트/수동 실행은 임시 DB 로 바꿔 끼운다. QG 는 DB 를 읽기만 한다.
         self.db_path: Path = BASE_DIR / "data" / "db" / "drug_prices.db"
+
+    @staticmethod
+    def _connect_ro(db_path: Path) -> sqlite3.Connection:
+        """QG 의 모든 DB 접근은 read-only — 감시자가 데이터를 바꾸는 일은 없다."""
+        return sqlite3.connect(f"{Path(db_path).resolve().as_uri()}?mode=ro", uri=True)
 
     # ── 스크레이퍼 결과 검증 ───────────────────────────────────────────────
 
@@ -109,12 +114,12 @@ class QualityGuardAgent:
         kr_mfds_approval_agent_rules.md §9 의 8개 indication 은 peri/adj/neo
         분류 로직의 회귀 지시자. 한 건이라도 불일치 시 ERROR 로 기록한다.
         """
-        db_path = BASE_DIR / "data" / "db" / "drug_prices.db"
+        db_path = self.db_path
         if not db_path.exists():
             return []
 
         mismatches: list[dict] = []
-        with sqlite3.connect(db_path) as conn:
+        with self._connect_ro(db_path) as conn:
             for ind_id, expected in self.MFDS_OFFICIAL_BASELINE.items():
                 row = conn.execute(
                     "SELECT approval_date, date_source FROM indications_by_agency "
@@ -252,10 +257,10 @@ class QualityGuardAgent:
 
         # 4) DISEASE_KR 커버리지 점검
         try:
-            db_path = BASE_DIR / "data" / "db" / "drug_prices.db"
+            db_path = self.db_path
             if db_path.exists():
                 from agents.hta_scrapers.kr_mfds_indication_mapper import DISEASE_KR
-                with sqlite3.connect(db_path) as conn:
+                with self._connect_ro(db_path) as conn:
                     diseases = {
                         r[0] for r in conn.execute(
                             "SELECT DISTINCT disease FROM indications_master "
@@ -273,9 +278,9 @@ class QualityGuardAgent:
 
         # 5) drug_enrichment 커버리지 — 활성 약제 대비
         try:
-            db_path = BASE_DIR / "data" / "db" / "drug_prices.db"
+            db_path = self.db_path
             if db_path.exists():
-                with sqlite3.connect(db_path) as conn:
+                with self._connect_ro(db_path) as conn:
                     def _table_exists(name: str) -> bool:
                         r = conn.execute(
                             "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
@@ -326,9 +331,9 @@ class QualityGuardAgent:
 
         # 6c) MFDS 공공데이터 API 통합 헬스 점검 — permit/patent cache 비어있으면 회귀 신호
         try:
-            db_path = BASE_DIR / "data" / "db" / "drug_prices.db"
+            db_path = self.db_path
             if db_path.exists():
-                with sqlite3.connect(db_path) as conn:
+                with self._connect_ro(db_path) as conn:
                     permit_n = patent_n = None
                     for tbl, key in [("mfds_permit_cache", "permit"), ("mfds_patent_cache", "patent")]:
                         r = conn.execute(

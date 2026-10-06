@@ -216,9 +216,12 @@ def summarize_unverified_pack_rows(db_path: Path | str) -> list[str]:
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='foreign_drug_prices'"
         ).fetchone():
             return []
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(foreign_drug_prices)")}
+        # 운영 DB 가 아직 pack_count_source 마이그레이션 전이면 컬럼 없이 읽는다(레거시 = NULL 과 같은 의미)
+        src_col = "pack_count_source" if "pack_count_source" in cols else "NULL AS pack_count_source"
         rows = [dict(r) for r in conn.execute(
             "SELECT id, query_name, country, product_name, dosage_strength, dosage_form, package_unit, form_type, "
-            "pack_count, pack_count_source FROM foreign_drug_prices WHERE local_price IS NOT NULL"
+            f"pack_count, {src_col} FROM foreign_drug_prices WHERE local_price IS NOT NULL"
         ).fetchall()]
         dosing = {r["ingredient_key"]: dict(r) for r in conn.execute(
             "SELECT ingredient_key, default_pack_count FROM foreign_drug_dosing"
