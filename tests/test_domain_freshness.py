@@ -110,7 +110,14 @@ def test_committee_results_flags_past_scheduled_sessions(tmp_path):
         INSERT INTO amjilsim_sessions VALUES (1,'YAKPYUNGWI','SCHEDULED','2026-07-02'), (2,'YAKPYUNGWI','SCHEDULED','2026-10-15');
     """)
     r = fr.check_committee_results(_ctx(tmp_path))
-    assert r.stale is True and r.observed == "2026-07-02" and r.runbook == "reimb_data_sync"
+    # P1.6: 잡 실패 신호가 없으면 소스 JSON 이 안 바뀐 것 — 런북(reimb_data_sync)은 '변경 없음 skip' 이라 무효 → None
+    assert r.stale is True and r.observed == "2026-07-02" and r.runbook is None and "헤르메스/사람" in r.evidence
+    from datetime import datetime, timezone
+    from agents.agent_tasks.jobs import record_job_run
+    record_job_run("reimb_data_sync", datetime.now(timezone.utc), {"ok": False, "counts": {}, "errors": ["원격 fetch 실패"]},
+                   db_path=tmp_path / "d.db")                    # ledger_path 없음 → 데이터 DB 와 같은 파일(프로덕션 배치)
+    r2 = fr.check_committee_results(_ctx(tmp_path))
+    assert r2.stale is True and r2.runbook == "reimb_data_sync"
 
 
 def test_market_share_expected_quarter():

@@ -1297,7 +1297,7 @@ def main():
         from agents.agent_tasks.freshness import Ctx, format_table, run_all, today_kst
         data_db = args.freshness_now or resolve_db_path()
         logger.info("도메인 신선도 즉시 판정 (데이터 DB=%s, 원장=%s)", data_db, resolve_db_path())
-        print(format_table(run_all(Ctx(db_path=data_db, base_dir=BASE_DIR, today=today_kst()))))
+        print(format_table(run_all(Ctx(db_path=data_db, base_dir=BASE_DIR, today=today_kst(), ledger_path=resolve_db_path()))))
         res = domain_freshness_job(data_db_path=args.freshness_now or None)
         logger.info("신선도 판정 결과: %s", res)
         return

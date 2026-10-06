@@ -96,6 +96,7 @@ class Ctx:
     base_dir: Path
     today: date
     policy_root: Path | None = None   # None 이면 agents.policy_analysis.default_root()
+    ledger_path: Path | str | None = None   # 원장(scheduler_job_run — 잡 자체의 실패 신호). None 이면 db_path 와 같은 파일
 
 
 def today_kst() -> date:
@@ -126,6 +127,25 @@ def _rows(ctx: Ctx, sql: str, params: tuple = ()) -> list[tuple]:
 
 def _days_ago(ctx: Ctx, days: int) -> str:
     return (ctx.today - timedelta(days=days)).isoformat()
+
+
+def latest_job_run(ctx: Ctx, job_id: str) -> dict | None:
+    """원장의 scheduler_job_run 에서 잡의 최근 실행 1건 {ok, errors, finished_at}. 테이블·기록이 없으면 None(실패 신호 없음)."""
+    conn = _open(ctx.ledger_path if ctx.ledger_path else ctx.db_path)
+    try:
+        row = conn.execute("SELECT ok, errors, finished_at FROM scheduler_job_run WHERE job_id=? ORDER BY id DESC LIMIT 1",
+                           (job_id,)).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    finally:
+        conn.close()
+    if not row:
+        return None
+    try:
+        errors = json.loads(row[1] or "[]")
+    except Exception:
+        errors = [str(row[1])]
+    return {"ok": bool(row[0]), "errors": [str(e) for e in errors], "finished_at": row[2]}
 
 
 def _max_ts(ctx: Ctx, domain: str, sql: str, max_days: int, runbook: str | None, what: str, priority: int = 2) -> Freshness:
@@ -337,13 +357,65 @@ def check_committee_schedule(ctx: Ctx) -> Freshness:
                      "HIRA 일정 fetcher 는 placeholder(미구현) → 사람이 amjilsim_sessions 에 차수 입력", None)
 
 
+COMMITTEE_KR = {"AMJILSIM": "암질심", "YAKPYUNGWI": "약평위"}
+COMMITTEE_RESULTS_JSON = Path("agents") / "ingest" / "committee_results.json"   # 회차 결과의 소스(헤르메스/사람이 git 에 커밋)
+
+
+def committee_source_state(ctx: Ctx) -> dict:
+    """소스 JSON 의 상태 — 마지막 반영 회차(session_status_updates 의 COMPLETED 와 missing_sessions 의 최대 session_date;
+    missing_sessions 는 importer 가 COMPLETED 로 INSERT 한다), 파일 갱신일(mtime — 체크아웃/빌드 시각일 수 있어 보조 지표)."""
+    p = ctx.base_dir / COMMITTEE_RESULTS_JSON
+    out: dict = {"exists": p.exists(), "mtime": None, "last_completed": None}
+    if not p.exists():
+        return out
+    out["mtime"] = datetime.fromtimestamp(p.stat().st_mtime).date().isoformat()
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return out
+    dates = [str(u[0]) for u in (data.get("session_status_updates") or []) if len(u) >= 2 and u[1] == "COMPLETED"]
+    dates += [str(m[3]) for m in (data.get("missing_sessions") or []) if len(m) >= 4]
+    out["last_completed"] = max(dates) if dates else None
+    return out
+
+
+def _session_listing(rows: list[tuple]) -> str:
+    return ", ".join(f"#{sid}={d}({COMMITTEE_KR.get(c, c)})" for sid, d, c in rows) or "-"
+
+
 def check_committee_results(ctx: Ctx) -> Freshness:
+    """지난 세션이 SCHEDULED 로 남아 있다 = 회차 결과 미반영. 원인은 둘이고 조치가 다르다(P1.6):
+      ① reimb_data_sync 잡 자체가 실패(원격 fetch 실패→폴백 등) — 원장 scheduler_job_run 의 최근 실행이 ok=0 → 런북 유지.
+      ② 잡은 정상인데 소스 JSON(agents/ingest/committee_results.json)이 안 바뀜 — 02:00 잡은 '변경 없음 skip' 이라 런북은
+         무효(디스패처가 3회 '접수' 뒤 blocked, 사람은 'sync 실패' 로 오독). 런북 None + 누가 무엇을 써야 하는지 evidence 에.
+    누락된 것은 **회차 결과**(session_status_updates/drugs)이지 D+1 보고서(reports_manifest.json → reimb_reports)가 아니다 —
+    보고서 누락은 committee_reports 도메인이 본다."""
     cutoff = _days_ago(ctx, RESULTS_LAG_DAYS)
-    n = _scalar(ctx, "SELECT COUNT(*) FROM amjilsim_sessions WHERE status='SCHEDULED' AND session_date < ?", (cutoff,))
-    oldest = _scalar(ctx, "SELECT MIN(session_date) FROM amjilsim_sessions WHERE status='SCHEDULED' AND session_date < ?", (cutoff,))
-    return Freshness("committee_results", int(n or 0) > 0, oldest, cutoff,
-                     f"{RESULTS_LAG_DAYS}일 넘게 지난 세션이 SCHEDULED 로 남음 {n}건(최초 {oldest}) — 위원회 결과(committee_results.json) 미반영",
-                     "reimb_data_sync")
+    overdue = _rows(ctx, "SELECT session_id, session_date, committee_type FROM amjilsim_sessions "
+                         "WHERE status='SCHEDULED' AND session_date < ? ORDER BY session_date", (cutoff,))
+    grace = _rows(ctx, "SELECT session_id, session_date, committee_type FROM amjilsim_sessions "
+                       "WHERE status='SCHEDULED' AND session_date >= ? AND session_date < ? ORDER BY session_date",
+                  (cutoff, ctx.today.isoformat()))
+    oldest = overdue[0][1] if overdue else None
+    head = (f"{RESULTS_LAG_DAYS}일 넘게 지난 세션이 SCHEDULED 로 남음 {len(overdue)}건(최초 {oldest}): {_session_listing(overdue)}; "
+            f"유예 중({RESULTS_LAG_DAYS}일 이내, 아직 과제 아님) {len(grace)}건: {_session_listing(grace)}")
+    if not overdue:
+        return Freshness("committee_results", False, oldest, cutoff, head, None)
+    run = latest_job_run(ctx, "reimb_data_sync")
+    if run is not None and not run["ok"]:
+        first = (run["errors"] or ["?"])[0][:160]
+        cause = (f"원인 ①: reimb_data_sync 잡 실패 중(최근 실행 {str(run['finished_at'])[:16]}: {first}) — 소스가 반영되지 못함. "
+                 "런북 재실행이 답이다")
+        runbook: str | None = "reimb_data_sync"
+    else:
+        src = committee_source_state(ctx)
+        signal = "최근 실행 ok" if run is not None else "원장에 실행 기록 없음 = 실패 신호 없음"
+        cause = (f"원인 ②: reimb_data_sync 는 정상({signal}, 변경 없음 skip)이라 런북은 무효 — "
+                 f"헤르메스/사람이 committee_results.json 에 회차 결과 미작성 — 마지막 반영 회차 {src['last_completed']}, "
+                 f"소스 갱신일 {src['mtime'] or '파일 없음'}(mtime). 누락된 것은 회차 결과(session_status_updates/drugs)이지 "
+                 "D+1 보고서(reports_manifest.json)가 아니다 — 보고서 누락은 committee_reports 도메인이 본다")
+        runbook = None
+    return Freshness("committee_results", True, oldest, cutoff, f"{head}. {cause}", runbook)
 
 
 # ── 7b 파이프라인 경과 예상일 (P1.6) ───────────────────────────────────────
@@ -353,7 +425,6 @@ def check_committee_results(ctx: Ctx) -> Freshness:
 # reimb_data_sync 는 같은 JSON 을 다시 적용할 뿐(해시 동일 → '변경 없음 skip')이라 무효 → 런북 None, 사람/헤르메스가 JSON 을 고친다.
 
 NEGOTIATION_CONCLUDED = ("AGREED", "REJECTED")      # amjilsim_drugs.negotiation_status 종결값 (reimb_pipeline._negotiation_phase_status)
-COMMITTEE_KR = {"AMJILSIM": "암질심", "YAKPYUNGWI": "약평위"}
 
 
 def check_pipeline_expected_sessions(ctx: Ctx) -> Freshness:
@@ -555,7 +626,8 @@ def run_and_record(*, db_path: str | Path | None = None, data_db_path: str | Pat
     counts.tasks 는 stale 과제 id 수(기존 포함), counts.tasks_new 는 이번 실행이 새로 만든 수 — 두 번째 실행은 0 이어야 한다.
     """
     ledger = Path(db_path) if db_path else resolve_db_path()
-    ctx = Ctx(db_path=data_db_path if data_db_path else ledger, base_dir=Path(base_dir), today=today or today_kst())
+    ctx = Ctx(db_path=data_db_path if data_db_path else ledger, base_dir=Path(base_dir), today=today or today_kst(),
+              ledger_path=ledger)
     results = run_all(ctx)
     write_domain_freshness(results, db_path=ledger)
     before = _count_freshness_tasks(ledger)

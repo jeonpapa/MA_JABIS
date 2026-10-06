@@ -127,3 +127,79 @@ def test_pipeline_expected_sessions_fresh_within_grace_or_when_nothing_points_ba
     _seed(tmp_path / "d.db", "UPDATE amjilsim_drugs SET expected_session_id = 20;")
     r = fr.check_pipeline_expected_sessions(_ctx(tmp_path))
     assert r.stale is False and "0건" in r.evidence
+
+
+# ── 2. 위원회 결과 — '원격 fetch 실패' 와 '소스 JSON 이 안 바뀜' 을 가른다 ─────────
+
+_SESSIONS_SQL = """
+    CREATE TABLE amjilsim_sessions (session_id INTEGER, committee_type TEXT, status TEXT, session_date TEXT);
+    INSERT INTO amjilsim_sessions VALUES (15,'YAKPYUNGWI','COMPLETED','2026-06-04'),
+        (16,'YAKPYUNGWI','SCHEDULED','2026-07-02'), (5,'AMJILSIM','SCHEDULED','2026-07-08'),
+        (7,'AMJILSIM','SCHEDULED','2026-09-30'), (19,'YAKPYUNGWI','SCHEDULED','2026-10-01'),
+        (20,'YAKPYUNGWI','SCHEDULED','2026-11-05');
+"""
+
+
+def _write_source_json(base: Path, updates: list, missing: list | None = None) -> Path:
+    import json
+    p = base / "agents" / "ingest" / "committee_results.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps({"schema_version": 1, "missing_sessions": missing or [], "session_status_updates": updates,
+                             "expected_next_session": {}, "key_issues": {}, "drugs": []}, ensure_ascii=False), encoding="utf-8")
+    return p
+
+
+def _record_sync_run(ledger: Path, ok: bool, errors: list[str]) -> None:
+    from datetime import datetime, timezone
+    from agents.agent_tasks.jobs import record_job_run
+    record_job_run("reimb_data_sync", datetime.now(timezone.utc), {"ok": ok, "counts": {}, "errors": errors}, db_path=ledger)
+
+
+def test_committee_results_source_not_advanced_names_hermes_and_drops_runbook(tmp_path):
+    """sync 는 정상('변경 없음 skip')인데 세션이 SCHEDULED 로 남음 → 런북은 무효. 누가(헤르메스/사람) 어느 파일(회차 결과)을
+    써야 하는지, 소스의 마지막 반영 회차·갱신일, 영향 세션 id/날짜가 evidence 에 있다."""
+    _seed(tmp_path / "d.db", _SESSIONS_SQL)
+    _write_source_json(tmp_path, [["2026-06-04", "COMPLETED", "6차 약평위"]], missing=[[2025, 9, 9, "2025-12-10", "AMJILSIM", "9차"]])
+    ledger = tmp_path / "ledger.db"
+    _record_sync_run(ledger, True, [])
+    r = fr.check_committee_results(_ctx(tmp_path, ledger_path=ledger))
+    assert r.stale is True and r.kind == "ops_incident" and r.runbook is None
+    assert r.observed == "2026-07-02" and r.deadline == "2026-09-22" and "2건" in r.evidence
+    assert "헤르메스/사람이 committee_results.json 에 회차 결과 미작성" in r.evidence
+    assert "마지막 반영 회차 2026-06-04" in r.evidence and "갱신일" in r.evidence
+    assert "#16=2026-07-02(약평위)" in r.evidence and "#5=2026-07-08(암질심)" in r.evidence
+    assert "유예" in r.evidence and "#7=2026-09-30" in r.evidence and "#19=2026-10-01" in r.evidence   # 14일 이내 — 아직 과제 아님
+    assert "D+1 보고서" in r.evidence and "committee_reports" in r.evidence                           # 보고서 ≠ 회차 결과
+    assert "reimb_data_sync 는 정상" in r.evidence
+
+
+def test_committee_results_keeps_runbook_when_sync_job_itself_failed(tmp_path):
+    _seed(tmp_path / "d.db", _SESSIONS_SQL)
+    _write_source_json(tmp_path, [["2026-06-04", "COMPLETED", "6차 약평위"]])
+    ledger = tmp_path / "ledger.db"
+    _record_sync_run(ledger, False, ["위원회 데이터 원격 fetch 실패 → 로컬 이미지 폴백 적용 (데이터는 적용됨): URLError: timed out"])
+    r = fr.check_committee_results(_ctx(tmp_path, ledger_path=ledger))
+    assert r.stale is True and r.runbook == "reimb_data_sync"
+    assert "reimb_data_sync 잡 실패" in r.evidence and "원격 fetch 실패" in r.evidence
+    assert "헤르메스/사람이 committee_results.json 에 회차 결과 미작성" not in r.evidence
+
+
+def test_committee_results_without_ledger_or_source_file_is_still_determinable(tmp_path):
+    """원장 기록(scheduler_job_run)도 소스 파일도 없으면 '실패 신호 없음' = 소스가 안 바뀐 쪽으로 — 판정 불가가 아니다."""
+    _seed(tmp_path / "d.db", _SESSIONS_SQL)
+    r = fr.check_committee_results(_ctx(tmp_path))
+    assert r.stale is True and r.determinable and r.runbook is None
+    assert "마지막 반영 회차 None" in r.evidence and "파일 없음" in r.evidence
+
+
+def test_committee_results_fresh_while_sessions_are_within_grace(tmp_path):
+    _seed(tmp_path / "d.db", _SESSIONS_SQL)
+    r = fr.check_committee_results(_ctx(tmp_path, today=date(2026, 7, 10)))
+    assert r.stale is False and "0건" in r.evidence and "유예" in r.evidence and "#16=2026-07-02" in r.evidence
+
+
+def test_run_and_record_passes_ledger_to_ctx(tmp_path, monkeypatch):
+    seen: list[fr.Ctx] = []
+    monkeypatch.setattr(fr, "run_all", lambda ctx: seen.append(ctx) or [])
+    fr.run_and_record(db_path=tmp_path / "ledger.db", data_db_path=tmp_path / "d.db", base_dir=tmp_path, today=TODAY)
+    assert seen and seen[0].ledger_path == tmp_path / "ledger.db" and seen[0].db_path == tmp_path / "d.db"
