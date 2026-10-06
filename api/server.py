@@ -1758,13 +1758,16 @@ def _compute_coverage_notes(query: str, countries: list, results) -> dict:
 def _compute_country_results(query: str, countries: list, results) -> dict:
     """국가별 명시적 검색 결과 — 프론트가 성공/무결과/실패를 구분하게 한다.
 
-    각 국가: {has_price: bool, count: int, priced_count: int, reason?: str}
-    reason 은 가격 미발견 시 사용자용 한 줄 설명(정책 메타 있으면 그것, 없으면 generic).
+    각 국가: {status: priced|no_result|scraper_error, has_price, count, priced_count, reason?, policy?, error_class?, error_label?, error?}
+    - no_result: reason 은 정책 메타(policy=True — 제도상 비공개/미등재) 또는 generic(policy=False).
+    - scraper_error: search_all 의 .errors(P1.6) — 정책 문구를 쓰지 않는다. 로그인이 깨진 것은 제도상 공백이 아니다.
     """
-    from agents.scrapers.country_coverage import describe_empty_result
+    from agents.foreign_price_agent import SCRAPE_ERROR_LABEL_KR
+    from agents.scrapers.country_coverage import describe_empty_result, lookup_policy
     slug = (query or "").strip().lower()
     out: dict = {}
     rows_by_cc = results if isinstance(results, dict) else {}
+    errors = getattr(results, "errors", None) or {}
     for cc in countries:
         rows = rows_by_cc.get(cc, []) or []
         priced = [r for r in rows
@@ -1774,8 +1777,17 @@ def _compute_country_results(query: str, countries: list, results) -> dict:
             "count": len(rows),
             "priced_count": len(priced),
         }
-        if not priced:
-            entry["reason"] = describe_empty_result(cc, slug)
+        if priced:
+            entry["status"] = "priced"
+        elif cc in errors:
+            err = errors[cc] or {}
+            cls = str(err.get("error_class") or "other")
+            label = SCRAPE_ERROR_LABEL_KR.get(cls, cls)
+            entry.update(status="scraper_error", error_class=cls, error_label=label, error=str(err.get("message") or "")[:300],
+                         reason=f"수집 실패({label}): {str(err.get('message') or '')[:200]}")
+        else:
+            entry.update(status="no_result", policy=lookup_policy(cc, slug) is not None,
+                         reason=describe_empty_result(cc, slug))
         out[cc] = entry
     return out
 

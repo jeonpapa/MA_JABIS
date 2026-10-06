@@ -177,10 +177,10 @@ export default function InternationalPricingPage() {
   // finally 에서 바로 해제하면 리로드 도중(옛 데이터) 카드가 깜빡여 '새로고침'처럼 보임 →
   // pricing.loading 이 true→false 로 떨어지는 순간(신규 데이터 도착) 검색중 해제 + 결과배지 확정.
   const [researchElapsed, setResearchElapsed] = useState(0);
-  // 국가별 마지막 재검색 결과(다음 행동까지 지속): updated=가격확인, no_result=무결과(사유), failed=실패
-  const [researchResult, setResearchResult] = useState<
-    Record<string, { kind: 'updated' | 'no_result' | 'failed'; reason?: string; at: string }>
-  >({});
+  // 국가별 마지막 재검색 결과(다음 행동까지 지속): updated=가격확인, no_result=무결과(사유), failed=실패.
+  // label 은 첫 줄 제목 — 스크레이퍼 실패는 '수집 실패(로그인 오류)' 처럼, 정책 무결과는 '제도상 비공개/미등재' 로 구분한다.
+  type ResearchBadge = { kind: 'updated' | 'no_result' | 'failed'; reason?: string; label?: string; at: string };
+  const [researchResult, setResearchResult] = useState<Record<string, ResearchBadge>>({});
   const awaitingReloadRef = useRef(false);
   const prevPricingLoadingRef = useRef(pricing.loading);
   // 검색 종료 시점에 확정할 결과(리로드 후 신규 데이터로 최종 판정)
@@ -199,16 +199,20 @@ export default function InternationalPricingPage() {
         const now = new Date();
         const at = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
         const cell = pricing.data?.a8Pricing?.[pend.cc];
-        let badge: { kind: 'updated' | 'no_result' | 'failed'; reason?: string; at: string };
+        let badge: ResearchBadge;
         if (pend.failed) {
           badge = { kind: 'failed', reason: pend.failed, at };
+        } else if (pend.result?.status === 'scraper_error') {
+          // 스크레이퍼 실패(로그인·의존성·403·시간 초과) — 제도상 공백이 아니다. 서버 error_label 을 그대로 쓴다.
+          badge = { kind: 'failed', label: `수집 실패(${pend.result.error_label || '오류'})`, reason: pend.result.error || pend.result.reason, at };
         } else if (pend.result?.has_price || cell?.price != null) {
           badge = { kind: 'updated', at };
         } else {
+          const policy = pend.result?.policy || (!pend.result?.reason && !!pricing.data?.coverageNotes?.[pend.cc]?.policy);
           const reason = pend.result?.reason
             || pricing.data?.coverageNotes?.[pend.cc]?.policy
             || '공개 소스에서 가격을 찾지 못함';
-          badge = { kind: 'no_result', reason, at };
+          badge = { kind: 'no_result', label: policy ? '제도상 비공개/미등재' : '결과 없음', reason, at };
         }
         setResearchResult(prev => ({ ...prev, [pend.cc]: badge }));
       }
@@ -657,7 +661,7 @@ export default function InternationalPricingPage() {
                                 if (r.kind === 'no_result') return (
                                   <p className={`text-[11px] mt-2 flex items-start gap-1 ${textMuted}`} title={r.reason}>
                                     <i className="ri-information-line mt-0.5 shrink-0"></i>
-                                    <span className="leading-snug">결과 없음 · {r.at}<br />{r.reason}</span>
+                                    <span className="leading-snug">{r.label ?? '결과 없음'} · {r.at}<br />{r.reason}</span>
                                   </p>
                                 );
                                 return (
@@ -665,7 +669,7 @@ export default function InternationalPricingPage() {
                                     className="text-[11px] mt-2 flex items-start gap-1 text-rose-500 hover:underline disabled:no-underline disabled:opacity-60 text-left"
                                     title={r.reason}>
                                     <i className="ri-error-warning-fill mt-0.5 shrink-0"></i>
-                                    <span className="leading-snug">검색 실패 · {r.at} — 다시 시도<br /><span className={textMuted}>{r.reason}</span></span>
+                                    <span className="leading-snug">{r.label ?? '검색 실패'} · {r.at} — 다시 시도<br /><span className={textMuted}>{r.reason}</span></span>
                                   </button>
                                 );
                               })()}

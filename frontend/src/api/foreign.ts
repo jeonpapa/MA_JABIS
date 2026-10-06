@@ -782,12 +782,20 @@ export async function fetchApprovalTab(productSlug: string): Promise<ApprovalTab
  * 긴 동기 요청이 아니라 짧은 폴링 GET 이라 "Failed to fetch"(프록시/워커 타임아웃)를 회피.
  * onProgress(선택)로 경과 초 등을 UI 에 전달할 수 있다.
  */
-/** 국가별 라이브 검색 결과 — has_price 로 성공/무결과를 구분, reason 은 무결과 사유 한 줄. */
+/** 국가별 라이브 검색 결과 — status 로 가격/무결과/수집 실패를 구분. reason 은 무결과 사유(정책 문구) 또는 실패 한 줄.
+ *  scraper_error 는 로그인·의존성·403·시간 초과 등 스크레이퍼 실패 — '제도상 비공개/미등재' 와 섞지 않는다. */
 export interface CountryResult {
   has_price: boolean;
   count: number;
   priced_count: number;
+  status?: 'priced' | 'no_result' | 'scraper_error';
   reason?: string;
+  /** no_result 일 때 reason 이 정책 메타(제도상 비공개/미등재)에서 왔는지 */
+  policy?: boolean;
+  error_class?: 'login' | 'http_403' | 'dependency' | 'timeout' | 'parse' | 'other';
+  /** 서버가 내려주는 한글 라벨 (예: '로그인 오류') — 프론트에 라벨 사본을 두지 않는다 */
+  error_label?: string;
+  error?: string;
 }
 
 /** 라이브 검색 완료 결과. 폴링이 done 으로 끝나면 반환(구버전/동기 완료 시 null). */

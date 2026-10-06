@@ -91,8 +91,10 @@ class UkMimsScraper(BaseScraper):
         try:
             from scrapling.fetchers import StealthySession
         except Exception as e:
-            logger.error("[UK] scrapling 미설치 — pip install 'scrapling[fetchers]' + scrapling install: %s", e)
-            return []
+            # 삼키지 않는다(P1.6): [] 를 돌려주면 화면이 'MIMS 구독 필요' 정책 문구로 감싸 의존성 문제가 보이지 않았다.
+            # search_all 이 ImportError 를 dependency 로 분류해 원장(foreign_search:UK:dependency)에 남긴다.
+            logger.error("[UK] scrapling import 실패 — pip install 'scrapling[fetchers]' + scrapling install: %s", e)
+            raise ImportError(f"scrapling import 실패 (playwright 호환 확인): {type(e).__name__}: {e}") from e
 
         def login_action(page):
             page.wait_for_timeout(1500)
@@ -245,18 +247,19 @@ class UkMimsScraper(BaseScraper):
         """Playwright 대신 Scrapling(StealthySession) 으로 로그인→검색→가격."""
         logger.info("[UK] MIMS(Scrapling) 검색 시작: '%s'", query)
         searched_at = datetime.now().isoformat()
+        # 실패는 삼키지 않는다(P1.6): 타임아웃(CF 미해결·프록시 부재)·의존성·기타 예외를 그대로 올려 search_all 이
+        # timeout/dependency/... 로 분류해 원장에 남기고 화면에 '수집 실패' 로 보이게 한다. 결과는 어차피 [] 다.
         try:
             raw = await asyncio.wait_for(
                 asyncio.to_thread(self._scrape_sync, query),
                 timeout=UK_SCRAPE_HARD_TIMEOUT,
             )
         except asyncio.TimeoutError:
-            logger.warning("[UK] MIMS 스크레이프 타임아웃(%ds) — CF 미해결(프록시 필요?)로 스킵",
-                           UK_SCRAPE_HARD_TIMEOUT)
-            return []
+            logger.warning("[UK] MIMS 스크레이프 타임아웃(%ds) — CF 미해결(프록시 필요?)", UK_SCRAPE_HARD_TIMEOUT)
+            raise
         except Exception as e:
             logger.error("[UK] MIMS 스크레이프 실패: %s", e, exc_info=True)
-            return []
+            raise
 
         results = []
         for item in raw:

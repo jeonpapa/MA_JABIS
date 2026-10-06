@@ -42,6 +42,64 @@ PER_UNIT_COUNTRIES = {"JP", "CA"}
 # Daily cost sanity cap (Welireg UK ₩46M/day 회귀 방지)
 DAILY_COST_SANITY_CAP_KRW = 10_000_000
 
+# ── 라이브 검색 국가별 실패 분류 (P1.6 관측) ───────────────────────────────────
+# search_all 이 국가별 예외를 삼키면 "로그인이 깨진 것" 이 화면에서 "제도상 비공개" 처럼 보이고 원장에 아무것도 남지 않는다.
+# 분류는 원장 키(foreign_search:{국가}:{분류})와 화면 라벨 양쪽이 쓴다 — 라벨은 여기 한 곳(서버가 error_label 로 내려준다).
+SCRAPE_ERROR_CLASSES = ("login", "http_403", "dependency", "timeout", "parse", "other")
+SCRAPE_ERROR_LABEL_KR = {
+    "login": "로그인 오류", "http_403": "접근 차단(403)", "dependency": "의존성 오류",
+    "timeout": "시간 초과", "parse": "파싱 오류", "other": "오류",
+}
+_LOGIN_HINTS = ("login", "로그인", "credential", "자격증명", "password", "license limit", "please login")
+_FORBIDDEN_HINTS = ("403", "forbidden", "cloudflare", "access denied", "차단")
+_PARSE_HINTS = ("parse", "파싱", "decode", "unexpected token", "expecting value")
+
+
+def classify_scrape_error(exc: BaseException) -> str:
+    """예외 → SCRAPE_ERROR_CLASSES 중 하나. 타입(ImportError·Timeout)이 먼저, 그다음 메시지 힌트."""
+    if isinstance(exc, ImportError):
+        return "dependency"
+    name = type(exc).__name__.lower()
+    msg = str(exc).lower()
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)) or "timeout" in name or "timed out" in msg or "timeout" in msg:
+        return "timeout"
+    if any(h in msg for h in _LOGIN_HINTS):
+        return "login"
+    if any(h in msg for h in _FORBIDDEN_HINTS):
+        return "http_403"
+    if isinstance(exc, (json.JSONDecodeError, KeyError, ValueError)) or any(h in msg for h in _PARSE_HINTS):
+        return "parse"
+    return "other"
+
+
+class SearchResults(dict):
+    """search_all 의 반환 — {country: [rows]} 그대로에 국가별 실패 분류를 .errors 로 얹는다(dict 호환).
+
+    errors[country] = {"error_class": str, "message": str}. 서버(_compute_country_results)가 읽어 status=scraper_error 로 내린다."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.errors: dict[str, dict] = {}
+
+
+def _record_search_failure(query: str, country: str, error_class: str, exc: BaseException) -> None:
+    """국가별 수집 실패 → 원장 ops_incident 1건/(국가, 분류). 같은 실패가 이어지면 같은 행(recurred/reopen — record_recurring).
+
+    신호 경계(집안 관례 `_agent_record_*`): 어떤 예외도 밖으로 내보내지 않는다 — 신호가 사용자의 검색을 깨면 안 된다."""
+    try:
+        from agents.agent_tasks.jobs import resolve_db_path
+        from agents.agent_tasks.signals import record_recurring, runbook_line
+        label = SCRAPE_ERROR_LABEL_KR.get(error_class, error_class)
+        record_recurring(
+            kind="ops_incident", source="foreign_search", source_ref=f"{country}:{error_class}",
+            title=f"해외약가 수집 실패 — {country} ({label})",
+            detail=(f"검색어: {query}\n분류: {error_class}\n오류: {type(exc).__name__}: {str(exc)[:300]}\n"
+                    f"{runbook_line(None)} — 로그인·의존성은 foreign_config_probe 결과(config/.env 키 이름·scrapling)를, "
+                    f"403·시간 초과는 프록시(PROXY_ENV_KEYS)를 확인한 뒤 해외약가 화면에서 그 국가를 재검색한다"),
+            priority=2, actor="foreign_search", db_path=resolve_db_path())
+    except Exception as signal_err:
+        logger.warning("[%s] 수집 실패 신호 기록 실패: %s", country, signal_err)
+
 
 class ForeignPriceAgent:
     def __init__(self, base_dir: Path, ecos_api_key: str = "sample"):
@@ -397,18 +455,22 @@ class ForeignPriceAgent:
         """
         여러 국가의 약가를 순차 조회.
         countries: None이면 구현된 전체 국가 조회
-        반환: {country: [results, ...], ...}
+        반환: {country: [results, ...], ...} (SearchResults — 실패 국가는 [] + .errors[country]={error_class, message})
         """
         targets = countries or AVAILABLE_COUNTRIES
-        results = {}
+        results = SearchResults()
         for country in targets:
             try:
                 results[country] = await self.search_one_country(
                     query, country, reference_date, identity=identity
                 )
             except Exception as e:
-                logger.error("[%s] 조회 실패: %s", country, e)
+                # 빈 결과와 실패를 분리한다 — 사용자에게는 [] 이지만 분류를 .errors 에 남기고 원장에 기록(신호 경계가 삼킨다)
+                error_class = classify_scrape_error(e)
+                logger.error("[%s] 조회 실패(%s): %s", country, error_class, e)
                 results[country] = []
+                results.errors[country] = {"error_class": error_class, "message": f"{type(e).__name__}: {e}"[:300]}
+                _record_search_failure(query, country, error_class, e)
 
         # 데이터 손실 검증
         self._validate_data_integrity(query, results)
