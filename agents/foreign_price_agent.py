@@ -252,39 +252,48 @@ class ForeignPriceAgent:
         return saved
 
     def _resolve_pack_count(self, country: str, item: dict, dosing: dict) -> int:
-        """pack_count 결정 — **form_type 우선 원칙**.
+        """pack_count 결정 — **form_type 우선 원칙**. 결정 근거를 `item["pack_count_source"]` 에 남긴다.
 
         최소단위는 제형에 따라 다르다:
           - oral      → 최소단위 = 1 tablet/capsule
           - injection → 최소단위 = 1 vial/ampoule/syringe
           - unknown   → 1 로 fallback (per-unit 으로 안전 가정)
 
-        우선순위:
-          1) scraper 가 item 에 직접 제공 (pack_count > 0) — 가장 신뢰.
-          2) **oral 전용**: dosage_strength × package_unit 에서 total/unit_mg ratio
-             (예: 40mg tab × 90 pack → 3600/40 = 90). injection 은 total=conc×vol
-             이라 이 ratio 가 pack count 가 아니라 volume → **금지**.
-          3) pack-pricing 국가에서 dosing.default_pack_count fallback.
-          4) 기본 1 (per-unit).
+        우선순위 (pack_count_source):
+          1) `scraper`  — 스크레이퍼가 item 에 직접 넣은 pack_count (IT TNF 등). 스크레이퍼 직후 item
+             (id 없음) 이거나 저장 시 source='scraper' 였던 행만. **DB 행의 pack_count 는 에이전트
+             산물이라 그대로 믿지 않고 다시 결정한다** (과거 default=1 이 영구화되는 것 방지).
+          2) `per_unit` — JP/CA 는 per-unit 가격 체계 → 항상 1.
+          3) `parsed`   — 포장 문구의 수량 단서 (`_extract_unit_count`, form-aware). injection 도
+             "in vial, 2"·"2 flaconcini"·"4 ml 2s" 같은 단서를 읽는다. **mg ratio 는 쓰지 않는다**
+             (injection 은 농도×volume/농도 = volume 이라 pack count 가 아님 — CLAUDE.md 절대 금지).
+          4) `dosing`   — oral × pack-pricing 국가에서 dosing.default_pack_count.
+          5) `default`  — 1. oral/unknown 이면 '팩가가 per-unit 으로 저장된' 미확인 행이므로
+             get_cached_results 가 A8 집계에서 제외한다 (injection 은 1 vial 보수 fallback 이 규칙).
         """
         pc = item.get("pack_count")
-        if isinstance(pc, (int, float)) and pc > 0:
+        has_pc = isinstance(pc, (int, float)) and pc > 0
+        src = item.get("pack_count_source")
+        if has_pc and (src == "scraper" or (src is None and "id" not in item)):
+            item["pack_count_source"] = "scraper"
             return int(pc)
 
         form_type = (item.get("form_type") or "unknown").lower()
 
-        if form_type == "oral":
-            total_mg = self._extract_total_pkg_mg(
-                item.get("dosage_strength", "") or "",
-                item.get("package_unit", "") or "",
-            )
-            unit_mg = self._extract_mg(item.get("dosage_strength", "") or "")
-            if total_mg and unit_mg and unit_mg > 0:
-                ratio = total_mg / unit_mg
-                if ratio >= 1 and abs(ratio - round(ratio)) < 0.01:
-                    inferred = int(round(ratio))
-                    if inferred >= 2 or country in PER_UNIT_COUNTRIES:
-                        return inferred
+        if country in PER_UNIT_COUNTRIES:
+            item["pack_count_source"] = "per_unit"
+            return 1
+
+        parsed = self._extract_unit_count(
+            form_type,
+            item.get("dosage_strength", "") or "",
+            item.get("package_unit", "") or "",
+            product_name=item.get("product_name", "") or "",
+            dosage_form=item.get("dosage_form", "") or "",
+        )
+        if parsed:
+            item["pack_count_source"] = "parsed"
+            return parsed
 
         # dosing.default_pack_count 는 oral 전용 (typical 28/30 blister).
         # injection 은 1 vial 로 보수 fallback (마커 없으면 단일 vial 가정).
@@ -299,7 +308,9 @@ class ForeignPriceAgent:
                 item.get("query_name") or item.get("ingredient"),
                 country, dosing["default_pack_count"],
             )
+            item["pack_count_source"] = "dosing"
             return int(dosing["default_pack_count"])
+        item["pack_count_source"] = "default"
         return 1
 
     def _populate_daily_cost(self, item: dict, dosing: dict) -> None:
@@ -525,7 +536,8 @@ class ForeignPriceAgent:
 
     @classmethod
     def _extract_per_unit_mg(cls, form_type: str, dosage_strength: str,
-                             package_unit: str = "") -> Optional[float]:
+                             package_unit: str = "", product_name: str = "",
+                             dosage_form: str = "") -> Optional[float]:
         """최소단위(tablet/vial) 1개당 mg — **form_type 기반**.
 
         - oral: dosage_strength 의 "N mg" 값이 per-tablet. _extract_mg 와 동일.
@@ -566,84 +578,102 @@ class ForeignPriceAgent:
         # fallback: 단독 mg 수치
         return cls._extract_mg(s)
 
-    @staticmethod
-    def _extract_total_pkg_mg(dosage_strength: str, package_unit: str = "") -> Optional[float]:
-        """포장 단위당 총 mg 추출 — 일일 투약비용의 정확한 분모.
+    # ── 포장 수량 단서 (form-aware) ────────────────────────────────────────
+    # 전각 숫자·단위 → 반각 (JP MHLW "１００ｍｇ４ｍＬ１瓶")
+    _ZENKAKU = str.maketrans(
+        "０１２３４５６７８９．ｍｇｋｍｌＭＧＫＬｘＸ×",
+        "0123456789.mgkmlMGKLxXx",
+    )
+    _ORAL_UNIT_WORDS = (
+        r"(?:compress[ae]|compresse|comprim[ée]s?|cpr|cps|cp|tablets?|tabs?|capsules?|caps|"
+        r"g[ée]lules?|Filmtabl\w*|Tabl\w*|Kaps\w*|Stk|Stück|St|pcs|錠|カプセル|包|정|캡슐|unit[aà]'?|units?)"
+    )
+    _INJ_UNIT_WORDS = (
+        r"(?:vials?|flacons?|flaconcin[oi]|fiale|fiala|ampoules?|amp|ampullen?|syringes?|seringues?|"
+        r"siringh?[ea]|pens?|penne|stylos?|Durchstechfl\w*|Fertigspritz\w*|瓶|バイアル|筒|キット|"
+        r"바이알|병|unit[aà]'?)"
+    )
+    _COUNT_PATTERNS = {
+        # 공통 — 제형 무관하게 의미가 명확한 단서. (N x M) 은 괄호가 M 바로 뒤에 닫힐 때만 곱한다
+        # ("(2 x 4 ml)" 은 2 바이알 × 4 ml 이라 곱하면 안 됨 → 아래 injection "N x M ml" 이 담당).
+        "common": [
+            (re.compile(r"\((\d{1,3})\s*x\s*(\d{1,3})\)"), "mul"),                      # IT TNF "90 (3 x 30) compresse"
+            (re.compile(r"m[lL]\s+(\d{1,4})s\b", re.I), "one"),                           # US Redbook "4 ml 2s"
+            (re.compile(r"\b(\d{1,4})s\s+ea\b", re.I), "one"),                            # US Redbook "90s ea"
+        ],
+        "oral": [
+            (re.compile(r"\*\s*(\d{1,4})(?:\s*x\s*(\d{1,3}))?\s*(?:cpr|cps|cp\b|compress|capsul|bust)", re.I), "mul"),   # IT CSV "JANUVIA*28 cpr", "*28x1 cpr"
+            (re.compile(r"(\d{1,4})\s*plaquettes?\b.*?\bde\s+(\d{1,4})\s*(?:comprim|g[ée]lule|capsule)", re.I | re.S), "mul"),   # FR "28 plaquette(s) … de 1 comprimé"
+            (re.compile(r"\bde\s+(\d{1,4})\s*(?:comprim|g[ée]lule|capsule|sachet)", re.I), "one"),                       # FR "de 30 comprimé(s)"
+            (re.compile(rf"(?<![\d.,/])(\d{{1,4}})\s*{_ORAL_UNIT_WORDS}(?![a-zA-Zäöü])", re.I), "one"),                 # "56 compresse", "28 UNITA'", "90 Stück", "1錠"
+            (re.compile(rf"{_ORAL_UNIT_WORDS}[^,]*?,\s*(\d{{1,4}})\b", re.I), "one"),                                    # UK MIMS "f-c tab marked 177, 90"
+        ],
+        "injection": [
+            (re.compile(r"\*\s*(\d{1,4})\s*(?:flaconcin|fiale|fiala|siring|penn)", re.I), "one"),                       # IT CSV "PREVYMIS*1 flaconcino"
+            (re.compile(r"\bde\s+(\d{1,4})\s*(?:flacon|ampoule|seringue|stylo)", re.I), "one"),                          # FR "de 2 flacon(s)"
+            (re.compile(r"(?<![\d.,/])(\d{1,3})\s*x\s*\d+(?:\.\d+)?\s*m[lL]\b", re.I), "one"),                           # "2 x 4 ml" → 2 바이알
+            (re.compile(rf"(?<![\d.,/])(\d{{1,4}})\s*{_INJ_UNIT_WORDS}(?![a-zA-Zäöü])", re.I), "one"),                  # "2 flaconcini", "1 flacon(s)", "1瓶"
+            (re.compile(rf"{_INJ_UNIT_WORDS}[^,]*?,\s*(\d{{1,4}})\b", re.I), "one"),                                     # UK MIMS "in vial, 2"
+        ],
+        "tail": [
+            (re.compile(r",\s*(\d{1,3})\s*$"), "one"),                                                                  # 꼬리 ", 90"
+        ],
+    }
 
-        핵심: price_per_mg = adj_price / **total_pkg_mg** (단위강도 X, 포장 총량 O)
-        dosage_strength 에 단위강도만 있는 경우 (예: "40mg") 패키지 단위 수량을
-        package_unit 또는 dosage_strength 꼬리에서 검색해 곱해준다.
+    @classmethod
+    def _extract_unit_count(cls, form_type: str, dosage_strength: str, package_unit: str = "",
+                            product_name: str = "", dosage_form: str = "") -> Optional[int]:
+        """포장 문구에서 **최소단위 수량**(정/바이알 수) 단서를 읽는다 — form-aware 공용 추출기.
 
-        케이스:
-          A) "100 mg/4 ml"           → 100  (바이알당 총 100mg)
-          B) "25 mg/ml" + "4 ml"     → 25 × 4 = 100
-          C) "40mg ... tab ... , 90" → 40 × 90 = 3600 (pack of 90)
-          D) "40 mg" + "de 90 (3x30)"→ 40 × 90 = 3600
-          E) "40mg 1錠" (JP MHLW)     → 40 (per-unit 가격 체계)
-          F) "25 mg/ml" 단독 (DE Rote Liste) → 25 (volume 미제공 → concentration 만)
+        `_resolve_pack_count`(pack_count) 와 `_extract_total_pkg_mg`(pack 총 mg) 가 같이 쓴다.
+        단서가 없으면 None — 추정하지 않는다 (호출측이 dosing fallback/default 로 처리하고 출처를 기록).
+        mg·ml 숫자(강도·농도·부피) 는 수량이 아니다: injection 에서 total_mg/unit_mg ratio 로 수량을
+        만들면 volume 이 나온다(절대 금지) — 여기엔 그런 경로가 없다.
 
-        반환: 총 mg, 실패 시 None.
+        oral 단서: IT "*28 cpr"/"56 UNITA'", FR "de 30 comprimé(s)"/"28 plaquette(s) … de 1 comprimé",
+                   DE/CH "90 Stück"/"28 Stk", UK ", 90", US "90s ea", IT TNF "90 (3 x 30) compresse".
+        injection 단서: UK "in vial, 2", IT "2 flaconcini", FR "1 flacon(s)", US "4 ml 2s", "2 x 4 ml", JP "1瓶".
         """
-        if not dosage_strength:
+        ft = (form_type or "unknown").lower()
+        texts = [dosage_strength or "", package_unit or "", dosage_form or "", product_name or ""]
+        texts = [t.translate(cls._ZENKAKU) for t in texts if t]
+        if not texts:
             return None
-        trans = str.maketrans(
-            "０１２３４５６７８９．ｍｇｋｍｌＭＧＫＬ",
-            "0123456789.mgkmlMGKL",
-        )
-        s = dosage_strength.translate(trans)
-        p = (package_unit or "").translate(trans)
-        combined = f"{s} | {p}".strip(" |")
-
-        # Step 1: per-unit (vial/tablet) mg
-        # "N mg/M ml" 에서 M>1: 그 바이알의 총량 = N mg (예: "100 mg/4 ml" = 100mg vial)
-        # M=1: 농도 (25 mg per 1 ml) — package_unit 에서 별도 volume 필요
-        m = re.search(r"(\d+(?:\.\d+)?)\s*mg\s*/\s*(\d+(?:\.\d+)?)\s*m[lL]", s, re.IGNORECASE)
-        if m and float(m.group(2)) > 1.0:
-            per_unit_mg = float(m.group(1))
+        if ft == "oral":
+            groups = ("common", "oral", "tail")
+        elif ft == "injection":
+            groups = ("common", "injection", "tail")
         else:
-            m_conc = (
-                m  # "N mg/1 ml" 로 매칭된 경우 → 농도
-                or re.search(r"(\d+(?:\.\d+)?)\s*mg\s*/\s*m[lL]", s, re.IGNORECASE)
-            )
-            if m_conc:
-                conc = float(m_conc.group(1))
-                # package_unit 또는 s 의 나머지에서 volume (mL) 탐색. 분모 mL 자기 자신 제외.
-                m_vol = re.search(r"(\d+(?:\.\d+)?)\s*m[lL](?!\s*/)", p, re.IGNORECASE)
-                if not m_vol:
-                    m_vol = re.search(r"(\d+(?:\.\d+)?)\s*m[lL](?!\s*/)", s, re.IGNORECASE)
-                per_unit_mg = conc * float(m_vol.group(1)) if m_vol else conc
-            else:
-                m_mg = re.search(r"(\d+(?:\.\d+)?)\s*mg", s, re.IGNORECASE)
-                if m_mg:
-                    per_unit_mg = float(m_mg.group(1))
-                else:
-                    m_mcg = re.search(r"(\d+(?:\.\d+)?)\s*mcg", s, re.IGNORECASE)
-                    if m_mcg:
-                        per_unit_mg = float(m_mcg.group(1)) / 1000.0
-                    else:
-                        return None
+            groups = ("common", "oral", "injection", "tail")
+        for text in texts:
+            for g in groups:
+                for pat, kind in cls._COUNT_PATTERNS[g]:
+                    m = pat.search(text)
+                    if not m:
+                        continue
+                    n = int(m.group(1))
+                    if kind == "mul" and m.lastindex and m.lastindex >= 2 and m.group(2):
+                        n *= int(m.group(2))
+                    if 1 <= n <= 1000:
+                        return n
+        return None
 
-        unit_count = 1
-        m_mul = re.search(r"\((\d+)\s*[x×]\s*(\d+)\)", combined)
-        if m_mul:
-            unit_count = int(m_mul.group(1)) * int(m_mul.group(2))
-        else:
-            patterns = [
-                r"\bde\s+(\d+)\s",
-                r"(\d+)\s*(?:compress?é|comprim|tablet|capsul|caps\b|tabs?\b|vial|flacon|瓶|錠|정)",
-                r"(?:vial|tablet|comprim|caps|瓶|錠|정|flacon|tab)[^,]*?,\s*(\d+)\b",
-                r"m[lL]\s+(\d+)s\b",         # US Redbook "4 ml 2s" → 2 바이알 (s 접미사 필수)
-                r"\b(\d+)s\s+ea\b",          # US Redbook "90s ea" → 90 tablets each pack
-                r",\s*(\d{1,3})\b\s*$",
-            ]
-            for pat in patterns:
-                m_c = re.search(pat, combined, re.IGNORECASE)
-                if m_c:
-                    cnt = int(m_c.group(1))
-                    if 2 <= cnt <= 500:
-                        unit_count = cnt
-                        break
-        return per_unit_mg * unit_count
+    @classmethod
+    def _extract_total_pkg_mg(cls, form_type: str, dosage_strength: str, package_unit: str = "",
+                              product_name: str = "", dosage_form: str = "") -> Optional[float]:
+        """포장(pack) 총 mg = 최소단위 mg(`_extract_per_unit_mg`, form-aware) × 수량(`_extract_unit_count`).
+
+        예: "40mg … tab …, 90" → 40 × 90 = 3600 / "100mg/4ml … in vial, 2" → 100 × 2 = 200.
+        최소단위 mg 를 복원할 수 없으면(injection 농도만 있고 volume 없음) None.
+        수량 단서가 없으면 1 로 본다 (표시용 — pack_count 결정은 `_resolve_pack_count` 가 한다).
+        """
+        per_unit_mg = cls._extract_per_unit_mg(form_type, dosage_strength, package_unit,
+                                               product_name=product_name, dosage_form=dosage_form)
+        if per_unit_mg is None:
+            return None
+        count = cls._extract_unit_count(form_type, dosage_strength, package_unit,
+                                        product_name=product_name, dosage_form=dosage_form) or 1
+        return per_unit_mg * count
 
     def _match_dosing(self, query: str, ingredient: str, dosing_map: dict) -> dict:
         """query + ingredient 에서 dosing 정보를 찾아 반환. 없으면 None."""
