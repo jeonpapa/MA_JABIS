@@ -131,6 +131,11 @@ export interface A8Pricing {
   dailyCostKrw?: number;
   dosingScheduleLabel?: string;
   packCount?: number;
+  /** pack_count 결정 근거 (서버): scraper|per_unit|parsed|dosing|default */
+  packCountSource?: string;
+  /** A8 min/avg 집계 포함 여부 (서버 판정). false 면 a8ExcludeReason 에 사유 — 예: pack_count_unverified(팩가가 단위가로 저장) */
+  a8AggregateEligible: boolean;
+  a8ExcludeReason?: string;
   searchedAt: string;
   /** 해당 국가 캐시 행 수 (대표 1건 외 변형 수) */
   variantCount: number;
@@ -147,6 +152,10 @@ export interface A8Summary {
   avgKrw: number;
   includedKeys: string[];       // 평균 산출에 포함된 uiKey
   excludedKeys: string[];       // 조정가 없어 제외된 uiKey
+  /** 조정가는 있지만 pack_count 미확인(pack_count_source=default, 팩가가 단위가로 저장)이라 평균에서 뺀 uiKey */
+  unverifiedKeys: string[];
+  /** uiKey → 제외 사유 (서버 a8_exclude_reason). 카드/사유 패널 표시용 */
+  excludedReasons: Record<string, string>;
 }
 
 export interface CoverageNote {
@@ -260,6 +269,9 @@ interface RawPricingEntry {
   form_type?: string | null;
   dosage_strength?: string | null;
   pack_count?: number | null;
+  pack_count_source?: string | null;
+  a8_aggregate_eligible?: boolean | null;
+  a8_exclude_reason?: string | null;
   // 조정가 산출 중간값 (서버 get_cached_results 가 PriceCalculator 로 재계산해 내려줌)
   exchange_rate?: number | null;
   exchange_rate_from?: string | null;
@@ -492,6 +504,10 @@ function mapPricingEntry(raw: RawPricingEntry, variantCount: number): A8Pricing 
     dailyCostKrw: raw.daily_cost_krw ?? undefined,
     dosingScheduleLabel: raw.dosing_schedule_label ?? undefined,
     packCount: raw.pack_count ?? undefined,
+    packCountSource: raw.pack_count_source ?? undefined,
+    // 서버가 판정하지 않은(구 응답) 행은 포함 — 제외는 서버 판정이 있을 때만
+    a8AggregateEligible: raw.a8_aggregate_eligible !== false,
+    a8ExcludeReason: raw.a8_exclude_reason ?? undefined,
     searchedAt: toIsoDate(raw.searched_at),
     variantCount,
     calc,
@@ -552,11 +568,22 @@ export async function fetchForeignDrugList(): Promise<ForeignDrugListItem[]> {
 function _buildSummary(a8: Record<string, A8Pricing | undefined>): A8Summary | undefined {
   const priced: { key: string; adj: number }[] = [];
   const excludedKeys: string[] = [];
+  const unverifiedKeys: string[] = [];
+  const excludedReasons: Record<string, string> = {};
   for (const uiKey of Object.keys(PRICING_COUNTRY_CODE)) {
     const cell = a8[uiKey];
     const adj = cell?.adjustedPriceKrwNormalized ?? cell?.adjustedPriceKrw;
-    if (adj != null && adj > 0) priced.push({ key: uiKey, adj });
-    else excludedKeys.push(uiKey);
+    if (adj == null || adj <= 0) {
+      excludedKeys.push(uiKey);
+      continue;
+    }
+    if (cell && cell.a8AggregateEligible === false) {
+      // 팩가가 단위가로 저장된 미확인 행(pack_count_source=default) — 숫자는 카드에 남기되 평균/최소/최고에는 섞지 않는다
+      unverifiedKeys.push(uiKey);
+      excludedReasons[uiKey] = cell.a8ExcludeReason || 'pack_count_unverified';
+      continue;
+    }
+    priced.push({ key: uiKey, adj });
   }
   if (!priced.length) return undefined;
   const min = priced.reduce((a, b) => (b.adj < a.adj ? b : a));
@@ -565,7 +592,7 @@ function _buildSummary(a8: Record<string, A8Pricing | undefined>): A8Summary | u
     minKrw: min.adj, minCountryKey: min.key,
     maxKrw: max.adj, maxCountryKey: max.key,
     avgKrw: Math.round(priced.reduce((s, p) => s + p.adj, 0) / priced.length),
-    includedKeys: priced.map(p => p.key), excludedKeys,
+    includedKeys: priced.map(p => p.key), excludedKeys, unverifiedKeys, excludedReasons,
   };
 }
 

@@ -3,7 +3,7 @@
 공용 API:
     from agents.quality_guard import (
         QualityGuardAgent, _write_deviation,
-        check_scraper_output, check_db_records, validate_keytruda, check_code_pattern,
+        check_scraper_output, check_foreign_price_data, check_code_pattern,
     )
 
 CLI:
@@ -14,9 +14,9 @@ CLI:
 from .agent import QualityGuardAgent
 from .checks import (
     check_code_pattern,
-    check_db_records,
+    check_foreign_price_data,
     check_scraper_output,
-    validate_keytruda,
+    summarize_unverified_pack_rows,
 )
 from .deviations import _write_deviation
 
@@ -24,7 +24,7 @@ __all__ = [
     "QualityGuardAgent",
     "_write_deviation",
     "check_scraper_output",
-    "check_db_records",
-    "validate_keytruda",
+    "check_foreign_price_data",
+    "summarize_unverified_pack_rows",
     "check_code_pattern",
 ]

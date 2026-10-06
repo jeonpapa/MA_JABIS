@@ -149,9 +149,20 @@ class _DbBase:
                 ("route",                 "ALTER TABLE foreign_drug_prices ADD COLUMN route TEXT"),
                 ("formulation_source",    "ALTER TABLE foreign_drug_prices ADD COLUMN formulation_source TEXT"),
                 ("is_us_listed",          "ALTER TABLE foreign_drug_prices ADD COLUMN is_us_listed INTEGER"),
+                # pack_count 결정 근거 (2026-10) — scraper|per_unit|parsed|dosing|default. pack-pricing 국가의
+                # oral/unknown 행이 default 면 팩가가 per-unit 으로 저장된 미확인 행 → A8 집계 제외 (foreign_agent_rules §pack_count).
+                ("pack_count_source",     "ALTER TABLE foreign_drug_prices ADD COLUMN pack_count_source TEXT"),
             ):
                 if col not in fp_cols:
-                    conn.execute(ddl)
+                    try:
+                        conn.execute(ddl)
+                    except sqlite3.OperationalError as e:
+                        # 읽기 전용 연결(테스트 conftest 가 실제 DB 를 mode=ro 로 돌린다)에서는 ALTER 가 불가 —
+                        # 컬럼 없는 DB 를 읽기만 하는 경우라 경고로 두고 계속한다. 쓰기 가능한 운영 DB 는 그대로 실패한다.
+                        if "readonly" not in str(e).lower():
+                            raise
+                        logger.warning("Migration skipped (read-only DB): foreign_drug_prices.%s — %s", col, e)
+                        continue
                     logger.info("Migrated: foreign_drug_prices.%s added", col)
 
     def _migrate_search_tables(self) -> None:

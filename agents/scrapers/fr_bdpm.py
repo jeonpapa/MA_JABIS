@@ -86,7 +86,7 @@ class FrBdpmScraper(BaseScraper):
     COUNTRY        = "FR"
     CURRENCY       = "EUR"
     SOURCE_LABEL   = "BDPM/ANSM (프랑스 공개 약품 DB)"
-    SOURCE_TYPE    = "vidal"    # HIRA factory_ratio = 0.65
+    SOURCE_TYPE    = "vidal"    # PriceCalculator 오버라이드 없음 → FR 기본 ratio 0.77 (2026-10: 0.65 는 발효된 적 없음)
     REQUIRES_LOGIN = False
 
     def __init__(self, cache_dir: Path = None, msd_only: bool = False, **kwargs):

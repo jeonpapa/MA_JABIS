@@ -9,7 +9,7 @@ from .drug_aliases import aliases, canonical, display_name
 
 class _ForeignMixin:
     _FOREIGN_OPTIONAL_COLS = (
-        "form_type", "pack_count", "per_unit_local", "total_pkg_mg",
+        "form_type", "pack_count", "pack_count_source", "per_unit_local", "total_pkg_mg",
         "daily_dose_mg", "daily_cost_krw", "daily_cost_note",
         # 국가간 용량 정규화 (dose_norm_factor 는 제형 내 표시단위 보정으로 의미 재정의)
         "unit_strength_mg", "reference_strength_mg", "dose_norm_factor",
@@ -36,7 +36,7 @@ class _ForeignMixin:
                  local_price, currency,
                  exchange_rate, exchange_rate_from, exchange_rate_to,
                  factory_price_krw, vat_rate, distribution_margin, adjusted_price_krw,
-                 pack_count, per_unit_local, total_pkg_mg,
+                 pack_count, pack_count_source, per_unit_local, total_pkg_mg,
                  daily_dose_mg, daily_cost_krw, daily_cost_note,
                  unit_strength_mg, reference_strength_mg, dose_norm_factor,
                  adjusted_price_krw_normalized, dose_norm_note,
@@ -49,7 +49,7 @@ class _ForeignMixin:
                  :local_price, :currency,
                  :exchange_rate, :exchange_rate_from, :exchange_rate_to,
                  :factory_price_krw, :vat_rate, :distribution_margin, :adjusted_price_krw,
-                 :pack_count, :per_unit_local, :total_pkg_mg,
+                 :pack_count, :pack_count_source, :per_unit_local, :total_pkg_mg,
                  :daily_dose_mg, :daily_cost_krw, :daily_cost_note,
                  :unit_strength_mg, :reference_strength_mg, :dose_norm_factor,
                  :adjusted_price_krw_normalized, :dose_norm_note,
@@ -287,7 +287,7 @@ class _ForeignMixin:
         국가별 (query_name, country) 최신 가격보유 행만 대상. 환율 변화가 tolerance
         이내면 skip. 반환: {candidates, updated, skipped, details}.
         """
-        from agents.exchange_rate import COUNTRY_CURRENCY
+        from agents.exchange_rate import COUNTRY_CURRENCY, per_unit_rate
 
         meta = meta or {}
         new_from = meta.get("from", "")
@@ -314,9 +314,11 @@ class _ForeignMixin:
 
         updated, skipped, details = 0, 0, []
         for r in rows:
-            old_rate = r.get("exchange_rate")
             cur = COUNTRY_CURRENCY.get(r.get("country"))
-            new_rate = rates.get(cur) if cur else None
+            # JPY: 저장 행은 100엔당(923.21), 새 캐시는 per-1(9.39) 일 수 있다 — 둘 다 per-1 로 맞춘 뒤 비율을 낸다
+            # (안 맞추면 scale 0.0102 → 100× 축소). 새 행에는 per-1 값을 저장한다.
+            old_rate = per_unit_rate(cur, r.get("exchange_rate"))
+            new_rate = per_unit_rate(cur, rates.get(cur)) if cur else None
             if (not old_rate or old_rate <= 0 or not new_rate
                     or r.get("local_price") is None):
                 skipped += 1

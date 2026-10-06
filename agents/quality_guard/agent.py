@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import sqlite3
 from datetime import date, datetime
@@ -14,9 +15,9 @@ from typing import Optional
 
 from .checks import (
     check_code_pattern,
-    check_db_records,
+    check_foreign_price_data,
     check_scraper_output,
-    validate_keytruda,
+    summarize_unverified_pack_rows,
 )
 from .deviations import BASE_DIR, DEVIATION_LOG, GUARD_DIR, _write_deviation
 
@@ -29,9 +30,13 @@ class QualityGuardAgent:
     사용 예시:
         guard = QualityGuardAgent()
         results = guard.validate_scraper_results(raw_results, "UK", "uk_mims.py")
-        guard.run_keytruda_validation("UK", results)
         guard.scan_codebase()
+        guard.review_codebase()        # 매일 06:00 잡이 부르는 것 — 코드 스캔 + 데이터 검사 + 회귀 + 제안
         guard.generate_daily_report()
+
+    2026-10: check_db_records / validate_keytruda(run_keytruda_validation) 는 삭제 — 어디서도 호출되지 않던 죽은
+    안전장치였다. 저장 행의 국가/통화 코드 검사는 `checks.check_foreign_price_data` 가 매일 리뷰에서 수행하고,
+    Keytruda 검증은 `tests/test_keytruda_injection_baseline.py` + 같은 데이터 검사가 맡는다.
     """
 
     # kr_mfds_approval_agent_rules.md §9 verification baseline
@@ -49,6 +54,13 @@ class QualityGuardAgent:
 
     def __init__(self):
         GUARD_DIR.mkdir(parents=True, exist_ok=True)
+        # 데이터 검사·회귀·제안이 읽는 DB — 테스트/수동 실행은 임시 DB 로 바꿔 끼운다. QG 는 DB 를 읽기만 한다.
+        self.db_path: Path = BASE_DIR / "data" / "db" / "drug_prices.db"
+
+    @staticmethod
+    def _connect_ro(db_path: Path) -> sqlite3.Connection:
+        """QG 의 모든 DB 접근은 read-only — 감시자가 데이터를 바꾸는 일은 없다."""
+        return sqlite3.connect(f"{Path(db_path).resolve().as_uri()}?mode=ro", uri=True)
 
     # ── 스크레이퍼 결과 검증 ───────────────────────────────────────────────
 
@@ -62,15 +74,15 @@ class QualityGuardAgent:
         logger.info("[QualityGuard] [%s] 스크레이퍼 결과 검증: %d건", country, len(results))
         return check_scraper_output(results, country, scraper_file)
 
-    def validate_db_records(self, records: list[dict], country: str) -> None:
-        """DB 저장 전 레코드 검증."""
-        check_db_records(records, country)
+    # ── 데이터 검사 (저장 행) ─────────────────────────────────────────────
 
-    # ── Keytruda Validation ────────────────────────────────────────────────
-
-    def run_keytruda_validation(self, country: str, results: list[dict]) -> bool:
-        """Keytruda 기준으로 스크레이퍼 정상 동작 검증."""
-        return validate_keytruda(results, country)
+    def check_foreign_price_data(self) -> list[dict]:
+        """해외약가 저장 행 검사 — injection 분모가 농도인 행, 잘못된 국가/통화 코드. review_codebase 가 매일 호출."""
+        findings = check_foreign_price_data(self.db_path)
+        if findings:
+            logger.error("[QualityGuard] 해외약가 데이터 검사: %d건 (%s)", len(findings),
+                         ", ".join(sorted({f["check"] for f in findings})))
+        return findings
 
     # ── 코드 스캔 ─────────────────────────────────────────────────────────
 
@@ -102,12 +114,12 @@ class QualityGuardAgent:
         kr_mfds_approval_agent_rules.md §9 의 8개 indication 은 peri/adj/neo
         분류 로직의 회귀 지시자. 한 건이라도 불일치 시 ERROR 로 기록한다.
         """
-        db_path = BASE_DIR / "data" / "db" / "drug_prices.db"
+        db_path = self.db_path
         if not db_path.exists():
             return []
 
         mismatches: list[dict] = []
-        with sqlite3.connect(db_path) as conn:
+        with self._connect_ro(db_path) as conn:
             for ind_id, expected in self.MFDS_OFFICIAL_BASELINE.items():
                 row = conn.execute(
                     "SELECT approval_date, date_source FROM indications_by_agency "
@@ -245,10 +257,10 @@ class QualityGuardAgent:
 
         # 4) DISEASE_KR 커버리지 점검
         try:
-            db_path = BASE_DIR / "data" / "db" / "drug_prices.db"
+            db_path = self.db_path
             if db_path.exists():
                 from agents.hta_scrapers.kr_mfds_indication_mapper import DISEASE_KR
-                with sqlite3.connect(db_path) as conn:
+                with self._connect_ro(db_path) as conn:
                     diseases = {
                         r[0] for r in conn.execute(
                             "SELECT DISTINCT disease FROM indications_master "
@@ -266,9 +278,9 @@ class QualityGuardAgent:
 
         # 5) drug_enrichment 커버리지 — 활성 약제 대비
         try:
-            db_path = BASE_DIR / "data" / "db" / "drug_prices.db"
+            db_path = self.db_path
             if db_path.exists():
-                with sqlite3.connect(db_path) as conn:
+                with self._connect_ro(db_path) as conn:
                     def _table_exists(name: str) -> bool:
                         r = conn.execute(
                             "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
@@ -293,9 +305,12 @@ class QualityGuardAgent:
             logger.debug("drug_enrichment 커버리지 점검 생략: %s", e)
 
         # 6a) DE DocCheck 자격증명 점검 — 로그인 실패 시 Rote Liste 가격 벽 통과 불가
+        #     (실제 로그인 시도 = 네트워크. 오프라인 리뷰/테스트는 QG_SKIP_NETWORK_CHECKS=1 로 건너뛴다)
         try:
             verify_script = BASE_DIR / "scripts" / "verify_docchecker_login.py"
-            if verify_script.exists():
+            if os.environ.get("QG_SKIP_NETWORK_CHECKS"):
+                logger.info("[QualityGuard] DocCheck 로그인 점검 생략 (QG_SKIP_NETWORK_CHECKS)")
+            elif verify_script.exists():
                 import subprocess
                 proc = subprocess.run(
                     ["python3", str(verify_script)],
@@ -316,9 +331,9 @@ class QualityGuardAgent:
 
         # 6c) MFDS 공공데이터 API 통합 헬스 점검 — permit/patent cache 비어있으면 회귀 신호
         try:
-            db_path = BASE_DIR / "data" / "db" / "drug_prices.db"
+            db_path = self.db_path
             if db_path.exists():
-                with sqlite3.connect(db_path) as conn:
+                with self._connect_ro(db_path) as conn:
                     permit_n = patent_n = None
                     for tbl, key in [("mfds_permit_cache", "permit"), ("mfds_patent_cache", "patent")]:
                         r = conn.execute(
@@ -395,18 +410,36 @@ class QualityGuardAgent:
         code_issues = self.scan_codebase()
         rule_drifts = self.scan_rule_drift()
         mfds_regressions = self.check_mfds_baseline()
+        # 해외약가 저장 행 데이터 검사 — 결과는 record_quality_review 가 읽는 rule_drifts 형태({rule, file, severity})
+        # 로 합친다 (ERROR → ops_incident priority 2). 코드 grep 이 못 잡는 간접 fallback 을 값으로 잡는다.
+        data_issues = self.check_foreign_price_data()
+        rule_drifts = list(rule_drifts) + data_issues
         suggestions = self.generate_suggestions()
+        try:
+            suggestions = list(suggestions) + summarize_unverified_pack_rows(self.db_path)
+        except Exception as e:
+            logger.debug("pack_count 미확인 요약 생략: %s", e)
 
         lines: list[str] = [
             f"# QualityGuard 코드베이스 리뷰 — {today}",
             "",
             "## 요약",
             f"- 코드 패턴 위반: **{len(code_issues)}건**",
-            f"- 규칙↔코드 drift: **{len(rule_drifts)}건**",
+            f"- 규칙↔코드 drift: **{len(rule_drifts) - len(data_issues)}건**",
+            f"- 해외약가 데이터 검사: **{len(data_issues)}건**",
             f"- MFDS baseline 회귀: **{len(mfds_regressions)}건**",
             f"- 개선 제안: **{len(suggestions)}건**",
             "",
         ]
+
+        if data_issues:
+            lines.append("## ❌ 해외약가 데이터 검사 (저장 행이 규칙과 어긋남)")
+            for d in data_issues:
+                lines.append(f"- **{d['check']}** `{d['file']}` — {d.get('detail', '')}")
+            lines.append("")
+            lines.append("→ 해당 행 재수집(스크레이퍼가 volume/포장수량 포함) 또는 값 정정. "
+                         "`agents/rules/foreign_agent_rules.md` §최소단위 · §pack_count")
+            lines.append("")
 
         if mfds_regressions:
             lines.append("## ❌ MFDS 공식일 회귀 (peri/adj/neo 매칭 의심)")
@@ -421,9 +454,10 @@ class QualityGuardAgent:
                          "+ `agents/rules/kr_mfds_approval_agent_rules.md` §2 LayerSpec 확인")
             lines.append("")
 
-        if rule_drifts:
+        code_drifts = [d for d in rule_drifts if d.get("kind") != "data"]
+        if code_drifts:
             lines.append("## ⚠️ 규칙 ↔ 코드 Drift")
-            for d in rule_drifts:
+            for d in code_drifts:
                 icon = "❌" if d["severity"] == "ERROR" else "⚠️"
                 lines.append(f"- {icon} **{d['rule']}** — `{d['file']}`")
             lines.append("")
@@ -452,7 +486,8 @@ class QualityGuardAgent:
         return {
             "date": today,
             "code_issues": code_issues,
-            "rule_drifts": rule_drifts,
+            "rule_drifts": rule_drifts,          # 코드 drift + 데이터 검사(kind="data") — 원장 계약
+            "data_issues": data_issues,          # 같은 항목, 이름 있는 키 (보고서·테스트용)
             "mfds_regressions": mfds_regressions,
             "suggestions": suggestions,
             "report_path": str(report_path),

@@ -52,7 +52,7 @@ class ChCompendiumScraper(BaseScraper):
     COUNTRY       = "CH"
     CURRENCY      = "CHF"
     SOURCE_LABEL  = "compendium.ch (Publikumspreis, SL)"
-    SOURCE_TYPE   = "compendium"    # PriceCalculator에 전달 → ratio 0.65
+    SOURCE_TYPE   = "compendium"    # PriceCalculator 오버라이드 없음 → CH 기본 ratio 0.73 (2026-10: 0.65 는 발효된 적 없음)
     REQUIRES_LOGIN = False
     PROXY_ENV_KEYS = ("CH_COMPENDIUM_PROXY", "FOREIGN_PROXY")   # Cloudflare 간헐 차단 — residential proxy(설정 프로브가 확인)
 

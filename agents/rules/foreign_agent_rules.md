@@ -32,7 +32,10 @@ JP, IT, FR, CH, UK, DE, CA (US는 구독 확인 필요)
 **금지사항:**
 - injection 에서 `total_mg / unit_mg` ratio 로 pack_count 추론 금지 — 이 비율은 **농도×volume/농도 = volume** 이라 pack count 와 무관 (예: Keytruda 100mg/4ml 25mg/ml → ratio=4 인데 실제는 1 vial).
 - injection 에서 `_extract_mg()` (per-mL 농도) 를 unit_mg 로 사용 금지 — 분모가 per-mL 이면 daily_cost 가 4× 과대 또는 반대 방향으로 왜곡.
-- **반드시 `_extract_per_unit_mg(form_type, ...)`** 사용: injection 은 "N mg/M mL (M>1)" 또는 "농도 × volume" 으로 per-vial 총량 복원, 복원 불가면 None → daily_cost 계산 skip.
+- **반드시 `_extract_per_unit_mg(form_type, dosage_strength, package_unit, product_name=, dosage_form=)`** 사용: injection 은 "N mg/M mL (M>1)" 또는 "농도 × volume" 으로 per-vial 총량 복원, 복원 불가면 None → daily_cost 계산 skip (`daily_cost_note="unit_mg_unresolved"`, `unit_strength_unresolved=True`).
+  - **bare "N mg" 도 농도일 수 있다** (2026-10 감사, FR Vidal #1504): dosage_strength 가 "25 mg" 인데 product_name/dosage_form 에 "25 mg/ml" 이 있으면 25 는 per-mL. 문맥 어디든 "mg/ml" 표기가 있으면 volume 없이는 None — 예전 `return _extract_mg(s)` fallback 이 4× 왜곡(₩1,083,683 vs ₩270,921)을 만들었다. 농도 표기가 **어디에도 없는** bare "N mg" 만 총량(DE "240 mg", JP "100mg4mL1瓶").
+  - 복원 불가 행은 제형 보정(`foreign_dose_normalize._strength_of`)도 regex fallback 으로 농도를 강도로 쓰지 않는다 (저장된 factor 4.0 은 `get_cached_results` 가 표시 시 미적용). 저장 행 정정은 재수집으로.
+  - QG 데이터 검사 `quality_guard.checks.check_foreign_price_data` 가 매일 06:00 저장 행을 보고 unit_strength_mg 가 농도와 같거나 분모 불명인데 daily_cost 가 있으면 ERROR drift 로 원장에 올린다 (코드 grep 만으로는 간접 fallback 을 못 잡았다).
 
 **injection pack_count 파싱 허용 단서** (scraper 가 직접 못 넣을 때만):
 - `(N x M)`, `N x M`
@@ -112,10 +115,16 @@ A8_adj_per_unit_KRW =
 | JP | 0.79 | 재정영향분석 표준 |
 | CA | 0.81 | 재정영향분석 표준 |
 
-### source-specific 오버라이드 (PriceCalculator.SOURCE_OVERRIDES)
-- `aifa_exfactory` (IT Class H) → 1.0 (이미 ex-factory)
-- `ch_compendium` → 0.65
-- `fr_vidal` → 0.65 (현재 BDPM 사용 시 SOURCE_TYPE=None → 기본 0.77)
+### source-specific 오버라이드 (PriceCalculator.SOURCE_OVERRIDES) — **코드가 적용하는 실효값**
+| 스크레이퍼 | SOURCE_TYPE | 실효 ratio |
+|-----------|-------------|-----------|
+| IT `it_aifa` / `it_aifa_tnf` | `aifa_exfactory` | **1.0** (이미 ex-factory — 유일한 오버라이드) |
+| CH `ch_compendium` | `compendium` | **0.73** (CH 국가 기본) |
+| FR `fr_bdpm` / `fr_vidal` | `vidal` | **0.77** (FR 국가 기본) |
+| US `us_micromedex` | `redbook_wac` | **0.74** (US 국가 기본, WAC) |
+| 그 외 | `None` | 국가 기본 |
+
+**2026-10-06 주석 (사용자 결정)**: 이전 문서는 `ch_compendium`/`fr_vidal` → 0.65 라고 적었으나, 그 키는 스크레이퍼의 `SOURCE_TYPE`(`"compendium"`/`"vidal"`) 과 한 번도 일치한 적이 없어 **0.65 는 발효된 적 없는 과거의 문서상 의도**였다. 실제로 저장·표시된 모든 CH/FR 조정가는 0.73/0.77 로 계산됐다(예: FR Vidal Keytruda #1504 factory_price_krw 2,379,302 = 2,000.74 × 1544.43 × 0.77). 결정: **코드가 현재 시점의 진실이고 문서는 과거다. 저장된 값은 재계산하지 않는다.** 죽은 항목은 `SOURCE_OVERRIDES` 에서 삭제했고(0.65 를 살리지 않음), `tests/test_foreign_factory_ratio_effective.py` 가 스크레이퍼 선언 `SOURCE_TYPE` 으로 실효 비율을 고정해 다음 drift(오버라이드 키 ≠ 스크레이퍼 선언)를 잡는다. 0.65 가 필요하다고 판단되면 그때 키를 스크레이퍼 선언값에 맞춰 새로 넣고 이 표·테스트·Welireg/Keytruda baseline 을 함께 갱신한다.
 
 ## source_type 처리
 ```python
@@ -130,15 +139,17 @@ calc = self.calculator.calculate_adjusted_price(
 
 scraper 가 pack 가격을 반환하면 pack_count 를 명시해야 per-unit 환산이 맞는다.
 
-**우선순위** (ForeignPriceAgent._resolve_pack_count):
-1. scraper 가 item 에 직접 `pack_count` 필드 제공 — 가장 신뢰
-2. **oral 전용**: `_extract_total_pkg_mg / _extract_mg` ratio (예: 3600/40=90)
-   - injection 에서는 이 ratio 가 농도×volume 의 volume 을 반환 → **금지**
-3. pack-pricing 국가({UK,US,DE,FR,IT,CH})에서 `foreign_drug_dosing.default_pack_count` fallback
-4. 기본 1 (per-unit / 단일 vial)
+**우선순위** (ForeignPriceAgent._resolve_pack_count) — 결정 근거를 `pack_count_source` 컬럼에 남긴다 (2026-10):
+1. `scraper` — 스크레이퍼가 item 에 직접 `pack_count` 제공 (IT TNF, FR Vidal UCD=1). 스크레이퍼 직후 item 이거나 저장 시 source=scraper 였던 행만. **DB 행의 저장 pack_count 는 에이전트 산물이라 읽을 때 다시 결정한다** (과거 default=1 이 캐시에서 영구화되지 않게)
+2. `per_unit` — JP/CA 는 per-unit 가격 체계 → 항상 1
+3. `parsed` — 포장 문구 수량 단서, **form-aware 공용 추출기 `_extract_unit_count`** (`_extract_total_pkg_mg` 와 공유). injection 도 "in vial, 2"·"2 flaconcini"·"1 flacon(s)"·"4 ml 2s"·"2 x 4 ml" 를 읽는다. **mg ratio 경로는 없다** — injection 에서 `total_mg/unit_mg` 는 농도×volume/농도 = volume 이라 pack count 가 아님 (절대 금지). oral ratio 도 unit×count/unit = count 라 단서 파싱과 동치여서 제거했다
+4. `dosing` — oral × pack-pricing 국가({UK,US,DE,FR,IT,CH})에서 `foreign_drug_dosing.default_pack_count`
+5. `default` — 1. **pack-pricing 국가의 oral/unknown 행이 default 면 '팩가가 per-unit 으로 저장된 미확인 행'** → `get_cached_results` 가 `a8_aggregate_eligible=False`, `a8_exclude_reason="pack_count_unverified"` 를 붙이고 UI 요약(min/avg/max, `_buildSummary` → `unverifiedKeys`)·A8 리포트(`foreign_report`, `excluded` + "집계 제외국" 행) 가 평균에서 뺀다. 카드의 숫자는 남는다(사유 필드 표시 권장). injection 의 default=1 vial 은 보수 fallback 규칙이라 집계에 포함
+
+**2026-10 감사 (sitagliptin per-tablet IT ₩51,794 · CH ₩47,326 · DE ₩31,335 vs FR ₩456)**: IT CSV "JANUVIA*28 cpr"·"56 UNITA'", FR "28 plaquette(s) … de 1 comprimé" 는 단서 추가로 파싱된다 (실제 DB 89행 재결정). **파싱 불가로 남는 행**: CH compendium 설명문에 수량이 없음(36/36 — 스크레이퍼가 Packungen 표의 "N Stk" 를 가져와야 함), DE Rote Liste DocCheck 벽 뒤 fallback 가격 5행(oral 3·injection 2 — Packungsangaben 표 "N St" 필요). 이 행들은 재수집 전까지 집계 제외.
 
 **국가별 과금방식:**
-- Per-unit (pack_count=1): JP MHLW, CA Ontario
+- Per-unit (pack_count=1): JP MHLW, CA Ontario, FR Vidal UCD(바이알 단가 — `extra.price_basis="ucd"`)
 - Pack (pack_count ≥ 1): UK MIMS, US Redbook, DE Rote Liste, FR BDPM, IT AIFA, CH Compendium
 
 ## 환율 적용 원칙
@@ -146,7 +157,7 @@ scraper 가 pack 가격을 반환하면 pack_count 를 명시해야 per-unit 환
 - **고시회차는 반드시 '최종'.** KEB 폼 라디오 매핑 반직관적: `tmpPbldDvCd_1`(value=1)=최초, `tmpPbldDvCd_2`(value=0)=**최종**. `inputCheck()` 가 제출 시 `pbldDvCd=radiobox.getCheckedValue(tmpPbldDvCd)` 로 hidden 재생성 → **체크된 라디오가 결정적** (hidden 수동설정 덮어써짐). 최초/최종 값 ~0.1% 차이.
 - 환율 조회 실패 시 → adjusted_price_krw = None (DB 저장은 진행)
 - EUR 은 FR/IT/DE 공용
-- **JPY: KEB 가 "100엔당 KRW" 로 고시.** parse 시점에 /100 정규화 + calculator safeguard 이중 방어.
+- **JPY: KEB 가 "100엔당 KRW" 로 고시.** 정규화 지점은 하나 — `agents.exchange_rate.per_unit_rate(currency, rate)` (JPY 이고 >100 이면 /100). parse(`parse_keb_excel`, 라벨 "(100)" 유무 무관)·`PriceCalculator`·`foreign_report`('적용환율' 칸)·`recompute_foreign_fx`(old/new 모두 정규화 후 비율) 가 전부 이 함수를 거친다. **저장된 레거시 행(923.21 = 100엔당) 은 재계산하지 않고 읽을 때 정규화** — 2026-10 감사 전에는 리포트가 923.21 을 적용환율로 쓰고(환산가는 per-1 로 계산돼 자기모순), 월간 재계산이 저장 923.21 vs 새 9.39 를 그대로 나눠 100× 축소될 수 있었다. 프론트(`foreign.ts` mapPricingEntry) 는 같은 >100 규칙으로 표시.
 
 ### 환율 캐시 = 단일 소스 (수집 1 / 소비 여럿)
 - **수집(크롤)은 월간 자동갱신 잡 하나뿐**: `scheduler.exchange_rate_refresh_job` (매월 2일 04:00 KST). KEB 최종 → `data/foreign/exchange_rate/keb_avg_rate_{from}_{to}.xlsx` 캐시 덮어씀. chromium 은 Dockerfile 에 설치됨.
@@ -186,10 +197,11 @@ scraper 가 pack 가격을 반환하면 pack_count 를 명시해야 per-unit 환
 daily_cost_krw = daily_dose_mg × (adjusted_price_krw / unit_mg)
 ```
 
-- `unit_mg` = `_extract_per_unit_mg(form_type, dosage_strength, package_unit)` — **form-aware**
+- `unit_mg` = `_extract_per_unit_mg(form_type, dosage_strength, package_unit, product_name=, dosage_form=)` — **form-aware**
   - oral: per-tablet mg (`_extract_mg(dosage_strength)` 와 동일, 예: 40)
-  - injection: per-vial **총** mg (예: "100 mg/4 mL" → 100, "25 mg/mL" + "4 mL" → 100)
-  - 농도만 있고 volume 없으면 per-vial 복원 불가 → `unit_mg=None` → daily_cost skip
+  - injection: per-vial **총** mg (예: "100 mg/4 mL" → 100, "25 mg" + "1 flacon(s) de 4 ml" → 100)
+  - 농도만 있고 volume 없으면 per-vial 복원 불가 → `unit_mg=None` → daily_cost skip + `daily_cost_note="unit_mg_unresolved"`
+  - `_populate_daily_cost` 는 **재계산**이다 — 캐시 행의 저장 daily_cost 를 먼저 비우고 계산한다 (skip 시 과거 값이 남지 않게)
 - `adjusted_price_krw` 는 **per-unit KRW** (정 1개 또는 바이알 1개 기준)
 - 분모가 per-mL 농도로 들어가면 daily_cost 가 4×~100× 왜곡됨 — **절대 금지**
 - **회귀 방지**: 과거에는 adj 가 per-pack 이어서 분모도 total_pkg_mg 였음. 이제 둘 다 per-unit 로

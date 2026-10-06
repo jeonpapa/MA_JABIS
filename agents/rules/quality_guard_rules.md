@@ -84,8 +84,8 @@
 
 | 트리거 | 점검 내용 | 구현 함수 |
 |--------|-----------|-----------|
-| 스크레이퍼 실행 완료 후 | Keytruda validation + 스키마 검증 | `validate_scraper_results` / `run_keytruda_validation` |
-| DB 저장 완료 후 | 중복 레코드 · 가격 이상값 확인 | `validate_db_records` |
+| 스크레이퍼 실행 완료 후 | 스키마 검증 | `validate_scraper_results` |
+| **매일 06:00 (review_codebase 안)** | **해외약가 저장 행 데이터 검사** — injection 분모가 per-mL 농도인 행 · 국가/통화 코드 · pack_count 미확인 행 요약 | `checks.check_foreign_price_data` / `checks.summarize_unverified_pack_rows` |
 | 대쉬보드 업데이트 후 | API 응답 → 화면 출력 일치 여부 | 수동 |
 | 매일 00:00 | Git 자동 백업 | `scheduler.git_backup_job` |
 | **매일 06:00** | **코드베이스 종합 리뷰 + 회귀 탐지 + 제안 생성** | `review_codebase` |
@@ -110,6 +110,15 @@
 ### 2) 규칙 ↔ 코드 Drift 탐지 (`scan_rule_drift`)
 - MFDS `approval_date` 를 `date_source` 판단 없이 사용하는 파일
 - (향후) CLAUDE.md 절대금지 항목 vs 코드 자동 매핑
+
+### 2b) 해외약가 **데이터** 검사 (`checks.check_foreign_price_data`, 2026-10 추가)
+코드 grep 만으로는 간접 fallback 을 못 잡았다 — FR Vidal "25 mg"(per-mL 농도) 가 `return _extract_mg(s)` 를 타고 daily_cost 분모가 돼 4× 였는데 (c) 패턴 검사는 통과했다. 그래서 **저장된 값**을 본다 (DB read-only):
+- `injection_concentration_as_unit` (ERROR): priced injection 행의 `unit_strength_mg` 가 문맥의 농도(N mg/ml 의 N)와 같거나, form-aware `_extract_per_unit_mg` 재계산과 다르거나, per-vial mg 불명인데 `daily_cost_krw` 가 있다
+- `invalid_country_code` / `invalid_currency_code` (ERROR): ISO 집합 밖 (구 `check_db_records` 승계 — 그 함수는 어디서도 호출되지 않던 죽은 코드라 삭제)
+- 결과는 `review_codebase()` 가 `rule_drifts` 에 합쳐 돌려준다(항목에 `kind="data"`, `check`, `row_id`, `detail`) — `signals.record_quality_review` 가 이미 읽는 형태라 **ops_incident(priority 2)** 로 원장에 간다. `file` 의 숫자는 내용 키에서 지워지므로 같은 (국가, 약제) 는 하루 1건·다음 날 재발도 같은 행. 보고서에는 "해외약가 데이터 검사" 섹션.
+- `summarize_unverified_pack_rows`: pack_count 미확인(default) 으로 A8 평균에서 빠진 pack 국가 행을 국가·약제별 건수로 제안(🧮) 1줄 → improvement 그룹.
+- 죽은 안전장치 정리: `validate_keytruda`/`run_keytruda_validation` 도 삭제 — Keytruda 검증은 `tests/test_keytruda_injection_baseline.py`(per-vial 조정가·일일비용 고정) 와 위 데이터 검사가 맡는다. `agents/pipeline.py` 는 아무도 import 하지 않는다(QG 호출 없음, 그대로 둠).
+- 오프라인 실행: `QG_SKIP_NETWORK_CHECKS=1` 이면 제안 6a(DocCheck 실제 로그인) 를 건너뛴다. `QUALITY_GUARD_DIR` 로 산출물 경로 오버라이드.
 
 ### 3) MFDS 공식일 회귀 탐지 (`check_mfds_baseline`)
 `kr_mfds_approval_agent_rules.md` §9 의 **8개 baseline indication** 이 DB 의 `approval_date` 와 일치하는지 확인. 한 건이라도 불일치 시 ERROR 기록 — peri/adj/neo 매칭 로직 회귀 신호.

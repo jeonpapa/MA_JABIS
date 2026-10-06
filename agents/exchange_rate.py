@@ -38,6 +38,21 @@ KEB_CURRENCY_NAME_MAP = {
 }
 
 
+def per_unit_rate(currency: str | None, rate: float | None) -> float | None:
+    """환율을 **통화 1단위당 KRW** 로 정규화한다 — 유일한 정규화 지점.
+
+    KEB하나은행은 JPY 를 '100엔당 KRW' 로 고시한다(예: 923.21 = ¥100). 과거 parse 가 라벨에 "100" 이 있을 때만
+    나눴고 현재 라벨은 "일본 JPY" 라 100엔당 값이 그대로 저장된 행이 있다(2026-10 감사). 그래서 소스(parse)·계산기·
+    리포트·월간 재계산(recompute_foreign_fx)이 모두 이 함수를 거친다: JPY 이고 100 을 넘으면 /100, 나머지는 그대로.
+    (¥1 = ₩100 을 넘는 날은 오지 않는다 — 넘으면 이 휴리스틱이 아니라 저장 규약을 바꿔야 한다.)
+    """
+    if rate is None:
+        return None
+    if (currency or "").upper() == "JPY" and rate > 100:
+        return rate / 100.0
+    return rate
+
+
 def _calc_date_range(ref_date: date = None) -> tuple[str, str]:
     """
     HIRA 기준 36개월 조회 기간 계산.
@@ -187,11 +202,10 @@ def parse_keb_excel(excel_path: Path) -> dict[str, float]:
         try:
             rate = float(raw_rate.replace(",", ""))
             if rate > 0:
-                # KEB 는 JPY 를 "100엔당" 으로 고시 (예: 924.75 = 100 JPY 기준 KRW).
-                # local_price * rate 가 KRW 가 되려면 per-1-unit 로 정규화 필요.
-                # raw_cur 에 "100" 이 있으면 divisor=100 적용.
+                # KEB 는 JPY 를 "100엔당" 으로 고시 (예: 939.36 = ¥100 당 KRW). 라벨 "(100)" 유무와 무관하게
+                # per-1 로 정규화해 저장한다 — per_unit_rate 가 단일 정규화 지점 (라벨에 100 이 있으면 먼저 나눈다).
                 per_unit_divisor = 100.0 if "100" in raw_cur else 1.0
-                rates[cur] = rate / per_unit_divisor
+                rates[cur] = per_unit_rate(cur, rate / per_unit_divisor)
         except ValueError:
             continue
 
@@ -295,11 +309,12 @@ class PriceCalculator:
         "JP": 0.79, "CA": 0.81,
     }
 
-    # source-specific 오버라이드 (공시가 체계가 다른 경우)
+    # source-specific 오버라이드 (공시가 체계가 다른 경우). 키는 스크레이퍼의 SOURCE_TYPE 과 **정확히** 같아야 한다 —
+    # tests/test_foreign_factory_ratio_effective.py 가 스크레이퍼 선언값으로 실효 비율을 고정한다.
+    # 2026-10: "ch_compendium"/"fr_vidal" 0.65 항목 삭제 — 스크레이퍼 SOURCE_TYPE 은 "compendium"/"vidal" 이라 한 번도
+    # 발효된 적 없고 실효 비율은 CH 0.73 / FR 0.77(국가 기본) 이었다. 사용자 결정: 코드가 현재 시점의 진실, 저장값 재계산 없음.
     SOURCE_OVERRIDES = {
-        "aifa_exfactory": 1.0,    # IT Class H: 이미 ex-factory
-        "ch_compendium":  0.65,   # CH Compendium
-        "fr_vidal":       0.65,   # FR Vidal (BDPM 사용 시는 SOURCE_TYPE=None → 기본 0.77)
+        "aifa_exfactory": 1.0,    # IT Class H / TrovaNorme: 이미 ex-factory
     }
 
     CURRENCY = COUNTRY_CURRENCY
@@ -322,9 +337,8 @@ class PriceCalculator:
 
         pack_count: listed_price 가 pack 가격이면 tablet/vial 수. None/1 이면 per-unit 취급.
         """
-        # JPY per-100 safeguard (KEB 레거시 캐시 호환)
-        if country == "JP" and exchange_rate and exchange_rate > 100:
-            exchange_rate = exchange_rate / 100.0
+        # JPY per-100 → per-1 (저장된 레거시 행 923.21 호환) — 단일 정규화 지점 per_unit_rate
+        exchange_rate = per_unit_rate(self.CURRENCY.get(country), exchange_rate)
 
         if pack_count and pack_count > 1:
             per_unit_listed = listed_price / pack_count

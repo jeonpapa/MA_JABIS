@@ -77,7 +77,7 @@ class FrVidalScraper(BaseScraper):
     COUNTRY        = "FR"
     CURRENCY       = "EUR"
     SOURCE_LABEL   = "VIDAL.fr"
-    SOURCE_TYPE    = "vidal"      # HIRA factory_ratio = 0.65
+    SOURCE_TYPE    = "vidal"      # PriceCalculator 오버라이드 없음 → FR 기본 ratio 0.77 (2026-10: 0.65 는 발효된 적 없음)
     REQUIRES_LOGIN = True
     LOGIN_OPTIONAL = True         # 자격증명 없으면 비로그인 모드(_login_requests → False) — 큐레이션 UCD 페이지는 공개
 
@@ -317,21 +317,23 @@ class FrVidalScraper(BaseScraper):
         # ── 가격 추출 ────────────────────────────────────────────────────────
         # 우선순위 1: **UCD 병원가** "... par UCD : N euros" (HT, ex-VAT). 병원용 주사제
         #   (keytruda 등)는 BDPM 공시가 없고 이 UCD 가격이 정답 — 공개, 3자리 소수 표기
-        #   (예 "2000,740 euros" = €2000.74). SOURCE_TYPE=vidal(ratio 0.65) 와 정합.
+        #   (예 "2000,740 euros" = €2000.74). HT 가에 FR 기본 ratio 0.77 적용(실효값, 2026-10).
         # 우선순위 2~: 일반 "X.XXX,XX €" / "Prix : ...".
         price = None
+        price_basis = ""
         price_patterns = [
             # UCD 병원가 — "par UCD ... N,NNN euros". 사이 UCD 13자리 코드는 comma/euros 가
             # 없어 자동 배제됨(euros 접미사 앵커). 예 "2000,740 euros" → 2000.74.
-            r"par\s*UCD.{0,150}?(\d{1,5}(?:[\s\.]\d{3})*,\d+)\s*euros",
-            r"responsabilit.{0,180}?(\d{1,5}(?:[\s\.]\d{3})*,\d+)\s*euros",
-            r"(\d{1,5}(?:[\s\.]\d{3})*,\d+)\s*euros",
-            r"[Pp]rix\s*(?:HT|TTC)?\s*[:\s]+(\d{1,5}(?:\.\d{3})*,\d{2})\s*€",
-            r"(\d{1,5}(?:\.\d{3})*,\d{2})\s*€(?:\s*(?:TTC|HT))?",
-            r"€\s*(\d{1,5}(?:\.\d{3})*,\d{2})",
-            r"[Pp]rix\s*[:\s]+(\d+[,\.]\d{2})",
+            # UCD(unité commune de dispensation) 는 정의상 최소단위(바이알 1개) 단가 → pack_count=1 명시.
+            ("ucd", r"par\s*UCD.{0,150}?(\d{1,5}(?:[\s\.]\d{3})*,\d+)\s*euros"),
+            ("ucd", r"responsabilit.{0,180}?(\d{1,5}(?:[\s\.]\d{3})*,\d+)\s*euros"),
+            ("", r"(\d{1,5}(?:[\s\.]\d{3})*,\d+)\s*euros"),
+            ("", r"[Pp]rix\s*(?:HT|TTC)?\s*[:\s]+(\d{1,5}(?:\.\d{3})*,\d{2})\s*€"),
+            ("", r"(\d{1,5}(?:\.\d{3})*,\d{2})\s*€(?:\s*(?:TTC|HT))?"),
+            ("", r"€\s*(\d{1,5}(?:\.\d{3})*,\d{2})"),
+            ("", r"[Pp]rix\s*[:\s]+(\d+[,\.]\d{2})"),
         ]
-        for pat in price_patterns:
+        for basis, pat in price_patterns:
             m = re.search(pat, text, re.IGNORECASE)
             if m:
                 raw = m.group(1).replace(" ", "").replace(".", "").replace(",", ".")
@@ -339,6 +341,7 @@ class FrVidalScraper(BaseScraper):
                     candidate = float(raw)
                     if 0.01 <= candidate <= 500_000:
                         price = candidate
+                        price_basis = basis
                         break
                 except ValueError:
                     continue
@@ -347,7 +350,7 @@ class FrVidalScraper(BaseScraper):
         if "Non remboursé" in (remboursement or "") and price is None:
             logger.info("[FR] Non remboursé — 가격 없음: %s", product_name)
 
-        return {
+        rec = {
             "product_name":    product_name,
             "ingredient":      ingredient,
             "dosage_strength": dosage,
@@ -360,8 +363,12 @@ class FrVidalScraper(BaseScraper):
                 "company":         company,
                 "login_required":  login_required,
                 "source_type":     self.SOURCE_TYPE,
+                "price_basis":     price_basis,
             },
         }
+        if price is not None and price_basis == "ucd":
+            rec["pack_count"] = 1        # UCD 단가 = 최소단위 1개 (에이전트 pack_count_source=scraper)
+        return rec
 
     # ────────────────────────────────────────────────────────────────────────
     # 4) BaseScraper 인터페이스
