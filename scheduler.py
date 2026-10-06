@@ -1196,9 +1196,10 @@ def main():
         return
 
     if args.config_probe_now:
-        from agents.agent_tasks.config_probe import Problem, format_table
-        res = foreign_config_probe_job()
-        print(format_table([Problem(**p) for p in res.get("problems", [])]))
+        from agents.agent_tasks.config_probe import env_from, format_table, probe
+        # 표는 순수 판정(기록 없음)에서 — guarded_job 의 normalize_result 는 {ok, counts, errors} 만 남겨 problems 를 잃는다
+        print(format_table(probe(env=env_from(BASE_DIR))))
+        res = foreign_config_probe_job()                       # 기록: 실행 1행 + 문제당 config 과제
         print(json.dumps(res["counts"], ensure_ascii=False))
         return
 

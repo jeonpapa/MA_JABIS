@@ -167,3 +167,18 @@ def test_scheduler_registers_config_probe_job(monkeypatch, tmp_path):
     tasks = list_tasks(db_path=ledger)
     assert tasks and all(t["source"] == "scheduler_job" and t["source_ref"].startswith("foreign_config_probe:config:") for t in tasks)
     assert any(t["source_ref"].endswith(":scrapling:import") for t in tasks)
+
+
+def test_config_probe_cli_prints_problems_not_the_guarded_summary(monkeypatch, tmp_path, capsys):
+    """guarded_job 의 normalize_result 는 problems 키를 버린다 — 표는 순수 probe() 로 찍어야 '설정 문제 없음' 오보가 없다."""
+    import sys
+    import scheduler as sch
+    monkeypatch.setenv("AGENT_TASK_DB", str(tmp_path / "ledger.db"))
+    monkeypatch.setattr(cp, "_import_scrapling", _bad_import)
+    monkeypatch.setattr(cp, "env_from", lambda base_dir, base=None: {})
+    monkeypatch.setattr(sys, "argv", ["scheduler.py", "--config-probe-now"])
+    sch.main()
+    out = capsys.readouterr().out
+    assert "CONFIG scrapling:import" in out and "CONFIG US:credentials" in out and "설정 문제 없음" not in out
+    assert '"tasks_new"' in out
+    assert any(t["source_ref"].endswith(":scrapling:import") for t in list_tasks(db_path=tmp_path / "ledger.db"))
