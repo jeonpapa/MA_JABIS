@@ -90,6 +90,14 @@ form_type 주입은 **스크레이퍼 + 에이전트 이중 보장**으로 캐�
 - **국가 검색 1회 = searched_at 1개**: `search_one_country` 가 세션 시각을 한 번 찍어 모든 채널 행(IT CSV+TNF, FR BDPM+Vidal)에 같은 값을 저장한다. 채널 run() 이 찍은 시각은 버린다.
 - 이유: 채널별 시각이 80ms 차이 나면 `compact_foreign_prices`(국가당 최신 1세션 유지) 가 먼저 찍힌 채널을 지웠고(keytruda IT CSV 행 소실), `get_foreign_prices` 도 한 채널만 노출했다. 압축·조회 SQL 은 그대로 — 저장 전에 통일하는 쪽이 작고 안전하다. 회귀: `tests/test_foreign_channel_session.py`.
 
+## JP MHLW — INN 라우팅 · 최신 공시 탐색 · 캐시 TTL (2026-10-06, P1.6 Item 4)
+
+- **INN → 일본어 표기는 기존 자원으로**(`JpMhlwScraper._resolve_jp_name`): ① `product_alias_map.agency_brand_overrides["PMDA"]`(`drug_aliases.agency_brand`) ② `EN_JP_NAME_MAP` 을 입력 + `drug_aliases.aliases(query)`(slug·inn·brand_aliases, 없으면 BRAND_TO_MOLECULE 역조회)로 역조회 ③ 원문. 두 번째 손관리 표를 만들지 않는다. 감사: 브랜드 키만 있어 백필 잡의 INN 검색이 39/39 0건.
+- **캐시는 카테고리(_01/_02/_03)별 최신 공시본 1개만 병합**(`_latest_files_by_category`, 파일명 tpYYYYMMDD 순). 갱신 뒤 구 공시본이 남아도 중복되지 않는다.
+- **페이지 탐색**: env `JP_MHLW_PAGE_URL` → 캐시 파일명에서 유도한 `/topics/YYYY/MM/tpYYYYMMDD-01.html` → 상수. 각 페이지에서 가장 최신 날짜의 xlsx 를 고른다. 새 공시가 **새 페이지**에만 실리면 캐시 유도 URL 로는 못 찾는다 — 안정적인 인덱스 페이지 URL 은 라이브 확인이 필요(env 로 즉시 지정 가능).
+- **TTL 90일**(`XLSX_CACHE_TTL_DAYS`, 4월 전면개정 + 분기 수재): 초과 시 `search()` 가 갱신 시도, page 없음/실패는 구 파일로 답하되 `stale_cache` 경고 → 원장 `foreign_search:JP:stale_cache`.
+- 고정: `tests/test_jp_mhlw_inn_routing.py` (fixture `tests/fixtures/jp_mhlw/` + 레포 캐시 `data/foreign/jp/tp20260318-01_0{1,2}.xlsx` 실측).
+
 ## 새 국가 추가 시 필수 작업
 1. `agents/scrapers/{cc}_{source}.py` 생성 (BaseScraper 상속)
 2. `foreign_price_agent.py` 에 import + `_build_scraper()` 케이스 추가
