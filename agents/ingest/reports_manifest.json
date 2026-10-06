@@ -22,6 +22,17 @@
       "cycle": 6,
       "session_date": "2026-06-04",
       "title": "2026년 6차 약제급여평가위원회 결과 리뷰 보고"
+    },
+    {
+      "file_name": "2026-10-02_약평위10차_암질심8차_d_plus_1.pdf",
+      "file_hash": "1a85e70a7c9870dc983cfa7966ab8baee55fe081",
+      "url": "https://raw.githubusercontent.com/jeonpapa/AccessRoutineAnalystic/main/data/hira_pipeline/%EB%B3%B4%EA%B3%A0%EC%84%9C/D%2B1_%EA%B2%B0%EA%B3%BC_%EB%A6%AC%EB%B7%B0/2026-10-02_%EC%95%BD%ED%8F%89%EC%9C%8410%EC%B0%A8_%EC%95%94%EC%A7%88%EC%8B%AC8%EC%B0%A8_d_plus_1.pdf",
+      "committee": "combined",
+      "report_type": "post",
+      "year": 2026,
+      "cycle": 10,
+      "session_date": "2026-10-01",
+      "title": "2026년 10차 약제급여평가위원회·8차 암질환심의위원회 결과 리뷰 보고"
     }
   ]
 }

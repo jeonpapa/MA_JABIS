@@ -27,9 +27,24 @@ from playwright.sync_api import sync_playwright
 
 
 CSS = """
+@font-face {
+    font-family: 'Noto Sans KR';
+    src: url('file:///opt/data/fonts/noto-static/NotoSansKR-400.ttf') format('truetype');
+    font-weight: 400;
+}
+@font-face {
+    font-family: 'Noto Sans KR';
+    src: url('file:///opt/data/fonts/noto-static/NotoSansKR-600.ttf') format('truetype');
+    font-weight: 600;
+}
+@font-face {
+    font-family: 'Noto Sans KR';
+    src: url('file:///opt/data/fonts/noto-static/NotoSansKR-700.ttf') format('truetype');
+    font-weight: 700;
+}
 @page { size: A4; margin: 18mm 16mm; }
 body {
-    font-family: 'Apple SD Gothic Neo', -apple-system, 'Pretendard',
+    font-family: 'Noto Sans KR', 'Apple SD Gothic Neo', -apple-system, 'Pretendard',
                  'Helvetica Neue', sans-serif;
     font-size: 10.5pt;
     line-height: 1.55;
