@@ -86,7 +86,9 @@ def _seed(db: Path, rows: list[dict]) -> None:
 
 
 def test_check_foreign_price_data_flags_concentration_as_unit(tmp_path, monkeypatch):
-    monkeypatch.setenv("QUALITY_GUARD_DIR", str(tmp_path / "qg"))
+    from agents.quality_guard import deviations
+    monkeypatch.setattr(deviations, "GUARD_DIR", tmp_path / "qg")          # 모듈 상수는 import 시점 — 직접 바꾼다
+    monkeypatch.setattr(deviations, "DEVIATION_LOG", tmp_path / "qg" / "deviation_log.jsonl")
     from agents.quality_guard.checks import check_foreign_price_data
     db = tmp_path / "p.db"
     _seed(db, [

@@ -103,32 +103,6 @@ def check_scraper_output(
     return results
 
 
-def check_db_records(records: list[dict], country: str) -> None:
-    """DB 저장 전 레코드 검증."""
-    for rec in records:
-        if rec.get("country", "").upper() not in VALID_COUNTRIES:
-            _write_deviation({
-                "severity": "ERROR",
-                "agent": "ForeignPriceAgent",
-                "deviation_type": "invalid_country_code",
-                "description": f"유효하지 않은 국가코드: {rec.get('country')}",
-                "expected": str(VALID_COUNTRIES),
-                "actual": rec.get("country"),
-                "corrective_action": "국가코드 수정 필요",
-            })
-
-        if rec.get("currency", "").upper() not in VALID_CURRENCIES:
-            _write_deviation({
-                "severity": "ERROR",
-                "agent": "ForeignPriceAgent",
-                "deviation_type": "invalid_currency_code",
-                "description": f"유효하지 않은 통화코드: {rec.get('currency')} ({country})",
-                "expected": str(VALID_CURRENCIES),
-                "actual": rec.get("currency"),
-                "corrective_action": "통화코드 수정 필요",
-            })
-
-
 def check_foreign_price_data(db_path: Path | str) -> list[dict]:
     """저장된 해외약가(foreign_drug_prices) **데이터** 검사 — 매일 06:00 `review_codebase` 가 호출한다.
 
@@ -221,26 +195,65 @@ def check_foreign_price_data(db_path: Path | str) -> list[dict]:
     return findings
 
 
-def validate_keytruda(results: list[dict], country: str) -> bool:
-    """Keytruda 가격 validation — 1건 이상 가격 있으면 True."""
-    priced = [r for r in results if r.get("local_price") is not None]
-    if not priced:
-        _write_deviation({
-            "severity": "WARNING",
-            "agent": "Scraper",
-            "deviation_type": "keytruda_validation_failed",
-            "description": f"[{country}] Keytruda validation 실패 — 가격 없음",
-            "expected": "1건 이상 local_price 있는 결과",
-            "actual": f"{len(results)}건 결과, 모두 local_price=None",
-            "corrective_action": "해당 국가 스크레이퍼 점검 또는 비급여 확인",
-        })
-        return False
+def summarize_unverified_pack_rows(db_path: Path | str) -> list[str]:
+    """pack_count 미확인(default) 으로 A8 집계에서 빠져 있는 pack 국가 행 요약 — review_codebase 제안(🧮) 1줄.
 
-    logger.info(
-        "[QualityGuard] [%s] Keytruda validation ✅ — %d건 가격 확인",
-        country, len(priced),
+    foreign_agent_rules.md §pack_count: pack-pricing 국가 oral/unknown 행이 수량 단서도 dosing 도 없으면 pack_count=1
+    (default) 이고, 그 숫자는 팩가가 단위가로 보이는 것이라 UI 요약·리포트가 평균에서 뺀다. 그 행들이 어느 국가·약제에
+    몇 건인지 매일 보이게 한다 (재수집/스크레이퍼 보강 대상). 저장 행이 아니라 현재 resolver 로 다시 판정한다
+    (저장 pack_count_source 는 레거시 NULL 일 수 있다). DB 는 read-only.
+    """
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return []
+    try:
+        conn = sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return []
+    try:
+        conn.row_factory = sqlite3.Row
+        if not conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='foreign_drug_prices'"
+        ).fetchone():
+            return []
+        rows = [dict(r) for r in conn.execute(
+            "SELECT id, query_name, country, product_name, dosage_strength, dosage_form, package_unit, form_type, "
+            "pack_count, pack_count_source FROM foreign_drug_prices WHERE local_price IS NOT NULL"
+        ).fetchall()]
+        dosing = {r["ingredient_key"]: dict(r) for r in conn.execute(
+            "SELECT ingredient_key, default_pack_count FROM foreign_drug_dosing"
+        ).fetchall()} if conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='foreign_drug_dosing'"
+        ).fetchone() else {}
+    finally:
+        conn.close()
+    if not rows:
+        return []
+
+    from collections import Counter
+
+    from agents.foreign_price_agent import (
+        PACK_PRICING_COUNTRIES, ForeignPriceAgent, a8_aggregate_eligibility,
     )
-    return True
+    agent = ForeignPriceAgent.__new__(ForeignPriceAgent)
+    counts: Counter = Counter()
+    for r in rows:
+        if r["country"] not in PACK_PRICING_COUNTRIES:
+            continue
+        d = dosing.get((r.get("query_name") or "").lower())
+        agent._resolve_pack_count(r["country"], r, d)
+        ok, reason = a8_aggregate_eligibility(r["country"], {**r, "adjusted_price_krw": 1})
+        if not ok and reason == "pack_count_unverified":
+            counts[(r["country"], r["query_name"])] += 1
+    if not counts:
+        return []
+    total = sum(counts.values())
+    parts = " · ".join(f"{c} {q} {n}" for (c, q), n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
+    return [
+        f"🧮 해외약가 pack_count 미확인(default) 행 {total}건 — {parts}: 팩가가 단위가로 저장된 행이라 A8 평균에서 "
+        f"제외 중. 스크레이퍼가 포장수량(CH Packungen 'N Stk', DE Packungsangaben 'N St')을 가져오도록 보강 후 재수집 "
+        f"(foreign_agent_rules.md §pack_count)"
+    ]
 
 
 # ──────────────────────────────────────────────────────────────────────────
