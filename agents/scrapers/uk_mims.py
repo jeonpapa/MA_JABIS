@@ -27,7 +27,7 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote, urlparse
 
-from .base import BaseScraper
+from .base import BaseScraper, ScraperConfigError, ScraperLoginError
 
 logger = logging.getLogger(__name__)
 
@@ -87,8 +87,9 @@ class UkMimsScraper(BaseScraper):
         user = (self.credentials or {}).get("username")
         pw   = (self.credentials or {}).get("password")
         if not user or not pw:
-            logger.warning("[UK] MIMS 자격증명 없음 (MIMS_UK_USERNAME/PASSWORD) — 스킵")
-            return []
+            # 삼키지 않는다(P1.6): [] 를 돌려주면 화면이 'MIMS 구독 필요' 로 감싸 설정 문제가 보이지 않았다.
+            # search_all 이 config 로 분류해 원장(foreign_search:UK:config)에 남기고 foreign_config_probe 와 같은 키 이름을 가리킨다.
+            raise ScraperConfigError("MIMS 자격증명 없음 — config/.env MIMS_UK_USERNAME/MIMS_UK_PASSWORD 미설정 (이름만 확인, 값 금지)")
         try:
             from scrapling.fetchers import StealthySession
         except Exception as e:
@@ -126,8 +127,9 @@ class UkMimsScraper(BaseScraper):
             lp = s.fetch(LOGIN_URL, page_action=login_action,
                          network_idle=False, timeout=120000)
             if "log in or register" in (lp.html_content or "").lower():
-                logger.warning("[UK] MIMS 로그인 실패 (로그인벽 잔존)")
-                return []
+                # 삼키지 않는다(P1.6): 로그인벽 잔존은 제도상 공백이 아니라 수집 실패 — login 으로 분류돼 원장·화면에 남는다.
+                raise ScraperLoginError(
+                    "MIMS 로그인 실패 (로그인벽 잔존) — 자격증명 또는 프록시 sticky 세션(MIMS_UK_PROXY, 로그인 IP 와 검색 IP 동일) 확인")
 
             sr = s.fetch(f"{SEARCH_URL}?keywords={quote(query)}",
                          network_idle=True, timeout=120000)

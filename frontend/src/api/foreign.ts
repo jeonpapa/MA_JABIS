@@ -819,7 +819,7 @@ export interface CountryResult {
   reason?: string;
   /** no_result 일 때 reason 이 정책 메타(제도상 비공개/미등재)에서 왔는지 */
   policy?: boolean;
-  error_class?: 'login' | 'http_403' | 'dependency' | 'timeout' | 'parse' | 'other';
+  error_class?: 'config' | 'login' | 'http_403' | 'dependency' | 'timeout' | 'parse' | 'other';
   /** 서버가 내려주는 한글 라벨 (예: '로그인 오류') — 프론트에 라벨 사본을 두지 않는다 */
   error_label?: string;
   error?: string;

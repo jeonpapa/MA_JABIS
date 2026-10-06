@@ -15,7 +15,7 @@ from typing import Optional
 
 from agents.db import DrugPriceDB
 from agents.exchange_rate import ExchangeRateFetcher, PriceCalculator
-from agents.scrapers.base import load_credentials
+from agents.scrapers.base import ScraperConfigError, ScraperLoginError, load_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -45,9 +45,9 @@ DAILY_COST_SANITY_CAP_KRW = 10_000_000
 # ── 라이브 검색 국가별 실패 분류 (P1.6 관측) ───────────────────────────────────
 # search_all 이 국가별 예외를 삼키면 "로그인이 깨진 것" 이 화면에서 "제도상 비공개" 처럼 보이고 원장에 아무것도 남지 않는다.
 # 분류는 원장 키(foreign_search:{국가}:{분류})와 화면 라벨 양쪽이 쓴다 — 라벨은 여기 한 곳(서버가 error_label 로 내려준다).
-SCRAPE_ERROR_CLASSES = ("login", "http_403", "dependency", "timeout", "parse", "other")
+SCRAPE_ERROR_CLASSES = ("config", "login", "http_403", "dependency", "timeout", "parse", "other")
 SCRAPE_ERROR_LABEL_KR = {
-    "login": "로그인 오류", "http_403": "접근 차단(403)", "dependency": "의존성 오류",
+    "config": "설정 오류", "login": "로그인 오류", "http_403": "접근 차단(403)", "dependency": "의존성 오류",
     "timeout": "시간 초과", "parse": "파싱 오류", "other": "오류",
 }
 # 결과는 있지만 사람이 알아야 할 사실(경고) — 실패(errors)와 분리해 status 는 priced 로 두고 warnings 로 내린다.
@@ -60,7 +60,11 @@ _PARSE_HINTS = ("parse", "파싱", "decode", "unexpected token", "expecting valu
 
 
 def classify_scrape_error(exc: BaseException) -> str:
-    """예외 → SCRAPE_ERROR_CLASSES 중 하나. 타입(ImportError·Timeout)이 먼저, 그다음 메시지 힌트."""
+    """예외 → SCRAPE_ERROR_CLASSES 중 하나. 타입(ScraperConfigError·ScraperLoginError·ImportError·Timeout)이 먼저, 그다음 메시지 힌트."""
+    if isinstance(exc, ScraperConfigError):
+        return "config"
+    if isinstance(exc, ScraperLoginError):
+        return "login"
     if isinstance(exc, ImportError):
         return "dependency"
     name = type(exc).__name__.lower()
@@ -279,7 +283,20 @@ class ForeignPriceAgent:
         # 없음 → 국가 기본 ratio (CH 0.73, FR 0.77, US 0.74). tests/test_foreign_factory_ratio_effective.py 가 고정.
         source_type = getattr(scraper, "SOURCE_TYPE", None)
         # identity 있으면 brand 로 검색(대부분 소스가 브랜드 인덱스), 저장/집계는 slug 로 통일.
-        ident = identity or {}
+        # identity 가 없으면(동기 경로·백필 잡·CLI) alias 맵 정확 일치로 오프라인 유도 — INN(pembrolizumab) 이 그대로 가면
+        # UK 는 Price 섹션 없는 /drugs/pembrolizumab/ 에, JP 는 0건에 닿았다(2026-10 감사). 네트워크(MFDS) 는 쓰지 않는다.
+        ident = identity
+        if not ident:
+            try:
+                from agents.drug_identity import derive_identity_offline
+                ident = derive_identity_offline(query)
+                if ident:
+                    logger.info("[%s] identity 유도: '%s' → brand=%s slug=%s inn=%s", country, query,
+                                ident.get("brand"), ident.get("slug"), ident.get("inn"))
+            except Exception as e:                      # alias 조회 실패가 검색을 막으면 안 된다
+                logger.warning("[%s] identity 유도 실패(원문으로 검색): %s", country, e)
+                ident = None
+        ident = ident or {}
         search_term = ident.get("brand") or query
         canonical_name = ident.get("slug") or query
         fallback_inn = ident.get("inn")
@@ -366,14 +383,16 @@ class ForeignPriceAgent:
             logger.warning("[%s] 환율 조회 실패, 조정가 미계산: %s", country, e)
             rate_info = None
 
-        # dosing 조회 (pack_count fallback + daily_cost 계산용)
-        ingredients = [r.get("ingredient", "") for r in raw_results]
+        # dosing 조회 (pack_count fallback + daily_cost 계산용) — identity 의 INN 도 키에 넣는다 (JP 처럼 성분명이 일본어인 소스)
+        ingredients = [r.get("ingredient", "") for r in raw_results] + ([fallback_inn] if fallback_inn else [])
         dosing_map = self._load_dosing_map(canonical_name, ingredients)
 
         # 3) 조정가 계산 + DB 저장
         saved = []
         for item in raw_results:
             dosing = self._match_dosing(canonical_name, item.get("ingredient", ""), dosing_map)
+            if not dosing and fallback_inn:
+                dosing = dosing_map.get(fallback_inn.strip().lower())
             pack_count = self._resolve_pack_count(country, item, dosing)
 
             # 행의 가격 종류가 우선 (IT CSV Class A 공중가 → 국가 기본 0.93, Class H/TNF ex-factory → 1.0)

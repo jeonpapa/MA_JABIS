@@ -27,6 +27,15 @@ ENV_KEY_MAP: dict[str, tuple[str, str]] = {
 }
 
 
+class ScraperConfigError(RuntimeError):
+    """설정 문제로 수집을 시작할 수 없다 — 자격증명/프록시 키 미설정 등. 분류: config (foreign_config_probe 가 다음에 볼 곳).
+    빈 결과로 돌려주면 화면이 '구독 필요' 정책 문구로 감싸 설정 문제가 보이지 않는다(P1.6) — 반드시 올린다."""
+
+
+class ScraperLoginError(RuntimeError):
+    """로그인했는데 로그인벽이 남았다/세션이 깨졌다 — 분류: login. 제도상 공백이 아니라 수집 실패다."""
+
+
 class BaseScraper(ABC):
     """
     국가별 약가 스크레이퍼 추상 베이스 클래스.
