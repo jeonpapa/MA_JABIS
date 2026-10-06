@@ -161,6 +161,11 @@ async def run_pipeline():
     # 1) 국내 약가 월별 catch-up (누락 월 자동 복구 적재)
     from agents.domestic_catchup import catch_up
     counts = {"ingested": 0, "catchup_errors": 0}
+    # 잡 실패 판정: catch-up 이 **전체** 실패(적재 0건 + 오류)하거나 예외로 죽으면 errors 에 담아 ok=False 로 돌린다.
+    # guarded_job(job) 이 이 errors 로 scheduler_job_run.ok=0 + 원장 실패 신호(하루 1건, record_recurring dedup)를 남기고
+    # /api/health 의 jobs_failed_24h 가 잡을 나열한다. 이전엔 여기서 신호만 남기고 ok=True 를 돌려 2026-09-01 전체 실패가
+    # '건강' 으로 보였다. 일부 오류(적재가 있음)는 멱등 재시도 대상이라 경고만.
+    errors: list[str] = []
     try:
         result = await catch_up(config, BASE_DIR)
         counts["ingested"] = len(result.get("ingested") or [])
@@ -170,17 +175,15 @@ async def run_pipeline():
         if result.get("skipped"):
             logger.info("국내 약가 catch-up skip (%s) — 당월 이미 적재", result["skipped"])
         elif result.get("errors") and not result.get("ingested"):
-            # 게시판 로딩 실패 등 전체 실패 — silent no-op 이 아니라 ERROR 로 남긴다
+            # 게시판 로딩 실패 등 전체 실패 — silent no-op 이 아니라 잡 실패다
             logger.error("국내 약가 catch-up 실패 — 적재 0건, 오류 %s (1~7일 일일 재시도)",
                          result["errors"])
-            _agent_record_job_failure("domestic_price_pipeline",
-                                      "; ".join(str(e) for e in result["errors"])[:300])
+            errors = [str(e)[:300] for e in result["errors"]]
         elif result.get("errors"):
             logger.warning("catch-up 일부 오류 — 다음 실행 시 재시도(멱등): %s", result["errors"])
     except Exception as e:
         logger.error("국내 약가 catch-up 실패: %s", e, exc_info=True)
-        # 캐치업 자체가 예외로 죽은 경우에도 에이전트 원장에 신호를 남긴다 (래퍼가 신호 실패를 삼킨다)
-        _agent_record_job_failure("domestic_price_pipeline", f"{type(e).__name__}: {e}"[:300])
+        errors = [f"{type(e).__name__}: {e}"[:300]]
         # 적재 실패해도 대쉬보드는 기존 데이터로 갱신
 
     # 2) 대쉬보드 에이전트 — 예외는 guarded_job(job) 이 받는다
@@ -190,7 +193,7 @@ async def run_pipeline():
     logger.info("━━━ 파이프라인 완료 ━━━")
     logger.info("대쉬보드: file://%s", html_path.resolve())
     counts["dashboard"] = str(html_path)
-    return {"ok": True, "counts": counts}
+    return {"ok": not errors, "counts": counts, "errors": errors}
 
 
 @guarded_job("domestic_price_pipeline")
