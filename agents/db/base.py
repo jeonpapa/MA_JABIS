@@ -149,6 +149,9 @@ class _DbBase:
                 ("route",                 "ALTER TABLE foreign_drug_prices ADD COLUMN route TEXT"),
                 ("formulation_source",    "ALTER TABLE foreign_drug_prices ADD COLUMN formulation_source TEXT"),
                 ("is_us_listed",          "ALTER TABLE foreign_drug_prices ADD COLUMN is_us_listed INTEGER"),
+                # pack_count 결정 근거 (2026-10) — scraper|per_unit|parsed|dosing|default. pack-pricing 국가의
+                # oral/unknown 행이 default 면 팩가가 per-unit 으로 저장된 미확인 행 → A8 집계 제외 (foreign_agent_rules §pack_count).
+                ("pack_count_source",     "ALTER TABLE foreign_drug_prices ADD COLUMN pack_count_source TEXT"),
             ):
                 if col not in fp_cols:
                     conn.execute(ddl)

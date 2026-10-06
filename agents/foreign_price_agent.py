@@ -43,6 +43,23 @@ PER_UNIT_COUNTRIES = {"JP", "CA"}
 DAILY_COST_SANITY_CAP_KRW = 10_000_000
 
 
+def a8_aggregate_eligibility(country: str, row: dict) -> tuple[bool, Optional[str]]:
+    """A8 min/avg 집계(UI 요약·리포트) 포함 여부 — (eligible, exclude_reason).
+
+    pack-pricing 국가의 oral/unknown 행이 pack_count_source == "default" 면 팩가가 per-unit 으로 저장된
+    **미확인** 행이다 (2026-10 감사: sitagliptin per-tablet CH ₩47,326 · DE ₩31,335 vs FR ₩456). 그 숫자를 평균에
+    섞으면 안 되므로 제외하고 사유를 남긴다. injection 의 default(1 vial) 는 규칙상 보수 fallback 이라 포함.
+    per-unit 국가(JP/CA) 는 pack 개념이 없고, 출처 미기록(레거시 NULL) 은 아직 재결정 전이라 판단을 보류한다.
+    """
+    if row.get("adjusted_price_krw") is None:
+        return False, "no_adjusted_price"
+    src = row.get("pack_count_source")
+    form = (row.get("form_type") or "unknown").lower()
+    if country in PACK_PRICING_COUNTRIES and src == "default" and form != "injection":
+        return False, "pack_count_unverified"
+    return True, None
+
+
 class ForeignPriceAgent:
     def __init__(self, base_dir: Path, ecos_api_key: str = "sample"):
         self.base_dir = base_dir
@@ -800,6 +817,8 @@ class ForeignPriceAgent:
 
             row["dosage_strength_mg"] = self._extract_mg(row.get("dosage_strength", ""))
             row["dosing_schedule_label"] = dosing["schedule_label"] if dosing else None
+            # A8 집계 안전망 — 팩가가 per-unit 으로 저장된 미확인 행(pack_count_source=default) 은 평균에서 뺀다
+            row["a8_aggregate_eligible"], row["a8_exclude_reason"] = a8_aggregate_eligibility(country, row)
 
             by_country.setdefault(country, []).append(row)
 

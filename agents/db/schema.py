@@ -99,7 +99,8 @@ CREATE TABLE IF NOT EXISTS foreign_drug_prices (
     source_url          TEXT,               -- 자료 출처 URL
     source_label        TEXT,               -- 자료원 명칭 (예: Redbook, MIMS)
     raw_data            TEXT,               -- 원본 데이터 JSON
-    form_type           TEXT                -- oral/injection/unknown (최소단위 결정 기준)
+    form_type           TEXT,               -- oral/injection/unknown (최소단위 결정 기준)
+    pack_count_source   TEXT                -- pack_count 결정 근거: scraper|per_unit|parsed|dosing|default (2026-10)
 );
 
 CREATE INDEX IF NOT EXISTS idx_foreign_query

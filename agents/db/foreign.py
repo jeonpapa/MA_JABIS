@@ -9,7 +9,7 @@ from .drug_aliases import aliases, canonical, display_name
 
 class _ForeignMixin:
     _FOREIGN_OPTIONAL_COLS = (
-        "form_type", "pack_count", "per_unit_local", "total_pkg_mg",
+        "form_type", "pack_count", "pack_count_source", "per_unit_local", "total_pkg_mg",
         "daily_dose_mg", "daily_cost_krw", "daily_cost_note",
         # 국가간 용량 정규화 (dose_norm_factor 는 제형 내 표시단위 보정으로 의미 재정의)
         "unit_strength_mg", "reference_strength_mg", "dose_norm_factor",
@@ -36,7 +36,7 @@ class _ForeignMixin:
                  local_price, currency,
                  exchange_rate, exchange_rate_from, exchange_rate_to,
                  factory_price_krw, vat_rate, distribution_margin, adjusted_price_krw,
-                 pack_count, per_unit_local, total_pkg_mg,
+                 pack_count, pack_count_source, per_unit_local, total_pkg_mg,
                  daily_dose_mg, daily_cost_krw, daily_cost_note,
                  unit_strength_mg, reference_strength_mg, dose_norm_factor,
                  adjusted_price_krw_normalized, dose_norm_note,
@@ -49,7 +49,7 @@ class _ForeignMixin:
                  :local_price, :currency,
                  :exchange_rate, :exchange_rate_from, :exchange_rate_to,
                  :factory_price_krw, :vat_rate, :distribution_margin, :adjusted_price_krw,
-                 :pack_count, :per_unit_local, :total_pkg_mg,
+                 :pack_count, :pack_count_source, :per_unit_local, :total_pkg_mg,
                  :daily_dose_mg, :daily_cost_krw, :daily_cost_note,
                  :unit_strength_mg, :reference_strength_mg, :dose_norm_factor,
                  :adjusted_price_krw_normalized, :dose_norm_note,

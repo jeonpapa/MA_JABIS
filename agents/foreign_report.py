@@ -23,15 +23,31 @@ def _num(v):
         return None
 
 
+EXCLUDE_REASON_KR = {
+    "pack_count_unverified": "포장수량 미확인 (팩가가 단위가로 저장 — 재수집 필요)",
+    "no_adjusted_price": "조정가 미산출",
+}
+
+
 def build_report_model(cached: dict, applied_display=None, applied_actual=None) -> dict:
-    """get_cached_results 결과 → A8 리포트 모델 (컬럼=국가, 행=지표)."""
+    """get_cached_results 결과 → A8 리포트 모델 (컬럼=국가, 행=지표).
+
+    집계 안전망: `a8_aggregate_eligible` 가 False 인 행(pack_count_source=default 인 pack 국가 oral 행 등)은
+    국가 컬럼·평균에 넣지 않고 `excluded` 에 사유와 함께 남긴다 — 틀린 단위가를 공식 리포트에 싣지 않는다.
+    """
     cols = []
+    excluded = []
     for c in COUNTRY_ORDER:
         rows = cached.get(c) or []
         priced = [r for r in rows if r.get("adjusted_price_krw") is not None]
         if not priced:
             continue
-        r = priced[0]
+        eligible = [r for r in priced if r.get("a8_aggregate_eligible", True)]
+        if not eligible:
+            reason = priced[0].get("a8_exclude_reason") or "pack_count_unverified"
+            excluded.append({"country": c, "country_kr": COUNTRY_KR.get(c, c), "reason": reason})
+            continue
+        r = eligible[0]
         per_unit = _num(r.get("per_unit_local"))
         fx = _num(r.get("exchange_rate"))
         krw_conv = _num(r.get("krw_converted"))
@@ -67,6 +83,7 @@ def build_report_model(cached: dict, applied_display=None, applied_actual=None) 
 
     return {
         "cols": cols,
+        "excluded": excluded,
         "avg": {"krw_converted": avg_conv, "adjusted": avg_adj, "ratio": avg_ratio},
         "applied_display": _num(applied_display),
         "applied_actual": actual,
@@ -98,6 +115,9 @@ def _rows_for_render(m: dict) -> tuple[list[str], list[list[str]]]:
             + [f"{m['avg']['ratio']}%" if m["avg"]["ratio"] is not None else "-"],
         ["근거 (출처)"] + [c["source"] or "-" for c in cols] + ["-"],
     ]
+    if m.get("excluded"):
+        note = " · ".join(f"{e['country_kr']}: {EXCLUDE_REASON_KR.get(e['reason'], e['reason'])}" for e in m["excluded"])
+        body.append(["집계 제외국"] + [f"{note}"] + ["" for _ in cols])
     return header, body
 
 

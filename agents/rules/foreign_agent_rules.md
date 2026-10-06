@@ -133,15 +133,17 @@ calc = self.calculator.calculate_adjusted_price(
 
 scraper 가 pack 가격을 반환하면 pack_count 를 명시해야 per-unit 환산이 맞는다.
 
-**우선순위** (ForeignPriceAgent._resolve_pack_count):
-1. scraper 가 item 에 직접 `pack_count` 필드 제공 — 가장 신뢰
-2. **oral 전용**: `_extract_total_pkg_mg / _extract_mg` ratio (예: 3600/40=90)
-   - injection 에서는 이 ratio 가 농도×volume 의 volume 을 반환 → **금지**
-3. pack-pricing 국가({UK,US,DE,FR,IT,CH})에서 `foreign_drug_dosing.default_pack_count` fallback
-4. 기본 1 (per-unit / 단일 vial)
+**우선순위** (ForeignPriceAgent._resolve_pack_count) — 결정 근거를 `pack_count_source` 컬럼에 남긴다 (2026-10):
+1. `scraper` — 스크레이퍼가 item 에 직접 `pack_count` 제공 (IT TNF, FR Vidal UCD=1). 스크레이퍼 직후 item 이거나 저장 시 source=scraper 였던 행만. **DB 행의 저장 pack_count 는 에이전트 산물이라 읽을 때 다시 결정한다** (과거 default=1 이 캐시에서 영구화되지 않게)
+2. `per_unit` — JP/CA 는 per-unit 가격 체계 → 항상 1
+3. `parsed` — 포장 문구 수량 단서, **form-aware 공용 추출기 `_extract_unit_count`** (`_extract_total_pkg_mg` 와 공유). injection 도 "in vial, 2"·"2 flaconcini"·"1 flacon(s)"·"4 ml 2s"·"2 x 4 ml" 를 읽는다. **mg ratio 경로는 없다** — injection 에서 `total_mg/unit_mg` 는 농도×volume/농도 = volume 이라 pack count 가 아님 (절대 금지). oral ratio 도 unit×count/unit = count 라 단서 파싱과 동치여서 제거했다
+4. `dosing` — oral × pack-pricing 국가({UK,US,DE,FR,IT,CH})에서 `foreign_drug_dosing.default_pack_count`
+5. `default` — 1. **pack-pricing 국가의 oral/unknown 행이 default 면 '팩가가 per-unit 으로 저장된 미확인 행'** → `get_cached_results` 가 `a8_aggregate_eligible=False`, `a8_exclude_reason="pack_count_unverified"` 를 붙이고 UI 요약(min/avg/max, `_buildSummary` → `unverifiedKeys`)·A8 리포트(`foreign_report`, `excluded` + "집계 제외국" 행) 가 평균에서 뺀다. 카드의 숫자는 남는다(사유 필드 표시 권장). injection 의 default=1 vial 은 보수 fallback 규칙이라 집계에 포함
+
+**2026-10 감사 (sitagliptin per-tablet IT ₩51,794 · CH ₩47,326 · DE ₩31,335 vs FR ₩456)**: IT CSV "JANUVIA*28 cpr"·"56 UNITA'", FR "28 plaquette(s) … de 1 comprimé" 는 단서 추가로 파싱된다 (실제 DB 89행 재결정). **파싱 불가로 남는 행**: CH compendium 설명문에 수량이 없음(36/36 — 스크레이퍼가 Packungen 표의 "N Stk" 를 가져와야 함), DE Rote Liste DocCheck 벽 뒤 fallback 가격 5행(oral 3·injection 2 — Packungsangaben 표 "N St" 필요). 이 행들은 재수집 전까지 집계 제외.
 
 **국가별 과금방식:**
-- Per-unit (pack_count=1): JP MHLW, CA Ontario
+- Per-unit (pack_count=1): JP MHLW, CA Ontario, FR Vidal UCD(바이알 단가 — `extra.price_basis="ucd"`)
 - Pack (pack_count ≥ 1): UK MIMS, US Redbook, DE Rote Liste, FR BDPM, IT AIFA, CH Compendium
 
 ## 환율 적용 원칙
