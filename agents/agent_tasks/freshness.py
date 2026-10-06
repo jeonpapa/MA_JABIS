@@ -501,6 +501,34 @@ def check_reimbursement_checklist_coverage(ctx: Ctx) -> Freshness:
                      kind="improvement")
 
 
+# ── 7d 사람 몫 적체 (P1.6, improvement — 한 과제로 묶음, 싸게) ──────────────
+# Home 브랜드 후보(home_brand source='related'·active=0 — home_brand_related_refresh 가 만들고 사람이 /admin/home-brands 에서
+# 활성화/삭제)가 14일 넘게 대기 중인 것과, NHIS 협상 공개자료 중 amjilsim_drugs 와 매칭 안 된 행(nhis_negotiations.drug_id IS NULL —
+# /admin/reimbursement-pipeline 의 nhis-unmatched 에서 수동 매칭). 둘 다 사람 몫이라 도메인 하나 = 과제 하나.
+
+HOME_BRAND_PENDING_DAYS = 14
+
+
+def check_human_backlog(ctx: Ctx) -> Freshness:
+    cutoff = _days_ago(ctx, HOME_BRAND_PENDING_DAYS)
+    n_brand, first = _rows(ctx, "SELECT COUNT(*), MIN(created_at) FROM home_brand "
+                                "WHERE source='related' AND active=0 AND COALESCE(created_at,'') < ?", (cutoff,))[0]
+    n_brand = int(n_brand or 0)
+    try:
+        n_nhis, n_prog = _rows(ctx, "SELECT COUNT(*), SUM(CASE WHEN completed_ym IS NULL OR completed_ym='' THEN 1 ELSE 0 END) "
+                                    "FROM nhis_negotiations WHERE drug_id IS NULL")[0]
+        n_nhis = int(n_nhis or 0)
+        nhis_txt = (f"NHIS 협상 공개자료 미매칭(drug_id NULL) {n_nhis}건(협상중 {int(n_prog or 0)}) "
+                    "→ /admin/reimbursement-pipeline(nhis-unmatched 에서 수동 매칭)")
+    except sqlite3.OperationalError:
+        n_nhis = 0
+        nhis_txt = "NHIS: nhis_negotiations 테이블 없음(판정 제외)"
+    evidence = (f"Home 브랜드 후보(home_brand source=related·active=0) {HOME_BRAND_PENDING_DAYS}일 넘게 승인 대기 {n_brand}건"
+                f"(최초 {str(first or '-')[:10]}) → /admin/home-brands(활성화/삭제); {nhis_txt}. 담당: 사람 — 두 적체를 과제 하나로 묶는다")
+    return Freshness("human_backlog", n_brand > 0 or n_nhis > 0, f"brand={n_brand},nhis={n_nhis}", "0", evidence, None, 3,
+                     kind="improvement")
+
+
 # ── 8 아날로그 · 9 마켓셰어 ────────────────────────────────────────────────
 
 def check_analog_reports(ctx: Ctx) -> Freshness:
@@ -593,6 +621,7 @@ DOMAIN_CHECKS: dict[str, Callable[[Ctx], Freshness]] = {
     "committee_reports": check_committee_reports,
     "pipeline_expected_sessions": check_pipeline_expected_sessions,
     "reimbursement_checklist_coverage": check_reimbursement_checklist_coverage,
+    "human_backlog": check_human_backlog,
     "analog_reports": check_analog_reports,
     "market_share": check_market_share,
     "policy_intelligence": check_policy_intelligence,

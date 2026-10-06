@@ -288,3 +288,43 @@ def test_checklist_coverage_without_tracked_product_is_fresh(tmp_path):
     _seed(tmp_path / "d.db", _CHECKLIST_SQL)
     r = fr.check_reimbursement_checklist_coverage(_ctx(tmp_path))
     assert r.stale is False and r.determinable and "0건 중" in r.evidence
+
+
+# ── 5. 사람 몫 적체 (human_backlog, improvement — 한 과제로 묶음) ───────────────
+
+_BACKLOG_SQL = """
+    CREATE TABLE home_brand (id INTEGER, brand TEXT, source TEXT, active INTEGER, created_at TEXT);
+    INSERT INTO home_brand VALUES
+        (1,'키트루다','seed',1,'2026-01-01T00:00:00+00:00'),
+        (13,'키트루다주','related',0,'2026-07-26T20:00:00+00:00'),      -- 14일 넘게 승인 대기
+        (14,'키트루다 환급','related',0,'2026-07-26T20:00:00+00:00'),
+        (15,'신규후보','related',0,'2026-10-01T00:00:00+00:00'),        -- 5일 — 유예
+        (16,'승인됨','related',1,'2026-07-26T20:00:00+00:00');          -- 승인됨(active=1)
+    CREATE TABLE nhis_negotiations (id INTEGER, drug_id INTEGER, completed_ym TEXT);
+    INSERT INTO nhis_negotiations VALUES (1,NULL,NULL), (2,NULL,'2026-05'), (3,7,NULL);
+"""
+
+
+def test_human_backlog_summarises_brand_candidates_and_nhis_unmatched_in_one_task(tmp_path):
+    _seed(tmp_path / "d.db", _BACKLOG_SQL)
+    r = fr.check_human_backlog(_ctx(tmp_path))
+    assert r.stale is True and r.kind == "improvement" and r.runbook is None and r.priority == 3
+    assert "승인 대기 2건(최초 2026-07-26)" in r.evidence and "/admin/home-brands" in r.evidence
+    assert "미매칭(drug_id NULL) 2건(협상중 1)" in r.evidence and "/admin/reimbursement-pipeline" in r.evidence
+    assert "담당: 사람" in r.evidence and r.observed == "brand=2,nhis=2"
+    assert fr.DOMAIN_CHECKS["human_backlog"] is fr.check_human_backlog
+    # 한 도메인 = 한 과제 (두 개가 아니다)
+    ids = fr.record_freshness_problems([r], today=TODAY, db_path=tmp_path / "a.db")
+    assert len(ids) == 1 and get_task(ids[0], db_path=tmp_path / "a.db")["source_ref"] == "human_backlog:backlog"
+
+
+def test_human_backlog_fresh_when_both_queues_are_empty(tmp_path):
+    _seed(tmp_path / "d.db", _BACKLOG_SQL, "UPDATE home_brand SET active=1; UPDATE nhis_negotiations SET drug_id=1;")
+    r = fr.check_human_backlog(_ctx(tmp_path))
+    assert r.stale is False and r.observed == "brand=0,nhis=0"
+
+
+def test_human_backlog_tolerates_missing_nhis_table(tmp_path):
+    _seed(tmp_path / "d.db", _BACKLOG_SQL, "DROP TABLE nhis_negotiations;")
+    r = fr.check_human_backlog(_ctx(tmp_path))
+    assert r.stale is True and r.determinable and "nhis_negotiations 테이블 없음" in r.evidence and r.observed == "brand=2,nhis=0"
