@@ -531,11 +531,15 @@ def check_human_backlog(ctx: Ctx) -> Freshness:
 
 # ── 8 아날로그 · 9 마켓셰어 ────────────────────────────────────────────────
 
+# 아날로그 PDF 반영과 마켓셰어 엑셀 업로드는 사람의 수동 작업이다(런북 없음) — P1.6 예산 리허설: ops_incident 월 키로 두면 매월
+# 1일 07:45 에 다른 런북 없는 도메인과 함께 터져(burst) ≤3건/일을 넘긴다. 사람 몫 적체는 improvement(도메인당 1행)로.
+
 def check_analog_reports(ctx: Ctx) -> Freshness:
     r = _max_ts(ctx, "analog_reports", "SELECT MAX(session_date) FROM analog_reports", ANALOG_MAX_DAYS, None,
                 "analog_reports MAX(session_date)", 3)
     return Freshness(r.domain, r.stale, r.observed, r.deadline,
-                     r.evidence + " — 약평위 결과 PDF 는 Mac 에서 apply_analog_sync 로 수동 반영", None, 3)
+                     r.evidence + " — 담당: 사람 — 약평위 결과 PDF 는 Mac 에서 apply_analog_sync 로 수동 반영", None, 3,
+                     kind="improvement")
 
 
 def expected_quarter(today: date) -> str:
@@ -550,7 +554,8 @@ def check_market_share(ctx: Ctx) -> Freshness:
     last = _scalar(ctx, "SELECT MAX(quarter) FROM market_share_quarterly")
     exp = expected_quarter(ctx.today)
     return Freshness("market_share", (last or "") < exp, last, exp,
-                     f"market_share_quarterly MAX(quarter)={last}, 기대≥{exp} (분기 종료 +{MARKET_SHARE_LAG_DAYS}일) — admin 엑셀 업로드", None, 3)
+                     f"market_share_quarterly MAX(quarter)={last}, 기대≥{exp} (분기 종료 +{MARKET_SHARE_LAG_DAYS}일) — "
+                     "담당: 사람 — /admin/market-share 엑셀 업로드", None, 3, kind="improvement")
 
 
 # ── 10 정책 인텔리전스 ─────────────────────────────────────────────────────

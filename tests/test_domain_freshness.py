@@ -138,6 +138,17 @@ def test_market_share_reads_quarterly_table_not_upload_log(tmp_path):
     """)
     r = fr.check_market_share(_ctx(tmp_path))
     assert r.stale is True and r.observed == "2025Q4" and r.deadline == "2026Q2" and r.runbook is None
+    assert r.kind == "improvement"            # P1.6: admin 엑셀 업로드는 사람 몫 — 월 키 ops_incident 가 아니라 도메인당 1행
+
+
+def test_human_upload_domains_are_improvement_not_ops_budget(tmp_path):
+    """예산 리허설(P1.6): 런북 없는 수동 업로드 도메인(아날로그 PDF·마켓셰어 엑셀)은 improvement — 매월 1일 ops_incident burst 에서 뺀다."""
+    _seed(tmp_path / "d.db", "CREATE TABLE analog_reports (session_date TEXT); INSERT INTO analog_reports VALUES ('2026-01-15');")
+    r = fr.check_analog_reports(_ctx(tmp_path))
+    assert r.stale is True and r.kind == "improvement" and r.runbook is None and "담당: 사람" in r.evidence
+    ids = fr.record_freshness_problems([r], today=TODAY, db_path=tmp_path / "a.db")
+    assert list_tasks(db_path=tmp_path / "a.db")[0]["source_ref"] == "analog_reports:backlog"
+    assert fr.record_freshness_problems([r], today=date(2026, 10, 1), db_path=tmp_path / "a.db") == ids    # 새 달에도 같은 행
 
 
 def test_policy_intelligence_ingest_and_analysis(tmp_path):
