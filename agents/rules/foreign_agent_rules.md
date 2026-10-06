@@ -115,10 +115,16 @@ A8_adj_per_unit_KRW =
 | JP | 0.79 | 재정영향분석 표준 |
 | CA | 0.81 | 재정영향분석 표준 |
 
-### source-specific 오버라이드 (PriceCalculator.SOURCE_OVERRIDES)
-- `aifa_exfactory` (IT Class H) → 1.0 (이미 ex-factory)
-- `ch_compendium` → 0.65
-- `fr_vidal` → 0.65 (현재 BDPM 사용 시 SOURCE_TYPE=None → 기본 0.77)
+### source-specific 오버라이드 (PriceCalculator.SOURCE_OVERRIDES) — **코드가 적용하는 실효값**
+| 스크레이퍼 | SOURCE_TYPE | 실효 ratio |
+|-----------|-------------|-----------|
+| IT `it_aifa` / `it_aifa_tnf` | `aifa_exfactory` | **1.0** (이미 ex-factory — 유일한 오버라이드) |
+| CH `ch_compendium` | `compendium` | **0.73** (CH 국가 기본) |
+| FR `fr_bdpm` / `fr_vidal` | `vidal` | **0.77** (FR 국가 기본) |
+| US `us_micromedex` | `redbook_wac` | **0.74** (US 국가 기본, WAC) |
+| 그 외 | `None` | 국가 기본 |
+
+**2026-10-06 주석 (사용자 결정)**: 이전 문서는 `ch_compendium`/`fr_vidal` → 0.65 라고 적었으나, 그 키는 스크레이퍼의 `SOURCE_TYPE`(`"compendium"`/`"vidal"`) 과 한 번도 일치한 적이 없어 **0.65 는 발효된 적 없는 과거의 문서상 의도**였다. 실제로 저장·표시된 모든 CH/FR 조정가는 0.73/0.77 로 계산됐다(예: FR Vidal Keytruda #1504 factory_price_krw 2,379,302 = 2,000.74 × 1544.43 × 0.77). 결정: **코드가 현재 시점의 진실이고 문서는 과거다. 저장된 값은 재계산하지 않는다.** 죽은 항목은 `SOURCE_OVERRIDES` 에서 삭제했고(0.65 를 살리지 않음), `tests/test_foreign_factory_ratio_effective.py` 가 스크레이퍼 선언 `SOURCE_TYPE` 으로 실효 비율을 고정해 다음 drift(오버라이드 키 ≠ 스크레이퍼 선언)를 잡는다. 0.65 가 필요하다고 판단되면 그때 키를 스크레이퍼 선언값에 맞춰 새로 넣고 이 표·테스트·Welireg/Keytruda baseline 을 함께 갱신한다.
 
 ## source_type 처리
 ```python

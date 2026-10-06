@@ -140,7 +140,8 @@ class ForeignPriceAgent:
 
         # 1) 스크레이퍼 실행 (로그인 → 검색 → 로그아웃)
         scraper = self._build_scraper(country)
-        # SOURCE_TYPE: CH=compendium(0.65), FR=vidal(0.65), 그 외=None(기본 ratio)
+        # SOURCE_TYPE: IT=aifa_exfactory(1.0) 만 오버라이드. CH=compendium / FR=vidal / US=redbook_wac 은 오버라이드
+        # 없음 → 국가 기본 ratio (CH 0.73, FR 0.77, US 0.74). tests/test_foreign_factory_ratio_effective.py 가 고정.
         source_type = getattr(scraper, "SOURCE_TYPE", None)
         # identity 있으면 brand 로 검색(대부분 소스가 브랜드 인덱스), 저장/집계는 slug 로 통일.
         ident = identity or {}
@@ -183,7 +184,7 @@ class ForeignPriceAgent:
             except Exception as e:
                 logger.warning("[IT] TrovaNorme 채널 실패(CSV 결과 유지): %s", e)
 
-        # FR: Vidal 채널을 기존 BDPM 과 **병행** (둘 다 source_type=vidal, ratio 0.65).
+        # FR: Vidal 채널을 기존 BDPM 과 **병행** (둘 다 source_type=vidal → FR 기본 ratio 0.77).
         # 병원용 주사제(keytruda 등)는 BDPM 공시가가 없고 Vidal UCD(HT) 에만 공개 →
         # 큐레이션 URL 맵으로 안정 조회. 실패해도 BDPM 결과는 유지.
         if country == "FR":

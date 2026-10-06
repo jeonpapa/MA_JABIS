@@ -52,7 +52,7 @@ class ChCompendiumScraper(BaseScraper):
     COUNTRY       = "CH"
     CURRENCY      = "CHF"
     SOURCE_LABEL  = "compendium.ch (Publikumspreis, SL)"
-    SOURCE_TYPE   = "compendium"    # PriceCalculator에 전달 → ratio 0.65
+    SOURCE_TYPE   = "compendium"    # PriceCalculator 오버라이드 없음 → CH 기본 ratio 0.73 (2026-10: 0.65 는 발효된 적 없음)
     REQUIRES_LOGIN = False
 
     def __init__(self, cache_dir: Path = None, msd_only: bool = False, **kwargs):

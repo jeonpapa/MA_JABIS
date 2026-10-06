@@ -309,11 +309,12 @@ class PriceCalculator:
         "JP": 0.79, "CA": 0.81,
     }
 
-    # source-specific 오버라이드 (공시가 체계가 다른 경우)
+    # source-specific 오버라이드 (공시가 체계가 다른 경우). 키는 스크레이퍼의 SOURCE_TYPE 과 **정확히** 같아야 한다 —
+    # tests/test_foreign_factory_ratio_effective.py 가 스크레이퍼 선언값으로 실효 비율을 고정한다.
+    # 2026-10: "ch_compendium"/"fr_vidal" 0.65 항목 삭제 — 스크레이퍼 SOURCE_TYPE 은 "compendium"/"vidal" 이라 한 번도
+    # 발효된 적 없고 실효 비율은 CH 0.73 / FR 0.77(국가 기본) 이었다. 사용자 결정: 코드가 현재 시점의 진실, 저장값 재계산 없음.
     SOURCE_OVERRIDES = {
-        "aifa_exfactory": 1.0,    # IT Class H: 이미 ex-factory
-        "ch_compendium":  0.65,   # CH Compendium
-        "fr_vidal":       0.65,   # FR Vidal (BDPM 사용 시는 SOURCE_TYPE=None → 기본 0.77)
+        "aifa_exfactory": 1.0,    # IT Class H / TrovaNorme: 이미 ex-factory
     }
 
     CURRENCY = COUNTRY_CURRENCY

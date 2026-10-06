@@ -77,7 +77,7 @@ class FrVidalScraper(BaseScraper):
     COUNTRY        = "FR"
     CURRENCY       = "EUR"
     SOURCE_LABEL   = "VIDAL.fr"
-    SOURCE_TYPE    = "vidal"      # HIRA factory_ratio = 0.65
+    SOURCE_TYPE    = "vidal"      # PriceCalculator 오버라이드 없음 → FR 기본 ratio 0.77 (2026-10: 0.65 는 발효된 적 없음)
     REQUIRES_LOGIN = True
 
     def __init__(self, cache_dir: Path = None, msd_only: bool = False, **kwargs):
@@ -316,7 +316,7 @@ class FrVidalScraper(BaseScraper):
         # ── 가격 추출 ────────────────────────────────────────────────────────
         # 우선순위 1: **UCD 병원가** "... par UCD : N euros" (HT, ex-VAT). 병원용 주사제
         #   (keytruda 등)는 BDPM 공시가 없고 이 UCD 가격이 정답 — 공개, 3자리 소수 표기
-        #   (예 "2000,740 euros" = €2000.74). SOURCE_TYPE=vidal(ratio 0.65) 와 정합.
+        #   (예 "2000,740 euros" = €2000.74). HT 가에 FR 기본 ratio 0.77 적용(실효값, 2026-10).
         # 우선순위 2~: 일반 "X.XXX,XX €" / "Prix : ...".
         price = None
         price_basis = ""
