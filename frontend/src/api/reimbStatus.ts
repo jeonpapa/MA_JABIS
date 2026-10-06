@@ -122,11 +122,16 @@ export interface DrugHistoryItem {
   synthetic?: boolean;        // 통과일 컬럼 기반 합성 이벤트 (큐 미수집 차수)
 }
 
+/** 예상일의 성격 — forecast(미래 차수) / overdue(예상 차수가 지났는데 결과 미반영: 예보가 아니라 경과) */
+export type ExpectedStatus = 'forecast' | 'overdue';
+
 export interface TimelineStep {
   phase: string;
   date: string | null;        // 'YYYY.MM.DD' (실측 통과일)
   expectedDate?: string | null; // 'YYYY.MM.DD' (위원회 일정 기반 예상일 — 실측과 분리)
-  status: 'done' | 'upcoming' | 'in_progress' | 'rejected' | 'expected';
+  expectedStatus?: ExpectedStatus | null;
+  // not_applicable: 비항암 약제의 암질심 단계 (약평위 직행) — 예상일을 달지 않는다
+  status: 'done' | 'upcoming' | 'in_progress' | 'rejected' | 'expected' | 'not_applicable';
   negotiationStatus?: string | null;
 }
 
@@ -144,6 +149,7 @@ export interface PipelineDrug {
   expectedSessionId?: number | null;
   expectedSessionDate?: string | null; // 'YYYY.MM.DD' — 상정예정 차수 일정
   expectedSessionCycle?: number | null; // 상정예정 차수 번호 (배지 "7차")
+  expectedStatus?: ExpectedStatus | null; // 타임라인 미도래 단계 예상일의 성격 (overdue 하나라도 있으면 overdue)
   submittedDate: string | null;
   amjilsimPassDate: string | null;
   yakpyungwiPassDate: string | null;

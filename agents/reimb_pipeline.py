@@ -222,12 +222,69 @@ def _expected_session_date(conn: sqlite3.Connection, session_id) -> Optional[str
     return row["session_date"] if row else None
 
 
+def _expected_session(conn: sqlite3.Connection, session_id) -> Optional[sqlite3.Row]:
+    if not session_id:
+        return None
+    return conn.execute(
+        "SELECT session_date, committee_type FROM amjilsim_sessions WHERE session_id = ?",
+        (session_id,)).fetchone()
+
+
+ONCOLOGY_EFFICACY_GROUP = "항악성종양제"
+
+
+def oncology_track(drug, *, expected_committee: Optional[str] = None,
+                   queue_committees: tuple[str, ...] = ()) -> Optional[bool]:
+    """약제가 항암(암질심 선행) 트랙인가 — True / False(비항암 확정) / None(미상).
+
+    access_insight 의 판정을 재사용한다 (backfill_oncology 캐스케이드 + aggregate 의 'unknown' 트랙 증거 규칙):
+      ① is_oncology 컬럼(백필 결과)이 채워져 있으면 그것이 우선
+      ② 실측 증거 — 암질심 통과일, 암질심 차수 예정(expected_session)·암질심 큐 이력 → 항암
+      ③ ATC L01/L02 · efficacy_group '항악성종양제' · indication 암 키워드 · KNOWN_ONCOLOGY_INN → 항암
+      ④ efficacy_group 이 다른 효능군(공단 자료)이면 비항암 확정
+      ⑤ 그 외 미상 — 호출자는 암질심 예상을 달지 않는다 (날조 금지)
+    drug 는 sqlite3.Row 또는 dict (컬럼 부재 허용).
+    """
+    from agents.access_insight.backfill import _indication_is_cancer, _inn_is_oncology
+
+    flag = _row_get(drug, "is_oncology")
+    if flag is not None and flag != "":
+        return bool(int(flag))
+    if _row_get(drug, "amjilsim_pass_date"):
+        return True
+    if expected_committee == "AMJILSIM" or "AMJILSIM" in queue_committees:
+        return True
+    atc = (_row_get(drug, "atc") or "").upper()
+    eff = (_row_get(drug, "efficacy_group") or "").strip()
+    if atc.startswith("L01") or atc.startswith("L02") or eff == ONCOLOGY_EFFICACY_GROUP:
+        return True
+    if _indication_is_cancer(_row_get(drug, "indication")) or _inn_is_oncology(_row_get(drug, "ingredient_inn")):
+        return True
+    if eff:
+        return False
+    return None
+
+
+def _expected_status(expected_date: Optional[str], today: str) -> Optional[str]:
+    """예상일의 성격 — 'forecast'(미래 차수) / 'overdue'(차수가 지났는데 결과 미반영). 날짜 없으면 None."""
+    if not expected_date:
+        return None
+    return "overdue" if expected_date < today else "forecast"
+
+
 def _timeline(drug: sqlite3.Row, conn: Optional[sqlite3.Connection] = None,
-              today: Optional[str] = None) -> list[dict]:
+              today: Optional[str] = None,
+              queue_rows: Optional[list[sqlite3.Row]] = None) -> list[dict]:
     """단계 타임라인 — 실측일은 date, 미도래 단계는 위원회 일정 기반 '예상일'(expectedDate).
 
     날조 금지 원칙 유지: 실제 통과일(date)과 일정 기반 예상일(expectedDate)을
     분리된 필드로 명시. 예상일 출처 = expected_session_id 차수 일정 / 다음 차수 일정.
+
+    - expectedStatus: 'forecast'(미래) / 'overdue'(예상 차수가 이미 지났는데 결과가 반영되지 않음 — 과거 날짜를
+      예보처럼 보여주지 않는다. expected_session_id 가 지난 차수를 가리키는 약제 6종, 2026-10-06 감사).
+    - 암질심 예상은 **항암 트랙이고 아직 약평위를 통과하지 않은** 약제에만 붙는다 (oncology_track). 비항암 확정이면
+      암질심 단계는 'not_applicable', 미상이면 예상 없이 'upcoming' — 당뇨·소화성궤양·PAH 약제와 이미 약평위를
+      통과한 약제에 "암질심 통과 예상" 이 붙던 결함.
     """
     today = today or date.today().isoformat()
     amj_pass = drug["amjilsim_pass_date"]
@@ -235,22 +292,37 @@ def _timeline(drug: sqlite3.Row, conn: Optional[sqlite3.Connection] = None,
 
     # 미도래 위원회 단계의 예상일: expected_session_id 일정 → 없으면 다음 차수 일정
     exp_amj = exp_yak = None
+    exp_committee = None
     if conn is not None:
-        exp_date = _expected_session_date(conn, drug["expected_session_id"])
+        exp_row = _expected_session(conn, drug["expected_session_id"])
+        exp_date = exp_row["session_date"] if exp_row else None
+        exp_committee = exp_row["committee_type"] if exp_row else None
+        if queue_rows is None:
+            queue_rows = conn.execute(_QUEUE_JOIN_SQL, (drug["drug_id"],)).fetchall()
+        onco = oncology_track(drug, expected_committee=exp_committee,
+                              queue_committees=tuple(q["committee_type"] for q in queue_rows))
         nxt = _next_session_ids(conn, today)
-        if not amj_pass:
-            exp_amj = exp_date or _expected_session_date(conn, nxt.get("AMJILSIM"))
+        if not amj_pass and not yak_pass and onco is True:
+            exp_amj = (exp_date if exp_committee == "AMJILSIM" else None) \
+                or _expected_session_date(conn, nxt.get("AMJILSIM"))
         if amj_pass and not yak_pass:
-            exp_yak = exp_date or _expected_session_date(conn, nxt.get("YAKPYUNGWI"))
+            exp_yak = (exp_date if exp_committee == "YAKPYUNGWI" else None) \
+                or _expected_session_date(conn, nxt.get("YAKPYUNGWI"))
+    else:
+        onco = oncology_track(drug)
 
+    amj_status = ("done" if amj_pass else "expected" if exp_amj
+                  else "not_applicable" if onco is False else "upcoming")
     out = [
         {"phase": "급여 신청(접수)", "date": drug["submitted_date"],
          "status": "done" if drug["submitted_date"] else "upcoming"},
         {"phase": "암질심 통과", "date": amj_pass,
          "expectedDate": exp_amj if not amj_pass else None,
-         "status": "done" if amj_pass else ("expected" if exp_amj else "upcoming")},
+         "expectedStatus": _expected_status(exp_amj, today) if not amj_pass else None,
+         "status": amj_status},
         {"phase": "약평위 통과", "date": yak_pass,
          "expectedDate": exp_yak if not yak_pass else None,
+         "expectedStatus": _expected_status(exp_yak, today) if not yak_pass else None,
          "status": "done" if yak_pass else ("expected" if exp_yak else "upcoming")},
     ]
     out.append({
@@ -320,6 +392,10 @@ def _pipeline_drug_dict(drug: sqlite3.Row, queue_rows: list[sqlite3.Row],
         if srow:
             expected_date = srow["session_date"]
             expected_cycle = srow["ord"]
+    timeline = _timeline(drug, conn, today, queue_rows=queue_rows)
+    # 카드 수준 예상 상태: 타임라인의 미도래 위원회 단계 중 예상일이 있는 것의 성격 ('overdue' 가 하나라도 있으면 overdue)
+    exp_statuses = [t.get("expectedStatus") for t in timeline if t.get("expectedStatus")]
+    expected_status = ("overdue" if "overdue" in exp_statuses else exp_statuses[0] if exp_statuses else None)
     item = {
         "id": drug["drug_id"],
         "name": drug["brand_kr"],
@@ -334,6 +410,8 @@ def _pipeline_drug_dict(drug: sqlite3.Row, queue_rows: list[sqlite3.Row],
         "expectedSessionId": drug["expected_session_id"],
         "expectedSessionDate": expected_date,
         "expectedSessionCycle": expected_cycle,
+        # 'forecast' | 'overdue' | None — overdue 는 예상 차수가 지났는데 결과가 반영되지 않은 상태 (예보가 아님)
+        "expectedStatus": expected_status,
         "submittedDate": drug["submitted_date"],
         "amjilsimPassDate": drug["amjilsim_pass_date"],
         "yakpyungwiPassDate": drug["yakpyungwi_pass_date"],
@@ -349,7 +427,7 @@ def _pipeline_drug_dict(drug: sqlite3.Row, queue_rows: list[sqlite3.Row],
         "keyIssues": _key_issues(drug),
         "updatedDate": max(observed) if observed else None,
         "history": _history(queue_rows, drug),
-        "timeline": _timeline(drug, conn, today),
+        "timeline": timeline,
     }
     return stage, item
 
