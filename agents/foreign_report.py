@@ -9,6 +9,8 @@ from __future__ import annotations
 import io
 from datetime import date
 
+from agents.exchange_rate import per_unit_rate
+
 # 표시 순서 (데이터 있는 국가만 노출)
 COUNTRY_ORDER = ["US", "UK", "CA", "DE", "FR", "IT", "CH", "JP"]
 COUNTRY_KR = {"US": "미국", "UK": "영국", "CA": "캐나다", "DE": "독일",
@@ -49,7 +51,8 @@ def build_report_model(cached: dict, applied_display=None, applied_actual=None) 
             continue
         r = eligible[0]
         per_unit = _num(r.get("per_unit_local"))
-        fx = _num(r.get("exchange_rate"))
+        # '적용환율' 은 통화 1단위당 — JPY 레거시 행은 100엔당(923.21) 로 저장돼 있어 그대로 쓰면 환산가와 자기모순
+        fx = per_unit_rate(r.get("currency"), _num(r.get("exchange_rate")))
         krw_conv = _num(r.get("krw_converted"))
         if krw_conv is None and per_unit is not None and fx is not None:
             krw_conv = per_unit * fx

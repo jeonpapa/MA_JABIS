@@ -151,7 +151,7 @@ scraper 가 pack 가격을 반환하면 pack_count 를 명시해야 per-unit 환
 - **고시회차는 반드시 '최종'.** KEB 폼 라디오 매핑 반직관적: `tmpPbldDvCd_1`(value=1)=최초, `tmpPbldDvCd_2`(value=0)=**최종**. `inputCheck()` 가 제출 시 `pbldDvCd=radiobox.getCheckedValue(tmpPbldDvCd)` 로 hidden 재생성 → **체크된 라디오가 결정적** (hidden 수동설정 덮어써짐). 최초/최종 값 ~0.1% 차이.
 - 환율 조회 실패 시 → adjusted_price_krw = None (DB 저장은 진행)
 - EUR 은 FR/IT/DE 공용
-- **JPY: KEB 가 "100엔당 KRW" 로 고시.** parse 시점에 /100 정규화 + calculator safeguard 이중 방어.
+- **JPY: KEB 가 "100엔당 KRW" 로 고시.** 정규화 지점은 하나 — `agents.exchange_rate.per_unit_rate(currency, rate)` (JPY 이고 >100 이면 /100). parse(`parse_keb_excel`, 라벨 "(100)" 유무 무관)·`PriceCalculator`·`foreign_report`('적용환율' 칸)·`recompute_foreign_fx`(old/new 모두 정규화 후 비율) 가 전부 이 함수를 거친다. **저장된 레거시 행(923.21 = 100엔당) 은 재계산하지 않고 읽을 때 정규화** — 2026-10 감사 전에는 리포트가 923.21 을 적용환율로 쓰고(환산가는 per-1 로 계산돼 자기모순), 월간 재계산이 저장 923.21 vs 새 9.39 를 그대로 나눠 100× 축소될 수 있었다. 프론트(`foreign.ts` mapPricingEntry) 는 같은 >100 규칙으로 표시.
 
 ### 환율 캐시 = 단일 소스 (수집 1 / 소비 여럿)
 - **수집(크롤)은 월간 자동갱신 잡 하나뿐**: `scheduler.exchange_rate_refresh_job` (매월 2일 04:00 KST). KEB 최종 → `data/foreign/exchange_rate/keb_avg_rate_{from}_{to}.xlsx` 캐시 덮어씀. chromium 은 Dockerfile 에 설치됨.
