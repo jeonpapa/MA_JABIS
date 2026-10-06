@@ -46,7 +46,7 @@ CREATE TABLE amjilsim_drug_queue_status (
 );
 CREATE TABLE reimb_reports (
     id INTEGER PRIMARY KEY, title TEXT, summary TEXT, highlights_json TEXT, report_type TEXT, committee TEXT,
-    year INTEGER, cycle INTEGER, session_date TEXT
+    year INTEGER, cycle INTEGER, session_date TEXT, analyzed INTEGER NOT NULL DEFAULT 0
 );
 """
 

@@ -44,8 +44,14 @@ function MeetingItem({ m, isDark, onClick }: { m: MeetingSchedule; isDark: boole
         </span>
       )}
       {m.isPast && (
-        <span className={`text-[10px] flex-shrink-0 ml-auto pl-0.5 ${isDark ? 'text-[#4A5568]' : 'text-gray-400'}`}>
-          {isClickable ? '결과' : '완료'}
+        // 지났는데 아직 SCHEDULED = 결과 미반영 — '결과' 가 있는 것처럼 보이지 않게 라벨을 구분한다 (클릭 시 모달이 설명)
+        <span
+          className={`text-[10px] flex-shrink-0 ml-auto pl-0.5 ${
+            m.status === 'SCHEDULED' ? (isDark ? 'text-amber-400/80' : 'text-amber-600') : isDark ? 'text-[#4A5568]' : 'text-gray-400'
+          }`}
+          title={m.status === 'SCHEDULED' ? '회차는 지났지만 심의 결과가 아직 반영되지 않았습니다' : undefined}
+        >
+          {m.status === 'SCHEDULED' ? '미반영' : isClickable ? '결과' : '완료'}
         </span>
       )}
     </div>

@@ -234,11 +234,16 @@ export interface MeetingResultDrug {
   evidenceUrl: string | null;
 }
 
+/** 회차 결과의 상태 — not_ingested(지났는데 미반영: drugs=[] 는 '없음' 이 아니라 '모름') / empty(닫혔고 0건) */
+export type MeetingResultsStatus = 'upcoming' | 'not_ingested' | 'available' | 'empty';
+
 export interface MeetingResultData {
   meeting: RawMeeting;
   totals: { reviewed: number; approved: number; rejected: number; withdrawn: number; pending: number };
   drugs: MeetingResultDrug[];
   report: { id: number; title: string; summary: string | null; highlights: string[] } | null;
+  resultsStatus?: MeetingResultsStatus;
+  resultsNote?: string | null;
 }
 
 export function fetchMeetingResults(meetingId: number): Promise<MeetingResultData> {

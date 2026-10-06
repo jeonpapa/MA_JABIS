@@ -617,7 +617,29 @@ def get_meeting_results(session_id: int) -> dict:
 
         report = _linked_report(conn, meeting)
 
-    return {"meeting": meeting, "totals": totals, "drugs": drugs, "report": report}
+    results_status, results_note = _results_status(meeting, len(drugs), date.today().isoformat())
+    return {"meeting": meeting, "totals": totals, "drugs": drugs, "report": report,
+            "resultsStatus": results_status, "resultsNote": results_note}
+
+
+def _results_status(meeting: dict, n_rows: int, today: str) -> tuple[str, Optional[str]]:
+    """회차 결과의 상태 — '아직 적재되지 않음' 을 '심의 약제 0건' 과 구분한다.
+
+      upcoming     : 회차가 아직 오지 않음
+      not_ingested : 회차는 지났는데 status 가 SCHEDULED (결과 미반영) — drugs=[] 는 '없음' 이 아니라 '모름'
+      available    : 큐 결과 행이 있음
+      empty        : COMPLETED 로 닫혔고 행이 0건 — 이때만 '심의 약제 없음' 이라 말할 수 있다
+    (2026-10-06 감사: 지난 SCHEDULED 세션 7개가 빈 결과 모달로 '심의 약제 없음' 처럼 보였다.)
+    """
+    session_date = meeting.get("date") or ""
+    if session_date > today:
+        return "upcoming", None
+    if n_rows > 0:
+        return "available", None
+    if meeting.get("status") != "COMPLETED":
+        return "not_ingested", (f"{session_date} 회차는 지났지만 심의 결과가 아직 미반영(status={meeting.get('status')}) — "
+                                "약제 0건이 아니라 결과를 모르는 상태입니다. 런북: reimb_data_sync")
+    return "empty", None
 
 
 # ── Admin CRUD: drugs ────────────────────────────────────────────────────────
