@@ -13,6 +13,12 @@ stale 이면 **같은 행을 다시 연다**(signals.record_recurring → store.
 판정 불가(테이블·컬럼·파일 부재, 권한)는 과제가 아니다 — evidence 를 "판정 불가: ..." 로 남기고 stale=False.
 데이터 DB 는 읽기만 한다(SELECT) — `file:...?mode=ro` URI 도 받으므로 로컬 실측은 실제 DB 를 읽기 전용으로 연다.
 판정 결과·과제는 원장 DB(jobs.resolve_db_path(); 프로덕션에서는 같은 drug_prices.db)에 쓴다.
+
+과제 종류(P1.6, 예산 ≤3건/일 설계 제약) — 판정마다 kind 가 있다:
+  - ops_incident(기본): 장애/회귀. 위의 월 키 — 런북이 있으면 디스패처가 선점, 없으면 blocked 로 사람 확인.
+  - improvement: 사람 몫 적체(체크리스트 입력·브랜드 승인·NHIS 수동 매칭·보고서 작성). source_ref "{domain}:backlog" —
+    월 키 없음, 도메인당 1행이 끝날 때까지 열려 있고 디스패처(CLAIMABLE_KINDS=ops_incident)는 집지 않는다. closed 뒤 재발이면
+    같은 행을 다시 열고(끝난 게 아니었다), rejected 는 '안 한다' 는 결정으로 존중한다(recurred ≤1/일만).
 """
 from __future__ import annotations
 
@@ -50,6 +56,9 @@ NHIS_MAX_DAYS = 10
 FOREIGN_PRICE_MAX_DAYS = 45          # 추적 제품마다 '가격 있는' 최신 행이 이보다 오래되면 stale (P1.6 관측)
 FOREIGN_COVERAGE_WINDOW_DAYS = 90    # 이 창 안에 가격 행이 없는 국가는 (제도상 공백이 아니면) 수집 실패
 
+KINDS = ("ops_incident", "improvement")
+IMPROVEMENT_REF_SUFFIX = "backlog"   # improvement 의 source_ref "{domain}:backlog" — 월 키 없음(도메인당 1행)
+
 DOMAIN_FRESHNESS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS domain_freshness (
     domain     TEXT PRIMARY KEY,
@@ -58,7 +67,8 @@ CREATE TABLE IF NOT EXISTS domain_freshness (
     observed   TEXT,
     deadline   TEXT,
     evidence   TEXT,
-    runbook    TEXT
+    runbook    TEXT,
+    kind       TEXT NOT NULL DEFAULT 'ops_incident'
 );
 """
 
@@ -72,6 +82,7 @@ class Freshness:
     evidence: str             # 사람용 한 줄
     runbook: str | None = None
     priority: int = 2
+    kind: str = "ops_incident"   # KINDS — improvement 는 사람 몫 적체(도메인당 1행, 디스패처 미선점)
 
     @property
     def determinable(self) -> bool:
@@ -457,13 +468,15 @@ def write_domain_freshness(results: list[Freshness], *, db_path: str | Path = DE
     conn = connect(db_path)
     try:
         conn.executescript(DOMAIN_FRESHNESS_SCHEMA)
+        if "kind" not in {r[1] for r in conn.execute("PRAGMA table_info(domain_freshness)")}:   # P1.6 이전 테이블 — 멱등 보강
+            conn.execute("ALTER TABLE domain_freshness ADD COLUMN kind TEXT NOT NULL DEFAULT 'ops_incident'")
         now = datetime.now(timezone.utc).isoformat()
         for r in results:
-            conn.execute("INSERT INTO domain_freshness (domain, checked_at, stale, observed, deadline, evidence, runbook) "
-                         "VALUES (?,?,?,?,?,?,?) ON CONFLICT(domain) DO UPDATE SET checked_at=excluded.checked_at, "
+            conn.execute("INSERT INTO domain_freshness (domain, checked_at, stale, observed, deadline, evidence, runbook, kind) "
+                         "VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(domain) DO UPDATE SET checked_at=excluded.checked_at, "
                          "stale=excluded.stale, observed=excluded.observed, deadline=excluded.deadline, "
-                         "evidence=excluded.evidence, runbook=excluded.runbook",
-                         (r.domain, now, 1 if r.stale else 0, r.observed, r.deadline, r.evidence, r.runbook))
+                         "evidence=excluded.evidence, runbook=excluded.runbook, kind=excluded.kind",
+                         (r.domain, now, 1 if r.stale else 0, r.observed, r.deadline, r.evidence, r.runbook, r.kind))
         conn.commit()
     finally:
         conn.close()
@@ -471,16 +484,24 @@ def write_domain_freshness(results: list[Freshness], *, db_path: str | Path = DE
 
 def record_freshness_problems(results: list[Freshness], *, today: date,
                               db_path: str | Path = DEFAULT_DB_PATH) -> list[int]:
-    """stale 도메인마다 과제 id — 같은 달의 같은 행(열려 있으면 recurred, 닫혔으면 다시 연다). 판정 불가·신선은 건너뛴다."""
+    """stale 도메인마다 과제 id. 판정 불가·신선은 건너뛴다.
+
+    ops_incident: 같은 달의 같은 행(열려 있으면 recurred, 닫혔으면 다시 연다 — rejected 포함, 조건이 되돌아온 것이므로).
+    improvement:  "{domain}:backlog" 1행 — 월이 바뀌어도 같은 행. closed 뒤 재발이면 다시 열고 rejected 는 존중한다.
+    """
     ids: list[int] = []
     for r in results:
         if not r.stale:
             continue
+        if r.kind not in KINDS:
+            raise ValueError(f"알 수 없는 kind: {r.kind!r} ({r.domain})")
+        improvement = r.kind == "improvement"
         ids.append(record_recurring(
-            kind="ops_incident", source="domain_freshness", source_ref=f"{r.domain}:{today:%Y-%m}",
-            title=f"데이터 신선도 — {r.domain} stale",
+            kind=r.kind, source="domain_freshness",
+            source_ref=f"{r.domain}:{IMPROVEMENT_REF_SUFFIX}" if improvement else f"{r.domain}:{today:%Y-%m}",
+            title=f"사람 몫 적체 — {r.domain}" if improvement else f"데이터 신선도 — {r.domain} stale",
             detail=f"{r.evidence}\n관측={r.observed} 기한={r.deadline}\n{runbook_line(r.runbook)}",
-            priority=r.priority, actor="freshness", db_path=db_path)[0])
+            priority=r.priority, actor="freshness", db_path=db_path, reopen_rejected=not improvement)[0])
     return ids
 
 
