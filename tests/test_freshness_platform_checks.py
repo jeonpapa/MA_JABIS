@@ -246,3 +246,45 @@ def test_committee_reports_window_excludes_old_and_future_sessions(tmp_path):
     r = fr.check_committee_reports(_ctx(tmp_path, today=date(2026, 7, 20)))     # 창 05-21~07-18: 06-04(있음)·07-02·07-08
     assert r.stale is True and "#16=2026-07-02" in r.evidence and "#5=2026-07-08" in r.evidence
     assert "#6=2026-08-19" not in r.evidence and "#15=2026-06-04" not in r.evidence.split("없음")[1].split(";")[0]
+
+
+# ── 4. 급여 체크리스트 커버리지 (reimbursement_checklist_coverage, improvement — 담당 사람) ─────
+
+_CHECKLIST_SQL = """
+    CREATE TABLE indications_master (indication_id TEXT, product TEXT);
+    CREATE TABLE indication_reimbursement (indication_id TEXT, is_reimbursed INTEGER, updated_at TEXT);
+    INSERT INTO indications_master VALUES ('w1','welireg');     -- 다른 제품은 세지 않는다
+"""
+
+
+def _seed_checklist(db: Path, n_total: int, n_covered: int, last_edit: str) -> None:
+    stmts = "".join(f"INSERT INTO indications_master VALUES ('k{i}','keytruda');" for i in range(n_total))
+    stmts += "".join(f"INSERT INTO indication_reimbursement VALUES ('k{i}',{i % 2},'{last_edit}');" for i in range(n_covered))
+    _seed(db, _CHECKLIST_SQL, stmts)
+
+
+def test_checklist_coverage_flags_unverified_share_over_half(tmp_path):
+    _seed_checklist(tmp_path / "d.db", 66, 15, "2026-10-01T00:00:00+00:00")       # 편집은 최근 — 비율만 걸린다
+    r = fr.check_reimbursement_checklist_coverage(_ctx(tmp_path))
+    assert r.stale is True and r.kind == "improvement" and r.runbook is None and r.priority == 3
+    assert "66건 중" in r.evidence and "미확인 51건(77%)" in r.evidence and "기준 ≤50%" in r.evidence
+    assert "마지막 편집 2026-10-01" in r.evidence and "/admin/reimbursement" in r.evidence and "담당: 사람" in r.evidence
+    assert r.observed == "2026-10-01" and r.deadline == "2026-07-08"
+    assert fr.DOMAIN_CHECKS["reimbursement_checklist_coverage"] is fr.check_reimbursement_checklist_coverage
+
+
+def test_checklist_coverage_flags_stale_edit_even_when_share_is_fine(tmp_path):
+    _seed_checklist(tmp_path / "d.db", 10, 8, "2026-06-12T01:27:50+00:00")        # 20% 미확인, 편집 116일 전
+    r = fr.check_reimbursement_checklist_coverage(_ctx(tmp_path))
+    assert r.stale is True and "90일" in r.evidence and r.observed == "2026-06-12" and "미확인 2건(20%)" in r.evidence
+
+
+def test_checklist_coverage_fresh_when_covered_and_recently_edited(tmp_path):
+    _seed_checklist(tmp_path / "d.db", 10, 8, "2026-09-20T00:00:00+00:00")
+    assert fr.check_reimbursement_checklist_coverage(_ctx(tmp_path)).stale is False
+
+
+def test_checklist_coverage_without_tracked_product_is_fresh(tmp_path):
+    _seed(tmp_path / "d.db", _CHECKLIST_SQL)
+    r = fr.check_reimbursement_checklist_coverage(_ctx(tmp_path))
+    assert r.stale is False and r.determinable and "0건 중" in r.evidence

@@ -473,6 +473,34 @@ def check_pipeline_expected_sessions(ctx: Ctx) -> Freshness:
     return Freshness("pipeline_expected_sessions", bool(rows), oldest, cutoff, evidence, None, 2)
 
 
+# ── 7c 급여 체크리스트 커버리지 (P1.6, improvement — 담당 사람) ─────────────
+# Home 의 Keytruda 급여 현황은 급여/미급여/미확인 3분할이다(api/server.py:msd_summary). '미확인' = indication_reimbursement 행 없음 —
+# 체크리스트는 사람이 /admin/reimbursement 에서 적응증별로 입력한다(프로젝트 노트: 수동 1회 약 1시간). 미확인이 절반을 넘거나
+# 마지막 편집이 90일을 넘으면 적체.
+
+CHECKLIST_PRODUCT = "keytruda"
+CHECKLIST_UNVERIFIED_MAX_SHARE = 0.5
+CHECKLIST_EDIT_MAX_DAYS = 90
+
+
+def check_reimbursement_checklist_coverage(ctx: Ctx) -> Freshness:
+    total = int(_scalar(ctx, "SELECT COUNT(*) FROM indications_master WHERE product=?", (CHECKLIST_PRODUCT,)) or 0)
+    covered = int(_scalar(ctx, "SELECT COUNT(*) FROM indications_master m JOIN indication_reimbursement r "
+                               "ON r.indication_id = m.indication_id WHERE m.product=?", (CHECKLIST_PRODUCT,)) or 0)
+    last_edit = str(_scalar(ctx, "SELECT MAX(updated_at) FROM indication_reimbursement") or "")[:10] or None
+    deadline = _days_ago(ctx, CHECKLIST_EDIT_MAX_DAYS)
+    unverified = total - covered
+    share = unverified / total if total else 0.0
+    share_bad = total > 0 and share > CHECKLIST_UNVERIFIED_MAX_SHARE
+    edit_stale = total > 0 and (last_edit or "") < deadline
+    evidence = (f"Keytruda 적응증 {total}건 중 체크리스트(indication_reimbursement) 행 없음 = 미확인 {unverified}건({share:.0%}) — "
+                f"기준 ≤{CHECKLIST_UNVERIFIED_MAX_SHARE:.0%}; 마지막 편집 {last_edit}(기대≥{deadline}, {CHECKLIST_EDIT_MAX_DAYS}일). "
+                "담당: 사람 — /admin/reimbursement 에서 적응증별 급여 여부·조건·공고 입력(수동 1회 약 1시간). "
+                "Home 3분할(급여/미급여/미확인)의 '미확인' 이 이 수다")
+    return Freshness("reimbursement_checklist_coverage", share_bad or edit_stale, last_edit, deadline, evidence, None, 3,
+                     kind="improvement")
+
+
 # ── 8 아날로그 · 9 마켓셰어 ────────────────────────────────────────────────
 
 def check_analog_reports(ctx: Ctx) -> Freshness:
@@ -564,6 +592,7 @@ DOMAIN_CHECKS: dict[str, Callable[[Ctx], Freshness]] = {
     "committee_results": check_committee_results,
     "committee_reports": check_committee_reports,
     "pipeline_expected_sessions": check_pipeline_expected_sessions,
+    "reimbursement_checklist_coverage": check_reimbursement_checklist_coverage,
     "analog_reports": check_analog_reports,
     "market_share": check_market_share,
     "policy_intelligence": check_policy_intelligence,
