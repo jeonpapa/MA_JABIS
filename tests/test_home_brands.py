@@ -311,7 +311,7 @@ def test_aggregate_brand_traffic_group_merges_with_url_dedupe(monkeypatch):
     shared = _item("공통기사", "https://ex.com/a")
 
     class _FakeClient:
-        def daily_counts(self, query, days=30, max_pages=10):
+        def daily_counts(self, query, days=30, max_pages=10, strict=False):
             if query == "키트루다":
                 items = [shared, _item("시드기사", "https://ex.com/b")]
             elif query == "펨브롤리주맙":

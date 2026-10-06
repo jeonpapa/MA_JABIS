@@ -112,7 +112,24 @@ export default function MeetingResultModal({ meeting, isDark, onClose }: Props) 
             </div>
           )}
 
-          {!loading && !error && data && (
+          {/* 회차는 지났지만 결과가 아직 적재되지 않음 — 빈 결과(심의 약제 없음)로 보이게 하지 않는다 */}
+          {!loading && !error && data && data.resultsStatus === 'not_ingested' && (
+            <div className={`rounded-xl border p-5 mb-5 ${
+              isDark ? 'border-amber-400/30 bg-amber-400/5' : 'border-amber-200 bg-amber-50'
+            }`}>
+              <h3 className={`text-sm font-bold mb-1.5 flex items-center gap-2 ${isDark ? 'text-amber-300' : 'text-amber-700'}`}>
+                <span className="w-5 h-5 flex items-center justify-center">
+                  <i className="ri-time-line text-sm"></i>
+                </span>
+                심의 결과 미반영
+              </h3>
+              <p className={`text-sm leading-relaxed ${isDark ? 'text-[#8B9BB4]' : 'text-gray-600'}`}>
+                {data.resultsNote ?? `${meeting.date} 회차는 지났지만 심의 결과가 아직 반영되지 않았습니다. 심의 약제가 없었다는 뜻이 아닙니다.`}
+              </p>
+            </div>
+          )}
+
+          {!loading && !error && data && data.resultsStatus !== 'not_ingested' && (
             <>
               <div className={`grid grid-cols-3 gap-3 mb-6`}>
                 <div className={`rounded-xl border p-3.5 text-center ${
@@ -219,27 +236,28 @@ export default function MeetingResultModal({ meeting, isDark, onClose }: Props) 
                   </div>
                 </div>
               )}
-
-              {meeting.note && (
-                <div className={`rounded-xl border p-4 ${
-                  isCancer
-                    ? (isDark ? 'border-teal-400/20 bg-teal-400/5' : 'border-teal-200 bg-teal-50')
-                    : (isDark ? 'border-violet-400/20 bg-violet-400/5' : 'border-violet-200 bg-violet-50')
-                }`}>
-                  <h3 className={`text-sm font-bold mb-2 flex items-center gap-2 ${
-                    isCancer ? (isDark ? 'text-teal-400' : 'text-teal-700') : (isDark ? 'text-violet-400' : 'text-violet-700')
-                  }`}>
-                    <span className={`w-5 h-5 flex items-center justify-center`}>
-                      <i className="ri-arrow-right-circle-line text-sm"></i>
-                    </span>
-                    회차 노트
-                  </h3>
-                  <p className={`text-sm leading-relaxed ${isDark ? 'text-[#8B9BB4]' : 'text-gray-600'}`}>
-                    {meeting.note}
-                  </p>
-                </div>
-              )}
             </>
+          )}
+
+          {/* 회차 노트는 결과 반영 여부와 무관하게 보여준다 */}
+          {!loading && !error && data && meeting.note && (
+            <div className={`rounded-xl border p-4 ${
+              isCancer
+                ? (isDark ? 'border-teal-400/20 bg-teal-400/5' : 'border-teal-200 bg-teal-50')
+                : (isDark ? 'border-violet-400/20 bg-violet-400/5' : 'border-violet-200 bg-violet-50')
+            }`}>
+              <h3 className={`text-sm font-bold mb-2 flex items-center gap-2 ${
+                isCancer ? (isDark ? 'text-teal-400' : 'text-teal-700') : (isDark ? 'text-violet-400' : 'text-violet-700')
+              }`}>
+                <span className={`w-5 h-5 flex items-center justify-center`}>
+                  <i className="ri-arrow-right-circle-line text-sm"></i>
+                </span>
+                회차 노트
+              </h3>
+              <p className={`text-sm leading-relaxed ${isDark ? 'text-[#8B9BB4]' : 'text-gray-600'}`}>
+                {meeting.note}
+              </p>
+            </div>
           )}
         </div>
       </div>

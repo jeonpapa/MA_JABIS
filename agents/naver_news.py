@@ -31,6 +31,20 @@ logger = logging.getLogger(__name__)
 NAVER_API_URL = "https://openapi.naver.com/v1/search/news.json"
 
 
+class NaverApiError(RuntimeError):
+    """네이버 뉴스 API 가 답을 주지 못했다 — '기사 0건' 과 구분되는 명시적 실패 신호.
+
+    kind: 'not_configured' 키 미설정 · 'transport' 전송 실패(DNS·연결·타임아웃·HTTP 4xx/5xx) · 'parse' 본문이 JSON 이 아님.
+    mfds_api.MfdsApiError 와 같은 규칙: 빈 리스트는 API 가 실제로 답했을 때만 나온다. 호출자는 이것을 '기사 없음' 으로
+    집계하거나 일자 캐시에 쓰면 안 된다 (2026-10-01 Home 미디어 카드 캐시 오염 재발 방지).
+    """
+
+    def __init__(self, kind: str, detail: str):
+        self.kind = kind
+        self.detail = detail
+        super().__init__(f"{kind}: {detail}")
+
+
 @dataclass
 class NewsItem:
     title: str          # HTML tag 제거된 제목
@@ -52,6 +66,8 @@ class NaverNewsClient:
     timeout: int = 10
     min_delay_ms: int = 120  # API quota 보호 (초당 10회 제한)
     _last_call: float = 0.0
+    # 마지막 search() 의 실패 — 비-strict 호출자가 [] 를 '0건' 과 구분할 때 본다. 성공하면 None 으로 리셋.
+    last_error: NaverApiError | None = None
 
     def __post_init__(self):
         if not self.client_id or not self.client_secret:
@@ -76,10 +92,17 @@ class NaverNewsClient:
         display: int = 100,
         start: int = 1,
         sort: str = "date",
+        strict: bool = False,
     ) -> list[NewsItem]:
-        """네이버 뉴스 검색. 최신순(date) 기본. start 로 페이지네이션."""
+        """네이버 뉴스 검색. 최신순(date) 기본. start 로 페이지네이션.
+
+        strict=False(기본, 기존 호출자 호환): 실패는 [] 로 돌리고 `last_error` 에 남긴다.
+        strict=True: 실패는 NaverApiError 로 raise — 빈 리스트는 API 가 답했을 때만 나온다.
+        """
+        self.last_error = None
         if not self.is_configured:
-            return []
+            return self._fail(NaverApiError("not_configured",
+                                            "NAVER_API_CLIENT_ID/SECRET 미설정 (config/.env)"), strict)
         self._throttle()
         try:
             resp = requests.get(
@@ -92,10 +115,16 @@ class NaverNewsClient:
                 timeout=self.timeout,
             )
             resp.raise_for_status()
-            data = resp.json()
         except requests.RequestException as e:
             logger.error("[NaverNews] 검색 실패 (%s): %s", query, e)
-            return []
+            return self._fail(NaverApiError("transport", f"{type(e).__name__}: {e}"), strict)
+        try:
+            data = resp.json()
+        except ValueError as e:
+            logger.error("[NaverNews] 응답 JSON 파싱 실패 (%s): %s", query, e)
+            return self._fail(NaverApiError("parse", f"JSON 아님: {e}"), strict)
+        if not isinstance(data, dict):
+            return self._fail(NaverApiError("parse", f"예상 밖 응답 형태: {type(data).__name__}"), strict)
 
         items = []
         for it in data.get("items", []):
@@ -117,16 +146,24 @@ class NaverNewsClient:
             ))
         return items
 
+    def _fail(self, err: NaverApiError, strict: bool) -> list[NewsItem]:
+        self.last_error = err
+        if strict:
+            raise err
+        return []
+
     def daily_counts(
         self,
         query: str,
         days: int = 30,
         max_pages: int = 10,
+        strict: bool = False,
     ) -> tuple[dict[str, int], list[NewsItem]]:
         """지난 `days` 일간 일별 기사 건수 + raw item 목록.
 
         네이버 API 는 sort=date 일 때 최대 1,000건 (start ≤ 1000) 까지 제공.
         한 달 한국 제약 뉴스는 보통 수백 건 — display=100 × 10 페이지로 커버.
+        strict=True 면 어느 페이지든 요청 실패는 NaverApiError 로 raise (search 참조).
         """
         cutoff = datetime.now() - timedelta(days=days)
         all_items: list[NewsItem] = []
@@ -134,7 +171,7 @@ class NaverNewsClient:
             start = 1 + page * 100
             if start > 1000:
                 break
-            batch = self.search(query, display=100, start=start, sort="date")
+            batch = self.search(query, display=100, start=start, sort="date", strict=strict)
             if not batch:
                 break
             all_items.extend(batch)
@@ -214,6 +251,10 @@ def aggregate_brand_traffic(
         "sparkline": [3,1,0,2,...],  // days 길이
         "latest_news": [{"title","url","source","date"}, ...5건]
     }, ...]
+
+    요청 실패(NaverApiError)는 '0건' 으로 집계하지 않는다 — 그 브랜드 entry 는 0건 모양에 `"error": "<kind>: <detail>"`
+    키가 추가되고, 나머지 브랜드는 계속 수집한다. 성공 entry 의 키 집합은 불변. 소비자(get_brand_traffic)는 error 가
+    하나라도 있으면 집계 전체에 error 를 달고 캐시에 쓰지 않는다.
     """
     client = get_client()
     result = []
@@ -229,22 +270,29 @@ def aggregate_brand_traffic(
         if not seed:
             continue
 
-        # 시드 + 보조 검색어 multi-query → URL 기준 dedupe 병합
+        # 시드 + 보조 검색어 multi-query → URL 기준 dedupe 병합. 어느 질의든 실패하면 브랜드 전체를 실패로 본다
+        # (부분 합산은 '적게 나온 진짜 값' 처럼 보여 더 위험하다).
         merged: dict[str, NewsItem] = {}
+        error: str | None = None
         for query in [seed] + terms:
-            _, items_q = client.daily_counts(query, days=days)
+            try:
+                _, items_q = client.daily_counts(query, days=days, strict=True)
+            except NaverApiError as e:
+                logger.warning("[NaverNews] 브랜드 트래픽 수집 실패 (%s / %s): %s", seed, query, e)
+                error = str(e)
+                break
             for it in items_q:
                 key = it.original_link or it.link or f"{it.title}|{it.date_str}"
                 if key not in merged:
                     merged[key] = it
 
-        items = list(merged.values())
+        items = list(merged.values()) if error is None else []
         counts: dict[str, int] = {}
         for it in items:
             counts[it.date_str] = counts.get(it.date_str, 0) + 1
         sparkline = [counts.get(d, 0) for d in date_keys]
         latest = sorted(items, key=lambda x: x.pub_date, reverse=True)[:5]
-        result.append({
+        row = {
             "brand": seed,
             "total_count": sum(counts.values()),
             "daily": counts,
@@ -256,7 +304,10 @@ def aggregate_brand_traffic(
                 "date": n.date_str,
                 "description": n.description[:140],
             } for n in latest],
-        })
+        }
+        if error is not None:
+            row["error"] = error
+        result.append(row)
     # 건수 내림차순
     result.sort(key=lambda x: x["total_count"], reverse=True)
     return result

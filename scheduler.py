@@ -161,6 +161,13 @@ async def run_pipeline():
     # 1) 국내 약가 월별 catch-up (누락 월 자동 복구 적재)
     from agents.domestic_catchup import catch_up
     counts = {"ingested": 0, "catchup_errors": 0}
+    # 잡 실패 판정: catch-up 이 **전체** 실패(적재 0건 + 오류)하거나 예외로 죽으면 errors 에 담아 ok=False 로 돌린다.
+    # guarded_job(job) 이 이 errors 로 scheduler_job_run.ok=0 을 기록하고 /api/health 의 jobs_failed_24h 가 잡을 나열한다.
+    # 이전엔 여기서 원장 신호만 남기고 ok=True 를 돌려 2026-09-01 전체 실패가 '건강' 으로 보였다.
+    # 원장 신호는 여기서도 남긴다(래퍼 없이 직접 호출돼도 신호가 있어야 한다 — test_agent_signal_wiring) — 래퍼의 두 번째
+    # 기록은 record_recurring 이 같은 (scheduler_job, domestic_price_pipeline:<오늘>) 행으로 합친다(과제 1건, 테스트로 증명).
+    # 일부 오류(적재가 있음)는 멱등 재시도 대상이라 경고만.
+    errors: list[str] = []
     try:
         result = await catch_up(config, BASE_DIR)
         counts["ingested"] = len(result.get("ingested") or [])
@@ -170,17 +177,18 @@ async def run_pipeline():
         if result.get("skipped"):
             logger.info("국내 약가 catch-up skip (%s) — 당월 이미 적재", result["skipped"])
         elif result.get("errors") and not result.get("ingested"):
-            # 게시판 로딩 실패 등 전체 실패 — silent no-op 이 아니라 ERROR 로 남긴다
+            # 게시판 로딩 실패 등 전체 실패 — silent no-op 이 아니라 잡 실패다
             logger.error("국내 약가 catch-up 실패 — 적재 0건, 오류 %s (1~7일 일일 재시도)",
                          result["errors"])
-            _agent_record_job_failure("domestic_price_pipeline",
-                                      "; ".join(str(e) for e in result["errors"])[:300])
+            errors = [str(e)[:300] for e in result["errors"]]
+            _agent_record_job_failure("domestic_price_pipeline", "; ".join(errors)[:300])
         elif result.get("errors"):
             logger.warning("catch-up 일부 오류 — 다음 실행 시 재시도(멱등): %s", result["errors"])
     except Exception as e:
         logger.error("국내 약가 catch-up 실패: %s", e, exc_info=True)
-        # 캐치업 자체가 예외로 죽은 경우에도 에이전트 원장에 신호를 남긴다 (래퍼가 신호 실패를 삼킨다)
-        _agent_record_job_failure("domestic_price_pipeline", f"{type(e).__name__}: {e}"[:300])
+        errors = [f"{type(e).__name__}: {e}"[:300]]
+        # 캐치업 자체가 예외로 죽은 경우에도 원장에 신호를 남긴다 (래퍼가 신호 실패를 삼킨다)
+        _agent_record_job_failure("domestic_price_pipeline", errors[0])
         # 적재 실패해도 대쉬보드는 기존 데이터로 갱신
 
     # 2) 대쉬보드 에이전트 — 예외는 guarded_job(job) 이 받는다
@@ -190,7 +198,7 @@ async def run_pipeline():
     logger.info("━━━ 파이프라인 완료 ━━━")
     logger.info("대쉬보드: file://%s", html_path.resolve())
     counts["dashboard"] = str(html_path)
-    return {"ok": True, "counts": counts}
+    return {"ok": not errors, "counts": counts, "errors": errors}
 
 
 @guarded_job("domestic_price_pipeline")
@@ -658,15 +666,32 @@ def daily_mailing_top_news_job():
 
 @guarded_job("daily_mailing_health")
 def daily_mailing_health_job():
-    """매일 09:30 — 오늘 예정 구독의 미생성·보류·발송실패·Gmail 토큰 상태 점검. 문제는 헬스 신호로(잡 실패 아님)."""
+    """매일 09:30 — ① daily_mailing_run/article 만료 행 purge(DELETE) ② 오늘 예정 구독의 미생성·보류·발송실패·Gmail 토큰
+    상태 점검. 문제는 헬스 신호로(잡 실패 아님).
+
+    purge 는 이전에 /api/admin/daily-mailing/kanban GET 의 부수효과였다(단방향 원칙 위반 — 대쉬보드는 DB 만 읽는다).
+    여기로 옮겨 하루 1회 돈다. purge 오류는 errors 로 남기되 헬스 점검은 계속한다.
+    """
+    from agents.daily_mailing import storage
     from agents.daily_mailing.dispatch import DispatchDeps, health_check
+    counts: dict = {}
+    errors: list[str] = []
+    try:
+        purged = storage.purge_expired_daily_mailing_rows()
+        counts["purged_runs"] = int(purged.get("runs_deleted") or 0)
+        counts["purged_articles"] = int(purged.get("articles_deleted") or 0)
+        logger.info("daily mailing 만료 purge: run %d · article %d", counts["purged_runs"], counts["purged_articles"])
+    except Exception as e:                                   # noqa: BLE001 — purge 실패가 헬스 점검을 막으면 안 된다
+        logger.error("daily mailing 만료 purge 실패: %s", e, exc_info=True)
+        errors.append(f"purge: {type(e).__name__}: {e}"[:300])
     res = health_check(DispatchDeps.production())
     if res["ok"]:
         logger.info("daily mailing health OK (%s)", res["run_date"])
     else:
         logger.error("daily mailing health 문제 %d건: %s", len(res["problems"]), res["problems"])
         _agent_record_health_problems(res)
-    return {"counts": {"problems": len(res.get("problems") or [])}}
+    counts["problems"] = len(res.get("problems") or [])
+    return {"ok": not errors, "counts": counts, "errors": errors}
 
 
 @guarded_job("nhis_negotiation_sync")

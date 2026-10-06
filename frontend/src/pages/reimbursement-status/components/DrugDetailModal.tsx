@@ -315,10 +315,14 @@ export default function DrugDetailModal({ drug, stageLabel, isDark, onClose }: D
                     </p>
                     <p className={`text-xs ${
                       t.status === 'in_progress' ? (isDark ? 'text-teal-300' : 'text-teal-600')
+                      : t.expectedStatus === 'overdue' ? (isDark ? 'text-amber-400' : 'text-amber-600')
                       : t.status === 'expected' ? (isDark ? 'text-teal-400/70' : 'text-teal-500')
                       : textMuted
                     }`}>
+                      {/* overdue: 예상 차수가 지났는데 결과가 반영되지 않음 — 과거 날짜를 예보처럼 쓰지 않는다 */}
                       {t.date ? t.date
+                        : t.status === 'not_applicable' ? '해당 없음 (비항암 — 약평위 직행)'
+                        : t.expectedDate && t.expectedStatus === 'overdue' ? `예상일 경과 (${t.expectedDate} 차수 결과 미반영)`
                         : t.expectedDate ? `예상 ${t.expectedDate}`
                         : t.status === 'expected' ? '예정일 미정' : '미정'}
                     </p>

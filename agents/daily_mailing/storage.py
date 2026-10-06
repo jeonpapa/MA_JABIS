@@ -459,8 +459,9 @@ def load_latest_run_for_subscription(
     return run
 
 
-def load_admin_kanban(db_path: str | Path = DEFAULT_DB_PATH, *, limit_runs: int = 20, purge: bool = True) -> dict:
-    """purge=False 는 읽기 전용 조회(플랫폼 스모크) — 만료 행 DELETE 를 건너뛴다."""
+def load_admin_kanban(db_path: str | Path = DEFAULT_DB_PATH, *, limit_runs: int = 20, purge: bool = False) -> dict:
+    """운영 칸반 조회 — 기본 읽기 전용. 만료 행 DELETE 는 scheduler.daily_mailing_health_job 이 매일 수행한다
+    (조회가 DB 를 지우던 단방향 원칙 위반 제거). purge=True 는 명시적 유지보수 호출용으로만 남긴다."""
     ensure_daily_mailing_tables(db_path)
     if purge:
         purge_expired_daily_mailing_rows(db_path)
