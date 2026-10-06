@@ -17,6 +17,15 @@ from .formulation import detect_form, normalize_form_type
 
 logger = logging.getLogger(__name__)
 
+# 국가 → config/.env 자격증명 키 이름 (load_credentials 와 설정 프로브(agents/agent_tasks/config_probe.py)가 함께 쓴다 — 이름만, 값 금지).
+ENV_KEY_MAP: dict[str, tuple[str, str]] = {
+    "UK": ("MIMS_UK_USERNAME",       "MIMS_UK_PASSWORD"),
+    "US": ("MICROMEDEX_US_USERNAME", "MICROMEDEX_US_PASSWORD"),
+    "DE": ("ROTE_LISTE_DE_USERNAME", "ROTE_LISTE_DE_PASSWORD"),
+    "FR": ("VIDAL_FR_USERNAME",      "VIDAL_FR_PASSWORD"),       # Vidal 은 비로그인 모드로도 동작(LOGIN_OPTIONAL)
+    "CH": ("COMPENDIUM_CH_USERNAME", "COMPENDIUM_CH_PASSWORD"),  # 공개 접근, 로그인 불필요
+}
+
 
 class BaseScraper(ABC):
     """
@@ -36,6 +45,10 @@ class BaseScraper(ABC):
     CURRENCY: str = ""
     SOURCE_LABEL: str = ""
     REQUIRES_LOGIN: bool = False
+    # REQUIRES_LOGIN 이어도 자격증명 없이 동작하는 소스(FR Vidal 비로그인 모드) — 설정 프로브가 자격증명 부재를 문제로 보지 않는다.
+    LOGIN_OPTIONAL: bool = False
+    # 이 소스가 읽는 프록시 env 키(대안 순서). 비면 직접 접근. 설정 프로브는 하나라도 있으면 충족으로 본다.
+    PROXY_ENV_KEYS: tuple[str, ...] = ()
     # brand 검색이 0건일 때 identity.inn 으로 1회 재시도할지 (기본 off).
     # 소스의 검색 모드가 제품명 위주여서 INN 입력을 놓치는 경우만 opt-in.
     FALLBACK_TO_INN = False
@@ -206,14 +219,6 @@ def load_credentials(config_path: Path, country: str) -> dict:
       DE  → ROTE_LISTE_DE_USERNAME / ROTE_LISTE_DE_PASSWORD
     """
     import os
-
-    ENV_KEY_MAP = {
-        "UK": ("MIMS_UK_USERNAME",       "MIMS_UK_PASSWORD"),
-        "US": ("MICROMEDEX_US_USERNAME", "MICROMEDEX_US_PASSWORD"),
-        "DE": ("ROTE_LISTE_DE_USERNAME", "ROTE_LISTE_DE_PASSWORD"),
-        "FR": ("VIDAL_FR_USERNAME",      "VIDAL_FR_PASSWORD"),       # 추후 추가
-        "CH": ("COMPENDIUM_CH_USERNAME", "COMPENDIUM_CH_PASSWORD"),  # 공개 접근, 로그인 불필요
-    }
 
     # 1) .env 로드 (python-dotenv가 설치된 경우)
     env_path = config_path.parent / ".env"

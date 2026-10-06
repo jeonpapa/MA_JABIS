@@ -48,6 +48,7 @@ class UkMimsScraper(BaseScraper):
     CURRENCY       = "GBP"
     SOURCE_LABEL   = "MIMS online (UK, 로그인)"
     REQUIRES_LOGIN = True
+    PROXY_ENV_KEYS = ("MIMS_UK_PROXY",)     # 데이터센터 IP 는 Cloudflare 차단 — residential proxy(설정 프로브가 확인)
 
     def __init__(self, cache_dir: Path = None, msd_only: bool = False, **kwargs):
         super().__init__(**kwargs)
@@ -110,7 +111,8 @@ class UkMimsScraper(BaseScraper):
                 pass
             page.wait_for_timeout(5000)
 
-        proxy = self._make_sticky(os.environ.get("MIMS_UK_PROXY", "").strip() or None)
+        proxy = self._make_sticky(next((os.environ.get(k, "").strip() for k in self.PROXY_ENV_KEYS
+                                        if os.environ.get(k, "").strip()), None))
         sess_kw = dict(headless=self.headless, solve_cloudflare=True)
         if proxy:
             sess_kw["proxy"] = proxy

@@ -104,6 +104,7 @@ class JpMhlwScraper(BaseScraper):
     CURRENCY     = "JPY"
     SOURCE_LABEL = "後生労働省 薬価基準収載品目リスト"
     REQUIRES_LOGIN = False
+    PROXY_ENV_KEYS = ("JP_MHLW_PROXY", "FOREIGN_PROXY")   # fly 데이터센터 IP 간헐 차단 — residential proxy(설정 프로브가 확인)
 
     def __init__(
         self,
@@ -126,7 +127,7 @@ class JpMhlwScraper(BaseScraper):
 
     def _browser_proxy(self):
         """mhlw.go.jp 페이지 로드용 residential proxy(JP_MHLW_PROXY, 없으면 FOREIGN_PROXY)."""
-        return playwright_proxy(proxy_from_env("JP_MHLW_PROXY", "FOREIGN_PROXY"))
+        return playwright_proxy(proxy_from_env(*self.PROXY_ENV_KEYS))
 
     # ────────────────────────────────────────────────────────────────────────
     # 1) 페이지에서 _01/_02/_03 엑셀 링크 동적 탐색
@@ -179,7 +180,7 @@ class JpMhlwScraper(BaseScraper):
         # 재시도마다 새 exit IP(sticky sessid 재생성)로 차단 IP 회피.
         last_exc = None
         for attempt in range(3):
-            proxies = requests_proxies(proxy_from_env("JP_MHLW_PROXY", "FOREIGN_PROXY"))
+            proxies = requests_proxies(proxy_from_env(*self.PROXY_ENV_KEYS))
             try:
                 resp = requests.get(url, timeout=60, stream=True, proxies=proxies)
                 resp.raise_for_status()

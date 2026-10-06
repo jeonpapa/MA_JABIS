@@ -54,6 +54,7 @@ class ChCompendiumScraper(BaseScraper):
     SOURCE_LABEL  = "compendium.ch (Publikumspreis, SL)"
     SOURCE_TYPE   = "compendium"    # PriceCalculator에 전달 → ratio 0.65
     REQUIRES_LOGIN = False
+    PROXY_ENV_KEYS = ("CH_COMPENDIUM_PROXY", "FOREIGN_PROXY")   # Cloudflare 간헐 차단 — residential proxy(설정 프로브가 확인)
 
     def __init__(self, cache_dir: Path = None, msd_only: bool = False, **kwargs):
         super().__init__(**kwargs)
@@ -70,9 +71,7 @@ class ChCompendiumScraper(BaseScraper):
         CH_COMPENDIUM_PROXY(없으면 FOREIGN_PROXY). 호출 시마다 새 sticky sessid →
         재시도에서 다른 exit IP 로 차단 IP 회피. 미설정 시 proxies 비움(직접 접근).
         """
-        self._session.proxies = requests_proxies(
-            proxy_from_env("CH_COMPENDIUM_PROXY", "FOREIGN_PROXY")
-        ) or {}
+        self._session.proxies = requests_proxies(proxy_from_env(*self.PROXY_ENV_KEYS)) or {}
 
     def _get(self, url: str, tries: int = 3, **kw):
         """차단/스로틀 대비 재시도 GET — 실패마다 새 exit IP(프록시 재적용)."""

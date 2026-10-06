@@ -79,6 +79,7 @@ class FrVidalScraper(BaseScraper):
     SOURCE_LABEL   = "VIDAL.fr"
     SOURCE_TYPE    = "vidal"      # HIRA factory_ratio = 0.65
     REQUIRES_LOGIN = True
+    LOGIN_OPTIONAL = True         # 자격증명 없으면 비로그인 모드(_login_requests → False) — 큐레이션 UCD 페이지는 공개
 
     def __init__(self, cache_dir: Path = None, msd_only: bool = False, **kwargs):
         super().__init__(**kwargs)

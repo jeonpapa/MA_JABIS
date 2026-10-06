@@ -56,6 +56,7 @@ JOB_RUNBOOK: dict[str, str | None] = {
     "domain_freshness": None,                 # 판정기 자체의 실패용. stale 도메인 과제는 freshness.py 가 도메인별 런북 힌트로 만든다
     "scheduler_heartbeat": None,     # T4: /api/health 가 stale 을 보면 같은 source_ref 로 기록(하루 1건) — 사람 확인
     "platform_smoke": None,          # T4: 화면 깨짐(라우트 5xx·키 부재·권한 게이트 붕괴) — 사람 확인. 키는 실패 집합 해시(CONTENT_KEYED_JOBS)
+    "foreign_config_probe": None,    # P1.6: 해외약가 설정(자격증명 키 이름·scrapling·프록시) — 문제마다 config 과제, 사람이 .env 를 고친다
 }
 # 스케줄에 없는 수동 전용 잡(guarded_job 은 있으나 build_job_specs 미등록) → 런북. JOB_RUNBOOK 과 분리하는 이유:
 # tests/test_scheduler_job_specs.py 가 JOB_RUNBOOK 키 집합 == 등록 잡 id 집합을 강제한다. record_job_failure 는
@@ -143,16 +144,23 @@ CONTENT_KEYED_JOBS = frozenset({"platform_smoke"})
 
 
 def record_job_failure(job_id: str, error: str, *, error_class: str = "transient",
-                       errors: list[str] | None = None, db_path: str | Path = DEFAULT_DB_PATH) -> int:
-    """잡 실패 → ops_incident. error 는 detail 본문(합친 문자열), errors 는 내용 키 계산용 원본 목록(없으면 error)."""
+                       errors: list[str] | None = None, problem: str | None = None,
+                       db_path: str | Path = DEFAULT_DB_PATH) -> int:
+    """잡 실패 → ops_incident. error 는 detail 본문(합친 문자열), errors 는 내용 키 계산용 원본 목록(없으면 error).
+
+    problem(설정 문제 전용, P1.6): 한 잡이 설정 문제를 여러 개 보고할 때(설정 프로브: US 자격증명·UK 프록시·scrapling import)
+    문제마다 과제 1건 — source_ref "{job_id}:config:{problem}", 사람이 닫을 때까지(닫았는데 재발하면 같은 행을 다시 연다)."""
     runbook = job_runbook(job_id)
     if error_class == "config":
-        ref = f"{job_id}:config"
+        ref = f"{job_id}:config" + (f":{problem}" if problem else "")
     elif job_id in CONTENT_KEYED_JOBS:
         ref = f"{job_id}:{_content_key(chr(10).join(sorted(errors)) if errors else error)}"
     else:
         ref = f"{job_id}:{_today()}"
-    title = f"스케줄러 잡 실패 — {job_id}" + (" (설정 문제)" if error_class == "config" else "")
+    if error_class == "config" and problem:
+        title = f"설정 문제 — {job_id}: {problem}"
+    else:
+        title = f"스케줄러 잡 실패 — {job_id}" + (" (설정 문제)" if error_class == "config" else "")
     tid, _ = record_recurring(
         kind="ops_incident", source="scheduler_job", source_ref=ref, title=title,
         detail=f"{error}\n{runbook_line(runbook)}", priority=2, actor="scheduler", db_path=db_path)

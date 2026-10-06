@@ -705,6 +705,20 @@ def home_brand_related_refresh_job():
     return {"counts": {k: res.get(k, 0) for k in ("seeds_processed", "candidates_added")}}
 
 
+@guarded_job("foreign_config_probe")
+def foreign_config_probe_job():
+    """매일 07:40 Seoul — 해외약가 설정 프로브(네트워크 없음): 로그인 필수 스크레이퍼의 자격증명 키 **이름**, scrapling import,
+    선언된 프록시 키. 문제마다 config 과제 1건(foreign_config_probe:config:{문제}) — 사람이 닫을 때까지.
+
+    별도 잡인 이유: 설정 문제는 데이터 나이(신선도)와 다른 종류라 키·런북이 다르고, 신선도가 판정 불가여도 돌아야 하며,
+    사람이 .env 를 고친 뒤 `--config-probe-now` 로 바로 재확인할 수 있어야 한다. 설정 문제는 과제이지 잡 실패가 아니다(ok=True).
+    """
+    from agents.agent_tasks.config_probe import run_and_record
+    res = run_and_record(base_dir=BASE_DIR)
+    logger.info("해외약가 설정 프로브: %s", res["counts"])
+    return res
+
+
 @guarded_job("domain_freshness")
 def domain_freshness_job(data_db_path: str | None = None):
     """매일 07:45 Seoul — 16개 데이터 도메인 신선도 판정 → stale 은 원장 과제(도메인당 월 1건). 02:00~07:00 수집 잡 뒤, 업무 전.
@@ -950,6 +964,8 @@ def build_job_specs(sched_cfg: dict) -> list[JobSpec]:
         JobSpec("home_brand_related_refresh", "Home 브랜드 Naver 연관검색어 확장 (주간, 후보 제안 → admin 승인 대기)",
                 home_brand_related_refresh_job, _cron(day_of_week="mon", hour=5, minute=0),
                 misfire_grace_time=PERIODIC_GRACE),
+        JobSpec("foreign_config_probe", "해외약가 설정 프로브 (매일 07:40, 자격증명 키 이름·scrapling·프록시 — 문제당 config 과제)",
+                foreign_config_probe_job, _cron(hour=7, minute=40)),
         JobSpec("domain_freshness", "데이터 도메인 신선도 판정 (매일 07:45, stale → 원장)", domain_freshness_job,
                 _cron(hour=7, minute=45)),
         JobSpec("scheduler_heartbeat", "스케줄러 heartbeat (60초, /api/health 생존 판정)", scheduler_heartbeat_job,
@@ -1033,6 +1049,8 @@ def main():
                         help="Daily Mailing 헬스체크 1회 즉시 실행")
     parser.add_argument("--smoke-now", action="store_true",
                         help="화면별 스모크 즉시 실행 (웹 서버 필요 — 기본 http://127.0.0.1:5001, MA_SMOKE_BASE 로 변경)")
+    parser.add_argument("--config-probe-now", action="store_true",
+                        help="해외약가 설정 프로브 즉시 실행 (네트워크 없음 — 자격증명 키 이름·scrapling import·프록시 키, 문제당 config 과제)")
     parser.add_argument(
         "--nhis-sync-now",
         action="store_true",
@@ -1173,6 +1191,13 @@ def main():
 
     if args.smoke_now:
         logger.info("플랫폼 스모크 즉시 실행: %s", platform_smoke_job())
+        return
+
+    if args.config_probe_now:
+        from agents.agent_tasks.config_probe import Problem, format_table
+        res = foreign_config_probe_job()
+        print(format_table([Problem(**p) for p in res.get("problems", [])]))
+        print(json.dumps(res["counts"], ensure_ascii=False))
         return
 
     if args.nhis_sync_now:
