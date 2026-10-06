@@ -71,10 +71,15 @@ def test_screen_table_covers_all_routes():
 
 # ── run_smoke ───────────────────────────────────────────────────────────────
 
+PRICED_CACHED = {"query": "keytruda", "results": {"JP": [{"local_price": 1, "adjusted_price_krw": 123}], "US": []}}
+
+
 def _ok_routes() -> dict:
     routes = {c.path: (200, {"tasks": []} if "agent-tasks" in c.path else []) for s in smoke.SCREENS for c in s.checks}
     routes["/api/auth/me"] = (401, {"error": "missing token"})
     routes["/api/admin/agent-tasks"] = (200, {"tasks": []})
+    routes["/api/foreign/cached?q=keytruda"] = (200, PRICED_CACHED)                 # P1.6: 조정가 있는 국가 1개 이상
+    routes["/api/foreign/country-overview?query=keytruda"] = (200, {"product": "keytruda", "countries": []})
     return routes
 
 
@@ -131,7 +136,8 @@ def test_run_smoke_auth_gate_failure_when_user_token_passes_admin_route():
 
 def test_run_smoke_skips_when_token_unavailable():
     """토큰을 못 만든 역할의 화면은 skipped 로 세고 실패로 치지 않는다 — 토큰 없이 치는 화면만 돈다."""
-    anon_routes = {c.path: (200, []) for s in smoke.SCREENS if s.role is None for c in s.checks}
+    anon_paths = {c.path for s in smoke.SCREENS if s.role is None for c in s.checks}
+    anon_routes = {p: v for p, v in _ok_routes().items() if p in anon_paths}      # 토큰 없이 치는 화면의 정상 응답만
     res = smoke.run_smoke("http://test", lambda role: None, opener=_gated_opener(anon_routes))
     assert res["counts"]["skipped"] > 0 and all("skipped" not in e for e in res["errors"])
     assert res["counts"]["skipped"] == sum(len(s.checks) for s in smoke.SCREENS if s.role)
@@ -232,3 +238,32 @@ def test_platform_smoke_job_records_one_task_per_day(monkeypatch):
     assert "policy-intelligence /api/policy-intelligence/overview → HTTP 500" in tasks[0]["detail"]
     runs = [r for r in recent_job_runs(db_path=db) if r["job_id"] == "platform_smoke"]
     assert len(runs) == 1 and runs[0]["ok"] == 0
+
+
+# ── P1.6: 해외약가 화면은 '200 + JSON' 으로 통과하지 않는다 — 조정가 있는 국가가 하나는 있어야 한다 ──────
+
+def test_international_pricing_fails_when_cached_has_no_priced_country():
+    """감사 상태(US 0행·가격 동결)에서 빈 results 는 200 이라 스모크가 통과했다. 이제 조정가 null 뿐이면 실패."""
+    for body in ({"query": "keytruda", "results": {}},
+                 {"query": "keytruda", "results": {"JP": [{"local_price": 1, "adjusted_price_krw": None}], "US": []}},
+                 {"query": "keytruda", "results": {"JP": [{"local_price": 1}]}}):
+        broken = _ok_routes()
+        broken["/api/foreign/cached?q=keytruda"] = (200, body)
+        res = smoke.run_smoke("http://test", _token_for, opener=_gated_opener(broken))
+        assert res["ok"] is False and res["counts"]["failed"] == 1
+        assert res["errors"][0].startswith("international-pricing /api/foreign/cached?q=keytruda → ") and "조정가" in res["errors"][0]
+
+
+def test_international_pricing_checks_country_overview_with_query_param():
+    paths = {c.path for sc in smoke.SCREENS if sc.name == "international-pricing" for c in sc.checks}
+    assert "/api/foreign/country-overview?query=keytruda" in paths          # 라우트의 실제 파라미터 이름은 query (q 아님)
+    broken = _ok_routes()
+    broken["/api/foreign/country-overview?query=keytruda"] = (200, {"product": "keytruda"})      # countries 없음
+    res = smoke.run_smoke("http://test", _token_for, opener=_gated_opener(broken))
+    assert res["errors"] == ["international-pricing /api/foreign/country-overview?query=keytruda → HTTP 200 / 'countries' 없음"]
+
+
+def test_priced_country_expectation_accepts_one_priced_country():
+    assert smoke._priced_country(200, PRICED_CACHED) is None
+    assert smoke._priced_country(500, {"error": "x"}) == "HTTP 500"
+    assert "조정가" in smoke._priced_country(200, {"results": {"US": []}})

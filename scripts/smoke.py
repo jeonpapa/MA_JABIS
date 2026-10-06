@@ -45,6 +45,19 @@ def _status(code: int) -> Expect:
     return lambda status, body: None if status == code else f"HTTP {status} (기대 {code})"
 
 
+def _priced_country(status: int, body) -> str | None:
+    """/api/foreign/cached — 조정가(adjusted_price_krw)가 있는 국가가 하나는 있어야 한다 (P1.6).
+
+    '200 + JSON' 만 보면 가격 동결·US 0행 상태(감사)에서도 통과한다 — 사용자 원칙은 "현 시점에 그 약제의 가격을 가지고 올 수
+    있느냐" 라 빈 results 는 화면이 깨진 것이다. X-MA-Smoke 라 라이브 수집은 없고 캐시(DB)만 본다."""
+    if status != 200 or not isinstance(body, dict):
+        return f"HTTP {status}"
+    results = body.get("results") or {}
+    priced = [cc for cc, rows in results.items() if isinstance(rows, list)
+              and any(isinstance(r, dict) and r.get("adjusted_price_krw") is not None for r in rows)]
+    return None if priced else "조정가(adjusted_price_krw) 있는 국가 0 — 캐시 비었거나 수집 중단"
+
+
 # 캐시 미스 시 무거운 라우트: 정부요약은 OpenAI+Gemini(각 45초) 순차 호출, 나머지는 외부 수집/집계. 기본값은 run_smoke(timeout=).
 HEAVY_TIMEOUT = 90.0      # /api/home/government-keyword-summary — LLM 2회
 SLOW_TIMEOUT = 30.0       # media-intelligence(Naver 트래픽)·gov-agency-clouds(아카이브 집계)·hta/approvals(캐시 미스 시 HTA 스크레이프)
@@ -76,7 +89,8 @@ SCREENS: tuple[Screen, ...] = (
     Screen("domestic-pricing", None, (Check("/api/domestic/price-changes?q=키트루다"), Check("/api/domestic/search?q=키트루다"),
                                       Check("/api/domestic/stats"))),
     Screen("regimen-cost", "user", (Check("/api/regimen/onco/search?q=pembrolizumab"), Check("/api/regimen-comparisons"))),
-    Screen("international-pricing", None, (Check("/api/foreign/drugs"), Check("/api/foreign/cached?q=keytruda"),
+    Screen("international-pricing", None, (Check("/api/foreign/drugs"), Check("/api/foreign/cached?q=keytruda", _priced_country),
+                                           Check("/api/foreign/country-overview?query=keytruda", _has_key("countries")),   # 파라미터는 query
                                            Check("/api/foreign/available_countries"),
                                            Check("/api/hta/approvals?drug=pembrolizumab", timeout=SLOW_TIMEOUT))),
     Screen("market-share", None, (Check("/api/market-share/search?q=키트루다"),)),
