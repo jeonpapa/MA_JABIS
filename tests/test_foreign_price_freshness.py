@@ -162,3 +162,50 @@ def test_country_coverage_fresh_when_only_structural_countries_are_empty(tmp_pat
           "INSERT INTO foreign_drug_prices VALUES (7, 'keytruda', 'US', 1, '2026-09-20T00:00:00', '20260831');")
     r = fr.check_foreign_country_coverage(_ctx(tmp_path))
     assert r.stale is False and fr.DOMAIN_CHECKS["foreign_country_coverage"] is fr.check_foreign_country_coverage
+
+
+# ── 3 FX 정합 — 캐시 파일 창이 아니라 '오늘 있어야 할 창' 기준 ───────────────────
+
+def _fx_cache(tmp_path, *windows: str) -> None:
+    d = tmp_path / "data" / "foreign" / "exchange_rate"
+    d.mkdir(parents=True, exist_ok=True)
+    for w in windows:
+        (d / f"keb_avg_rate_{w}.xlsx").write_bytes(b"x")
+
+
+def test_expected_fx_window_reuses_exchange_rate_calc_date_range():
+    from agents.exchange_rate import _calc_date_range
+    assert fr.expected_fx_window_to(date(2026, 10, 6)) == _calc_date_range(date(2026, 10, 6))[1] == "20260930"
+    # 매월 2일 갱신 잡 유예: 4일까지는 전전월 말일 (exchange_rate_cache 의 기한과 같은 규칙)
+    assert fr.expected_fx_window_to(date(2026, 10, 3)) == "20260831"
+    assert fr.check_exchange_rate_cache(fr.Ctx(db_path=":memory:", base_dir=Path("/nonexistent"), today=date(2026, 10, 3))).deadline == "20260831"
+
+
+def test_fx_alignment_stale_cache_with_matching_rows_is_stale(tmp_path):
+    """감사가 본 결함: 행과 캐시가 함께 구창(20260531)이면 예전 판정은 ok 였다. 기대 창(20260930) 기준이면 stale."""
+    _fx_cache(tmp_path, "20230403_20260331", "20230603_20260531")
+    _seed(tmp_path / "d.db", SCHEMA, """
+        INSERT INTO foreign_drug_prices VALUES (1, 'keytruda', 'UK', 10, '2026-07-24T11:35:13', '20260531');
+        INSERT INTO foreign_drug_prices VALUES (2, 'welireg', 'IT', 20, '2026-07-24T10:54:35', '20260531');
+    """)
+    r = fr.check_foreign_price_fx_alignment(_ctx(tmp_path))
+    assert r.stale is True and r.observed == "2" and r.deadline == "0"
+    assert "20260930" in r.evidence and "20260531" in r.evidence
+    assert r.runbook == "exchange_rate_refresh"                # 캐시도 구창 — 갱신 잡이 재계산까지 한다
+
+
+def test_fx_alignment_fresh_when_rows_match_expected_window(tmp_path):
+    _fx_cache(tmp_path, "20231003_20260930")
+    _seed(tmp_path / "d.db", SCHEMA, """
+        INSERT INTO foreign_drug_prices VALUES (1, 'keytruda', 'UK', 10, '2026-07-24T11:35:13', '20260531');  -- 구 세션
+        INSERT INTO foreign_drug_prices VALUES (2, 'keytruda', 'UK', 10, '2026-10-02T11:35:13', '20260930');  -- 최신 행 정합
+    """)
+    r = fr.check_foreign_price_fx_alignment(_ctx(tmp_path))
+    assert r.stale is False and r.observed == "0"
+
+
+def test_fx_alignment_without_cache_file_still_judges_rows(tmp_path):
+    """캐시 파일이 없어도 기대 창은 계산된다 — 예전엔 '캐시 없음' 으로 판정을 건너뛰었다."""
+    _seed(tmp_path / "d.db", SCHEMA, "INSERT INTO foreign_drug_prices VALUES (1, 'keytruda', 'UK', 10, '2026-07-24T11:35:13', '20260531');")
+    r = fr.check_foreign_price_fx_alignment(_ctx(tmp_path))
+    assert r.stale is True and r.determinable and r.runbook == "exchange_rate_refresh"

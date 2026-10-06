@@ -61,7 +61,8 @@ def test_fx_alignment_counts_only_latest_priced_rows(tmp_path):
         INSERT INTO foreign_drug_prices VALUES (3,'welireg','UK',50,'20260331');     -- 최신 행이 구 환율
         INSERT INTO foreign_drug_prices VALUES (4,'welireg','FR',NULL,'20260331');   -- 가격 없음 → 제외
     """)
-    r = fr.check_foreign_price_fx_alignment(_ctx(tmp_path))
+    # 2026-06-15: 기대 창 종료일 = 전월 말일 20260531 = 캐시 창 → 캐시는 최신, 최신 행이 구 환율인 welireg/UK 1건만 — 재계산 런북
+    r = fr.check_foreign_price_fx_alignment(_ctx(tmp_path, today=date(2026, 6, 15)))
     assert r.stale is True and r.observed == "1" and r.runbook == "exchange_rate_recompute"
 
 

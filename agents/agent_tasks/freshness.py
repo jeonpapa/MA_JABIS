@@ -25,6 +25,8 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 
+from agents.exchange_rate import _calc_date_range      # KEB 36개월 창 규칙의 단일 소스 — 복사하지 않는다
+
 from .jobs import resolve_db_path
 from .signals import record_recurring, runbook_line
 from .store import DEFAULT_DB_PATH, connect
@@ -153,25 +155,38 @@ def _last_day_of_prev_month(d: date) -> date:
     return d.replace(day=1) - timedelta(days=1)
 
 
+def expected_fx_window_to(today: date) -> str:
+    """오늘 KEB 캐시(와 모든 조정가 행)가 가져야 할 36개월 창의 종료일(YYYYMMDD).
+
+    규칙은 agents/exchange_rate._calc_date_range(전월 말일)를 그대로 쓴다. 매월 2일 갱신 잡의 유예로 4일까지는 전전월 말일."""
+    ref = today if today.day >= 5 else _last_day_of_prev_month(today)
+    return _calc_date_range(ref)[1]
+
+
 def check_exchange_rate_cache(ctx: Ctx) -> Freshness:
     to = _latest_fx_window_to(ctx)
-    ref = ctx.today if ctx.today.day >= 5 else _last_day_of_prev_month(ctx.today)
-    deadline = _last_day_of_prev_month(ref).strftime("%Y%m%d")
+    deadline = expected_fx_window_to(ctx.today)
     return Freshness("exchange_rate_cache", (to or "") < deadline, to, deadline,
                      f"KEB 캐시 창 종료일={to}, 기대≥{deadline} (매월 2일 갱신 잡)", "exchange_rate_refresh")
 
 
 def check_foreign_price_fx_alignment(ctx: Ctx) -> Freshness:
-    to = _latest_fx_window_to(ctx)
-    if not to:
-        return Freshness("foreign_price_fx_alignment", False, None, "0", "환율 캐시 없음 — exchange_rate_cache 가 먼저", None, 3)
+    """최신 가격 행의 exchange_rate_to 를 **오늘 있어야 할 창**과 비교한다 — 캐시 파일의 창이 아니다.
+
+    캐시 파일 기준이면 행과 캐시가 함께 구창일 때(감사가 본 상태: 둘 다 20260531) ok 로 보인다. 캐시도 구창이면 런북은
+    갱신(exchange_rate_refresh — 갱신 잡이 recompute 까지 한다), 캐시가 최신인데 행만 구창이면 재계산(exchange_rate_recompute)."""
+    expected = expected_fx_window_to(ctx.today)
+    cache_to = _latest_fx_window_to(ctx)
     n = _scalar(ctx, """
         SELECT COUNT(*) FROM foreign_drug_prices f
         WHERE f.local_price IS NOT NULL AND f.exchange_rate_to IS NOT NULL AND f.exchange_rate_to != ?
           AND f.id = (SELECT MAX(g.id) FROM foreign_drug_prices g
-                      WHERE g.query_name = f.query_name AND g.country = f.country AND g.local_price IS NOT NULL)""", (to,))
+                      WHERE g.query_name = f.query_name AND g.country = f.country AND g.local_price IS NOT NULL)""", (expected,))
+    cache_stale = (cache_to or "") < expected
+    why = ("캐시도 구창 — 환율 갱신 뒤 재계산" if cache_stale else "캐시는 최신 — 환율 갱신 후 재계산 누락")
     return Freshness("foreign_price_fx_alignment", int(n or 0) > 0, str(n), "0",
-                     f"최신 해외약가 행 중 캐시 환율창({to})과 다른 행 {n}건 — 환율 갱신 후 재계산 누락", "exchange_rate_recompute", 3)
+                     f"최신 해외약가 행 중 기대 환율창({expected})과 다른 행 {n}건 (KEB 캐시 창={cache_to}; {why})",
+                     "exchange_rate_refresh" if cache_stale else "exchange_rate_recompute", 3)
 
 
 # ── 3b 해외약가 가격 나이 (P1.6 관측) ──────────────────────────────────────
