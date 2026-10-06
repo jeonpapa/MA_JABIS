@@ -9,7 +9,7 @@ import asyncio
 import json
 import logging
 import re
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
@@ -222,6 +222,10 @@ class ForeignPriceAgent:
             raise ValueError(f"아직 구현되지 않은 국가: {country}")
 
         logger.info("=== [%s] '%s' 해외약가 조회 시작 ===", country, query)
+        # 국가 검색 1회 = 세션 1개 = searched_at 1개. 채널(IT CSV+TNF, FR BDPM+Vidal)마다 run() 이 찍은 시각은 버린다 —
+        # 80ms 차이로 compact_foreign_prices 가 '두 세션' 으로 보고 먼저 찍힌 채널을 지웠고(keytruda IT CSV 행 소실),
+        # get_foreign_prices 도 한 채널만 노출했다(2026-10 감사). 압축·조회 SQL 은 그대로 두고 저장 전에 통일한다.
+        session_searched_at = datetime.now().isoformat()
 
         # 1) 스크레이퍼 실행 (로그인 → 검색 → 로그아웃)
         scraper = self._build_scraper(country)
@@ -296,9 +300,11 @@ class ForeignPriceAgent:
             logger.info("[%s] 검색 결과 없음", country)
             return []
 
-        # 브랜드/성분 어느 입력이든 같은 캐시 레코드로 집계 → query_name = canonical slug
+        # 브랜드/성분 어느 입력이든 같은 캐시 레코드로 집계 → query_name = canonical slug.
+        # searched_at 은 세션 값으로 통일 (채널별 시각 폐기 — 위 주석).
         for item in raw_results:
             item["query_name"] = canonical_name
+            item["searched_at"] = session_searched_at
 
         # 방어적 fallback: 신규/기존 스크레이퍼가 form_type 을 빠뜨려도
         # 파이프라인 단에서 반드시 채워넣는다 (최소단위 원칙 파이프라인 보장).

@@ -85,6 +85,11 @@ form_type 주입은 **스크레이퍼 + 에이전트 이중 보장**으로 캐�
 - **갱신 실패 → 구 파일 사용은 숨기지 않는다**: `scraper.warnings` → `SearchResults.warnings[IT]` → 원장 `foreign_search:IT:stale_cache`(ops_incident, 재발은 같은 행) → `country_results[IT].warnings`(status 는 priced 유지) → 화면 배지 "경고: 캐시 만료(갱신 실패)". 캐시가 아예 없고 갱신도 실패하면 예외(수집 실패) — 빈 결과로 위장하지 않는다.
 - 경고 프로토콜은 공용(`BaseScraper.warnings`, `SCRAPE_WARNING_LABEL_KR`): `stale_cache` · `channel_failed`.
 
+## 다채널 국가의 세션 타임스탬프 (2026-10-06)
+
+- **국가 검색 1회 = searched_at 1개**: `search_one_country` 가 세션 시각을 한 번 찍어 모든 채널 행(IT CSV+TNF, FR BDPM+Vidal)에 같은 값을 저장한다. 채널 run() 이 찍은 시각은 버린다.
+- 이유: 채널별 시각이 80ms 차이 나면 `compact_foreign_prices`(국가당 최신 1세션 유지) 가 먼저 찍힌 채널을 지웠고(keytruda IT CSV 행 소실), `get_foreign_prices` 도 한 채널만 노출했다. 압축·조회 SQL 은 그대로 — 저장 전에 통일하는 쪽이 작고 안전하다. 회귀: `tests/test_foreign_channel_session.py`.
+
 ## 새 국가 추가 시 필수 작업
 1. `agents/scrapers/{cc}_{source}.py` 생성 (BaseScraper 상속)
 2. `foreign_price_agent.py` 에 import + `_build_scraper()` 케이스 추가
