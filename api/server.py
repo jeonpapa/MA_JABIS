@@ -51,7 +51,8 @@ users_db = UsersDB(BASE_DIR / "data" / "db" / "users.db")
 app.register_blueprint(build_auth_blueprint(users_db))
 
 # 플랫폼 스모크(scripts/smoke.py, 매일 07:50)가 모든 요청에 붙이는 헤더. 스모크의 목적은 읽기 판정(상태·JSON)이지 데이터 생성이
-# 아니다 — GET 라우트의 부수효과(검색 로그 INSERT·만료 purge·캐시 미스 동기 크롤)만 이 요청에서 건너뛴다(P1.5 fix C).
+# 아니다 — GET 라우트의 부수효과(검색 로그 INSERT·캐시 미스 동기 크롤)만 이 요청에서 건너뛴다(P1.5 fix C).
+# (칸반 만료 purge 는 더 이상 GET 의 부수효과가 아니다 — scheduler.daily_mailing_health_job 으로 이동.)
 # 누구나 붙일 수 있지만 건너뛰는 것이 분석용 로그·정리 작업뿐이라 권한 문제가 아니다. 값은 scripts/smoke.py 와 같아야 한다.
 SMOKE_HEADER = "X-MA-Smoke"
 
@@ -5337,8 +5338,9 @@ def daily_mailing_admin_kanban():
         return jsonify({"error": "daily_mailing 모듈 미탑재(origin/main 커밋 누락)", "runs": []}), 503
     try:
         limit_runs = min(int(request.args.get("limitRuns", 20)), 100)
-        # 만료 행 purge(DELETE)는 운영 화면 조회의 부수효과 — 스모크 요청은 읽기만
-        return jsonify(_daily_mailing_admin_kanban(limit_runs=limit_runs, purge=not _is_smoke_request()))
+        # 읽기 전용 — 만료 행 purge(DELETE)는 scheduler.daily_mailing_health_job(매일 09:30)의 일이다.
+        # (단방향 원칙: 대쉬보드는 DB 만 읽는다. 이전엔 GET 이 DELETE 하고 스모크만 X-MA-Smoke 로 건너뛰었다.)
+        return jsonify(_daily_mailing_admin_kanban(limit_runs=limit_runs, purge=False))
     except Exception as e:
         logger.error("daily_mailing_admin_kanban 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500

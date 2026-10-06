@@ -659,15 +659,32 @@ def daily_mailing_top_news_job():
 
 @guarded_job("daily_mailing_health")
 def daily_mailing_health_job():
-    """매일 09:30 — 오늘 예정 구독의 미생성·보류·발송실패·Gmail 토큰 상태 점검. 문제는 헬스 신호로(잡 실패 아님)."""
+    """매일 09:30 — ① daily_mailing_run/article 만료 행 purge(DELETE) ② 오늘 예정 구독의 미생성·보류·발송실패·Gmail 토큰
+    상태 점검. 문제는 헬스 신호로(잡 실패 아님).
+
+    purge 는 이전에 /api/admin/daily-mailing/kanban GET 의 부수효과였다(단방향 원칙 위반 — 대쉬보드는 DB 만 읽는다).
+    여기로 옮겨 하루 1회 돈다. purge 오류는 errors 로 남기되 헬스 점검은 계속한다.
+    """
+    from agents.daily_mailing import storage
     from agents.daily_mailing.dispatch import DispatchDeps, health_check
+    counts: dict = {}
+    errors: list[str] = []
+    try:
+        purged = storage.purge_expired_daily_mailing_rows()
+        counts["purged_runs"] = int(purged.get("runs_deleted") or 0)
+        counts["purged_articles"] = int(purged.get("articles_deleted") or 0)
+        logger.info("daily mailing 만료 purge: run %d · article %d", counts["purged_runs"], counts["purged_articles"])
+    except Exception as e:                                   # noqa: BLE001 — purge 실패가 헬스 점검을 막으면 안 된다
+        logger.error("daily mailing 만료 purge 실패: %s", e, exc_info=True)
+        errors.append(f"purge: {type(e).__name__}: {e}"[:300])
     res = health_check(DispatchDeps.production())
     if res["ok"]:
         logger.info("daily mailing health OK (%s)", res["run_date"])
     else:
         logger.error("daily mailing health 문제 %d건: %s", len(res["problems"]), res["problems"])
         _agent_record_health_problems(res)
-    return {"counts": {"problems": len(res.get("problems") or [])}}
+    counts["problems"] = len(res.get("problems") or [])
+    return {"ok": not errors, "counts": counts, "errors": errors}
 
 
 @guarded_job("nhis_negotiation_sync")

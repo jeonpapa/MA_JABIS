@@ -81,7 +81,9 @@ def test_hta_indication_matrix_skips_search_log_and_freshness_for_smoke(api_db, 
     assert _count(api_db, "SELECT COUNT(*) FROM data_freshness") == 5
 
 
-def test_daily_mailing_kanban_skips_purge_for_smoke(monkeypatch, tmp_path):
+def test_daily_mailing_kanban_get_never_purges(monkeypatch, tmp_path):
+    """칸반 GET 은 읽기 전용 — 스모크 헤더와 무관하게 만료 purge(DELETE)를 하지 않는다 (단방향 원칙: 대쉬보드는 DB 만 읽는다).
+    purge 는 scheduler.daily_mailing_health_job 으로 옮겼다 (tests/test_daily_mailing_purge_job.py)."""
     from agents.daily_mailing import storage
     db = tmp_path / "dm.db"
     # 라우트는 load_admin_kanban 의 기본 db_path(정의 시점에 묶인 실제 DB)를 쓴다 — 임시 DB 로 감싼다
@@ -93,7 +95,7 @@ def test_daily_mailing_kanban_skips_purge_for_smoke(monkeypatch, tmp_path):
     r = c.get("/api/admin/daily-mailing/kanban", headers={**_admin(), **SMOKE})
     assert r.status_code == 200 and "runs" in r.get_json() and purges == []
     assert c.get("/api/admin/daily-mailing/kanban", headers=_admin()).status_code == 200
-    assert purges == [db]
+    assert purges == []                                                    # 일반 요청도 읽기만
 
 
 def test_government_summary_route_disables_fetch_for_smoke(monkeypatch):
