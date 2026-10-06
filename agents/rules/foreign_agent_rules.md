@@ -130,13 +130,16 @@ A8_adj_per_unit_KRW =
 ### source-specific 오버라이드 (PriceCalculator.SOURCE_OVERRIDES) — **코드가 적용하는 실효값**
 | 스크레이퍼 | SOURCE_TYPE | 실효 ratio |
 |-----------|-------------|-----------|
-| IT `it_aifa` / `it_aifa_tnf` | `aifa_exfactory` | **1.0** (이미 ex-factory — 유일한 오버라이드) |
+| IT `it_aifa` **Class H 행** / `it_aifa_tnf` | `aifa_exfactory` (행 선언) | **1.0** (이미 ex-factory — 유일한 오버라이드) |
+| IT `it_aifa` **Class A 행** | `None` (행 선언, raw_data.price_kind="prezzo al pubblico") | **0.93** (IT 국가 기본 — 공중가) |
 | CH `ch_compendium` | `compendium` | **0.73** (CH 국가 기본) |
 | FR `fr_bdpm` / `fr_vidal` | `vidal` | **0.77** (FR 국가 기본) |
 | US `us_micromedex` | `redbook_wac` | **0.74** (US 국가 기본, WAC) |
 | 그 외 | `None` | 국가 기본 |
 
 **2026-10-06 주석 (사용자 결정)**: 이전 문서는 `ch_compendium`/`fr_vidal` → 0.65 라고 적었으나, 그 키는 스크레이퍼의 `SOURCE_TYPE`(`"compendium"`/`"vidal"`) 과 한 번도 일치한 적이 없어 **0.65 는 발효된 적 없는 과거의 문서상 의도**였다. 실제로 저장·표시된 모든 CH/FR 조정가는 0.73/0.77 로 계산됐다(예: FR Vidal Keytruda #1504 factory_price_krw 2,379,302 = 2,000.74 × 1544.43 × 0.77). 결정: **코드가 현재 시점의 진실이고 문서는 과거다. 저장된 값은 재계산하지 않는다.** 죽은 항목은 `SOURCE_OVERRIDES` 에서 삭제했고(0.65 를 살리지 않음), `tests/test_foreign_factory_ratio_effective.py` 가 스크레이퍼 선언 `SOURCE_TYPE` 으로 실효 비율을 고정해 다음 drift(오버라이드 키 ≠ 스크레이퍼 선언)를 잡는다. 0.65 가 필요하다고 판단되면 그때 키를 스크레이퍼 선언값에 맞춰 새로 넣고 이 표·테스트·Welireg/Keytruda baseline 을 함께 갱신한다.
+
+**2026-10-06 (P1.6 Item 3) 행 단위 source_type**: 실효 비율은 스크레이퍼 클래스가 아니라 **행의 가격 종류**가 정한다(`agents/foreign_price_agent.resolve_item_source_type` — ① item 최상위 `source_type`(명시적 None 포함) ② extra/raw_data 의 `source_type` ③ 클래스 기본). IT CSV 는 한 클래스가 Class H(ex-factory, 1.0) 와 Class A(공중가 → 0.93) 를 함께 돌려주는데, 클래스 기본을 모든 행에 써서 Class A 행이 +7.5% 과대였다. 신규 수집(`search_one_country`)과 캐시 읽기-재계산(`get_cached_results`) 둘 다 행 기준; **저장 행은 다시 쓰지 않는다**(실제 DB 영향 79행: sitagliptin #1304–#1380, letermovir 경구 #1481·#1482 — 화면/리포트는 재계산값, 저장 adjusted_price_krw 는 그대로). source_label 도 행 단위(Class A = "AIFA Lista Classe A (Prezzo al pubblico)"; 과거 행은 읽기 시점에 `display_source_label` 이 raw_data.aifa_class 로 바로잡는다). 고정: `tests/test_foreign_factory_ratio_item_source.py`.
 
 ## source_type 처리
 ```python

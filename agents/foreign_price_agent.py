@@ -128,6 +128,52 @@ def _record_search_warning(query: str, country: str, warning: dict) -> None:
         logger.warning("[%s] 수집 경고 신호 기록 실패: %s", country, signal_err)
 
 
+def _item_extra(row: dict) -> dict:
+    """행의 스크레이퍼 extra — 스크레이퍼 직후 item 은 `extra` dict, DB 행은 `raw_data` JSON 문자열."""
+    extra = row.get("extra")
+    if isinstance(extra, dict):
+        return extra
+    raw = row.get("raw_data")
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str) and raw:
+        try:
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, dict) else {}
+        except (ValueError, TypeError):
+            return {}
+    return {}
+
+
+def resolve_item_source_type(row: dict, class_default: Optional[str]) -> Optional[str]:
+    """factory_ratio 를 정하는 source_type — **행의 가격 종류가 우선**, 선언이 없을 때만 스크레이퍼 클래스 기본.
+
+    IT CSV 는 한 클래스(SOURCE_TYPE="aifa_exfactory")가 Class H(ex-factory, 1.0) 와 Class A(공중가 → IT 기본 0.93) 를 함께
+    돌려준다. 2026-10 감사: 클래스 기본을 모든 행에 써서 Class A 행(sitagliptin·letermovir 경구) 이 +7.5% 과대였다.
+    우선순위: ① item 최상위 `source_type` 키(명시적 None 포함) ② extra/raw_data 의 `source_type` 키(명시적 None 포함)
+    ③ 클래스 기본. 키가 있는데 None 인 것과 키가 없는 것을 구분한다 — None 선언은 '국가 기본 공식' 이라는 뜻이다."""
+    if "source_type" in row:
+        return row["source_type"]
+    extra = _item_extra(row)
+    if "source_type" in extra:
+        return extra["source_type"]
+    return class_default
+
+
+_IT_CSV_LABEL_BY_CLASS = {"A": "AIFA Lista Classe A (Prezzo al pubblico)", "H": "AIFA Lista Classe H (Prezzo Ex-factory)"}
+
+
+def display_source_label(row: dict) -> Optional[str]:
+    """읽기 시점 자료원 라벨 — IT CSV 행은 raw_data.aifa_class 가 진실(과거 수집은 Class A 도 "Classe H" 로 저장됐다).
+    저장 행은 고치지 않고 화면/리포트에만 바로잡는다."""
+    label = row.get("source_label")
+    if row.get("country") == "IT":
+        cls = _item_extra(row).get("aifa_class")
+        if cls in _IT_CSV_LABEL_BY_CLASS:
+            return _IT_CSV_LABEL_BY_CLASS[cls]
+    return label
+
+
 def a8_aggregate_eligibility(country: str, row: dict) -> tuple[bool, Optional[str]]:
     """A8 min/avg 집계(UI 요약·리포트) 포함 여부 — (eligible, exclude_reason).
 
@@ -330,13 +376,15 @@ class ForeignPriceAgent:
             dosing = self._match_dosing(canonical_name, item.get("ingredient", ""), dosing_map)
             pack_count = self._resolve_pack_count(country, item, dosing)
 
+            # 행의 가격 종류가 우선 (IT CSV Class A 공중가 → 국가 기본 0.93, Class H/TNF ex-factory → 1.0)
+            item_source_type = resolve_item_source_type(item, source_type)
             if rate_info and item.get("local_price") is not None:
                 calc = self.calculator.calculate_adjusted_price(
                     country=country,
                     listed_price=item["local_price"],
                     exchange_rate=rate_info["rate"],
                     pack_count=pack_count,
-                    source_type=source_type,
+                    source_type=item_source_type,
                 )
                 item.update({
                     "exchange_rate": rate_info["rate"],
@@ -353,7 +401,7 @@ class ForeignPriceAgent:
                     "adjusted_price_krw": calc["adjusted_price_krw"],   # per-unit KRW
                     "pack_count": calc["pack_count"],
                     "per_unit_local": calc["per_unit_listed"],
-                    "source_type": source_type,
+                    "source_type": item_source_type,
                 })
 
             # Daily cost 계산 (per-unit adj × (daily_dose / single_unit_mg))
@@ -889,6 +937,7 @@ class ForeignPriceAgent:
             dosing = self._match_dosing(query, row.get("ingredient", ""), dosing_map)
             pack_count = self._resolve_pack_count(country, row, dosing)
             row["pack_count"] = pack_count
+            row["source_label"] = display_source_label(row)      # IT CSV Class A 는 저장 라벨이 "Classe H" 로 굳어 있다
 
             if row.get("local_price") is not None and row.get("exchange_rate"):
                 if country not in scraper_cache:
@@ -897,7 +946,8 @@ class ForeignPriceAgent:
                         scraper_cache[country] = getattr(scr, "SOURCE_TYPE", None) if scr else None
                     except Exception:
                         scraper_cache[country] = None
-                src_type = scraper_cache[country]
+                # 행의 가격 종류가 우선 — 저장 행은 다시 쓰지 않고 읽기-재계산이 바로잡는다 (IT Class A 공중가 → 0.93)
+                src_type = resolve_item_source_type(row, scraper_cache[country])
                 calc = self.calculator.calculate_adjusted_price(
                     country=country,
                     listed_price=row["local_price"],

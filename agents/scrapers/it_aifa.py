@@ -73,8 +73,12 @@ MSD_COMPANY_PATTERNS = [
 class ItAifaScraper(BaseScraper):
     COUNTRY       = "IT"
     CURRENCY      = "EUR"
-    SOURCE_TYPE   = "aifa_exfactory"
+    SOURCE_TYPE   = "aifa_exfactory"          # 클래스 기본 — Class H/ex-factory. Class A 행은 행 단위로 None 을 선언한다
     SOURCE_LABEL  = "AIFA Lista Classe H (Prezzo Ex-factory)"
+    SOURCE_LABEL_BY_CLASS = {
+        "H": "AIFA Lista Classe H (Prezzo Ex-factory)",
+        "A": "AIFA Lista Classe A (Prezzo al pubblico)",
+    }
     REQUIRES_LOGIN = False
     # 캐시 CSV 유효기간(일). AIFA 의 Liste farmaci A/H 는 월 단위로 재공시된다(파일명 30-09-2025, Class A 헤더의
     # "lista di trasparenza 15/9/2025") — 30일이면 한 공시 주기 이상 뒤처지지 않고, 신선도 판정(foreign_price_age, 45일)
@@ -332,7 +336,10 @@ class ItAifaScraper(BaseScraper):
                 "dosage_form":     gruppo_raw,
                 "package_unit":    "",
                 "local_price":     local_price,
+                # 행 단위 선언 — Class A 는 공중가라 source_type=None(IT 국가 기본 0.93). 에이전트(resolve_item_source_type)와
+                # BaseScraper.run() 이 클래스 기본(SOURCE_TYPE/SOURCE_LABEL) 대신 이 값을 쓴다.
                 "source_type":     src_type,
+                "source_label":    self.SOURCE_LABEL_BY_CLASS.get(cls, self.SOURCE_LABEL),
                 "source_url":      AIFA_PAGE_URL,
                 "extra": {
                     "company":      str(row.get(titolare_col, "") if titolare_col else ""),

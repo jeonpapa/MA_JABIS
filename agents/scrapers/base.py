@@ -170,7 +170,7 @@ class BaseScraper(ABC):
                 searched_at = datetime.now().isoformat()
                 for item in raw_results:
                     form_type = self._resolve_form_type(item)
-                    results.append({
+                    rec = {
                         "searched_at": searched_at,
                         "query_name": query,
                         "country": self.COUNTRY,
@@ -189,10 +189,15 @@ class BaseScraper(ABC):
                         "distribution_margin": None,
                         "adjusted_price_krw": None,
                         "source_url": item.get("source_url", ""),
-                        "source_label": self.SOURCE_LABEL,
+                        # 행이 자기 자료원/가격 종류를 선언하면 그것이 우선 (IT CSV Class A = 공중가, Class H = ex-factory).
+                        # 클래스 기본은 선언 없는 소스의 fallback. factory_ratio 는 에이전트가 resolve_item_source_type 로 정한다.
+                        "source_label": item.get("source_label") or self.SOURCE_LABEL,
                         "raw_data": json.dumps(item.get("extra", {}), ensure_ascii=False),
                         "form_type": form_type,
-                    })
+                    }
+                    if "source_type" in item:
+                        rec["source_type"] = item["source_type"]    # DB 컬럼은 아니다 — save 는 무시, 에이전트가 읽는다
+                    results.append(rec)
 
             except Exception as e:
                 logger.error("[%s] 검색 중 오류: %s", self.COUNTRY, e, exc_info=True)
