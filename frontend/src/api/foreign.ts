@@ -158,6 +158,17 @@ export interface A8Summary {
   excludedReasons: Record<string, string>;
 }
 
+/** 서버 a8_exclude_reason → 화면 문구 (사유 패널·요약 노트 공통). 미지 사유는 원문 그대로. */
+export const A8_EXCLUDE_REASON_LABEL: Record<string, string> = {
+  pack_count_unverified: '포장수량 미확인',
+  no_adjusted_price: '조정가 미산출',
+};
+
+export function a8ExcludeReasonLabel(reason?: string | null): string {
+  if (!reason) return A8_EXCLUDE_REASON_LABEL.pack_count_unverified;
+  return A8_EXCLUDE_REASON_LABEL[reason] ?? reason;
+}
+
 export interface CoverageNote {
   policy: string;
   sourceHint?: string;
