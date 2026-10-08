@@ -78,6 +78,37 @@ form_type 주입은 **스크레이퍼 + 에이전트 이중 보장**으로 캐�
 - 결정문 선택: 가격결정문(tipiAtto `A_H` 또는 titolo 에 rimborsabilità/prezzo/classificazione/rinegoziazione) 중 datiFarmaco 가 검색어와 매칭되는 **최신** 1건.
 - **한계**: TNF 는 2025-01 이후 결정문만 보유 → 오래전 등재약(예: Januvia)은 최근 결정문이 없어 TNF 0건(기존 CSV 채널이 커버). 검증: welireg(belzutifan, CSV 미등재)=TNF만 1건 oral pack90, keytruda=CSV+TNF 공존.
 
+## IT AIFA CSV 캐시 TTL + 수집 경고 (2026-10-06, P1.6 수집 가능성)
+
+- **TTL 30일** (`ItAifaScraper.CSV_CACHE_TTL_DAYS`): AIFA Liste farmaci A/H 는 월 단위 재공시(파일명 `30-09-2025`, Class A 헤더 "lista di trasparenza 15/9/2025") — 한 공시 주기 이상 뒤처지지 않고 신선도 판정(`foreign_price_age` 45일)보다 먼저 갱신. 감사: TTL 없이 같은 파일이 12개월째 39회 로드됐다.
+- 만료 시 AIFA 페이지에서 최신 공시 확인(검색당 1회): **같은 파일명이면 touch** 만(재다운로드 없음), 새 파일명이면 다운로드. 캐시 파일 선택은 파일명 공시일(DD-MM-YYYY) 순 — 사전순은 `30-09` > `15-10` 으로 틀린다.
+- **갱신 실패 → 구 파일 사용은 숨기지 않는다**: `scraper.warnings` → `SearchResults.warnings[IT]` → 원장 `foreign_search:IT:stale_cache`(ops_incident, 재발은 같은 행) → `country_results[IT].warnings`(status 는 priced 유지) → 화면 배지 "경고: 캐시 만료(갱신 실패)". 캐시가 아예 없고 갱신도 실패하면 예외(수집 실패) — 빈 결과로 위장하지 않는다.
+- 경고 프로토콜은 공용(`BaseScraper.warnings`, `SCRAPE_WARNING_LABEL_KR`): `stale_cache` · `channel_failed`.
+
+## 다채널 국가의 세션 타임스탬프 (2026-10-06)
+
+- **국가 검색 1회 = searched_at 1개**: `search_one_country` 가 세션 시각을 한 번 찍어 모든 채널 행(IT CSV+TNF, FR BDPM+Vidal)에 같은 값을 저장한다. 채널 run() 이 찍은 시각은 버린다.
+- 이유: 채널별 시각이 80ms 차이 나면 `compact_foreign_prices`(국가당 최신 1세션 유지) 가 먼저 찍힌 채널을 지웠고(keytruda IT CSV 행 소실), `get_foreign_prices` 도 한 채널만 노출했다. 압축·조회 SQL 은 그대로 — 저장 전에 통일하는 쪽이 작고 안전하다. 회귀: `tests/test_foreign_channel_session.py`.
+
+## JP MHLW — INN 라우팅 · 최신 공시 탐색 · 캐시 TTL (2026-10-06, P1.6 Item 4)
+
+- **INN → 일본어 표기는 기존 자원으로**(`JpMhlwScraper._resolve_jp_name`): ① `product_alias_map.agency_brand_overrides["PMDA"]`(`drug_aliases.agency_brand`) ② `EN_JP_NAME_MAP` 을 입력 + `drug_aliases.aliases(query)`(slug·inn·brand_aliases, 없으면 BRAND_TO_MOLECULE 역조회)로 역조회 ③ 원문. 두 번째 손관리 표를 만들지 않는다. 감사: 브랜드 키만 있어 백필 잡의 INN 검색이 39/39 0건.
+- **캐시는 카테고리(_01/_02/_03)별 최신 공시본 1개만 병합**(`_latest_files_by_category`, 파일명 tpYYYYMMDD 순). 갱신 뒤 구 공시본이 남아도 중복되지 않는다.
+- **페이지 탐색**: env `JP_MHLW_PAGE_URL` → 캐시 파일명에서 유도한 `/topics/YYYY/MM/tpYYYYMMDD-01.html` → 상수. 각 페이지에서 가장 최신 날짜의 xlsx 를 고른다. 새 공시가 **새 페이지**에만 실리면 캐시 유도 URL 로는 못 찾는다 — 안정적인 인덱스 페이지 URL 은 라이브 확인이 필요(env 로 즉시 지정 가능).
+- **TTL 90일**(`XLSX_CACHE_TTL_DAYS`, 4월 전면개정 + 분기 수재): 초과 시 `search()` 가 갱신 시도, page 없음/실패는 구 파일로 답하되 `stale_cache` 경고 → 원장 `foreign_search:JP:stale_cache`.
+- 고정: `tests/test_jp_mhlw_inn_routing.py` (fixture `tests/fixtures/jp_mhlw/` + 레포 캐시 `data/foreign/jp/tp20260318-01_0{1,2}.xlsx` 실측).
+
+## 수집 실패는 예외로 올린다 — UK MIMS · identity 오프라인 유도 (2026-10-06, P1.6 Item 5)
+
+- `agents/scrapers/base.py`: `ScraperConfigError`(자격증명/프록시 키 미설정 → 분류 `config`, 라벨 "설정 오류") · `ScraperLoginError`(로그인벽 잔존/세션 붕괴 → `login`). `classify_scrape_error` 는 **타입을 메시지 힌트보다 먼저** 본다. 원장 키 `foreign_search:{국가}:config|login`, 화면 "수집 실패(설정 오류|로그인 오류)".
+- UK MIMS: 자격증명 없음 → `ScraperConfigError`(이전 `[]` → 화면 'MIMS 구독 필요' 로 위장), 로그인 후 "log in or register" 잔존 → `ScraperLoginError`. 관측 슬라이스의 ImportError/timeout 전파와 같은 경로.
+- **identity 가 없는 검색 경로**(동기 `GET /api/foreign/cached?use_cache=false`·백필 잡·CLI)는 `drug_identity.derive_identity_offline(query)`(product_alias_map → BRAND_TO_MOLECULE **정확 일치**, 부분 일치·MFDS 폴백 없음)로 brand 를 유도해 검색한다 — INN(`pembrolizumab`)이 그대로 가면 UK 는 Price 섹션 없는 `/drugs/pembrolizumab/`, JP 는 0건. 저장 `query_name` 은 slug(기존 identity 경로와 동일, alias 로 묶인다). 명시 identity 가 있으면 그것이 우선. 고정: `tests/test_uk_mims_errors_and_routing.py`.
+
+## 다채널 국가의 채널 실패 판정 + 동기 검색 경로 (2026-10-06, P1.6 Item 6)
+
+- `search_one_country` 는 IT(CSV→TNF)·FR(BDPM→Vidal) 의 채널 실패를 모아 판정한다: **결과가 하나도 없으면 첫 실패를 예외로 올린다**(search_all → `errors[cc]` → 원장 `foreign_search:{cc}:{분류}` → 화면 "수집 실패") — 이전엔 warning 로그로 삼켜 보조 채널도 0건이면 '제도상 비공개' 로 위장됐다. 다른 채널 결과가 있으면 `channel_failed` 경고(`channel`·`error_class` 포함)를 내리고 원장에는 전체 실패와 **같은 분류 키**로 남긴다(같은 조건 = 같은 행). 단일 채널 국가는 그대로 전파.
+- 동기 경로 `GET /api/foreign/cached?use_cache=false` 는 응답에 `country_results`(status/error_label/warnings) + `search_errors` 를 싣는다(이전엔 `.errors` 를 버렸다). 고정: `tests/test_foreign_channel_failures.py`.
+
 ## 새 국가 추가 시 필수 작업
 1. `agents/scrapers/{cc}_{source}.py` 생성 (BaseScraper 상속)
 2. `foreign_price_agent.py` 에 import + `_build_scraper()` 케이스 추가
@@ -118,13 +149,16 @@ A8_adj_per_unit_KRW =
 ### source-specific 오버라이드 (PriceCalculator.SOURCE_OVERRIDES) — **코드가 적용하는 실효값**
 | 스크레이퍼 | SOURCE_TYPE | 실효 ratio |
 |-----------|-------------|-----------|
-| IT `it_aifa` / `it_aifa_tnf` | `aifa_exfactory` | **1.0** (이미 ex-factory — 유일한 오버라이드) |
+| IT `it_aifa` **Class H 행** / `it_aifa_tnf` | `aifa_exfactory` (행 선언) | **1.0** (이미 ex-factory — 유일한 오버라이드) |
+| IT `it_aifa` **Class A 행** | `None` (행 선언, raw_data.price_kind="prezzo al pubblico") | **0.93** (IT 국가 기본 — 공중가) |
 | CH `ch_compendium` | `compendium` | **0.73** (CH 국가 기본) |
 | FR `fr_bdpm` / `fr_vidal` | `vidal` | **0.77** (FR 국가 기본) |
 | US `us_micromedex` | `redbook_wac` | **0.74** (US 국가 기본, WAC) |
 | 그 외 | `None` | 국가 기본 |
 
 **2026-10-06 주석 (사용자 결정)**: 이전 문서는 `ch_compendium`/`fr_vidal` → 0.65 라고 적었으나, 그 키는 스크레이퍼의 `SOURCE_TYPE`(`"compendium"`/`"vidal"`) 과 한 번도 일치한 적이 없어 **0.65 는 발효된 적 없는 과거의 문서상 의도**였다. 실제로 저장·표시된 모든 CH/FR 조정가는 0.73/0.77 로 계산됐다(예: FR Vidal Keytruda #1504 factory_price_krw 2,379,302 = 2,000.74 × 1544.43 × 0.77). 결정: **코드가 현재 시점의 진실이고 문서는 과거다. 저장된 값은 재계산하지 않는다.** 죽은 항목은 `SOURCE_OVERRIDES` 에서 삭제했고(0.65 를 살리지 않음), `tests/test_foreign_factory_ratio_effective.py` 가 스크레이퍼 선언 `SOURCE_TYPE` 으로 실효 비율을 고정해 다음 drift(오버라이드 키 ≠ 스크레이퍼 선언)를 잡는다. 0.65 가 필요하다고 판단되면 그때 키를 스크레이퍼 선언값에 맞춰 새로 넣고 이 표·테스트·Welireg/Keytruda baseline 을 함께 갱신한다.
+
+**2026-10-06 (P1.6 Item 3) 행 단위 source_type**: 실효 비율은 스크레이퍼 클래스가 아니라 **행의 가격 종류**가 정한다(`agents/foreign_price_agent.resolve_item_source_type` — ① item 최상위 `source_type`(명시적 None 포함) ② extra/raw_data 의 `source_type` ③ 클래스 기본). IT CSV 는 한 클래스가 Class H(ex-factory, 1.0) 와 Class A(공중가 → 0.93) 를 함께 돌려주는데, 클래스 기본을 모든 행에 써서 Class A 행이 +7.5% 과대였다. 신규 수집(`search_one_country`)과 캐시 읽기-재계산(`get_cached_results`) 둘 다 행 기준; **저장 행은 다시 쓰지 않는다**(실제 DB 영향 79행: sitagliptin #1304–#1380, letermovir 경구 #1481·#1482 — 화면/리포트는 재계산값, 저장 adjusted_price_krw 는 그대로). source_label 도 행 단위(Class A = "AIFA Lista Classe A (Prezzo al pubblico)"; 과거 행은 읽기 시점에 `display_source_label` 이 raw_data.aifa_class 로 바로잡는다). 고정: `tests/test_foreign_factory_ratio_item_source.py`.
 
 ## source_type 처리
 ```python

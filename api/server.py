@@ -1763,12 +1763,13 @@ def _compute_country_results(query: str, countries: list, results) -> dict:
     - no_result: reason 은 정책 메타(policy=True — 제도상 비공개/미등재) 또는 generic(policy=False).
     - scraper_error: search_all 의 .errors(P1.6) — 정책 문구를 쓰지 않는다. 로그인이 깨진 것은 제도상 공백이 아니다.
     """
-    from agents.foreign_price_agent import SCRAPE_ERROR_LABEL_KR
+    from agents.foreign_price_agent import SCRAPE_ERROR_LABEL_KR, SCRAPE_WARNING_LABEL_KR
     from agents.scrapers.country_coverage import describe_empty_result, lookup_policy
     slug = (query or "").strip().lower()
     out: dict = {}
     rows_by_cc = results if isinstance(results, dict) else {}
     errors = getattr(results, "errors", None) or {}
+    warnings = getattr(results, "warnings", None) or {}
     for cc in countries:
         rows = rows_by_cc.get(cc, []) or []
         priced = [r for r in rows
@@ -1778,6 +1779,14 @@ def _compute_country_results(query: str, countries: list, results) -> dict:
             "count": len(rows),
             "priced_count": len(priced),
         }
+        if warnings.get(cc):
+            # 결과는 있으나 알아야 할 사실(구 캐시 사용·채널 일부 실패) — status 는 그대로, 라벨은 서버 한 곳에서
+            entry["warnings"] = [{
+                "warning_class": str(w.get("warning_class") or "other"),
+                "warning_label": SCRAPE_WARNING_LABEL_KR.get(str(w.get("warning_class") or ""), str(w.get("warning_class") or "경고")),
+                "channel": w.get("channel"),
+                "message": str(w.get("message") or "")[:300],
+            } for w in warnings[cc] if isinstance(w, dict)]
         if priced:
             entry["status"] = "priced"
         elif cc in errors:
@@ -1808,7 +1817,10 @@ def foreign_cached():
     if not query:
         return jsonify({"error": "검색어(q)를 입력하세요."}), 400
 
-    # use_cache=false 일 때: 실시간 스크래이핑 실행
+    # use_cache=false 일 때: 실시간 스크래이핑 실행 (동기 경로). SearchResults.errors/warnings 를 버리지 않는다 —
+    # 국가별 status/error_label/warnings 를 country_results 로, 원문 분류를 search_errors 로 싣는다(P1.6 Item 6).
+    country_results = None
+    search_errors = None
     if not use_cache:
         logger.info("[API] 실시간 재검색 시작: %s", query)
         try:
@@ -1817,6 +1829,10 @@ def foreign_cached():
         except Exception as e:
             logger.error("[API] 실시간 검색 실패: %s", e, exc_info=True)
             return jsonify({"error": f"실시간 검색 실패: {str(e)}"}), 500
+        country_results = _compute_country_results(query, AVAILABLE_COUNTRIES, results)
+        search_errors = dict(getattr(results, "errors", None) or {})
+        for cc, err in search_errors.items():
+            logger.warning("[API] 실시간 검색 국가 실패 %s: %s — %s", cc, err.get("error_class"), err.get("message"))
 
     # DB에서 최신 데이터 조회 (실시간 검색했으면 방금 저장된 데이터)
     cached = foreign_agent.get_cached_results(query)
@@ -1836,13 +1852,17 @@ def foreign_cached():
     except Exception as e:
         logger.warning("[Formulation] %s 그룹핑 실패: %s", query, e)
         formulations = {}
-    return jsonify({
+    payload = {
         "query": query,
         "results": cached,
         "formulations": formulations,
         "refreshed": not use_cache,
         "coverage_notes": coverage_notes,
-    })
+    }
+    if country_results is not None:
+        payload["country_results"] = country_results
+        payload["search_errors"] = search_errors
+    return jsonify(payload)
 
 
 @app.post("/api/foreign/report/export")

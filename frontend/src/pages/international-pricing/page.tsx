@@ -11,6 +11,7 @@ import {
   searchForeignLive,
   downloadForeignReport,
   PRICING_COUNTRY_CODE,
+  a8ExcludeReasonLabel,
 } from '@/api/foreign';
 import type {
   A8Pricing,
@@ -206,7 +207,11 @@ export default function InternationalPricingPage() {
           // 스크레이퍼 실패(로그인·의존성·403·시간 초과) — 제도상 공백이 아니다. 서버 error_label 을 그대로 쓴다.
           badge = { kind: 'failed', label: `수집 실패(${pend.result.error_label || '오류'})`, reason: pend.result.error || pend.result.reason, at };
         } else if (pend.result?.has_price || cell?.price != null) {
-          badge = { kind: 'updated', at };
+          // 가격은 왔지만 서버 경고(구 캐시 사용·채널 일부 실패)가 있으면 배지에 같이 보인다 — "현 시점 가격" 이 아닐 수 있다
+          const warns = pend.result?.warnings ?? [];
+          badge = warns.length
+            ? { kind: 'updated', at, label: warns.map(w => w.warning_label).join(' · '), reason: warns.map(w => w.message).join(' / ') }
+            : { kind: 'updated', at };
         } else {
           const policy = pend.result?.policy || (!pend.result?.reason && !!pricing.data?.coverageNotes?.[pend.cc]?.policy);
           const reason = pend.result?.reason
@@ -543,10 +548,19 @@ export default function InternationalPricingPage() {
                             <p className={`text-xs mt-1.5 ${textSub}`}>{countryFlag(summary.maxCountryKey)} {countryLabel(summary.maxCountryKey)} · 최소단위당</p>
                           </div>
                         </div>
-                        {summary.excludedKeys.length > 0 && (
+                        {(summary.excludedKeys.length > 0 || summary.unverifiedKeys.length > 0) && (
                           <p className={`text-xs mt-2 px-1 ${textMuted}`}>
                             <i className="ri-information-line mr-1"></i>
-                            평균 산출 제외국: {summary.excludedKeys.map(k => `${countryFlag(k)} ${countryLabel(k)}`).join(' · ')} — 조정가 미산출 (가격 미공개/미등재/환율 미적용). 아래 '조정가 산출 로직'에서 사유 확인.
+                            평균 산출 제외국:
+                            {summary.excludedKeys.length > 0 && (
+                              <> {summary.excludedKeys.map(k => `${countryFlag(k)} ${countryLabel(k)}`).join(' · ')} — 조정가 미산출 (가격 미공개/미등재/환율 미적용)</>
+                            )}
+                            {summary.excludedKeys.length > 0 && summary.unverifiedKeys.length > 0 && <> ·</>}
+                            {summary.unverifiedKeys.length > 0 && (
+                              // 조정가는 있지만 팩 가격이 단위가로 저장된 미확인 행 — 숫자는 카드에 남기되 평균/최소/최고에서 뺀다
+                              <> {summary.unverifiedKeys.map(k => `${countryFlag(k)} ${countryLabel(k)}`).join(' · ')} — {a8ExcludeReasonLabel(summary.excludedReasons[summary.unverifiedKeys[0]])} (팩 가격이 단위가로 저장)</>
+                            )}
+                            . 아래 '조정가 산출 로직'에서 사유 확인.
                           </p>
                         )}
                       </div>
@@ -654,8 +668,9 @@ export default function InternationalPricingPage() {
                               {researchingCountry !== country.key && researchResult[country.key] && (() => {
                                 const r = researchResult[country.key];
                                 if (r.kind === 'updated') return (
-                                  <p className="text-[11px] mt-2 flex items-center gap-1 text-emerald-600" title={`재검색 완료 ${r.at}`}>
-                                    <i className="ri-checkbox-circle-fill"></i> 방금 갱신 · {r.at}
+                                  <p className="text-[11px] mt-2 flex items-start gap-1 text-emerald-600" title={r.reason ? `${r.label} — ${r.reason}` : `재검색 완료 ${r.at}`}>
+                                    <i className="ri-checkbox-circle-fill mt-0.5 shrink-0"></i>
+                                    <span className="leading-snug">방금 갱신 · {r.at}{r.label && <><br /><span className="text-amber-600">경고: {r.label}</span></>}</span>
                                   </p>
                                 );
                                 if (r.kind === 'no_result') return (
@@ -746,10 +761,15 @@ export default function InternationalPricingPage() {
                             </div>
                           )}
                           {/* 산출 제외국 사유 */}
-                          {summary && summary.excludedKeys.length > 0 && (
+                          {summary && (summary.excludedKeys.length > 0 || summary.unverifiedKeys.length > 0) && (
                             <div className={`px-5 py-3.5 border-t ${divider}`}>
                               <p className={`text-xs font-semibold mb-1.5 ${textSub}`}>산출 제외국 사유</p>
                               <div className="space-y-1">
+                                {summary.unverifiedKeys.map(k => (
+                                  <p key={`unv-${k}`} className={`text-xs leading-relaxed ${textMuted}`}>
+                                    {countryFlag(k)} <span className="font-semibold">{countryLabel(k)}</span> — {a8ExcludeReasonLabel(summary.excludedReasons[k])} (팩 가격이 단위가로 저장돼 평균 산출 제외 — 조정가는 카드에 표시)
+                                  </p>
+                                ))}
                                 {summary.excludedKeys.map(k => {
                                   const cov = pricing.data?.coverageNotes[k];
                                   const cell = activeA8[k];

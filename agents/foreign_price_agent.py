@@ -9,13 +9,13 @@ import asyncio
 import json
 import logging
 import re
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
 from agents.db import DrugPriceDB
 from agents.exchange_rate import ExchangeRateFetcher, PriceCalculator
-from agents.scrapers.base import load_credentials
+from agents.scrapers.base import ScraperConfigError, ScraperLoginError, load_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -45,18 +45,26 @@ DAILY_COST_SANITY_CAP_KRW = 10_000_000
 # ── 라이브 검색 국가별 실패 분류 (P1.6 관측) ───────────────────────────────────
 # search_all 이 국가별 예외를 삼키면 "로그인이 깨진 것" 이 화면에서 "제도상 비공개" 처럼 보이고 원장에 아무것도 남지 않는다.
 # 분류는 원장 키(foreign_search:{국가}:{분류})와 화면 라벨 양쪽이 쓴다 — 라벨은 여기 한 곳(서버가 error_label 로 내려준다).
-SCRAPE_ERROR_CLASSES = ("login", "http_403", "dependency", "timeout", "parse", "other")
+SCRAPE_ERROR_CLASSES = ("config", "login", "http_403", "dependency", "timeout", "parse", "other")
 SCRAPE_ERROR_LABEL_KR = {
-    "login": "로그인 오류", "http_403": "접근 차단(403)", "dependency": "의존성 오류",
+    "config": "설정 오류", "login": "로그인 오류", "http_403": "접근 차단(403)", "dependency": "의존성 오류",
     "timeout": "시간 초과", "parse": "파싱 오류", "other": "오류",
 }
+# 결과는 있지만 사람이 알아야 할 사실(경고) — 실패(errors)와 분리해 status 는 priced 로 두고 warnings 로 내린다.
+#   stale_cache    : 캐시 갱신 실패로 구 파일을 썼다 (IT AIFA CSV TTL — "현 시점의 가격" 이 아닐 수 있다)
+#   channel_failed : 다채널 국가(IT CSV+TNF, FR BDPM+Vidal)에서 한 채널이 실패했다 (message 에 분류 포함)
+SCRAPE_WARNING_LABEL_KR = {"stale_cache": "캐시 만료(갱신 실패)", "channel_failed": "채널 일부 실패"}
 _LOGIN_HINTS = ("login", "로그인", "credential", "자격증명", "password", "license limit", "please login")
 _FORBIDDEN_HINTS = ("403", "forbidden", "cloudflare", "access denied", "차단")
 _PARSE_HINTS = ("parse", "파싱", "decode", "unexpected token", "expecting value")
 
 
 def classify_scrape_error(exc: BaseException) -> str:
-    """예외 → SCRAPE_ERROR_CLASSES 중 하나. 타입(ImportError·Timeout)이 먼저, 그다음 메시지 힌트."""
+    """예외 → SCRAPE_ERROR_CLASSES 중 하나. 타입(ScraperConfigError·ScraperLoginError·ImportError·Timeout)이 먼저, 그다음 메시지 힌트."""
+    if isinstance(exc, ScraperConfigError):
+        return "config"
+    if isinstance(exc, ScraperLoginError):
+        return "login"
     if isinstance(exc, ImportError):
         return "dependency"
     name = type(exc).__name__.lower()
@@ -75,11 +83,14 @@ def classify_scrape_error(exc: BaseException) -> str:
 class SearchResults(dict):
     """search_all 의 반환 — {country: [rows]} 그대로에 국가별 실패 분류를 .errors 로 얹는다(dict 호환).
 
-    errors[country] = {"error_class": str, "message": str}. 서버(_compute_country_results)가 읽어 status=scraper_error 로 내린다."""
+    errors[country] = {"error_class": str, "message": str}. 서버(_compute_country_results)가 읽어 status=scraper_error 로 내린다.
+    warnings[country] = [{"warning_class", "channel", "message"}, ...] — 결과는 있으나 알아야 할 사실(stale_cache 등).
+    서버는 status 를 바꾸지 않고 country_results[cc].warnings 로 내린다."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.errors: dict[str, dict] = {}
+        self.warnings: dict[str, list[dict]] = {}
 
 
 def _record_search_failure(query: str, country: str, error_class: str, exc: BaseException) -> None:
@@ -99,6 +110,72 @@ def _record_search_failure(query: str, country: str, error_class: str, exc: Base
             priority=2, actor="foreign_search", db_path=resolve_db_path())
     except Exception as signal_err:
         logger.warning("[%s] 수집 실패 신호 기록 실패: %s", country, signal_err)
+
+
+def _record_search_warning(query: str, country: str, warning: dict) -> None:
+    """국가별 수집 경고(결과는 있음) → 원장 ops_incident 1건/(국가, 분류) — 실패와 같은 키 체계(foreign_search:{국가}:{분류}).
+
+    stale_cache 가 매일 이어지면 같은 행이 recurred 로 쌓여 "구 파일로 버티는 중" 이 원장에서 보인다. 신호 경계 — 예외 삼킴."""
+    try:
+        from agents.agent_tasks.jobs import resolve_db_path
+        from agents.agent_tasks.signals import record_recurring, runbook_line
+        wcls = str(warning.get("warning_class") or "other")
+        label = SCRAPE_WARNING_LABEL_KR.get(wcls, wcls)
+        record_recurring(
+            kind="ops_incident", source="foreign_search", source_ref=f"{country}:{wcls}",
+            title=f"해외약가 수집 경고 — {country} ({label})",
+            detail=(f"검색어: {query}\n분류: {wcls}\n채널: {warning.get('channel') or '-'}\n내용: {str(warning.get('message') or '')[:300]}\n"
+                    f"{runbook_line(None)} — 결과는 구 캐시/남은 채널로 돌려줬다. 소스 접근(인증서·프록시)을 확인한 뒤 "
+                    f"해외약가 화면에서 그 국가를 재검색하면 갱신을 다시 시도한다"),
+            priority=3, actor="foreign_search", db_path=resolve_db_path())
+    except Exception as signal_err:
+        logger.warning("[%s] 수집 경고 신호 기록 실패: %s", country, signal_err)
+
+
+def _item_extra(row: dict) -> dict:
+    """행의 스크레이퍼 extra — 스크레이퍼 직후 item 은 `extra` dict, DB 행은 `raw_data` JSON 문자열."""
+    extra = row.get("extra")
+    if isinstance(extra, dict):
+        return extra
+    raw = row.get("raw_data")
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str) and raw:
+        try:
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, dict) else {}
+        except (ValueError, TypeError):
+            return {}
+    return {}
+
+
+def resolve_item_source_type(row: dict, class_default: Optional[str]) -> Optional[str]:
+    """factory_ratio 를 정하는 source_type — **행의 가격 종류가 우선**, 선언이 없을 때만 스크레이퍼 클래스 기본.
+
+    IT CSV 는 한 클래스(SOURCE_TYPE="aifa_exfactory")가 Class H(ex-factory, 1.0) 와 Class A(공중가 → IT 기본 0.93) 를 함께
+    돌려준다. 2026-10 감사: 클래스 기본을 모든 행에 써서 Class A 행(sitagliptin·letermovir 경구) 이 +7.5% 과대였다.
+    우선순위: ① item 최상위 `source_type` 키(명시적 None 포함) ② extra/raw_data 의 `source_type` 키(명시적 None 포함)
+    ③ 클래스 기본. 키가 있는데 None 인 것과 키가 없는 것을 구분한다 — None 선언은 '국가 기본 공식' 이라는 뜻이다."""
+    if "source_type" in row:
+        return row["source_type"]
+    extra = _item_extra(row)
+    if "source_type" in extra:
+        return extra["source_type"]
+    return class_default
+
+
+_IT_CSV_LABEL_BY_CLASS = {"A": "AIFA Lista Classe A (Prezzo al pubblico)", "H": "AIFA Lista Classe H (Prezzo Ex-factory)"}
+
+
+def display_source_label(row: dict) -> Optional[str]:
+    """읽기 시점 자료원 라벨 — IT CSV 행은 raw_data.aifa_class 가 진실(과거 수집은 Class A 도 "Classe H" 로 저장됐다).
+    저장 행은 고치지 않고 화면/리포트에만 바로잡는다."""
+    label = row.get("source_label")
+    if row.get("country") == "IT":
+        cls = _item_extra(row).get("aifa_class")
+        if cls in _IT_CSV_LABEL_BY_CLASS:
+            return _IT_CSV_LABEL_BY_CLASS[cls]
+    return label
 
 
 def a8_aggregate_eligibility(country: str, row: dict) -> tuple[bool, Optional[str]]:
@@ -195,6 +272,10 @@ class ForeignPriceAgent:
             raise ValueError(f"아직 구현되지 않은 국가: {country}")
 
         logger.info("=== [%s] '%s' 해외약가 조회 시작 ===", country, query)
+        # 국가 검색 1회 = 세션 1개 = searched_at 1개. 채널(IT CSV+TNF, FR BDPM+Vidal)마다 run() 이 찍은 시각은 버린다 —
+        # 80ms 차이로 compact_foreign_prices 가 '두 세션' 으로 보고 먼저 찍힌 채널을 지웠고(keytruda IT CSV 행 소실),
+        # get_foreign_prices 도 한 채널만 노출했다(2026-10 감사). 압축·조회 SQL 은 그대로 두고 저장 전에 통일한다.
+        session_searched_at = datetime.now().isoformat()
 
         # 1) 스크레이퍼 실행 (로그인 → 검색 → 로그아웃)
         scraper = self._build_scraper(country)
@@ -202,20 +283,38 @@ class ForeignPriceAgent:
         # 없음 → 국가 기본 ratio (CH 0.73, FR 0.77, US 0.74). tests/test_foreign_factory_ratio_effective.py 가 고정.
         source_type = getattr(scraper, "SOURCE_TYPE", None)
         # identity 있으면 brand 로 검색(대부분 소스가 브랜드 인덱스), 저장/집계는 slug 로 통일.
-        ident = identity or {}
+        # identity 가 없으면(동기 경로·백필 잡·CLI) alias 맵 정확 일치로 오프라인 유도 — INN(pembrolizumab) 이 그대로 가면
+        # UK 는 Price 섹션 없는 /drugs/pembrolizumab/ 에, JP 는 0건에 닿았다(2026-10 감사). 네트워크(MFDS) 는 쓰지 않는다.
+        ident = identity
+        if not ident:
+            try:
+                from agents.drug_identity import derive_identity_offline
+                ident = derive_identity_offline(query)
+                if ident:
+                    logger.info("[%s] identity 유도: '%s' → brand=%s slug=%s inn=%s", country, query,
+                                ident.get("brand"), ident.get("slug"), ident.get("inn"))
+            except Exception as e:                      # alias 조회 실패가 검색을 막으면 안 된다
+                logger.warning("[%s] identity 유도 실패(원문으로 검색): %s", country, e)
+                ident = None
+        ident = ident or {}
         search_term = ident.get("brand") or query
         canonical_name = ident.get("slug") or query
         fallback_inn = ident.get("inn")
+        channel_scrapers = [scraper]          # 경고 수집 대상 — 다채널 국가는 보조 채널 인스턴스도 넣는다
+        # 다채널 국가의 채널 실패는 모아서 판정한다 (Item 6): 결과가 하나도 없으면 첫 실패를 예외로 올리고(search_all 이 분류 →
+        # errors[cc] → 원장), 다른 채널 결과가 있으면 channel_failed 경고(분류 포함)로 같은 원장 키에 남긴다. 경고 로그로만
+        # 삼키면 TNF/Vidal 도 0건일 때 "검색 결과 없음" → 화면 '제도상 비공개' 로 위장됐다(2026-10 감사).
+        MULTI_CHANNEL = {"IT": "aifa_csv", "FR": "bdpm"}
+        channel_errors: list[tuple[str, BaseException]] = []
         try:
             raw_results = await scraper.run(search_term)
         except Exception as e:
-            # IT 는 2채널(CSV+TNF)이라 CSV 실패가 TNF 를 막으면 안 됨 (예: AIFA SSL 오류).
-            # 다른 국가는 단일 채널이므로 기존대로 전파(search_all 이 국가별로 catch).
-            if country == "IT":
-                logger.warning("[IT] CSV 채널 실패(TNF 로 계속): %s", e)
+            if country in MULTI_CHANNEL:
+                logger.warning("[%s] %s 채널 실패(보조 채널로 계속): %s", country, MULTI_CHANNEL[country], e)
+                channel_errors.append((MULTI_CHANNEL[country], e))
                 raw_results = []
             else:
-                raise
+                raise          # 단일 채널 국가는 그대로 전파(search_all 이 국가별로 catch)
         # brand 0건 & 스크레이퍼 opt-in & INN 존재 → INN 으로 1회 재시도
         if (not raw_results and getattr(scraper, "FALLBACK_TO_INN", False)
                 and fallback_inn and fallback_inn.lower() != str(search_term).lower()):
@@ -226,46 +325,62 @@ class ForeignPriceAgent:
                 logger.warning("[%s] INN 폴백 실패: %s", country, e)
 
         # IT: TrovaNorme 결정문 채널을 기존 CSV 채널과 **병행** (둘 다 aifa_exfactory).
-        # 결정문(determina)에서 성분·제형·ex-factory 가격을 직접 확인 — CSV 미등재/신규
-        # 협상 약제를 보완. 실패해도 CSV 결과는 유지.
+        # 결정문(determina)에서 성분·제형·ex-factory 가격을 직접 확인 — CSV 미등재/신규 협상 약제를 보완.
         if country == "IT":
             raw_results = list(raw_results or [])
             try:
                 tnf = ItAifaTnfScraper(
                     cache_dir=self.foreign_data_dir / "it", msd_only=False,
                 )
+                channel_scrapers.append(tnf)
                 tnf_rows = await tnf.run(search_term)
                 if tnf_rows:
                     raw_results.extend(tnf_rows)
                     logger.info("[IT] TrovaNorme 채널 +%d건 (총 %d건)",
                                 len(tnf_rows), len(raw_results))
             except Exception as e:
-                logger.warning("[IT] TrovaNorme 채널 실패(CSV 결과 유지): %s", e)
+                logger.warning("[IT] TrovaNorme 채널 실패: %s", e)
+                channel_errors.append(("tnf", e))
 
         # FR: Vidal 채널을 기존 BDPM 과 **병행** (둘 다 source_type=vidal → FR 기본 ratio 0.77).
-        # 병원용 주사제(keytruda 등)는 BDPM 공시가가 없고 Vidal UCD(HT) 에만 공개 →
-        # 큐레이션 URL 맵으로 안정 조회. 실패해도 BDPM 결과는 유지.
+        # 병원용 주사제(keytruda 등)는 BDPM 공시가가 없고 Vidal UCD(HT) 에만 공개 → 큐레이션 URL 맵으로 안정 조회.
         if country == "FR":
             raw_results = list(raw_results or [])
             try:
                 vidal = FrVidalScraper(
                     cache_dir=self.foreign_data_dir / "fr", msd_only=False,
                 )
+                channel_scrapers.append(vidal)
                 vidal_rows = await vidal.run(search_term)
                 if vidal_rows:
                     raw_results.extend(vidal_rows)
                     logger.info("[FR] Vidal 채널 +%d건 (총 %d건)",
                                 len(vidal_rows), len(raw_results))
             except Exception as e:
-                logger.warning("[FR] Vidal 채널 실패(BDPM 결과 유지): %s", e)
+                logger.warning("[FR] Vidal 채널 실패: %s", e)
+                channel_errors.append(("vidal", e))
+
+        # 스크레이퍼 경고(stale_cache 등)는 결과 유무와 무관하게 search_all 로 올린다 — 빈 결과여도 "왜" 가 남아야 한다.
+        warnings = [w for s in channel_scrapers for w in (getattr(s, "warnings", None) or [])]
+        if channel_errors:
+            if not raw_results:
+                self._note_country_warnings(country, warnings)
+                raise channel_errors[0][1]          # 전 채널이 비었고 실패가 있다 — 빈 결과가 아니라 수집 실패
+            for ch, e in channel_errors:
+                cls = classify_scrape_error(e)
+                warnings.append({"warning_class": "channel_failed", "channel": ch, "error_class": cls, "exc": e,
+                                 "message": f"{ch} 채널 실패({cls}: {type(e).__name__}: {str(e)[:160]}) — 나머지 채널 결과만 반환"})
+        self._note_country_warnings(country, warnings)
 
         if not raw_results:
             logger.info("[%s] 검색 결과 없음", country)
             return []
 
-        # 브랜드/성분 어느 입력이든 같은 캐시 레코드로 집계 → query_name = canonical slug
+        # 브랜드/성분 어느 입력이든 같은 캐시 레코드로 집계 → query_name = canonical slug.
+        # searched_at 은 세션 값으로 통일 (채널별 시각 폐기 — 위 주석).
         for item in raw_results:
             item["query_name"] = canonical_name
+            item["searched_at"] = session_searched_at
 
         # 방어적 fallback: 신규/기존 스크레이퍼가 form_type 을 빠뜨려도
         # 파이프라인 단에서 반드시 채워넣는다 (최소단위 원칙 파이프라인 보장).
@@ -281,23 +396,27 @@ class ForeignPriceAgent:
             logger.warning("[%s] 환율 조회 실패, 조정가 미계산: %s", country, e)
             rate_info = None
 
-        # dosing 조회 (pack_count fallback + daily_cost 계산용)
-        ingredients = [r.get("ingredient", "") for r in raw_results]
+        # dosing 조회 (pack_count fallback + daily_cost 계산용) — identity 의 INN 도 키에 넣는다 (JP 처럼 성분명이 일본어인 소스)
+        ingredients = [r.get("ingredient", "") for r in raw_results] + ([fallback_inn] if fallback_inn else [])
         dosing_map = self._load_dosing_map(canonical_name, ingredients)
 
         # 3) 조정가 계산 + DB 저장
         saved = []
         for item in raw_results:
             dosing = self._match_dosing(canonical_name, item.get("ingredient", ""), dosing_map)
+            if not dosing and fallback_inn:
+                dosing = dosing_map.get(fallback_inn.strip().lower())
             pack_count = self._resolve_pack_count(country, item, dosing)
 
+            # 행의 가격 종류가 우선 (IT CSV Class A 공중가 → 국가 기본 0.93, Class H/TNF ex-factory → 1.0)
+            item_source_type = resolve_item_source_type(item, source_type)
             if rate_info and item.get("local_price") is not None:
                 calc = self.calculator.calculate_adjusted_price(
                     country=country,
                     listed_price=item["local_price"],
                     exchange_rate=rate_info["rate"],
                     pack_count=pack_count,
-                    source_type=source_type,
+                    source_type=item_source_type,
                 )
                 item.update({
                     "exchange_rate": rate_info["rate"],
@@ -314,7 +433,7 @@ class ForeignPriceAgent:
                     "adjusted_price_krw": calc["adjusted_price_krw"],   # per-unit KRW
                     "pack_count": calc["pack_count"],
                     "per_unit_local": calc["per_unit_listed"],
-                    "source_type": source_type,
+                    "source_type": item_source_type,
                 })
 
             # Daily cost 계산 (per-unit adj × (daily_dose / single_unit_mg))
@@ -326,6 +445,23 @@ class ForeignPriceAgent:
 
         logger.info("[%s] DB 저장 완료: %d건", country, len(saved))
         return saved
+
+    # ── 국가별 수집 경고 전달 (search_one_country → search_all) ───────────────────────────────────
+    # search_one_country 의 반환형(list)을 바꾸지 않으려고 인스턴스에 잠시 둔다. 테스트가 __new__ 로 만든 에이전트도 있어
+    # __init__ 에 의존하지 않는다.
+
+    def _note_country_warnings(self, country: str, warnings: list[dict]) -> None:
+        store = getattr(self, "_country_warnings", None)
+        if store is None:
+            store = self._country_warnings = {}
+        if warnings:
+            store[country] = list(warnings)
+        else:
+            store.pop(country, None)
+
+    def _pop_country_warnings(self, country: str) -> list[dict]:
+        store = getattr(self, "_country_warnings", None) or {}
+        return store.pop(country, []) or []
 
     def _resolve_pack_count(self, country: str, item: dict, dosing: dict) -> int:
         """pack_count 결정 — **form_type 우선 원칙**. 결정 근거를 `item["pack_count_source"]` 에 남긴다.
@@ -511,6 +647,18 @@ class ForeignPriceAgent:
                 results[country] = []
                 results.errors[country] = {"error_class": error_class, "message": f"{type(e).__name__}: {e}"[:300]}
                 _record_search_failure(query, country, error_class, e)
+            # 결과는 있으나 알아야 할 사실(구 캐시 사용·채널 일부 실패) — 실패와 같은 원장 키 체계로 남기고 화면에 내린다
+            warnings = self._pop_country_warnings(country)
+            if warnings:
+                results.warnings[country] = warnings
+                for w in warnings:
+                    logger.warning("[%s] 수집 경고(%s): %s", country, w.get("warning_class"), w.get("message"))
+                    exc = w.pop("exc", None)      # 원장용 — 응답에는 싣지 않는다
+                    if w.get("warning_class") == "channel_failed" and w.get("error_class"):
+                        # 채널 일부 실패는 전체 실패와 **같은 분류 키**(foreign_search:{국가}:{분류})로 — 같은 조건, 같은 행
+                        _record_search_failure(query, country, w["error_class"], exc or RuntimeError(w.get("message") or ""))
+                    else:
+                        _record_search_warning(query, country, w)
 
         # 데이터 손실 검증
         self._validate_data_integrity(query, results)
@@ -826,6 +974,7 @@ class ForeignPriceAgent:
             dosing = self._match_dosing(query, row.get("ingredient", ""), dosing_map)
             pack_count = self._resolve_pack_count(country, row, dosing)
             row["pack_count"] = pack_count
+            row["source_label"] = display_source_label(row)      # IT CSV Class A 는 저장 라벨이 "Classe H" 로 굳어 있다
 
             if row.get("local_price") is not None and row.get("exchange_rate"):
                 if country not in scraper_cache:
@@ -834,7 +983,8 @@ class ForeignPriceAgent:
                         scraper_cache[country] = getattr(scr, "SOURCE_TYPE", None) if scr else None
                     except Exception:
                         scraper_cache[country] = None
-                src_type = scraper_cache[country]
+                # 행의 가격 종류가 우선 — 저장 행은 다시 쓰지 않고 읽기-재계산이 바로잡는다 (IT Class A 공중가 → 0.93)
+                src_type = resolve_item_source_type(row, scraper_cache[country])
                 calc = self.calculator.calculate_adjusted_price(
                     country=country,
                     listed_price=row["local_price"],

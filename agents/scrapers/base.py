@@ -27,6 +27,15 @@ ENV_KEY_MAP: dict[str, tuple[str, str]] = {
 }
 
 
+class ScraperConfigError(RuntimeError):
+    """설정 문제로 수집을 시작할 수 없다 — 자격증명/프록시 키 미설정 등. 분류: config (foreign_config_probe 가 다음에 볼 곳).
+    빈 결과로 돌려주면 화면이 '구독 필요' 정책 문구로 감싸 설정 문제가 보이지 않는다(P1.6) — 반드시 올린다."""
+
+
+class ScraperLoginError(RuntimeError):
+    """로그인했는데 로그인벽이 남았다/세션이 깨졌다 — 분류: login. 제도상 공백이 아니라 수집 실패다."""
+
+
 class BaseScraper(ABC):
     """
     국가별 약가 스크레이퍼 추상 베이스 클래스.
@@ -62,6 +71,10 @@ class BaseScraper(ABC):
         self.headless = headless
         self._browser: Browser = None
         self._context: BrowserContext = None
+        # 결과는 돌려줬지만 사람이 알아야 할 사실 — {"warning_class": str, "channel": str, "message": str}.
+        # 예: 캐시 갱신 실패로 구 파일을 썼다(stale_cache). 에이전트(search_one_country)가 읽어 SearchResults.warnings 와
+        # 원장(foreign_search:{국가}:{분류})으로 올린다. 조용히 로그에만 남기지 않는다(P1.6 수집 가능성).
+        self.warnings: list[dict] = []
 
     # ──────────────────────────────────────────────────────────────────────
     # 서브클래스에서 반드시 구현해야 하는 메서드
@@ -166,7 +179,7 @@ class BaseScraper(ABC):
                 searched_at = datetime.now().isoformat()
                 for item in raw_results:
                     form_type = self._resolve_form_type(item)
-                    results.append({
+                    rec = {
                         "searched_at": searched_at,
                         "query_name": query,
                         "country": self.COUNTRY,
@@ -185,10 +198,15 @@ class BaseScraper(ABC):
                         "distribution_margin": None,
                         "adjusted_price_krw": None,
                         "source_url": item.get("source_url", ""),
-                        "source_label": self.SOURCE_LABEL,
+                        # 행이 자기 자료원/가격 종류를 선언하면 그것이 우선 (IT CSV Class A = 공중가, Class H = ex-factory).
+                        # 클래스 기본은 선언 없는 소스의 fallback. factory_ratio 는 에이전트가 resolve_item_source_type 로 정한다.
+                        "source_label": item.get("source_label") or self.SOURCE_LABEL,
                         "raw_data": json.dumps(item.get("extra", {}), ensure_ascii=False),
                         "form_type": form_type,
-                    })
+                    }
+                    if "source_type" in item:
+                        rec["source_type"] = item["source_type"]    # DB 컬럼은 아니다 — save 는 무시, 에이전트가 읽는다
+                    results.append(rec)
 
             except Exception as e:
                 logger.error("[%s] 검색 중 오류: %s", self.COUNTRY, e, exc_info=True)

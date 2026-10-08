@@ -55,14 +55,20 @@ def _load_db_cache() -> dict[str, dict]:
             try:
                 with sqlite3.connect(str(_DB_PATH)) as conn:
                     rows = conn.execute(
-                        "SELECT product_slug, inn, brand_aliases_json FROM product_alias_map"
+                        "SELECT product_slug, inn, brand_aliases_json, agency_brand_overrides_json FROM product_alias_map"
                     ).fetchall()
-                for slug, inn, ba_json in rows:
+                for slug, inn, ba_json, ov_json in rows:
                     try:
                         ba = json.loads(ba_json or "[]")
                     except Exception:
                         ba = []
-                    entry = {"slug": slug, "inn": inn, "brand_aliases": ba}
+                    try:
+                        ov = json.loads(ov_json or "{}")
+                    except Exception:
+                        ov = {}
+                    # agency_brand_overrides: 기관별 권위 표기 (예: PMDA → "キイトルーダ") — JP 스크레이퍼가 INN 검색을 브랜드 표기로 푼다
+                    entry = {"slug": slug, "inn": inn, "brand_aliases": ba,
+                             "agency_brand_overrides": ov if isinstance(ov, dict) else {}}
                     keys = {slug.lower()}
                     if inn:
                         keys.add(inn.lower())
@@ -126,6 +132,18 @@ def aliases(name: str) -> list[str]:
         if mol == canon:
             out.add(brand)
     return sorted(out)
+
+
+def agency_brand(name: str, agency: str) -> str | None:
+    """product_alias_map.agency_brand_overrides[agency] — 기관별 권위 표기 (예: PMDA → 일본어 브랜드). 없으면 None.
+    name 은 slug·inn·brand alias 어느 것이든(소문자 비교). in-memory BRAND_TO_MOLECULE 에는 기관 표기가 없다."""
+    if not name or not agency:
+        return None
+    entry = _load_db_cache().get(name.strip().lower())
+    if not entry:
+        return None
+    val = (entry.get("agency_brand_overrides") or {}).get(agency)
+    return str(val).strip() if val else None
 
 
 def display_name(canon_or_name: str) -> str:

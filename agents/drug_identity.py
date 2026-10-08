@@ -80,6 +80,30 @@ def _mfds_candidate(q: str) -> list[dict]:
     }]
 
 
+def derive_identity_offline(q: str) -> dict | None:
+    """자유 텍스트 → identity 1건 **정확 일치·오프라인** (검색 파이프라인용). 없으면 None — 호출측이 원문으로 검색한다.
+
+    resolve_identity 와 달리 부분 일치(애매)와 MFDS 폴백(네트워크)을 쓰지 않는다. identity 가 없는 경로(동기 검색·백필 잡·CLI)
+    에서 INN 입력을 brand 로 라우팅하기 위한 것 — UK 는 /drugs/{inn}/ 에 Price 섹션이 없고 JP 는 브랜드 표기로만 찾힌다.
+    우선: product_alias_map(slug·inn·brand_aliases 정확 일치) → BRAND_TO_MOLECULE(브랜드 키 또는 molecule 값 정확 일치)."""
+    key = (q or "").strip().lower()
+    if not key:
+        return None
+    entry = drug_aliases._load_db_cache().get(key)
+    if entry:
+        slug = entry["slug"]
+        brand = drug_aliases.display_name(slug)
+        return {"slug": slug, "brand": brand, "inn": entry.get("inn") or "", "display": brand,
+                "matched_as": "ingredient" if (entry.get("inn") or "").lower() == key else "brand", "source": "alias"}
+    mol = drug_aliases.BRAND_TO_MOLECULE.get(key)
+    if mol:
+        return {"slug": key, "brand": key, "inn": mol, "display": key, "matched_as": "brand", "source": "alias"}
+    for brand, m in drug_aliases.BRAND_TO_MOLECULE.items():     # dict 순서 = 첫 등록 브랜드(오타 alias 는 뒤)
+        if m == key:
+            return {"slug": brand, "brand": brand, "inn": m, "display": brand, "matched_as": "ingredient", "source": "alias"}
+    return None
+
+
 def resolve_identity(q: str, limit: int = 6) -> list[dict]:
     """자유 텍스트 → 확정 후보 리스트. alias 우선, 미스 시 MFDS 폴백."""
     if not q or not q.strip():
