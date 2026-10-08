@@ -176,10 +176,14 @@ def check_domestic_price(ctx: Ctx) -> Freshness:
 # ── 2 환율 캐시 · 3 FX 정합 ────────────────────────────────────────────────
 
 def _latest_fx_window_to(ctx: Ctx) -> str | None:
-    files = sorted((ctx.base_dir / "data" / "foreign" / "exchange_rate").glob("keb_avg_rate_*.xlsx"))
+    """최신 캐시 창 종료일. 로더(ExchangeRateFetcher)와 같은 목록을 본다 — 0 바이트 파일은 '최신 창' 을 가장하지 못한다
+    (2026-10-02 빈 다운로드가 이름만으로 20260930 창으로 보여 신선도가 ok 가 될 뻔했다)."""
+    from agents.exchange_rate import list_cache_files
+    d = ctx.base_dir / "data" / "foreign" / "exchange_rate"
+    files = list_cache_files(d) if d.is_dir() else []
     if not files:
         return None
-    m = re.search(r"keb_avg_rate_(\d{8})_(\d{8})", files[-1].stem)
+    m = re.search(r"keb_avg_rate_(\d{8})_(\d{8})", files[0].stem)
     return m.group(2) if m else None
 
 

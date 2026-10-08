@@ -8,6 +8,7 @@
 """
 
 import logging
+import os
 import re
 from datetime import date, timedelta
 from pathlib import Path
@@ -73,23 +74,113 @@ def _calc_date_range(ref_date: date = None) -> tuple[str, str]:
     return start_dt.strftime("%Y%m%d"), end_dt.strftime("%Y%m%d")
 
 
+# 캐시 파일이 '유효' 하려면 반드시 있어야 하는 통화 (A8 조정가 8개국 중 CAD 제외 핵심 5종).
+CORE_CURRENCIES = ("USD", "EUR", "JPY", "GBP", "CHF")
+_PREVIEW_BYTES = 300
+
+
+class InvalidKebFileError(ValueError):
+    """KEB 다운로드(또는 캐시 파일)가 유효한 환율 TSV 가 아니다 — 빈 본문·오류 페이지·핵심 통화 누락.
+
+    다운로드 단계에서 이 예외가 나면 파일은 최종 캐시 이름으로 내려앉지 않는다(임시 파일 삭제). 메시지에 바이트 크기와
+    받은 내용의 앞부분을 넣어 다음 장애가 '무엇을 받았는지' 말하게 한다 (2026-10-02 는 0 바이트였는데 로그는 '헤더 행을
+    찾을 수 없음' 뿐이었다).
+    """
+
+
+def _preview(data: bytes, limit: int = _PREVIEW_BYTES) -> str:
+    text = data[:limit].decode("euc-kr", errors="replace")
+    lines = [ln for ln in text.splitlines() if ln.strip()][:5]
+    return " | ".join(ln.strip() for ln in lines) + (" …" if len(data) > limit else "")
+
+
+def validate_keb_file(path: Path) -> dict[str, float]:
+    """캐시/다운로드 파일의 유효성 검사 → 환율 dict. 쓰기(다운로드)와 읽기(캐시 로드)가 같은 기준을 쓴다.
+
+    유효 = 0 바이트가 아니고, parse_keb_excel 이 성공하고, CORE_CURRENCIES 가 모두 양수로 있다.
+    """
+    size = path.stat().st_size if path.exists() else -1
+    if size <= 0:
+        raise InvalidKebFileError(f"{path.name}: 빈 다운로드 ({max(size, 0)} bytes)")
+    data = path.read_bytes()
+    try:
+        rates = parse_keb_excel(path)
+    except ValueError as e:
+        raise InvalidKebFileError(f"{path.name}: 파싱 실패 ({size} bytes) — {e}; 수신 내용: {_preview(data)!r}") from e
+    missing = [c for c in CORE_CURRENCIES if not (rates.get(c) or 0) > 0]
+    if missing:
+        raise InvalidKebFileError(
+            f"{path.name}: 핵심 통화 누락/비양수 {missing} ({size} bytes, 파싱 {len(rates)}개 통화); "
+            f"수신 내용: {_preview(data)!r}")
+    return rates
+
+
+def cache_file_name(start_str: str, end_str: str) -> str:
+    return f"keb_avg_rate_{start_str}_{end_str}.xlsx"
+
+
+def list_cache_files(cache_dir: Path, *, skip_empty: bool = True) -> list[Path]:
+    """캐시 파일을 최신 창 → 과거 창 순으로. 진행 중 임시 파일(`.…​.part`)은 glob 에 걸리지 않는다.
+
+    skip_empty=True 면 0 바이트 파일은 경고와 함께 뺀다 — 로더와 신선도 판정(freshness.check_exchange_rate_cache)이 같은
+    목록을 봐야 빈 파일이 '최신 창' 을 가장하지 못한다.
+    """
+    files = sorted(cache_dir.glob("keb_avg_rate_*.xlsx"), reverse=True)
+    if not skip_empty:
+        return files
+    out = []
+    for f in files:
+        if f.stat().st_size == 0:
+            logger.warning("[환율] 0 바이트 캐시 파일 무시: %s", f.name)
+            continue
+        out.append(f)
+    return out
+
+
+def _window_meta(path: Path) -> dict:
+    m = re.search(r"keb_avg_rate_(\d{8})_(\d{8})", path.stem)
+    return {"from": m.group(1), "to": m.group(2)} if m else {}
+
+
 async def fetch_keb_excel(
     cache_dir: Path = None,
     ref_date: date = None,
     headless: bool = True,
+    *,
+    downloader=None,
 ) -> Path:
     """
-    KEB하나은행 평균환율 페이지에서 엑셀을 다운로드해 저장 경로 반환.
-    Playwright 비동기로 실행해야 함.
-    """
-    from playwright.async_api import async_playwright
+    KEB하나은행 평균환율 엑셀을 **임시 파일로** 받아 검증한 뒤에만 최종 캐시 이름으로 원자적 교체.
 
+    - 임시 경로는 같은 디렉터리의 `.keb_avg_rate_{from}_{to}.xlsx.part` — 캐시 glob 에 걸리지 않는다.
+    - 검증(validate_keb_file) 실패·예외 시 임시 파일을 지우고 InvalidKebFileError 를 올린다. 직전 유효 캐시는 그대로다.
+    - downloader(start_str, end_str, save_path, headless): 기본은 Playwright(_download_keb_excel). 테스트가 대체한다.
+    """
     start_str, end_str = _calc_date_range(ref_date)
     logger.info("[환율] 조회 기간: %s ~ %s", start_str, end_str)
 
     if cache_dir is None:
         cache_dir = Path("data/foreign/exchange_rate")
     cache_dir.mkdir(parents=True, exist_ok=True)
+
+    final_path = cache_dir / cache_file_name(start_str, end_str)
+    tmp_path = cache_dir / f".{final_path.name}.part"
+    tmp_path.unlink(missing_ok=True)
+    download = downloader or _download_keb_excel
+    try:
+        await download(start_str, end_str, tmp_path, headless)
+        rates = validate_keb_file(tmp_path)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
+    os.replace(tmp_path, final_path)
+    logger.info("[환율] 캐시 갱신: %s (%d bytes, %d개 통화)", final_path.name, final_path.stat().st_size, len(rates))
+    return final_path
+
+
+async def _download_keb_excel(start_str: str, end_str: str, save_path: Path, headless: bool = True) -> None:
+    """KEB 페이지 폼 입력 → 엑셀 다운로드를 save_path 에 저장 (Playwright). 검증은 호출자(fetch_keb_excel)가 한다."""
+    from playwright.async_api import async_playwright
 
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=headless)
@@ -144,20 +235,17 @@ async def fetch_keb_excel(
         await page.wait_for_timeout(4000)
         logger.info("[환율] 조회 완료")
 
-        # ── 5) 엑셀 다운로드
-        save_path = cache_dir / f"keb_avg_rate_{start_str}_{end_str}.xlsx"
+        # ── 5) 엑셀 다운로드 (임시 경로 — 검증 통과 후 fetch_keb_excel 이 최종 이름으로 바꾼다)
         async with page.expect_download(timeout=30_000) as dl_info:
             await target_frame.evaluate(
                 "pbk.foreign.rate.pbld.avg.doExcelDown('Y')"
             )
         download = await dl_info.value
         await download.save_as(str(save_path))
-        logger.info("[환율] 엑셀 저장: %s (%d bytes)", save_path.name, save_path.stat().st_size)
+        logger.info("[환율] 엑셀 수신: %s (%d bytes)", save_path.name, save_path.stat().st_size)
 
         await context.close()
         await browser.close()
-
-    return save_path
 
 
 def parse_keb_excel(excel_path: Path) -> dict[str, float]:
@@ -223,35 +311,65 @@ class ExchangeRateFetcher:
         self.cache_dir = cache_dir or Path("data/foreign/exchange_rate")
         self._rates: dict[str, float] = {}   # {통화코드: 환율}
         self._rate_meta: dict = {}
+        self.active_cache_file: Path | None = None
+        # 로더가 건너뛴 (활성 파일보다 **새로운**) 무효 캐시 파일 — 호출자가 "과거 창을 쓰고 있다" 를 드러낼 수 있게 남긴다.
+        self.skipped_cache_files: list[dict] = []
 
     def _load_latest_cache(self) -> bool:
-        """캐시 디렉터리에서 가장 최신 엑셀 파일을 로드."""
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
-        files = sorted(self.cache_dir.glob("keb_avg_rate_*.xlsx"), reverse=True)
-        if not files:
-            return False
-        logger.info("[환율] 캐시 파일 로드: %s", files[0].name)
-        self._rates = parse_keb_excel(files[0])
-        m = re.search(r"keb_avg_rate_(\d{8})_(\d{8})", files[0].stem)
-        if m:
-            self._rate_meta = {"from": m.group(1), "to": m.group(2)}
-        return bool(self._rates)
+        """캐시 디렉터리를 최신 창 → 과거 창 순으로 돌며 **첫 유효 파일**을 로드.
 
-    async def refresh(self, ref_date: date = None, headless: bool = True) -> dict:
-        """KEB에서 최신 평균환율 엑셀을 다운로드하고 파싱."""
-        excel_path = await fetch_keb_excel(self.cache_dir, ref_date, headless)
+        무효(0 바이트·파싱 실패·핵심 통화 누락) 파일은 경고(파일명·사유)와 함께 건너뛰고 skipped_cache_files 에 남긴다.
+        예전에는 이름순 최신 파일 하나만 파싱해 2026-10-02 의 0 바이트 파일이 모든 get_rate() 를 죽였다.
+        """
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.skipped_cache_files = []
+        for f in list_cache_files(self.cache_dir, skip_empty=False):
+            try:
+                rates = validate_keb_file(f)
+            except InvalidKebFileError as e:
+                logger.warning("[환율] 무효 캐시 파일 건너뜀: %s — %s", f.name, e)
+                self.skipped_cache_files.append({"file": f.name, "reason": str(e)})
+                continue
+            self._rates = rates
+            self._rate_meta = _window_meta(f)
+            self.active_cache_file = f
+            if self.skipped_cache_files:
+                logger.warning("[환율] 최신 캐시 %d개가 무효라 과거 창 %s 를 사용한다: %s — 런북 exchange_rate_refresh "
+                               "(`scheduler.py --fx-refresh-now`) 로 재다운로드",
+                               len(self.skipped_cache_files), self._rate_meta.get("to"),
+                               [s["file"] for s in self.skipped_cache_files])
+            else:
+                logger.info("[환율] 캐시 파일 로드: %s", f.name)
+            return True
+        self._rates, self._rate_meta, self.active_cache_file = {}, {}, None
+        return False
+
+    def cache_status(self) -> dict:
+        """활성 캐시 파일·창·건너뛴 신규 무효 파일 — 잡 counts / 진단용."""
+        return {
+            "active_file": self.active_cache_file.name if self.active_cache_file else None,
+            "from": self._rate_meta.get("from"),
+            "to": self._rate_meta.get("to"),
+            "skipped_newer": list(self.skipped_cache_files),
+        }
+
+    async def refresh(self, ref_date: date = None, headless: bool = True, *, downloader=None) -> dict:
+        """KEB에서 최신 평균환율 엑셀을 다운로드(검증·원자적 교체)하고 파싱."""
+        excel_path = await fetch_keb_excel(self.cache_dir, ref_date, headless, downloader=downloader)
         self._rates = parse_keb_excel(excel_path)
-        m = re.search(r"keb_avg_rate_(\d{8})_(\d{8})", excel_path.stem)
-        if m:
-            self._rate_meta = {"from": m.group(1), "to": m.group(2)}
+        self._rate_meta = _window_meta(excel_path)
+        self.active_cache_file = excel_path
+        self.skipped_cache_files = []
         return self._rates
 
     def get_rate(self, currency: str) -> dict:
         """특정 통화 환율 반환. 캐시가 없으면 오류 발생 (refresh() 먼저 호출 필요)."""
         if not self._rates:
             if not self._load_latest_cache():
+                skipped = ", ".join(f"{s['file']} ({s['reason']})" for s in self.skipped_cache_files)
                 raise RuntimeError(
                     "환율 데이터가 없습니다. await fetcher.refresh()를 먼저 실행하세요."
+                    + (f" 무효 캐시 파일: {skipped}" if skipped else "")
                 )
         currency = currency.upper()
         rate = self._rates.get(currency)

@@ -14,6 +14,7 @@ import logging
 import os
 import shutil
 import sys
+import time
 from pathlib import Path
 
 from dataclasses import dataclass
@@ -326,6 +327,27 @@ def foreign_price_backfill_job():
             "failed": failed}
 
 
+FX_REFRESH_ATTEMPTS = 2            # 최초 1회 + 재시도 1회
+FX_REFRESH_RETRY_WAIT_SEC = 60
+
+
+def _refresh_fx_with_retry(fetcher, *, attempts: int = FX_REFRESH_ATTEMPTS,
+                           wait_sec: float = FX_REFRESH_RETRY_WAIT_SEC) -> tuple[dict, int]:
+    """fetcher.refresh() 를 최대 attempts 회. 실패 사이에 wait_sec 대기. 마지막 예외는 그대로 올린다(guarded_job 이 받는다)."""
+    last: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return asyncio.run(fetcher.refresh(headless=True)), attempt
+        except Exception as e:                      # noqa: BLE001 — 어떤 실패든 1회 재시도 뒤 올린다
+            last = e
+            if attempt < attempts:
+                logger.warning("KEB 환율 갱신 %d/%d회 실패 — %ds 뒤 재시도: %s: %s", attempt, attempts, wait_sec,
+                               type(e).__name__, e)
+                time.sleep(wait_sec)
+    assert last is not None
+    raise last
+
+
 @guarded_job("exchange_rate_refresh")
 def exchange_rate_refresh_job():
     """KEB 36개월 평균환율 갱신 — 매월 2일 04:00 Seoul.
@@ -337,15 +359,18 @@ def exchange_rate_refresh_job():
     이전에는 정기 갱신 잡이 없어 누군가 refresh() 를 호출하기 전까지 마지막 xlsx 가
     계속 쓰였음(KEB 36mo 창 drift 의 원인). chromium 은 Dockerfile 에 이미 설치됨.
     배포 안전: 네트워크/Playwright 실패는 guarded_job 이 받아 원장 과제로 남긴다.
+    재시도: 다운로드는 임시 파일 + 검증 + 원자적 교체라 멱등이다(fetch_keb_excel). 2026-10-02 처럼 KEB 가 빈 본문을 주면
+    FX_REFRESH_RETRY_WAIT_SEC 뒤 1회만 더 시도하고, 그래도 실패하면 예외를 그대로 올린다 — 그 뒤는 런북
+    exchange_rate_refresh + 신선도 exchange_rate_cache(5일부터 stale) 가 사람을 부른다.
     """
     logger.info("━━━ KEB 36개월 평균환율 갱신 시작 ━━━")
     from agents.exchange_rate import ExchangeRateFetcher
     fetcher = ExchangeRateFetcher()
-    rates = asyncio.run(fetcher.refresh(headless=True))
+    rates, attempts = _refresh_fx_with_retry(fetcher)
     meta = fetcher._rate_meta
-    logger.info("환율 갱신 완료: %d개 통화 (기간 %s~%s) — %s", len(rates), meta.get("from", "?"), meta.get("to", "?"),
-                {k: rates.get(k) for k in ("USD", "EUR", "JPY", "GBP", "CHF") if k in rates})
-    counts = {"currencies": len(rates), "to": meta.get("to")}
+    logger.info("환율 갱신 완료: %d개 통화 (기간 %s~%s, %d회 시도) — %s", len(rates), meta.get("from", "?"),
+                meta.get("to", "?"), attempts, {k: rates.get(k) for k in ("USD", "EUR", "JPY", "GBP", "CHF") if k in rates})
+    counts = {"currencies": len(rates), "to": meta.get("to"), "attempts": attempts}
     errors = []
     # 갱신 직후 기존 최신 해외약가 행도 최종환율로 재계산 (주간 백필 대기 없이 즉시 반영)
     try:
@@ -381,14 +406,22 @@ def exchange_rate_recompute_job():
         msg = "환율 캐시 없음 — 런북 exchange_rate_refresh(`scheduler.py --fx-refresh-now`) 를 먼저 실행해야 한다"
         logger.warning("FX 재계산: %s", msg)
         return {"ok": False, "counts": {}, "errors": [msg]}
+    # 로더가 더 새로운 무효 캐시(예: 0 바이트 다운로드)를 건너뛰고 과거 창을 쓰고 있으면 counts 에 드러낸다 — 재계산은
+    # 그 창으로 하되 사람이 exchange_rate_refresh 를 돌려야 한다는 신호.
+    skipped_newer = [s["file"] for s in getattr(fetcher, "skipped_cache_files", []) or []]
+    if skipped_newer:
+        logger.warning("FX 재계산: 무효 캐시 %s 를 건너뛰고 과거 창 %s 사용 — 런북 exchange_rate_refresh 필요",
+                       skipped_newer, fetcher._rate_meta.get("to"))
     db = DrugPriceDB(BASE_DIR / "data" / "db" / "drug_prices.db")
     res = db.recompute_foreign_fx(fetcher._rates, fetcher._rate_meta)
     logger.info("FX 재계산 완료: 대상 %d · 갱신 %d · skip %d (기간 %s~%s)",
                 res["candidates"], res["updated"], res["skipped"],
                 fetcher._rate_meta.get("from"), fetcher._rate_meta.get("to"))
-    return {"ok": True, "errors": [],
-            "counts": {"candidates": res["candidates"], "updated": res["updated"], "skipped": res["skipped"],
-                       "to": fetcher._rate_meta.get("to")}}
+    counts = {"candidates": res["candidates"], "updated": res["updated"], "skipped": res["skipped"],
+              "to": fetcher._rate_meta.get("to")}
+    if skipped_newer:
+        counts["skipped_newer_cache"] = skipped_newer
+    return {"ok": True, "errors": [], "counts": counts}
 
 
 @guarded_job("reimbursement_xnational_sync")

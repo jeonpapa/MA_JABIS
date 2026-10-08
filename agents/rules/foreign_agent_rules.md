@@ -198,6 +198,9 @@ scraper 가 pack 가격을 반환하면 pack_count 를 명시해야 per-unit 환
 - **검색은 크롤 안 함**: `get_36m_average`→`_load_latest_cache` 로 캐시만 읽음. 신규 검색은 현재 캐시값으로 즉시 계산해 새 행 INSERT (환율 동결).
 - **기존 행 반영**: `save_foreign_price` 는 append-only. 월간 잡이 갱신 직후 `DrugPriceDB.recompute_foreign_fx(rates, meta)` 로 기존 최신 가격행을 **선형 스케일**(new/old rate) 재계산해 새 행 append (adjusted_price_krw 는 환율에 선형 → 재스크레이프 불필요). `get_foreign_prices` 가 최신행 노출.
 - **수동 즉시 반영**: `scheduler.py --fx-refresh-now`(캐시갱신+재계산) / `--fx-recompute-now`(재계산만). 프로덕션은 `flyctl ssh console -C "python scheduler.py --fx-refresh-now"`.
+- **캐시 쓰기 가드 (2026-10-08)**: `fetch_keb_excel` 은 같은 디렉터리의 임시 파일(`.keb_avg_rate_{from}_{to}.xlsx.part`, glob 비대상)로 받아 `validate_keb_file`(0 바이트 아님 + `parse_keb_excel` 성공 + USD/EUR/JPY/GBP/CHF 양수)을 통과한 뒤에만 `os.replace` 로 최종 이름에 올린다. 실패는 임시 파일 삭제 + `InvalidKebFileError`(바이트 크기 + 수신 내용 앞부분 포함). **빈/깨진 다운로드는 절대 최종 캐시 이름이 되지 않는다.**
+- **캐시 읽기 가드**: `_load_latest_cache` 는 최신 창 → 과거 창으로 돌며 첫 유효 파일을 쓴다(같은 `validate_keb_file`). 건너뛴 신규 무효 파일은 경고 로그 + `fetcher.skipped_cache_files`/`cache_status()` 로 드러나고, `exchange_rate_recompute` counts 에 `skipped_newer_cache` 로 남는다. 신선도 `exchange_rate_cache` 도 같은 목록(`list_cache_files`, 0 바이트 제외)을 보므로 빈 파일이 최신 창을 가장하지 못한다.
+- **월간 잡 재시도**: `exchange_rate_refresh_job` 은 다운로드가 멱등이라 60초 뒤 1회만 재시도(`FX_REFRESH_ATTEMPTS=2`). 그래도 실패하면 guarded_job 실패 → 런북 `exchange_rate_refresh` + 신선도 `exchange_rate_cache`(매월 5일부터 stale)가 사람을 부른다.
 
 ## 국가간 용량(strength) 정규화 — per-unit 비교 공정성
 
