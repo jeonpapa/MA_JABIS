@@ -549,16 +549,21 @@ def list_nhis_unmatched(limit: int = 1000) -> dict:
 
 
 def _linked_report(conn: sqlite3.Connection, meeting: dict) -> Optional[dict]:
-    """차수 결과에 연결할 post 리포트: 회의일 일치 또는 (연도+차수) 일치."""
-    row = conn.execute(
-        """SELECT id, title, summary, highlights_json FROM reimb_reports
-           WHERE report_type = 'post' AND committee = ?
-             AND (session_date = ? OR (year = ? AND cycle = ?))
-           ORDER BY analyzed DESC, id DESC LIMIT 1""",
-        (meeting["committee"], meeting["date"], meeting["year"], meeting["cycle"]),
-    ).fetchone()
-    if not row:
+    """차수 결과에 연결할 post 리포트 — 규칙은 reimb_reports.report_covers_session 하나(freshness.committee_reports 와 공유).
+
+    위원회 지정 보고서는 회의일 일치 또는 (연도+차수) 일치, combined(committee NULL + committee_scope='combined') 는
+    두 위원회 어느 회차든 session_date ±COMBINED_LINK_WINDOW_DAYS. 같은 회차에 둘 다 있으면 위원회 지정 보고서가 먼저.
+    """
+    from agents.reimb_reports import report_covers_session, report_scope
+    has_scope = "committee_scope" in {r[1] for r in conn.execute("PRAGMA table_info(reimb_reports)")}
+    scope_col = "committee_scope" if has_scope else "NULL AS committee_scope"
+    rows = conn.execute(
+        f"""SELECT id, title, summary, highlights_json, committee, {scope_col}, session_date, year, cycle, analyzed
+            FROM reimb_reports WHERE report_type = 'post' ORDER BY analyzed DESC, id DESC""").fetchall()
+    candidates = [r for r in rows if report_covers_session(dict(r), meeting)]
+    if not candidates:
         return None
+    row = min(candidates, key=lambda r: (report_scope(dict(r)) == "combined", -(r["analyzed"] or 0), -r["id"]))
     try:
         highlights = json.loads(row["highlights_json"] or "[]")
     except Exception:

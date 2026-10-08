@@ -8,6 +8,15 @@
 - archive: data/hira_pipeline/보고서/archive/
 - 중복 방지: 파일 내용 sha1 해시 UNIQUE
 - LLM 실패 시: 파일명 힌트만으로 등록 (analyzed=0) — 값 날조 금지, 재분석 가능
+
+위원회 범위(committee) 두 컬럼 — 2026-10-08, 헤르메스 병합 보고서(cc25e4ff) 이후:
+- `committee`       : 프로덕션 테이블에 박힌 CHECK (cancer|evaluation|NULL). SQLite 는 CHECK 를 못 바꾸고(테이블 재생성)
+                      `CREATE TABLE IF NOT EXISTS` 도 손대지 않으므로 이 컬럼의 허용값은 영구히 그 셋이다.
+- `committee_scope` : 매니페스트/판정의 권위값 cancer|evaluation|combined (ALTER ADD COLUMN — pdf_blob 과 같은 멱등 보강).
+                      combined(약평위+암질심 한 보고서) 는 committee=NULL + committee_scope='combined' 로 저장한다.
+- 읽기는 `report_scope(row)` 한 곳 — scope 가 없으면 committee, 둘 다 NULL 이면 'combined'(위원회 미지정 = 양쪽) 로 읽는다.
+- 보고서 ↔ 회차 연결 규칙은 `report_covers_session()` 하나 — reimb_pipeline._linked_report(UI 결과 모달) 와
+  agent_tasks.freshness.check_committee_reports(에이전트 팀) 가 같은 함수를 쓴다. 두 곳이 따로 판단하면 어긋난다.
 """
 from __future__ import annotations
 
@@ -18,11 +27,18 @@ import os
 import re
 import shutil
 import sqlite3
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Mapping, Optional
 
 logger = logging.getLogger(__name__)
+
+# 매니페스트 계약 (agents/ingest/REIMB_DATA_README.md 트랙 B 가 사람용 문서)
+COMMITTEE_SCOPES = ("cancer", "evaluation", "combined")      # committee_scope 허용값 — combined = 약평위+암질심 한 보고서
+COMMITTEE_CHECK_VALUES = ("cancer", "evaluation")            # reimb_reports.committee CHECK 가 허용하는 값 (NULL 별도)
+REPORT_TYPES = ("pre", "post", "monthly", "other")
+COMBINED_LINK_WINDOW_DAYS = 3   # combined/NULL 보고서는 session_date ±N일 안의 두 위원회 회차에 붙는다 (10-01 약평위 ↔ 09-30 암질심)
+_SESSION_COMMITTEE_ALIAS = {"AMJILSIM": "cancer", "YAKPYUNGWI": "evaluation", "cancer": "cancer", "evaluation": "evaluation"}
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 DB_PATH = BASE_DIR / "data" / "db" / "drug_prices.db"
@@ -84,6 +100,10 @@ def ensure_schema() -> None:
         rr_cols = {r[1] for r in conn.execute("PRAGMA table_info(reimb_reports)")}
         if "pdf_blob" not in rr_cols:
             conn.execute("ALTER TABLE reimb_reports ADD COLUMN pdf_blob BLOB")
+        # reimb_reports.committee_scope — combined 보고서 표식 (committee CHECK 는 못 바꾸므로 옆 컬럼, 모듈 docstring 참조)
+        if "committee_scope" not in rr_cols:
+            conn.execute("ALTER TABLE reimb_reports ADD COLUMN committee_scope TEXT")
+            conn.execute("UPDATE reimb_reports SET committee_scope = committee WHERE committee IS NOT NULL")
         # amjilsim_drugs 가 아직 없는 DB(최초 배포 빈 볼륨 등)에선 ALTER 스킵 —
         # 테이블 생성 시점(amjilsim ingest) 이후 재호출되면 그때 보강된다.
         existing = {r[1] for r in conn.execute("PRAGMA table_info(amjilsim_drugs)")}
@@ -254,15 +274,16 @@ def ingest_pdf(path: Path, source: str = "inbox") -> dict:
     with _connect() as conn:
         cur = conn.execute(
             """INSERT INTO reimb_reports
-               (file_hash, file_name, pdf_path, pdf_blob, file_size, pages, title, committee,
+               (file_hash, file_name, pdf_path, pdf_blob, file_size, pages, title, committee, committee_scope,
                 report_type, year, cycle, session_date, summary, highlights_json,
                 analyzed, analysis_model, analysis_error, source, analyzed_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 file_hash, path.name, str(dest.relative_to(BASE_DIR)), pdf_blob,
                 file_size, pages,
                 analysis.get("title") or path.stem,
                 analysis.get("committee") or hints.get("committee"),
+                analysis.get("committee") or hints.get("committee"),   # committee_scope — inbox 는 위원회 지정만 (combined 는 매니페스트 경로)
                 analysis.get("report_type") or hints.get("report_type"),
                 analysis.get("year") or hints.get("year"),
                 analysis.get("cycle") or hints.get("cycle"),
@@ -304,14 +325,18 @@ def reanalyze(report_id: int) -> dict:
     except Exception as e:
         return {"status": "error", "id": report_id, "error": str(e)[:300]}
     now = datetime.now().isoformat(timespec="seconds")
+    if row["source"] == "git_sync":   # 매니페스트 메타가 권위 — LLM 이 위원회(combined→evaluation 등)·회차·날짜를 덮지 않는다
+        analysis = {k: v for k, v in analysis.items() if k in ("title", "summary", "highlights")}
+    committee = analysis.get("committee") or row["committee"]
     with _connect() as conn:
         conn.execute(
-            """UPDATE reimb_reports SET title=?, committee=?, report_type=?, year=?, cycle=?,
+            """UPDATE reimb_reports SET title=?, committee=?, committee_scope=?, report_type=?, year=?, cycle=?,
                session_date=?, summary=?, highlights_json=?, analyzed=1, analysis_model=?,
                analysis_error=NULL, analyzed_at=? WHERE id=?""",
             (
                 analysis.get("title") or row["title"],
-                analysis.get("committee") or row["committee"],
+                committee,
+                committee if analysis.get("committee") else row["committee_scope"],
                 analysis.get("report_type") or row["report_type"],
                 analysis.get("year") or row["year"],
                 analysis.get("cycle") or row["cycle"],
@@ -407,6 +432,123 @@ def _sha1_bytes(data: bytes) -> str:
     return h.hexdigest()
 
 
+# ── 위원회 범위 + 보고서 ↔ 회차 연결 규칙 (단일 소스) ───────────────────────────
+
+def report_scope(report: Mapping[str, Any]) -> str:
+    """보고서가 다루는 위원회: cancer | evaluation | combined.
+
+    committee_scope(권위) → committee(구 행·CHECK 컬럼) → 둘 다 없으면 'combined'. 위원회가 적히지 않은 보고서는
+    '모른다' 가 아니라 '한 위원회에 묶이지 않는다' 로 읽는다 — 연결은 날짜가 결정한다.
+    """
+    scope = report.get("committee_scope")
+    if scope in COMMITTEE_SCOPES:
+        return scope
+    committee = report.get("committee")
+    return committee if committee in COMMITTEE_CHECK_VALUES else "combined"
+
+
+def _session_committee(session: Mapping[str, Any]) -> Optional[str]:
+    raw = session.get("committee") or session.get("committee_type")
+    return _SESSION_COMMITTEE_ALIAS.get(raw) if raw else None
+
+
+def _parse_date(s: Any) -> Optional[date]:
+    try:
+        return date.fromisoformat(str(s)[:10]) if s else None
+    except ValueError:
+        return None
+
+
+def report_covers_session(report: Mapping[str, Any], session: Mapping[str, Any],
+                          window_days: int = COMBINED_LINK_WINDOW_DAYS) -> bool:
+    """보고서 한 건이 회차 한 건을 다루는가 — UI(reimb_pipeline._linked_report)와 에이전트 팀(freshness.committee_reports)의 유일한 규칙.
+
+    report : committee / committee_scope / session_date / year / cycle (reimb_reports 행 또는 매니페스트 메타)
+    session: committee('cancer'|'evaluation' 또는 committee_type 'AMJILSIM'|'YAKPYUNGWI') / session_date 또는 date / year / cycle
+
+    - 위원회 지정 보고서(cancer|evaluation): 같은 위원회이고, 회의일이 같거나 (연도+차수) 가 같다.
+    - combined(또는 위원회 미지정): 두 위원회 어느 회차든 회의일이 보고서 session_date ±window_days 안이면 다룬다.
+      (연도+차수) 는 쓰지 않는다 — 차수는 한 위원회의 번호라 '10차' 가 약평위 10차이지 암질심 10차(12-23)가 아니다.
+    """
+    scope = report_scope(report)
+    s_committee = _session_committee(session)
+    s_date = _parse_date(session.get("session_date") or session.get("date"))
+    r_date = _parse_date(report.get("session_date"))
+    if scope == "combined":
+        return bool(s_date and r_date and abs((s_date - r_date).days) <= window_days)
+    if s_committee != scope:
+        return False
+    if s_date and r_date and s_date == r_date:
+        return True
+    r_year, r_cycle = report.get("year"), report.get("cycle")
+    return (r_year is not None and r_cycle is not None
+            and r_year == session.get("year") and r_cycle == session.get("cycle"))
+
+
+# ── 매니페스트 항목 검증 — 다운로드·LLM 보다 먼저 ────────────────────────────────
+
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_META_KEYS = ("file_name", "committee", "report_type", "year", "cycle", "session_date", "title")
+
+
+def _coerce_int(value: Any, key: str, problems: list[str]) -> Optional[int]:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        problems.append(f"{key}={value!r} 정수 아님")
+        return None
+
+
+def normalize_report_meta(meta: Mapping[str, Any]) -> tuple[dict, Optional[str]]:
+    """매니페스트 메타 → 저장 가능한 메타. 반환 (meta, error). error 가 있으면 저장할 수 없는 항목이다.
+
+    저장 불가를 다운로드·LLM 뒤에 IntegrityError 로 알면 행이 안 써져 file_hash 도 안 남고, 다음 밤 또 내려받고 또 분석한다
+    (2026-10-02 combined 항목이 그랬다). 그래서 CHECK 가 거절할 것을 여기서 먼저 거절한다.
+    반환 meta 의 committee 는 CHECK 호환값(cancer|evaluation|None), committee_scope 는 매니페스트 원값이다.
+    """
+    problems: list[str] = []
+    out: dict = {k: meta.get(k) for k in _META_KEYS}
+    scope = meta.get("committee_scope") or out.get("committee")    # 멱등: 이미 정규화된 meta(committee=NULL, scope=combined) 도 통과
+    if scope not in COMMITTEE_SCOPES:
+        problems.append(f"committee={scope!r} — 허용값 {'|'.join(COMMITTEE_SCOPES)} (combined = 약평위+암질심 한 보고서)")
+    out["committee_scope"] = scope if scope in COMMITTEE_SCOPES else None
+    out["committee"] = scope if scope in COMMITTEE_CHECK_VALUES else None
+    if out.get("report_type") not in REPORT_TYPES:
+        problems.append(f"report_type={out.get('report_type')!r} — 허용값 {'|'.join(REPORT_TYPES)}")
+    sd = out.get("session_date")
+    if sd is not None and not (isinstance(sd, str) and _ISO_DATE_RE.match(sd) and _parse_date(sd)):
+        problems.append(f"session_date={sd!r} — YYYY-MM-DD 여야 회차와 연결된다")
+    out["year"] = _coerce_int(out.get("year"), "year", problems)
+    out["cycle"] = _coerce_int(out.get("cycle"), "cycle", problems)
+    if not out.get("file_name"):
+        problems.append("file_name 없음")
+    return out, ("; ".join(problems) or None)
+
+
+def validate_manifest_entry(entry: Mapping[str, Any]) -> tuple[dict, Optional[str]]:
+    """매니페스트 항목 전체(url·file_hash 포함) 검증. 반환 (meta, error)."""
+    meta, err = normalize_report_meta(entry)
+    problems = [err] if err else []
+    url = entry.get("url")
+    if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+        problems.append(f"url={url!r} — http(s) 여야 한다")
+    fh = entry.get("file_hash")
+    if fh is not None and not re.fullmatch(r"[0-9a-f]{40}", str(fh)):
+        problems.append(f"file_hash={fh!r} — sha1 16진 40자")
+    return meta, ("; ".join(problems) or None)
+
+
+def _download(url: str) -> bytes:
+    req = urllib.request.Request(url, headers={"User-Agent": "ma-reports-sync/1.0"})
+    token = os.environ.get("REPORTS_DATA_TOKEN") or os.environ.get("REIMB_DATA_TOKEN")
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        return resp.read()
+
+
 def build_reports_manifest(reports: "list[dict]", out: Path = MANIFEST_PATH,
                            raw_base: str = GITHUB_RAW_BASE) -> dict:
     """큐레이션 보고서 목록 → 매니페스트 JSON 생성 (1회/갱신).
@@ -421,6 +563,9 @@ def build_reports_manifest(reports: "list[dict]", out: Path = MANIFEST_PATH,
         if not p.exists():
             logger.warning("[reports_manifest] 파일 없음: %s", r["repo_path"])
             continue
+        _, err = normalize_report_meta({**r, "file_name": p.name})
+        if err:   # 적재 못 할 항목은 매니페스트에 쓰지 않는다 — 02:00 sync 가 아니라 작성 시점에 알린다
+            raise ValueError(f"[reports_manifest] {p.name}: {err}")
         data = p.read_bytes()
         url = raw_base.rstrip("/") + "/" + quote(r["repo_path"])
         entries.append({
@@ -464,17 +609,16 @@ def ingest_from_url(url: str, meta: dict) -> dict:
 
     meta(committee/report_type/year/cycle/session_date/title/file_hash/file_name)는 권위값.
     LLM 분석은 summary/highlights 보조(키 없으면 graceful skip — 메타는 유지).
+    검증(normalize_report_meta)은 다운로드·LLM 보다 먼저 — 저장 못 할 항목에 비용을 쓰지 않는다.
     """
     ensure_schema()
+    meta, err = normalize_report_meta(meta)
+    if err:
+        return {"status": "error", "url": url, "file": meta.get("file_name"), "error": f"매니페스트 메타 오류: {err}"}
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "ma-reports-sync/1.0"})
-        token = os.environ.get("REPORTS_DATA_TOKEN") or os.environ.get("REIMB_DATA_TOKEN")
-        if token:
-            req.add_header("Authorization", f"Bearer {token}")
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            data = resp.read()
+        data = _download(url)
     except Exception as e:
-        return {"status": "error", "url": url, "error": f"download 실패: {e}"}
+        return {"status": "error", "url": url, "file": meta.get("file_name"), "error": f"download 실패: {e}"}
 
     file_hash = _sha1_bytes(data)
     with _connect() as conn:
@@ -515,12 +659,12 @@ def ingest_from_url(url: str, meta: dict) -> dict:
     with _connect() as conn:
         cur = conn.execute(
             """INSERT INTO reimb_reports
-               (file_hash, file_name, pdf_path, pdf_blob, file_size, pages, title, committee,
+               (file_hash, file_name, pdf_path, pdf_blob, file_size, pages, title, committee, committee_scope,
                 report_type, year, cycle, session_date, summary, highlights_json,
                 analyzed, analysis_model, analysis_error, source, analyzed_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (file_hash, meta.get("file_name") or "report.pdf", url, data, len(data), pages,
-             meta.get("title"), meta.get("committee"), meta.get("report_type"),
+             meta.get("title"), meta.get("committee"), meta.get("committee_scope"), meta.get("report_type"),
              meta.get("year"), meta.get("cycle"), meta.get("session_date"),
              summary, json.dumps(highlights, ensure_ascii=False),
              analyzed, ANALYSIS_MODEL if analyzed else None, analysis_error,
@@ -528,7 +672,7 @@ def ingest_from_url(url: str, meta: dict) -> dict:
         )
         conn.commit()
         rid = cur.lastrowid
-    return {"status": "ingested", "id": rid, "file": meta.get("file_name"),
+    return {"status": "ingested", "id": rid, "file": meta.get("file_name"), "file_hash": file_hash,
             "analyzed": bool(analyzed), "error": analysis_error}
 
 
@@ -536,6 +680,8 @@ def sync_reports(source: "str | Path | dict | None" = None) -> dict:
     """매니페스트 기반 보고서 git-sync. 각 항목 file_hash 가 DB 에 없으면 download+ingest.
 
     반환에 manifest_hash 포함 (스케줄러 해시게이트용). 멱등·무재다운로드(file_hash dedup).
+    항목마다 ① file_hash 가 있으면 skip ② 검증(validate_manifest_entry) — 실패면 다운로드·LLM 없이 errors
+    ③ ingest. 한 항목의 오류·예외는 errors 에 모으고 다른 항목은 계속한다.
     """
     ensure_schema()
     manifest = load_reports_manifest(source)
@@ -547,21 +693,35 @@ def sync_reports(source: "str | Path | dict | None" = None) -> dict:
         existing = {r["file_hash"] for r in conn.execute(
             "SELECT file_hash FROM reimb_reports").fetchall()}
 
-    ingested, skipped, errors = [], 0, []
+    ingested, skipped, errors, warnings = [], 0, [], []
     for e in entries:
+        if not isinstance(e, dict):
+            errors.append({"file": None, "url": None, "error": f"항목이 객체가 아님: {e!r}"[:200]})
+            continue
         fh = e.get("file_hash")
         if fh and fh in existing:
             skipped += 1
             continue
-        meta = {k: e.get(k) for k in
-                ("file_name", "committee", "report_type", "year", "cycle",
-                 "session_date", "title")}
-        res = ingest_from_url(e["url"], meta)
+        meta, err = validate_manifest_entry(e)
+        if err:
+            logger.warning("[reimb_reports] 매니페스트 항목 거절(다운로드 안 함) %s: %s", e.get("file_name"), err)
+            errors.append({"file": e.get("file_name"), "url": e.get("url"), "error": f"매니페스트 메타 오류: {err}"})
+            continue
+        try:
+            res = ingest_from_url(e["url"], meta)
+        except Exception as exc:   # 한 항목의 예외가 나머지 적재를 막지 않는다 — 잡 결과의 errors 로 올라간다
+            logger.exception("[reimb_reports] 적재 예외 %s", e.get("file_name"))
+            errors.append({"file": e.get("file_name"), "url": e.get("url"), "error": f"{type(exc).__name__}: {exc}"[:300]})
+            continue
         if res["status"] == "ingested":
             ingested.append(res.get("file"))
+            if fh and res.get("file_hash") and fh != res["file_hash"]:
+                # 적재는 됐지만 매니페스트 hash 가 PDF 와 다르면 다음 sync 마다 다시 내려받는다(내용 hash 로 duplicate 처리) — 고치라고 알린다
+                warnings.append({"file": e.get("file_name"), "url": e.get("url"),
+                                 "warning": f"매니페스트 file_hash {fh[:12]}… ≠ PDF sha1 {res['file_hash'][:12]}… — 매니페스트를 고쳐야 재다운로드가 멈춘다"})
         elif res["status"] == "duplicate":
             skipped += 1
         else:
-            errors.append({"url": e.get("url"), "error": res.get("error")})
+            errors.append({"file": e.get("file_name"), "url": e.get("url"), "error": res.get("error")})
     return {"manifest_hash": m_hash, "reports_in_manifest": len(entries),
-            "ingested": ingested, "skipped": skipped, "errors": errors}
+            "ingested": ingested, "skipped": skipped, "errors": errors, "warnings": warnings}

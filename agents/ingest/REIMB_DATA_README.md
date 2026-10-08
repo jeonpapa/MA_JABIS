@@ -95,15 +95,38 @@ PDF 를 repo 에 커밋 + 매니페스트에 1줄 추가하면, 앱이 다운로
       "file_name": "2026-07-03_yakpyungwi-7_d_plus_1.pdf",
       "file_hash": "<PDF 의 sha1 16진>",
       "url": "https://raw.githubusercontent.com/jeonpapa/AccessRoutineAnalystic/main/<PDF repo경로, URL-encode>",
-      "committee": "evaluation",      // evaluation(약평위) | cancer(암질심)
-      "report_type": "post",          // pre(D-2 사전) | post(D+1 사후) | monthly(월간)
+      "committee": "evaluation",      // evaluation(약평위) | cancer(암질심) | combined(두 위원회 한 보고서) — 아래 계약
+      "report_type": "post",          // pre(D-2 사전) | post(D+1 사후) | monthly(월간) | other
       "year": 2026, "cycle": 7,
-      "session_date": "2026-07-02",
+      "session_date": "2026-07-02",   // YYYY-MM-DD — 회차 연결의 기준
       "title": "2026년 7차 약제급여평가위원회 결과 리뷰 보고"
     }
   ]
 }
 ```
+
+### 매니페스트 항목 계약 (앱이 적재 전에 검증 — `agents/reimb_reports.validate_manifest_entry`)
+
+| 필드 | 허용값 | 비고 |
+|------|--------|------|
+| `committee` | `cancer` · `evaluation` · `combined` | **필수.** 그 외 값(예: `joint`, 빈 값)은 항목 거절 |
+| `report_type` | `pre` · `post` · `monthly` · `other` | 필수 |
+| `session_date` | `YYYY-MM-DD` | 회차 연결 기준. 회차일(HIRA 회의일)에 맞춘다 |
+| `year` / `cycle` | 정수 | `cycle` 은 **한 위원회의 차수** (약평위 10차 ≠ 암질심 10차) |
+| `url` | `http(s)://…` | git raw URL |
+| `file_hash` | sha1 16진 40자 | PDF 내용 sha1. 실제 PDF 와 다르면 적재는 되지만 매니페스트가 바뀔 때마다 재다운로드 → 잡 로그 경고 |
+
+- **검증은 다운로드·LLM 분석보다 먼저** 한다. 거절된 항목은 비용 없이 잡 결과 `errors`(→ 원장 과제)에 오르고, **같은 매니페스트의
+  다른 항목은 계속 적재**된다. (2026-10-02 `committee: "combined"` 항목이 CHECK 에 걸려 매일 PDF 재다운로드 + LLM 재분석 후
+  실패하던 누수의 재발 방지.)
+- **`combined` 의 뜻**: 한 PDF 가 약평위·암질심 **두 위원회 회차를 함께** 리뷰한다(예: 10차 약평위 2026-10-01 + 8차 암질심 2026-09-30
+  → `2026-10-02_약평위10차_암질심8차_d_plus_1.pdf`). `session_date` 는 그중 한 회차일(보통 약평위)로 적고, `cycle` 은 그 회차의 차수.
+  - 저장: `reimb_reports.committee = NULL` + `committee_scope = 'combined'` (프로덕션 테이블의 `committee` CHECK 는 cancer|evaluation 만
+    허용하고 SQLite 는 CHECK 변경이 테이블 재생성이라 손대지 않는다 — 표식은 옆 컬럼).
+  - 연결: 규칙 하나 `agents/reimb_reports.report_covers_session()` — 위원회 지정 보고서는 같은 위원회의 **같은 회의일**(또는 연도+차수),
+    `combined` 는 **두 위원회 어느 회차든 `session_date` ±3일**. 회차 결과 모달(`reimb_pipeline._linked_report`)과 에이전트 팀 신선도
+    판정(`freshness.committee_reports`)이 같은 함수를 쓰므로 combined 보고서 하나로 두 회차 모두 '보고서 있음' 이 된다.
+  - 두 회차가 3일 넘게 떨어져 있으면 combined 로 묶지 말고 **회차마다 보고서 1건**(`cancer` / `evaluation`)으로 발행한다.
 
 ### file_hash·url 자동 생성 (권장 — 손계산 불필요)
 `repo_path` 만 주면 sha1·git raw URL 을 계산해 매니페스트를 갱신한다:

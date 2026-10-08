@@ -579,11 +579,15 @@ def _reimb_reports_sync() -> dict:
     rres = rr.sync_reports(manifest)
     rhash_file.parent.mkdir(parents=True, exist_ok=True)
     rhash_file.write_text(m_hash)
+    for w in rres.get("warnings") or []:   # 매니페스트 file_hash ≠ PDF — 적재는 됐고, 매니페스트가 바뀔 때만 재다운로드라 과제 아님(로그)
+        logger.warning("보고서 sync 경고 %s: %s", w.get("file"), w.get("warning"))
     logger.info("보고서 sync 완료: 매니페스트 %d · 신규적재 %d · skip %d · 오류 %d · hash %s",
                 rres["reports_in_manifest"], len(rres["ingested"]), rres["skipped"], len(rres["errors"]), m_hash[:12])
     return {"counts": {"manifest": rres["reports_in_manifest"], "ingested": len(rres["ingested"]),
-                       "skipped": rres["skipped"]},
-            "fallback": fallback, "errors": [str(e)[:200] for e in rres["errors"]]}
+                       "skipped": rres["skipped"], "warnings": len(rres.get("warnings") or [])},
+            "fallback": fallback,
+            "errors": [(f"{e.get('file') or e.get('url')}: {e.get('error')}" if isinstance(e, dict) else str(e))[:200]
+                       for e in rres["errors"]]}
 
 
 @guarded_job("reimb_data_sync")

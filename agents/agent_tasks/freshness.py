@@ -419,28 +419,40 @@ def check_committee_results(ctx: Ctx) -> Freshness:
 
 
 # ── 7a 위원회 보고서 누락 (P1.6, improvement — 담당 헤르메스) ──────────────
-# 회차마다 D+1 결과 리뷰가 reports_manifest.json → reimb_reports 로 들어와야 한다(session_date 일치). 지난 60일의 지난 세션 중
-# 행이 없는 것을 센다. 회차 당일·다음 날은 유예(REPORT_LAG_DAYS) — D+1 발행 → 02:00 sync 라 07:45 판정은 D+2 부터 의미가 있다.
+# 회차마다 D+1 결과 리뷰가 reports_manifest.json → reimb_reports 로 들어와야 한다. 지난 60일의 지난 세션 중 다루는 보고서가 없는
+# 것을 센다. '다룬다' 는 reimb_reports.report_covers_session 하나로 판단한다(UI 결과 모달 _linked_report 와 같은 규칙) —
+# 위원회 지정 보고서는 session_date 일치, combined(committee NULL + committee_scope='combined')는 두 위원회 회차 ±3일.
+# 회차 당일·다음 날은 유예(REPORT_LAG_DAYS) — D+1 발행 → 02:00 sync 라 07:45 판정은 D+2 부터 의미가 있다.
 
 REPORTS_WINDOW_DAYS = 60
 REPORT_LAG_DAYS = 2
 
 
 def check_committee_reports(ctx: Ctx) -> Freshness:
+    from agents.reimb_reports import COMBINED_LINK_WINDOW_DAYS, report_covers_session, report_scope
     since = _days_ago(ctx, REPORTS_WINDOW_DAYS)
     due = _days_ago(ctx, REPORT_LAG_DAYS)
     sessions = _rows(ctx, "SELECT session_id, session_date, committee_type FROM amjilsim_sessions "
                           "WHERE session_date >= ? AND session_date < ? ORDER BY session_date", (since, due))
-    reports = _rows(ctx, "SELECT session_date, committee, report_type, title FROM reimb_reports "
-                         "WHERE session_date >= ? AND session_date < ? ORDER BY session_date", (since, ctx.today.isoformat()))
-    have = {r[0] for r in reports}
-    missing = [s for s in sessions if s[1] not in have]
-    latest = max((r[0] for r in reports), default=None)
-    present = "; ".join(f"{d} {c}/{t} '{title}'" for d, c, t, title in reports) or "-"
+    has_scope = any(r[1] == "committee_scope" for r in _rows(ctx, "PRAGMA table_info(reimb_reports)"))
+    scope_col = "committee_scope" if has_scope else "NULL"
+    # 창 가장자리: combined 보고서는 ±window 로 붙으므로 창 밖 보고서가 창 안 회차를 다룰 수 있다 → 보고서 창을 그만큼 넓힌다
+    r_since = (date.fromisoformat(since) - timedelta(days=COMBINED_LINK_WINDOW_DAYS)).isoformat()
+    r_until = (ctx.today + timedelta(days=COMBINED_LINK_WINDOW_DAYS)).isoformat()
+    reports = [{"session_date": d, "committee": c, "committee_scope": sc, "report_type": t, "title": title}
+               for d, c, sc, t, title in _rows(ctx, f"SELECT session_date, committee, {scope_col}, report_type, title "
+                                                    "FROM reimb_reports WHERE session_date >= ? AND session_date < ? "
+                                                    "ORDER BY session_date", (r_since, r_until))]
+    missing = [s for s in sessions
+               if not any(report_covers_session(r, {"committee_type": s[2], "session_date": s[1]}) for r in reports)]
+    in_window = [r for r in reports if since <= r["session_date"] < ctx.today.isoformat()]
+    latest = max((r["session_date"] for r in in_window), default=None)
+    present = "; ".join(f"{r['session_date']} {report_scope(r)}/{r['report_type']} '{r['title']}'" for r in in_window) or "-"
     evidence = (f"최근 {REPORTS_WINDOW_DAYS}일(≥{since}) 지난 세션(D+{REPORT_LAG_DAYS} 경과) {len(sessions)}건 중 "
-                f"reimb_reports 행(session_date 일치) 없음 {len(missing)}건: {_session_listing(missing)}; "
+                f"다루는 reimb_reports 행 없음 {len(missing)}건: {_session_listing(missing)}; "
                 f"창 안 보고서: {present}. 담당: 헤르메스 — D+1 결과 리뷰를 reports_manifest.json 에 발행(session_date 를 회차일에 맞춤) "
-                "→ 02:00 reimb_data_sync 가 적재. 병합 보고서(combined)는 session_date 가 한 회차만 가리키므로 다른 회차는 여기 남는다")
+                "→ 02:00 reimb_data_sync 가 적재. 연결 규칙(reimb_reports.report_covers_session): 위원회 지정 보고서는 session_date 일치, "
+                f"병합 보고서(committee=combined)는 두 위원회 회차 ±{COMBINED_LINK_WINDOW_DAYS}일을 모두 다룬 것으로 본다")
     return Freshness("committee_reports", bool(missing), latest, since, evidence, None, 3, kind="improvement")
 
 
