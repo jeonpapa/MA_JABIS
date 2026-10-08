@@ -1817,7 +1817,10 @@ def foreign_cached():
     if not query:
         return jsonify({"error": "검색어(q)를 입력하세요."}), 400
 
-    # use_cache=false 일 때: 실시간 스크래이핑 실행
+    # use_cache=false 일 때: 실시간 스크래이핑 실행 (동기 경로). SearchResults.errors/warnings 를 버리지 않는다 —
+    # 국가별 status/error_label/warnings 를 country_results 로, 원문 분류를 search_errors 로 싣는다(P1.6 Item 6).
+    country_results = None
+    search_errors = None
     if not use_cache:
         logger.info("[API] 실시간 재검색 시작: %s", query)
         try:
@@ -1826,6 +1829,10 @@ def foreign_cached():
         except Exception as e:
             logger.error("[API] 실시간 검색 실패: %s", e, exc_info=True)
             return jsonify({"error": f"실시간 검색 실패: {str(e)}"}), 500
+        country_results = _compute_country_results(query, AVAILABLE_COUNTRIES, results)
+        search_errors = dict(getattr(results, "errors", None) or {})
+        for cc, err in search_errors.items():
+            logger.warning("[API] 실시간 검색 국가 실패 %s: %s — %s", cc, err.get("error_class"), err.get("message"))
 
     # DB에서 최신 데이터 조회 (실시간 검색했으면 방금 저장된 데이터)
     cached = foreign_agent.get_cached_results(query)
@@ -1845,13 +1852,17 @@ def foreign_cached():
     except Exception as e:
         logger.warning("[Formulation] %s 그룹핑 실패: %s", query, e)
         formulations = {}
-    return jsonify({
+    payload = {
         "query": query,
         "results": cached,
         "formulations": formulations,
         "refreshed": not use_cache,
         "coverage_notes": coverage_notes,
-    })
+    }
+    if country_results is not None:
+        payload["country_results"] = country_results
+        payload["search_errors"] = search_errors
+    return jsonify(payload)
 
 
 @app.post("/api/foreign/report/export")

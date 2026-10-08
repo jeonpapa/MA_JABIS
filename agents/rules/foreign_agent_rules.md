@@ -104,6 +104,11 @@ form_type 주입은 **스크레이퍼 + 에이전트 이중 보장**으로 캐�
 - UK MIMS: 자격증명 없음 → `ScraperConfigError`(이전 `[]` → 화면 'MIMS 구독 필요' 로 위장), 로그인 후 "log in or register" 잔존 → `ScraperLoginError`. 관측 슬라이스의 ImportError/timeout 전파와 같은 경로.
 - **identity 가 없는 검색 경로**(동기 `GET /api/foreign/cached?use_cache=false`·백필 잡·CLI)는 `drug_identity.derive_identity_offline(query)`(product_alias_map → BRAND_TO_MOLECULE **정확 일치**, 부분 일치·MFDS 폴백 없음)로 brand 를 유도해 검색한다 — INN(`pembrolizumab`)이 그대로 가면 UK 는 Price 섹션 없는 `/drugs/pembrolizumab/`, JP 는 0건. 저장 `query_name` 은 slug(기존 identity 경로와 동일, alias 로 묶인다). 명시 identity 가 있으면 그것이 우선. 고정: `tests/test_uk_mims_errors_and_routing.py`.
 
+## 다채널 국가의 채널 실패 판정 + 동기 검색 경로 (2026-10-06, P1.6 Item 6)
+
+- `search_one_country` 는 IT(CSV→TNF)·FR(BDPM→Vidal) 의 채널 실패를 모아 판정한다: **결과가 하나도 없으면 첫 실패를 예외로 올린다**(search_all → `errors[cc]` → 원장 `foreign_search:{cc}:{분류}` → 화면 "수집 실패") — 이전엔 warning 로그로 삼켜 보조 채널도 0건이면 '제도상 비공개' 로 위장됐다. 다른 채널 결과가 있으면 `channel_failed` 경고(`channel`·`error_class` 포함)를 내리고 원장에는 전체 실패와 **같은 분류 키**로 남긴다(같은 조건 = 같은 행). 단일 채널 국가는 그대로 전파.
+- 동기 경로 `GET /api/foreign/cached?use_cache=false` 는 응답에 `country_results`(status/error_label/warnings) + `search_errors` 를 싣는다(이전엔 `.errors` 를 버렸다). 고정: `tests/test_foreign_channel_failures.py`.
+
 ## 새 국가 추가 시 필수 작업
 1. `agents/scrapers/{cc}_{source}.py` 생성 (BaseScraper 상속)
 2. `foreign_price_agent.py` 에 import + `_build_scraper()` 케이스 추가

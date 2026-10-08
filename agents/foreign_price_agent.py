@@ -301,16 +301,20 @@ class ForeignPriceAgent:
         canonical_name = ident.get("slug") or query
         fallback_inn = ident.get("inn")
         channel_scrapers = [scraper]          # 경고 수집 대상 — 다채널 국가는 보조 채널 인스턴스도 넣는다
+        # 다채널 국가의 채널 실패는 모아서 판정한다 (Item 6): 결과가 하나도 없으면 첫 실패를 예외로 올리고(search_all 이 분류 →
+        # errors[cc] → 원장), 다른 채널 결과가 있으면 channel_failed 경고(분류 포함)로 같은 원장 키에 남긴다. 경고 로그로만
+        # 삼키면 TNF/Vidal 도 0건일 때 "검색 결과 없음" → 화면 '제도상 비공개' 로 위장됐다(2026-10 감사).
+        MULTI_CHANNEL = {"IT": "aifa_csv", "FR": "bdpm"}
+        channel_errors: list[tuple[str, BaseException]] = []
         try:
             raw_results = await scraper.run(search_term)
         except Exception as e:
-            # IT 는 2채널(CSV+TNF)이라 CSV 실패가 TNF 를 막으면 안 됨 (예: AIFA SSL 오류).
-            # 다른 국가는 단일 채널이므로 기존대로 전파(search_all 이 국가별로 catch).
-            if country == "IT":
-                logger.warning("[IT] CSV 채널 실패(TNF 로 계속): %s", e)
+            if country in MULTI_CHANNEL:
+                logger.warning("[%s] %s 채널 실패(보조 채널로 계속): %s", country, MULTI_CHANNEL[country], e)
+                channel_errors.append((MULTI_CHANNEL[country], e))
                 raw_results = []
             else:
-                raise
+                raise          # 단일 채널 국가는 그대로 전파(search_all 이 국가별로 catch)
         # brand 0건 & 스크레이퍼 opt-in & INN 존재 → INN 으로 1회 재시도
         if (not raw_results and getattr(scraper, "FALLBACK_TO_INN", False)
                 and fallback_inn and fallback_inn.lower() != str(search_term).lower()):
@@ -321,8 +325,7 @@ class ForeignPriceAgent:
                 logger.warning("[%s] INN 폴백 실패: %s", country, e)
 
         # IT: TrovaNorme 결정문 채널을 기존 CSV 채널과 **병행** (둘 다 aifa_exfactory).
-        # 결정문(determina)에서 성분·제형·ex-factory 가격을 직접 확인 — CSV 미등재/신규
-        # 협상 약제를 보완. 실패해도 CSV 결과는 유지.
+        # 결정문(determina)에서 성분·제형·ex-factory 가격을 직접 확인 — CSV 미등재/신규 협상 약제를 보완.
         if country == "IT":
             raw_results = list(raw_results or [])
             try:
@@ -336,11 +339,11 @@ class ForeignPriceAgent:
                     logger.info("[IT] TrovaNorme 채널 +%d건 (총 %d건)",
                                 len(tnf_rows), len(raw_results))
             except Exception as e:
-                logger.warning("[IT] TrovaNorme 채널 실패(CSV 결과 유지): %s", e)
+                logger.warning("[IT] TrovaNorme 채널 실패: %s", e)
+                channel_errors.append(("tnf", e))
 
         # FR: Vidal 채널을 기존 BDPM 과 **병행** (둘 다 source_type=vidal → FR 기본 ratio 0.77).
-        # 병원용 주사제(keytruda 등)는 BDPM 공시가가 없고 Vidal UCD(HT) 에만 공개 →
-        # 큐레이션 URL 맵으로 안정 조회. 실패해도 BDPM 결과는 유지.
+        # 병원용 주사제(keytruda 등)는 BDPM 공시가가 없고 Vidal UCD(HT) 에만 공개 → 큐레이션 URL 맵으로 안정 조회.
         if country == "FR":
             raw_results = list(raw_results or [])
             try:
@@ -354,10 +357,20 @@ class ForeignPriceAgent:
                     logger.info("[FR] Vidal 채널 +%d건 (총 %d건)",
                                 len(vidal_rows), len(raw_results))
             except Exception as e:
-                logger.warning("[FR] Vidal 채널 실패(BDPM 결과 유지): %s", e)
+                logger.warning("[FR] Vidal 채널 실패: %s", e)
+                channel_errors.append(("vidal", e))
 
         # 스크레이퍼 경고(stale_cache 등)는 결과 유무와 무관하게 search_all 로 올린다 — 빈 결과여도 "왜" 가 남아야 한다.
-        self._note_country_warnings(country, [w for s in channel_scrapers for w in (getattr(s, "warnings", None) or [])])
+        warnings = [w for s in channel_scrapers for w in (getattr(s, "warnings", None) or [])]
+        if channel_errors:
+            if not raw_results:
+                self._note_country_warnings(country, warnings)
+                raise channel_errors[0][1]          # 전 채널이 비었고 실패가 있다 — 빈 결과가 아니라 수집 실패
+            for ch, e in channel_errors:
+                cls = classify_scrape_error(e)
+                warnings.append({"warning_class": "channel_failed", "channel": ch, "error_class": cls, "exc": e,
+                                 "message": f"{ch} 채널 실패({cls}: {type(e).__name__}: {str(e)[:160]}) — 나머지 채널 결과만 반환"})
+        self._note_country_warnings(country, warnings)
 
         if not raw_results:
             logger.info("[%s] 검색 결과 없음", country)
@@ -640,7 +653,12 @@ class ForeignPriceAgent:
                 results.warnings[country] = warnings
                 for w in warnings:
                     logger.warning("[%s] 수집 경고(%s): %s", country, w.get("warning_class"), w.get("message"))
-                    _record_search_warning(query, country, w)
+                    exc = w.pop("exc", None)      # 원장용 — 응답에는 싣지 않는다
+                    if w.get("warning_class") == "channel_failed" and w.get("error_class"):
+                        # 채널 일부 실패는 전체 실패와 **같은 분류 키**(foreign_search:{국가}:{분류})로 — 같은 조건, 같은 행
+                        _record_search_failure(query, country, w["error_class"], exc or RuntimeError(w.get("message") or ""))
+                    else:
+                        _record_search_warning(query, country, w)
 
         # 데이터 손실 검증
         self._validate_data_integrity(query, results)
