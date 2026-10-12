@@ -35,7 +35,7 @@ from agents.exchange_rate import _calc_date_range      # KEB 36개월 창 규칙
 
 from .jobs import resolve_db_path
 from .signals import record_recurring, runbook_line
-from .store import DEFAULT_DB_PATH, connect
+from .store import DEFAULT_DB_PATH, TERMINAL_STATUSES, connect
 
 logger = logging.getLogger(__name__)
 KST = timezone(timedelta(hours=9))
@@ -56,6 +56,9 @@ NHIS_MAX_DAYS = 10
 FOREIGN_PRICE_MAX_DAYS = 45          # 추적 제품마다 '가격 있는' 최신 행이 이보다 오래되면 stale (P1.6 관측)
 FOREIGN_COVERAGE_WINDOW_DAYS = 90    # 이 창 안에 가격 행이 없는 국가는 (제도상 공백이 아니면) 수집 실패
 PIPELINE_EXPECTED_LAG_DAYS = 14      # expected_session_id 가 이보다 오래 지난 차수를 가리키면(협상 미종결) 보드가 '예상일 경과' 를 그린다
+STAKEHOLDER_MONITORING_MAX_DAYS = 2  # VPS 일일 모니터링(07:00 커밋 → 08:20 sync) — 07:45 판정 시점의 정상 최신은 어제 런
+STAKEHOLDER_AUDIT_MAX_DAYS = 3       # VPS 커버리지 감사(07:40) — 감사는 degraded 로 하루 빠질 수 있어 하루 더 허용
+STAKEHOLDER_PROPOSAL_REVIEW_DAYS = 7 # 검토 대기 제안이 이보다 오래되면 사람 몫 적체(improvement)
 
 KINDS = ("ops_incident", "improvement")
 IMPROVEMENT_REF_SUFFIX = "backlog"   # improvement 의 source_ref "{domain}:backlog" — 월 키 없음(도메인당 1행)
@@ -629,6 +632,151 @@ def check_nhis_negotiations(ctx: Ctx) -> Freshness:
                    NHIS_MAX_DAYS, "nhis_negotiation_sync", "nhis_negotiations MAX(fetched_at)", 3)
 
 
+# ── 15~19 Stakeholder & Verbatim (T8) ──────────────────────────────────────
+# 데이터는 외부 에이전트(Key/Hermes, VPS)가 소스 repo 에 커밋하고 stakeholder_data_sync(02:20·08:20)가 sv_* 로 적재한다.
+# 런·감사가 오래됐을 때 원인은 셋이고 조치가 다르다(committee_results 선례):
+#   ① sync 잡 자체가 실패 중(transient) — 런북 재실행이 답.   ② sync 설정 문제(토큰·repo 권한) — 원장 config 과제가 원인, 재실행 무효.
+#   ③ sync 는 정상인데 런이 안 늘었다 — 외부 에이전트가 커밋하지 않음. 런북 None + 누가 무엇을 해야 하는지 evidence 에.
+# 한 번도 sync 되지 않은 저장소(첫 배포·토큰 부재)는 '판정 불가' — 원인은 sync 잡의 config 과제 1건이 이미 말한다(배포 당일
+# 같은 원인으로 과제 3건이 생겨 ≤3건/일 예산을 혼자 쓰지 않게).
+# 무결성의 no_local(video-only 등 원문 파일이 없는 소스)은 소스 상태이지 실패가 아니다. 인용 locator_match='none' 은 정본 MD 의
+# 결함(외부 에이전트 소유) — 재sync 로 안 풀리고 화면은 정상이라 improvement(담당 외부 에이전트, 도메인당 1행)로 둔다.
+
+STAKEHOLDER_SYNC_JOB = "stakeholder_data_sync"
+STAKEHOLDER_OPEN_PROPOSAL = ("needs_review", "needs_evidence")
+STAKEHOLDER_AUDIT_SCREEN = "/admin/stakeholder-audit"
+
+
+def _sv_synced(ctx: Ctx) -> bool:
+    """sv_meta.last_sync_at 이 있으면 적어도 한 번 import 가 돌았다. 테이블 부재·행 없음은 False."""
+    try:
+        return bool(_scalar(ctx, "SELECT value FROM sv_meta WHERE key='last_sync_at'"))
+    except sqlite3.OperationalError:
+        return False
+
+
+def _ledger_has_open_task(ctx: Ctx, source: str, source_ref: str) -> bool:
+    conn = _open(ctx.ledger_path if ctx.ledger_path else ctx.db_path)
+    try:
+        row = conn.execute("SELECT status FROM agent_task WHERE source=? AND source_ref=? ORDER BY id DESC LIMIT 1",
+                           (source, source_ref)).fetchone()
+    except sqlite3.OperationalError:
+        return False
+    finally:
+        conn.close()
+    return bool(row) and row[0] not in TERMINAL_STATUSES
+
+
+def _stakeholder_cause(ctx: Ctx, publisher: str) -> tuple[str | None, str]:
+    """(runbook, 원인 문장). publisher = 그 런을 커밋해야 하는 외부 에이전트 작업 설명."""
+    run = latest_job_run(ctx, STAKEHOLDER_SYNC_JOB)
+    if run is None:
+        return STAKEHOLDER_SYNC_JOB, ("원장에 stakeholder_data_sync 실행 기록 없음 — 런북(sync 1회)이 첫 조치. "
+                                      f"sync 후에도 그대로면 {publisher} 확인")
+    when = str(run["finished_at"])[:16]
+    if not run["ok"]:
+        first = (run["errors"] or ["?"])[0][:160]
+        if _ledger_has_open_task(ctx, "scheduler_job", f"{STAKEHOLDER_SYNC_JOB}:config"):
+            return None, (f"원인: sync 설정 문제(최근 실행 {when}: {first}) — 재실행으로 안 풀린다. "
+                          f"원장 {STAKEHOLDER_SYNC_JOB}:config 과제(fly secret STAKEHOLDER_SYNC_TOKEN·repo 권한)가 원인이다")
+        return STAKEHOLDER_SYNC_JOB, f"원인 ①: stakeholder_data_sync 실패 중(최근 실행 {when}: {first}) — 런북 재실행이 답이다"
+    return None, (f"원인 ②: stakeholder_data_sync 는 정상(최근 실행 {when} ok)이라 런북은 무효 — "
+                  f"외부 에이전트(Key/Hermes, VPS)의 {publisher} 가 소스 repo 에 새 런을 커밋하지 않았다. "
+                  "VPS 크론·에이전트 로그 확인")
+
+
+def _stakeholder_run_age(ctx: Ctx, domain: str, table: str, max_days: int, publisher: str, priority: int) -> Freshness:
+    observed = _scalar(ctx, f"SELECT MAX(run_date) FROM {table}")
+    deadline = _days_ago(ctx, max_days)
+    head = f"{table} MAX(run_date)={observed}, 기대≥{deadline} ({max_days}일)"
+    if observed is None and not _sv_synced(ctx):
+        return Freshness(domain, False, None, deadline,
+                         f"{UNDETERMINABLE}: Stakeholder 저장소가 아직 한 번도 sync 되지 않음(sv_meta.last_sync_at 없음) — "
+                         f"원인은 {STAKEHOLDER_SYNC_JOB} 잡 결과(토큰 부재면 :config 과제)가 말한다", None, priority)
+    if str(observed or "")[:10] >= deadline:
+        return Freshness(domain, False, observed, deadline, head, STAKEHOLDER_SYNC_JOB, priority)
+    runbook, cause = _stakeholder_cause(ctx, publisher)
+    return Freshness(domain, True, observed, deadline, f"{head}. {cause}", runbook, priority)
+
+
+def check_stakeholder_monitoring_run(ctx: Ctx) -> Freshness:
+    return _stakeholder_run_age(ctx, "stakeholder_monitoring_run", "sv_monitoring_run", STAKEHOLDER_MONITORING_MAX_DAYS,
+                                "일일 모니터링(07:00 KST, monitoring-runs/<날짜>/daily_monitoring.json)", 2)
+
+
+def check_stakeholder_audit_run(ctx: Ctx) -> Freshness:
+    return _stakeholder_run_age(ctx, "stakeholder_audit_run", "sv_audit_run", STAKEHOLDER_AUDIT_MAX_DAYS,
+                                "커버리지 감사(07:40 KST, audit-runs/<날짜>/coverage_audit.json)", 3)
+
+
+def check_stakeholder_proposal_backlog(ctx: Ctx) -> Freshness:
+    """검토 대기 제안이 7일 넘게 쌓임 = 사람(admin) 몫 적체. 장애가 아니다 — improvement, 런북 없음."""
+    cutoff = _days_ago(ctx, STAKEHOLDER_PROPOSAL_REVIEW_DAYS)
+    ph = ",".join("?" * len(STAKEHOLDER_OPEN_PROPOSAL))
+    open_total = int(_scalar(ctx, f"SELECT COUNT(*) FROM sv_audit_proposal WHERE status IN ({ph})",
+                             STAKEHOLDER_OPEN_PROPOSAL) or 0)
+    n, first = _rows(ctx, f"SELECT COUNT(*), MIN(created_at) FROM sv_audit_proposal WHERE status IN ({ph}) "
+                          "AND substr(COALESCE(created_at,''),1,10) < ?", (*STAKEHOLDER_OPEN_PROPOSAL, cutoff))[0]
+    n = int(n or 0)
+    try:
+        conflicted = sum(1 for (cj,) in _rows(ctx, f"SELECT conflicts_json FROM sv_audit_proposal WHERE status IN ({ph}) "
+                                                   "AND substr(COALESCE(created_at,''),1,10) < ?",
+                                              (*STAKEHOLDER_OPEN_PROPOSAL, cutoff))
+                         if isinstance(_json_or_none(cj), list) and _json_or_none(cj))
+        conflict_txt = (f"; 그중 충돌 확인 대기 {conflicted}건(충돌별 확인 후에만 승인 가능 — 사용자 결정)"
+                        if conflicted else "")
+    except sqlite3.OperationalError:
+        conflict_txt = ""
+    evidence = (f"검토 대기(needs_review·needs_evidence) 제안 {open_total}건 중 {STAKEHOLDER_PROPOSAL_REVIEW_DAYS}일 넘게 "
+                f"대기 {n}건(최초 {str(first or '-')[:10]}, 기준 <{cutoff}){conflict_txt}. "
+                f"담당: admin — 모니터링 감사 화면({STAKEHOLDER_AUDIT_SCREEN})에서 승인·반려(반려는 사유 필수). "
+                "사람 몫 적체이지 장애가 아니다 — 디스패처는 집지 않는다")
+    return Freshness("stakeholder_proposal_backlog", n > 0, str(first)[:10] if first else None, cutoff, evidence, None, 3,
+                     kind="improvement")
+
+
+def _json_or_none(text):
+    try:
+        return json.loads(text) if text else None
+    except (TypeError, ValueError):
+        return None
+
+
+def check_stakeholder_source_integrity(ctx: Ctx) -> Freshness:
+    """볼륨 원문·산출물의 SHA-256 판정(sync 가 매 실행 재계산) 중 mismatch·missing. no_local 은 소스 상태 — 실패 아님."""
+    bad_src = [r[0] for r in _rows(ctx, "SELECT source_id FROM sv_source WHERE integrity_status IN ('mismatch','missing') "
+                                        "ORDER BY 1")]
+    by = {k: v for k, v in _rows(ctx, "SELECT integrity_status, COUNT(*) FROM sv_source GROUP BY 1")}
+    try:
+        bad_art = [r[0] for r in _rows(ctx, "SELECT path FROM sv_artifact WHERE integrity_status IN ('mismatch','missing') "
+                                            "ORDER BY 1")]
+    except sqlite3.OperationalError:
+        bad_art = []
+    bad = len(bad_src) + len(bad_art)
+    evidence = (f"원문 무결성 {by}; 실패 출처 {len(bad_src)}건 {bad_src[:10]}, 실패 산출물 {len(bad_art)}건 {bad_art[:5]}. "
+                f"no_local {by.get('no_local', 0)}건은 원문 파일이 없는 소스(video-only 등) — 소스 상태이지 실패가 아니다"
+                + (f". 조치: 런북 {STAKEHOLDER_SYNC_JOB} — 볼륨 손상·누락은 재sync 가 다시 받는다(받은 당시 sha256 대조 자가 치유). "
+                   "재sync 뒤에도 남으면 소스 repo 의 source_manifest.json(sha256·bytes)과 파일이 어긋난 것 — "
+                   "외부 에이전트(Key/Hermes)가 manifest 를 고쳐 커밋" if bad else ""))
+    return Freshness("stakeholder_source_integrity", bad > 0, str(bad), "0", evidence,
+                     STAKEHOLDER_SYNC_JOB if bad else None, 3)
+
+
+def check_stakeholder_quote_provenance(ctx: Ctx) -> Freshness:
+    """정본 인용문이 근거 locator 원문에 정확 부분문자열로 없음(locator_match='none'). 외부 에이전트 소유 문서의 결함 —
+    재sync 는 같은 MD 를 다시 읽을 뿐이고 화면은 정상(배지만 꺼짐)이라 ops 가 아니라 improvement(도메인당 1행)."""
+    rows = _rows(ctx, "SELECT event_id, speaker_name, locator FROM sv_quote WHERE locator_match='none' "
+                      "ORDER BY event_id, speaker_name")
+    by = {k: v for k, v in _rows(ctx, "SELECT locator_match, COUNT(*) FROM sv_quote GROUP BY 1")}
+    listing = "; ".join(f"{e} {s} ({loc or 'locator 없음'})" for e, s, loc in rows[:10]) or "-"
+    evidence = (f"정본 인용 {sum(by.values())}건 원문 대조 {by}; 근거 원문에서 인용문을 찾지 못함(none) {len(rows)}건: {listing}. "
+                "담당: 외부 에이전트(Key/Hermes) — 정본 MD(주제별_인물발언_타임라인_정본)의 인용문을 근거 원문(sources/*.txt)과 "
+                "대조해 문구 또는 locator 를 고쳐 커밋 → 다음 sync 가 재파싱. 대쉬보드는 이 인용에 원문 일치 배지를 켜지 않는다. "
+                f"런북 없음(재sync 무효). unchecked {by.get('unchecked', 0)}건(locator·원문 파일 없음)은 판정 대상 아님")
+    return Freshness("stakeholder_quote_provenance", bool(rows), str(len(rows)), "0", evidence, None, 3,
+                     kind="improvement")
+
+
 DOMAIN_CHECKS: dict[str, Callable[[Ctx], Freshness]] = {
     "domestic_price": check_domestic_price,
     "exchange_rate_cache": check_exchange_rate_cache,
@@ -650,6 +798,11 @@ DOMAIN_CHECKS: dict[str, Callable[[Ctx], Freshness]] = {
     "competitor_trends": check_competitor_trends,
     "access_insight_signals": check_access_insight_signals,
     "nhis_negotiations": check_nhis_negotiations,
+    "stakeholder_monitoring_run": check_stakeholder_monitoring_run,
+    "stakeholder_audit_run": check_stakeholder_audit_run,
+    "stakeholder_proposal_backlog": check_stakeholder_proposal_backlog,
+    "stakeholder_source_integrity": check_stakeholder_source_integrity,
+    "stakeholder_quote_provenance": check_stakeholder_quote_provenance,
 }
 
 

@@ -20,6 +20,7 @@ import json
 import logging
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -45,6 +46,48 @@ def _json_ok(status: int, body) -> str | None:
 
 def _has_key(key: str) -> Expect:
     return lambda status, body: None if status == 200 and isinstance(body, dict) and key in body else f"HTTP {status} / '{key}' 없음"
+
+
+def _has_keys(*keys: str) -> Expect:
+    def expect(status: int, body) -> str | None:
+        if status != 200 or not isinstance(body, dict):
+            return f"HTTP {status}"
+        missing = [k for k in keys if k not in body]
+        return f"HTTP 200 / 키 없음 {missing}" if missing else None
+    return expect
+
+
+# Stakeholder 권한 경계(api/stakeholder_routes.USER_HIDDEN_KEYS 와 같은 집합 — 테스트가 대조): user 응답 어디에도 원문 경로·언론
+# CDN 사진 링크가 없어야 한다. 런 payload(외부 에이전트 JSON)에 local_path 가 실제로 들어 있어 상세 응답이 진짜 누출 경로다.
+USER_HIDDEN_KEYS = frozenset({"photo_url", "photo_path", "local_path", "text_path"})
+
+
+def _hidden_keys(obj) -> set[str]:
+    if isinstance(obj, dict):
+        return {k for k in obj if k in USER_HIDDEN_KEYS} | {h for v in obj.values() for h in _hidden_keys(v)}
+    if isinstance(obj, list):
+        return {h for v in obj for h in _hidden_keys(v)}
+    return set()
+
+
+def _user_safe(key: str) -> Expect:
+    """200 + dict + key 존재 + 어느 깊이에도 숨김 키 없음. user 토큰 전용 — admin 은 원본 경로를 보는 게 정상이라
+    외부 admin 로그인 모드에서는 auth-gates 의 다른 체크처럼 실패한다(그 화면 이름이 '권한 경계' 인 이유)."""
+    def expect(status: int, body) -> str | None:
+        if status != 200 or not isinstance(body, dict):
+            return f"HTTP {status}"
+        if key not in body:
+            return f"HTTP 200 / '{key}' 없음"
+        leaked = _hidden_keys(body)
+        return f"사용자 응답에 숨김 키 노출 {sorted(leaked)}" if leaked else None
+    return expect
+
+
+def _first_monitoring_run(body) -> str | None:
+    """/api/stakeholder/runs?kind=monitoring 목록 → 최신 런 상세 경로. 런이 없으면 None(상세 검사 생략 — 실패 아님)."""
+    items = body.get("items") if isinstance(body, dict) else None
+    run_id = items[0].get("run_id") if isinstance(items, list) and items and isinstance(items[0], dict) else None
+    return f"/api/stakeholder/runs/monitoring/{urllib.parse.quote(str(run_id), safe='')}" if run_id else None
 
 
 def _status(code: int) -> Expect:
@@ -173,6 +216,10 @@ class Check:
     path: str
     expect: Expect = _json_ok
     timeout: float | None = None       # None = run_smoke 의 기본값
+    # 통과한 본문 → 상세 경로를 follow_expect(없으면 expect)로 한 번 더 — 같은 체크로 집계. None 이면 상세 생략. 실패 문구에는
+    # 상세 경로(가변 id)를 넣지 않는다 — '상세: <사유>' 만(과제 키는 실패 집합의 내용 해시라 id 가 바뀌어도 같은 과제여야 한다).
+    follow: Callable[[object], "str | None"] | None = None
+    follow_expect: Expect | None = None
 
 
 @dataclass(frozen=True)
@@ -221,8 +268,24 @@ SCREENS: tuple[Screen, ...] = (
     Screen("admin/home-brands", "admin", (Check("/api/admin/home-brands"),)),
     Screen("admin/service-requests", "admin", (Check("/api/admin/service-requests"), Check("/api/admin/service-requests/outbox/count"))),
     Screen("admin/agent-tasks", "admin", (Check("/api/admin/agent-tasks", _has_key("tasks")),)),
-    # ── 권한 경계: user 토큰으로 admin 라우트 → 403 (토큰 없음 → 401 은 login 화면이 본다) ──
-    Screen("auth-gates", "user", (Check("/api/admin/agent-tasks", _status(403)), Check("/api/admin/users", _status(403)))),
+    # ── Stakeholder Signals (T8, config.tsx: user 2 + admin 2) — 데이터 나이는 신선도(stakeholder_*)가 본다 ──
+    Screen("stakeholder-signals", "user", (Check("/api/stakeholder/overview", _has_keys("kpi", "integrity", "topics")),
+                                           Check("/api/stakeholder/statements?limit=1", _has_key("items")))),
+    Screen("stakeholder-signals/workbench", "user", (Check("/api/stakeholder/statements?topic=price_reform&grade=A&limit=1",
+                                                           _has_key("items")),
+                                                     Check("/api/stakeholder/events", _has_key("items")))),
+    Screen("admin/stakeholder-people", "admin", (Check("/api/stakeholder/people", _has_key("items")),
+                                                 Check("/api/admin/stakeholder/source-domains", _has_key("items")))),
+    Screen("admin/stakeholder-audit", "admin", (Check("/api/admin/stakeholder/proposals", _has_key("proposals")),
+                                                Check("/api/admin/stakeholder/integrity", _has_key("summary")),
+                                                Check("/api/stakeholder/runs?kind=audit&limit=1", _has_key("items")))),
+    # ── 권한 경계: user 토큰으로 admin·agent 라우트 → 403 (토큰 없음 → 401 은 login 화면이 본다), user 응답의 원문 경로 0 ──
+    Screen("auth-gates", "user", (Check("/api/admin/agent-tasks", _status(403)), Check("/api/admin/users", _status(403)),
+                                  Check("/api/admin/stakeholder/proposals", _status(403)),
+                                  Check("/api/agent/stakeholder/registry", _status(403)),
+                                  Check("/api/stakeholder/sources", _user_safe("items")),
+                                  Check("/api/stakeholder/runs?kind=monitoring&limit=1", _user_safe("items"),
+                                        follow=_first_monitoring_run, follow_expect=_user_safe("run_id")))),
 )
 
 
@@ -258,6 +321,11 @@ def run_smoke(base: str, token_for: TokenFor, *, opener=urllib.request.urlopen, 
             try:
                 status, body = _get(base, check.path, token, opener, check.timeout or timeout)
                 why = check.expect(status, body)
+                detail_path = check.follow(body) if (not why and check.follow) else None
+                if detail_path:
+                    d_status, d_body = _get(base, detail_path, token, opener, check.timeout or timeout)
+                    d_why = (check.follow_expect or check.expect)(d_status, d_body)
+                    why = f"상세: {d_why}" if d_why else None
             except Exception as exc:
                 why = f"{type(exc).__name__}: {exc}"[:200]
             if why:

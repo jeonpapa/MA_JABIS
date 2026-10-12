@@ -214,6 +214,10 @@ def _runbook_policy_intel_analysis_sync() -> dict:
     return _from_job("policy_analysis_sync_job", "정책 분석 사이드카 sync")
 
 
+def _runbook_stakeholder_data_sync() -> dict:
+    return _from_job("stakeholder_data_sync_job", "Stakeholder sync")
+
+
 RUNBOOKS.update({
     "exchange_rate_refresh": _runbook_exchange_rate_refresh,
     "exchange_rate_recompute": _runbook_exchange_rate_recompute,
@@ -226,6 +230,7 @@ RUNBOOKS.update({
     "access_insight_fresh_signals": _runbook_access_insight_fresh_signals,
     "reimb_data_sync": _runbook_reimb_data_sync,
     "policy_intel_analysis_sync": _runbook_policy_intel_analysis_sync,
+    "stakeholder_data_sync": _runbook_stakeholder_data_sync,
 })
 
 

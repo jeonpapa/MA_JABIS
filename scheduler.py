@@ -936,6 +936,29 @@ def policy_analysis_sync_job():
     return {"ok": True, "counts": counts, "errors": []}
 
 
+@guarded_job("stakeholder_data_sync")
+def stakeholder_data_sync_job():
+    """매일 02:20·08:20 — Stakeholder 소스 repo(kr-drug-pricing-nhi-finance-intelligence) git-sync + 스냅샷 적재 + 스케줄 반영.
+
+    02:20 은 reimb 02:00·policy 02:10 뒤, 08:20 은 VPS 일일 모니터링 07:00·감사 07:40 커밋 뒤. 승인된 직책·출처의 익일 반영
+    (apply_scheduled)은 sync 안에서 돈다 — GitHub 실패·토큰 부재여도 DB 가 있으면 반영은 된다(T5 _early_failure).
+    토큰 부재(prod fail-closed)·401/404 는 sync 가 error_class="config" 로 분류 → 과제 stakeholder_data_sync:config 1건(사람이 닫을
+    때까지), 잠금 경합·네트워크·5xx 는 transient(하루 1건). 반환은 {ok, counts, errors, error_class} 만 — sync 결과의 `error` 는
+    errors 의 첫 줄과 같은 문구라 함께 넘기면 normalize_result 가 두 번 기록한다. warnings(반영 실패 등)는 로그로만."""
+    from agents.stakeholder import sync as _sv_sync
+    res = _sv_sync.sync_now()
+    errors = [str(e) for e in (res.get("errors") or [])] or ([str(res["error"])] if res.get("error") else [])
+    for w in (res.get("warnings") or [])[:10]:
+        logger.warning("stakeholder sync 경고: %s", w)
+    counts = res.get("counts") or {}
+    if errors or not res.get("ok"):
+        logger.warning("stakeholder sync 실패(%s): %s", res.get("error_class"), "; ".join(errors)[:300])
+        return {"ok": False, "counts": counts, "errors": errors or ["stakeholder sync 실패(사유 없음)"],
+                "error_class": res.get("error_class") or "transient"}
+    logger.info("stakeholder sync: changes=%s downloaded=%s", counts.get("changes"), counts.get("downloaded"))
+    return {"ok": True, "counts": counts, "errors": [], "error_class": "transient"}
+
+
 @guarded_job("scheduler_heartbeat", record_runs=False)
 def scheduler_heartbeat_job():
     """60초 — 생존 파일 갱신(atomic rename). /api/health 가 mtime 으로 판정(웹 기동 5분 유예 뒤 15분 초과 → 503 → Fly check 실패).
@@ -949,7 +972,7 @@ def scheduler_heartbeat_job():
 
 @guarded_job("platform_smoke")
 def platform_smoke_job():
-    """매일 07:50 — 21개 화면 + 권한 게이트 스모크 (같은 컨테이너의 웹 프로세스, 공유 JWT_SECRET 으로 토큰 직접 발급).
+    """매일 07:50 — 25개 화면 + 권한 게이트 스모크 (같은 컨테이너의 웹 프로세스, 공유 JWT_SECRET 으로 토큰 직접 발급).
 
     실패 = 화면 깨짐 → 과제 platform_smoke:<실패 집합 해시> 1건(같은 화면이 계속 깨져 있으면 날이 바뀌어도 같은 과제, 집합이
     바뀌면 새 과제 — signals.CONTENT_KEYED_JOBS). 토큰을 못 만들면(비밀 미공유) 그 역할
@@ -1017,6 +1040,8 @@ def build_job_specs(sched_cfg: dict) -> list[JobSpec]:
                 _cron(hour=2, minute=0)),
         JobSpec("policy_intel_analysis_sync", "Policy Intelligence 큐레이션 사이드카 매일 02:10 git sync",
                 policy_analysis_sync_job, _cron(hour=2, minute=10)),
+        JobSpec("stakeholder_data_sync", "Stakeholder 소스 repo git-sync (02:20·08:20, 런·원문·정본 + 스케줄 반영)",
+                stakeholder_data_sync_job, _cron(hour="2,8", minute=20)),
         JobSpec("daily_mailing_dispatch", "Daily Mailing 10분 주기 발송 판정 (생성→승인대기/자동발송·재시도)",
                 daily_mailing_dispatch_job, IntervalTrigger(minutes=10, timezone="Asia/Seoul"),
                 misfire_grace_time=INTERVAL_GRACE),
@@ -1034,7 +1059,7 @@ def build_job_specs(sched_cfg: dict) -> list[JobSpec]:
                 _cron(hour=7, minute=45)),
         JobSpec("scheduler_heartbeat", "스케줄러 heartbeat (60초, /api/health 생존 판정)", scheduler_heartbeat_job,
                 IntervalTrigger(seconds=60, timezone="Asia/Seoul"), misfire_grace_time=30),
-        JobSpec("platform_smoke", "화면별 API 스모크 (매일 07:50, 21 화면 + 권한 게이트)", platform_smoke_job,
+        JobSpec("platform_smoke", "화면별 API 스모크 (매일 07:50, 25 화면 + 권한 게이트)", platform_smoke_job,
                 _cron(hour=7, minute=50)),
     ]
 
@@ -1164,6 +1189,11 @@ def main():
         help="신호 session_id 를 약제 track 별 위원회(항암=암질심/일반=약평위) 세션으로 재배정 (UPDATE-only, 멱등)",
     )
     parser.add_argument(
+        "--stakeholder-sync-now",
+        action="store_true",
+        help="Stakeholder 소스 repo git-sync 즉시 실행 (스케줄 잡·런북 stakeholder_data_sync 와 같은 경로 — 원격, 토큰 필요)",
+    )
+    parser.add_argument(
         "--freshness-now", nargs="?", const="", metavar="DATA_DB",
         help="도메인 신선도 즉시 판정 + stale 과제 생성 (표 출력). 값을 주면 그 DB 를 판정 "
              "(file:/경로/drug_prices.db?mode=ro 로 실제 DB 읽기 전용 실측; 과제는 AGENT_TASK_DB 로)",
@@ -1263,6 +1293,13 @@ def main():
         print(format_table(probe(env=env_from(BASE_DIR))))
         res = foreign_config_probe_job()                       # 기록: 실행 1행 + 문제당 config 과제
         print(json.dumps(res["counts"], ensure_ascii=False))
+        return
+
+    if args.stakeholder_sync_now:
+        logger.info("Stakeholder 소스 repo 즉시 sync")
+        res = stakeholder_data_sync_job()
+        print(json.dumps({"ok": res["ok"], "counts": res["counts"], "errors": res["errors"],
+                          "error_class": res["error_class"]}, ensure_ascii=False))
         return
 
     if args.nhis_sync_now:

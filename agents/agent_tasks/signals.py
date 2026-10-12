@@ -48,6 +48,7 @@ JOB_RUNBOOK: dict[str, str | None] = {
     "exchange_rate_refresh": "exchange_rate_refresh",
     "reimb_data_sync": "reimb_data_sync",
     "policy_intel_analysis_sync": "policy_intel_analysis_sync",
+    "stakeholder_data_sync": "stakeholder_data_sync",   # 02:20·08:20 — 토큰 부재는 :config 1건, 그 외 재실행(동기 런북)
     "daily_mailing_dispatch": "daily_mailing_dispatch",
     "daily_mailing_top_news": "daily_mailing_top_news",
     "daily_mailing_health": None,
