@@ -63,8 +63,10 @@ def test_screen_table_covers_all_routes():
     admin = {"admin/market-share", "admin/msd-pipeline", "admin/competitor-trends", "admin/reimbursement",
              "admin/reimbursement-pipeline", "admin/daily-mailing-kanban", "admin/home-brands",
              "admin/service-requests", "admin/agent-tasks"}
+    user |= {"stakeholder-signals", "stakeholder-signals/workbench"}                    # T8 Stakeholder Signals
+    admin |= {"admin/stakeholder-people", "admin/stakeholder-audit"}
     assert user <= names and admin <= names and "auth-gates" in names
-    assert len(names) == len(smoke.SCREENS) == 22
+    assert len(names) == len(smoke.SCREENS) == 26
     assert sum(len(s.checks) for s in smoke.SCREENS) >= 44           # 계획 완료 기준(T4): 기대 조건 44개 이상
     assert all(s.role in (None, "user", "admin") for s in smoke.SCREENS)
 
@@ -99,6 +101,15 @@ def _ok_routes() -> dict:
     routes["/api/reimbursement/meetings"] = (200, MEETINGS_OK)
     routes["/api/home/media-intelligence"] = (200, MEDIA_OK)
     routes["/api/admin/daily-mailing/kanban"] = (200, {"runs": [], "articles": []})
+    # T8 Stakeholder: 키 존재 체크의 정상 본문 (빈 저장소 모양 — 데이터 나이는 신선도가 본다)
+    routes["/api/stakeholder/overview"] = (200, {"kpi": {}, "integrity": {}, "topics": []})
+    for p in ("/api/stakeholder/statements?limit=1", "/api/stakeholder/statements?topic=price_reform&grade=A&limit=1",
+              "/api/stakeholder/events", "/api/stakeholder/people", "/api/admin/stakeholder/source-domains",
+              "/api/stakeholder/runs?kind=audit&limit=1", "/api/stakeholder/sources",
+              "/api/stakeholder/runs?kind=monitoring&limit=1"):
+        routes[p] = (200, {"items": []})
+    routes["/api/admin/stakeholder/proposals"] = (200, {"proposals": []})
+    routes["/api/admin/stakeholder/integrity"] = (200, {"summary": {}})
     return routes
 
 
@@ -106,14 +117,14 @@ _GATED_ANON = ("/api/auth/me", "/api/competitor-trends", "/api/admin/")     # �
 
 
 def _gated_opener(routes: dict, *, anon_gate: bool = True, admin_gate: bool = True):
-    """실서버의 권한 게이트를 흉내내는 가짜 서버: 토큰 없이 보호 라우트 → 401, user 토큰으로 /api/admin/* → 403.
+    """실서버의 권한 게이트를 흉내내는 가짜 서버: 토큰 없이 보호 라우트 → 401, user 토큰으로 /api/admin/*·/api/agent/* → 403.
     게이트를 끄면(anon_gate/admin_gate=False) '인증이 뚫린 서버' 가 된다 — 스모크가 그것을 잡는지 본다."""
     def opener(req, timeout=10):
         path = req.full_url.split("http://test", 1)[1]
         auth = req.get_header("Authorization") or ""
         if anon_gate and not auth and path.startswith(_GATED_ANON):
             raise urllib.error.HTTPError(req.full_url, 401, "unauthorized", {}, io.BytesIO(b'{"error":"missing token"}'))
-        if admin_gate and path.startswith("/api/admin/") and auth == "Bearer user-token":
+        if admin_gate and path.startswith(("/api/admin/", "/api/agent/")) and auth == "Bearer user-token":
             raise urllib.error.HTTPError(req.full_url, 403, "forbidden", {}, io.BytesIO(b'{"error":"admin required"}'))
         return _fake_opener(routes)(req, timeout)
     return opener
@@ -150,7 +161,9 @@ def test_run_smoke_auth_gate_failure_when_user_token_passes_admin_route():
     res = smoke.run_smoke("http://test", _token_for, opener=_gated_opener(_ok_routes(), admin_gate=False))
     assert res["ok"] is False
     assert res["errors"] == ["auth-gates /api/admin/agent-tasks → HTTP 200 (기대 403)",
-                             "auth-gates /api/admin/users → HTTP 200 (기대 403)"]
+                             "auth-gates /api/admin/users → HTTP 200 (기대 403)",
+                             "auth-gates /api/admin/stakeholder/proposals → HTTP 200 (기대 403)",
+                             "auth-gates /api/agent/stakeholder/registry → HTTP 200 (기대 403)"]
 
 
 def test_run_smoke_skips_when_token_unavailable():
@@ -226,6 +239,12 @@ def test_smoke_against_flask_test_client(monkeypatch, tmp_path):
                         lambda limit_runs=20, purge=True: _dm_storage.load_admin_kanban(tmp_path / "dm.db", limit_runs=limit_runs, purge=purge))
     monkeypatch.setattr(_gov, "CACHE_DIR", tmp_path)        # 두 Home 라우트의 일자 캐시는 git 추적 디렉터리 — 작업트리에 쓰지 않는다
     monkeypatch.setattr(_clouds, "CACHE_DIR", tmp_path)
+    # Stakeholder Blueprint 는 import 시점에 기본 DB 경로(실제 drug_prices.db)를 잡는다 — store.connect 를 임시 DB 로 돌려
+    # 실제 DB 에 sv_* DDL 을 시도하지 않게 한다(conftest 의 읽기 전용 가드면 500 이 되고, 가드가 없으면 쓰기다).
+    from agents.stakeholder import store as _sv_store
+    _real_sv_connect, _sv_db = _sv_store.connect, tmp_path / "sv.db"
+    monkeypatch.setattr(_sv_store, "connect", lambda db_path=None: _real_sv_connect(_sv_db))
+    monkeypatch.setattr(_sv_store, "_ENSURED", set())
     opener = _flask_opener(s.app)
     res = smoke.run_smoke("http://test", smoke.mint_token_factory("http://test", opener=opener), opener=opener)
     assert sqlite3.connect(api_db).execute("SELECT COUNT(*) FROM search_log").fetchone()[0] == 0
@@ -233,6 +252,7 @@ def test_smoke_against_flask_test_client(monkeypatch, tmp_path):
     assert res["counts"]["skipped"] == 0                               # 같은 프로세스 → 비밀 공유 → 토큰 발급됨
     assert res["counts"]["passed"] + res["counts"]["failed"] == total
     assert not [e for e in res["errors"] if e.startswith(("login ", "auth-gates ", "admin/agent-tasks "))]
+    assert not [e for e in res["errors"] if "stakeholder" in e], res["errors"]   # 빈 sv_* 저장소도 화면 계약(키)은 지킨다
     assert not [e for e in res["errors"] if "HTTP 401" in e or "HTTP 403" in e]   # 역할 매핑이 맞다
     assert all(" → " in e for e in res["errors"])
     print("\nSMOKE(stub DB):", json.dumps(res, ensure_ascii=False))

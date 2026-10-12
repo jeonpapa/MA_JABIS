@@ -18,7 +18,7 @@ from agents.agent_tasks import runbooks
 FRESHNESS_HINTS = (
     "domestic_price_catchup", "exchange_rate_refresh", "exchange_rate_recompute", "foreign_approval_sync",
     "reimbursement_xnational_sync", "reimb_data_sync", "policy_intel_analysis_sync", "news_daily_fetch",
-    "competitor_trend_promote", "access_insight_fresh_signals", "nhis_negotiation_sync",
+    "competitor_trend_promote", "access_insight_fresh_signals", "nhis_negotiation_sync", "stakeholder_data_sync",
 )
 # 동기 런북 → scheduler 의 guarded 잡 함수 (잡 = 런북, 코드 경로 하나)
 SYNC_RUNBOOK_JOBS = {
@@ -29,6 +29,7 @@ SYNC_RUNBOOK_JOBS = {
     "nhis_negotiation_sync": "nhis_negotiation_sync_job",
     "reimb_data_sync": "reimb_data_sync_job",
     "policy_intel_analysis_sync": "policy_analysis_sync_job",
+    "stakeholder_data_sync": "stakeholder_data_sync_job",
 }
 # 분리 런북 → `python scheduler.py <flag>` (600초 디스패처 타임아웃을 넘길 수 있는 크롤)
 DETACHED_RUNBOOK_FLAGS = {
@@ -44,7 +45,7 @@ def test_registry_lists_known_runbooks():
         "domestic_price_catchup", "daily_mailing_dispatch", "daily_mailing_top_news",
         "exchange_rate_refresh", "exchange_rate_recompute", "foreign_approval_sync", "reimbursement_xnational_sync",
         "news_daily_fetch", "news_weekly_crawl", "competitor_trend_promote", "nhis_negotiation_sync",
-        "access_insight_fresh_signals", "reimb_data_sync", "policy_intel_analysis_sync"}
+        "access_insight_fresh_signals", "reimb_data_sync", "policy_intel_analysis_sync", "stakeholder_data_sync"}
 
 
 def test_every_runbook_hint_in_signals_and_freshness_is_registered():
