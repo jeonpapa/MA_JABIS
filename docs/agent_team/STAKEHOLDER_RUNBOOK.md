@@ -2,7 +2,7 @@
 
 > 대상: MA 리드 + 운영자. 무엇이 자동으로 돌고, 실패하면 어디에 드러나며, 무엇을 어떻게 고치는지.
 > 외부 에이전트 계약: `agents/ingest/STAKEHOLDER_SYNC_README.md` · 규칙: `agents/rules/stakeholder_verbatim_rules.md` · API: `docs/api_contract.md` §11.
-> 기준 코드: sync(`agents/stakeholder/sync.py`)·승인(`approval.py`)·API(`api/stakeholder_routes.py`)는 `main` 기준. §2 의 잡·신선도·스모크 행은 계획 Task 8 규격이다(머지 후 `scheduler.py`·`freshness.py` 와 대조).
+> 기준 코드: sync(`agents/stakeholder/sync.py`)·승인(`approval.py`)·API(`api/stakeholder_routes.py`)·잡/신선도/스모크(`scheduler.py`·`agents/agent_tasks/freshness.py`·`scripts/smoke.py`)는 `main` 기준 — §2 는 2026-10-12 머지 코드와 대조한 값이다(신선도 도메인 5종).
 
 ---
 
@@ -31,9 +31,10 @@ sync 는 결정 테이블(`sv_person`·`sv_person_role_history`·`sv_source_doma
 | 신선도 `stakeholder_audit_run` | 최신 `sv_audit_run.run_date` ≥ 오늘−3일 | 감사 런 정체 | ops_incident, 런북 `stakeholder_data_sync` |
 | 신선도 `stakeholder_proposal_backlog` | 7일 넘게 `needs_review`/`needs_evidence` 인 제안 0건 | **사람 몫** — 승인·반려 대기 | improvement 과제 `…:backlog` 1건 (런북 없음) |
 | 신선도 `stakeholder_source_integrity` | `integrity_status IN ('mismatch','missing')` 인 출처 0건 | 원문 파일이 manifest 해시와 다르거나 없음 | ops_incident (priority 3), 런북 `stakeholder_data_sync` |
+| 신선도 `stakeholder_quote_provenance` | `sv_quote.locator_match='none'` 0건 | 정본 인용문이 근거 원문(locator 줄 범위)에 글자 그대로 없음 — **외부 에이전트 몫**(정본 MD 수정 → 재sync 로 해소) | improvement 과제 1건(런북 없음 — 재sync 무효). 화면은 정상, 해당 인용만 "원문 불일치" |
 | 스모크 | 매일 07:50 (`platform_smoke`) | 화면 4개 `stakeholder-signals`, `stakeholder-signals/workbench`, `admin/stakeholder-people`, `admin/stakeholder-audit` + auth-gates 2(`/api/admin/stakeholder/proposals`·`/api/agent/stakeholder/registry` 가 user 토큰에 403) | 실패 체크 집합당 과제 1건 |
 
-정상 상태에서는 과제가 0건/일이다. 예외: 제안이 7일 넘게 쌓이면 backlog 1건이 정상적으로 생긴다(사람이 처리하면 닫힌다).
+정상 상태에서는 ops 과제가 0건/일이다(일일 예산 ≤3건 안). 예외 둘 다 improvement(사람·외부 에이전트 몫)이다: 제안이 7일 넘게 쌓이면 backlog 1건, 정본 인용이 원문과 어긋나면 `stakeholder_quote_provenance` 1건 — **2026-10-12 현재 정본 296행(홍승권) 1건이 열려 있다**(§4-5, 상류 수정 시 자동으로 닫힌다). 토큰 없이 배포한 날은 `stakeholder_data_sync:config` 1건이 더 생긴다.
 
 ---
 
@@ -139,7 +140,7 @@ GitHub 5xx·네트워크·레이트리밋·`stakeholder sync already running (lo
 | `python -m agents.stakeholder.sync --source-dir <디렉터리> [--root R] [--db D]` | 로컬 디렉터리를 원격으로 간주해 1회 import — 토큰 없이 최초 시딩/검증용 (임시 root·DB 를 주면 운영 데이터를 건드리지 않는다) |
 | `... --today YYYY-MM-DD` | `apply_scheduled` 기준일 지정 (테스트/재현용) |
 | `python scripts/stakeholder_verify_import.py --root /app/data/stakeholder --db /app/data/db/drug_prices.db [--source-dir S] [--json]` | 손실 없음 검증 (T10) — `failures: []` 가 정상 |
-| `python scheduler.py --freshness-now` | 신선도 즉시 판정 — `stakeholder_*` 4행 확인 |
+| `python scheduler.py --freshness-now` | 신선도 즉시 판정 — `stakeholder_*` 5행 확인(`monitoring_run`·`audit_run`·`proposal_backlog`·`source_integrity`·`quote_provenance`) |
 | `python scripts/smoke.py --base <URL> --login-email <admin>` | 화면 스모크 |
 | `curl -H "Authorization: Bearer <admin 토큰>" -X POST .../api/admin/stakeholder/sync` | 화면 없이 수동 sync (admin). 실패 시 409 `SYNC_RUNNING` / 503 `SYNC_CONFIG` / 502 `SYNC_FAILED` |
 
@@ -185,7 +186,7 @@ CLI 출력: `stakeholder sync: ok=… listed=… downloaded=… unchanged=… re
 3. **첫 sync (1회)**: `fly ssh console -a ma-ai-dossier -C "python -m agents.stakeholder.sync --now"` → 전량(≈25MB) 수신 + import. 토큰이 아직 없으면 `fly ssh sftp shell` 로 소스를 `/app/data/stakeholder_import/` 에 올리고 `... sync --source-dir /app/data/stakeholder_import` 후 업로드 디렉터리를 삭제.
 4. **검증**: `fly ssh console -a ma-ai-dossier -C "python scripts/stakeholder_verify_import.py --root /app/data/stakeholder --db /app/data/db/drug_prices.db --json"` → `failures: []`.
 5. **에이전트 계정 발급**: `STAKEHOLDER_SYNC_README.md` §5 절차(`role=agent` 전용 계정) → 외부 에이전트 VPS `.env` 에 설정 → 에이전트가 07:00 실행 전에 `GET /api/agent/stakeholder/registry` 를 pull 하도록 전환(cutover).
-6. **확인**: 화면 4개 열람, `python scheduler.py --freshness-now` 의 `stakeholder_*` 행, 스모크 통과. 정본 296행의 "원문 불일치" 1건은 상류 수정 전까지 정상.
+6. **확인**: 화면 4개 열람, `python scheduler.py --freshness-now` 의 `stakeholder_*` 5행(`quote_provenance` 는 상류 296행 수정 전까지 STALE·improvement 1건이 정상), 스모크 통과. 정본 296행의 "원문 불일치" 1건은 상류 수정 전까지 정상.
 
 ---
 
