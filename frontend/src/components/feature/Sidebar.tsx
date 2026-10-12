@@ -32,6 +32,7 @@ export const allNavItems: NavItem[] = [
   { path: '/reimbursement-status', label: 'Reimbursement Status', icon: 'ri-article-line' },
   { path: '/policy-intelligence', label: 'Policy Intelligence', icon: 'ri-government-line' },
   { path: '/analog-search', label: 'Listing Analog Search', icon: 'ri-search-eye-line' },
+  { path: '/stakeholder-signals', label: 'Stakeholder Signals', icon: 'ri-user-voice-line' },
   { path: '/my-requests', label: '내 개선 요청', icon: 'ri-feedback-line' },
 ];
 
