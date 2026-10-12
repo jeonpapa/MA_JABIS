@@ -9,6 +9,8 @@ import DailyMailingPage from '@/pages/daily-mailing/page';
 import ReimbursementStatusPage from '@/pages/reimbursement-status/page';
 import PolicyIntelligencePage from '@/pages/policy-intelligence/page';
 import AnalogSearchPage from '@/pages/analog-search/page';
+import StakeholderSignalsPage from '@/pages/stakeholder-signals/page';
+import StakeholderWorkbenchPage from '@/pages/stakeholder-signals/workbench';
 import MyRequestsPage from '@/pages/service-requests/mine';
 import LoginPage from '@/pages/login/page';
 import NotFound from '@/pages/NotFound';
@@ -35,6 +37,8 @@ const routes: RouteObject[] = [
   { path: '/reimbursement-status', element: <ReimbursementStatusPage /> },
   { path: '/policy-intelligence', element: <PolicyIntelligencePage /> },
   { path: '/analog-search', element: <AnalogSearchPage /> },
+  { path: '/stakeholder-signals', element: <StakeholderSignalsPage /> },
+  { path: '/stakeholder-signals/workbench', element: <StakeholderWorkbenchPage /> },
   { path: '/my-requests', element: <MyRequestsPage /> },
   { path: '/admin/market-share', element: <AdminMarketSharePage /> },
   { path: '/admin/msd-pipeline', element: <AdminMsdPipelinePage /> },
