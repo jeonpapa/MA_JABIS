@@ -49,6 +49,11 @@ db = DrugPriceDB(BASE_DIR / "data" / "db" / "drug_prices.db")
 foreign_agent = ForeignPriceAgent(BASE_DIR)
 users_db = UsersDB(BASE_DIR / "data" / "db" / "users.db")
 app.register_blueprint(build_auth_blueprint(users_db))
+try:  # Stakeholder & Verbatim (sv_*) — 모듈 미탑재 시 해당 엔드포인트만 비활성 (service_requests 선례)
+    from api.stakeholder_routes import build_stakeholder_blueprint
+    app.register_blueprint(build_stakeholder_blueprint())
+except Exception as _sv_e:  # pragma: no cover
+    logging.getLogger(__name__).warning("stakeholder 엔드포인트 비활성 (%s)", _sv_e)
 
 # 플랫폼 스모크(scripts/smoke.py, 매일 07:50)가 모든 요청에 붙이는 헤더. 스모크의 목적은 읽기 판정(상태·JSON)이지 데이터 생성이
 # 아니다 — GET 라우트의 부수효과(검색 로그 INSERT·캐시 미스 동기 크롤)만 이 요청에서 건너뛴다(P1.5 fix C).
