@@ -64,3 +64,6 @@ data/daily_mailing/
 
 # Gmail OAuth 토큰 등 로컬 시크릿 (scripts/gmail_oauth_setup.py 산출물) — 절대 커밋 금지
 data/secrets/
+
+# Stakeholder & Verbatim 런타임 데이터 — 언론 원문(HTML/TXT)·인물 사진·sync 상태. 저작권/개인정보상 볼륨 전용, git 금지
+data/stakeholder/

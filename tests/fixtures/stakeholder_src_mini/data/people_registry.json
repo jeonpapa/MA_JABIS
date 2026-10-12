@@ -1,0 +1,65 @@
+{
+  "schema_version": "1.0",
+  "updated_at": "2026-10-08T00:00:00+09:00",
+  "people": [
+    {
+      "person_id": "P-FAKE-GOV-HONG",
+      "name": "홍길동",
+      "organization": "가상부",
+      "organization_code": "FKGOV",
+      "department": "가상과",
+      "role": "과장",
+      "status": "active",
+      "verification_status": "verified",
+      "effective_from": "2026-10-09",
+      "aliases": [],
+      "topic_tags": [
+        "약가",
+        "건강보험 재정"
+      ],
+      "photo_url": null,
+      "photo_path": null,
+      "created_at": "2026-10-08T00:00:00+09:00",
+      "updated_at": "2026-10-08T00:00:00+09:00"
+    },
+    {
+      "person_id": "P-FAKE-INST-KIM",
+      "name": "김가상",
+      "organization": "가상원",
+      "organization_code": "FKINST",
+      "department": "가상평가실",
+      "role": "실장",
+      "status": "active",
+      "verification_status": "verified",
+      "effective_from": "2026-10-09",
+      "aliases": [],
+      "topic_tags": [
+        "RWE",
+        "성과평가"
+      ],
+      "photo_url": "https://cdn.example-news.test/photo/fake_kim.jpg",
+      "photo_path": null,
+      "created_at": "2026-10-08T00:00:00+09:00",
+      "updated_at": "2026-10-08T00:00:00+09:00"
+    },
+    {
+      "person_id": "P-FAKE-INST-PARK",
+      "name": "박가상",
+      "organization": "가상원",
+      "organization_code": "FKINST",
+      "department": "가상관리실",
+      "role": "부장 후보",
+      "status": "active",
+      "verification_status": "candidate",
+      "effective_from": "2026-10-09",
+      "aliases": [],
+      "topic_tags": [
+        "신약 접근성"
+      ],
+      "photo_url": null,
+      "photo_path": null,
+      "created_at": "2026-10-08T00:00:00+09:00",
+      "updated_at": "2026-10-08T00:00:00+09:00"
+    }
+  ]
+}

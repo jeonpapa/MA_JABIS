@@ -49,6 +49,7 @@ MSD Korea MA 팀의 국내·해외 약가·허가·HTA 모니터링 자동화 �
 | Policy Intelligence 큐레이션 (헤르메스 기준) | `agents/rules/policy_intelligence_curation_rules.md` |
 | Competitor Trends (주 1회 자동 크롤 + LLM 필터) | `agents/rules/competitor_trends_rules.md` |
 | Review (LLM 다수결) | `agents/rules/review_agent_rules.md` |
+| Stakeholder Verbatim (인물·발언·감사) | `agents/rules/stakeholder_verbatim_rules.md` |
 
 ---
 

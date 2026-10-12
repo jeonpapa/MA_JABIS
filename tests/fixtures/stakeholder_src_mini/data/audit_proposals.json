@@ -1,0 +1,170 @@
+{
+  "schema_version": "1.0",
+  "updated_at": "2026-10-10T07:51:55+09:00",
+  "proposals": [
+    {
+      "proposal_id": "AUD-F1A000000001",
+      "proposal_type": "new_person",
+      "dedupe_key": "new_person:최가상:가상국회:위원",
+      "priority": "high",
+      "summary": "가상 약가 토론에서 직접 발언한 최가상 위원을 신규 모니터링 후보로 제안",
+      "rationale": "합성 데이터: 공식 역할 확인(E3) 1건과 매체 보도(E1) 2건으로 구성된 신규 인물 제안.",
+      "proposed_change": {
+        "name": "최가상",
+        "organization": "가상국회",
+        "department": "가상위원회",
+        "role": "위원",
+        "aliases": [],
+        "topic_tags": [
+          "약가",
+          "신약 접근성"
+        ]
+      },
+      "evidence": [
+        {
+          "url": "https://gov.example-news.test/profile/choi",
+          "publisher": "가상정부",
+          "source_class": "official",
+          "evidence_level": "E3",
+          "publication_date": null,
+          "effective_date": null,
+          "quoted_text": "이름: 최가상 / 소속: 가상위원회 / 직위: 위원",
+          "locator": "프로필 표 1행",
+          "retrieved_at": "2026-10-10T07:45:00+09:00",
+          "content_hash": "0000000000000000000000000000000000000000000000000000000000000008",
+          "independence_group": "FAKE-official-role"
+        },
+        {
+          "url": "https://example-news.test/news/1001",
+          "publisher": "가상뉴스",
+          "source_class": "healthcare_trade",
+          "evidence_level": "E1",
+          "publication_date": "2026-10-08",
+          "effective_date": "2026-10-08",
+          "quoted_text": "가상의 첫 번째 발언 문장입니다",
+          "locator": "본문 2문단",
+          "retrieved_at": "2026-10-10T07:45:00+09:00",
+          "content_hash": "0000000000000000000000000000000000000000000000000000000000000004",
+          "independence_group": "FAKE-NEWS-1001"
+        },
+        {
+          "url": "https://pharm.example-news.test/news/2002",
+          "publisher": "가상팜",
+          "source_class": "healthcare_trade",
+          "evidence_level": "E1",
+          "publication_date": "2026-10-08",
+          "effective_date": "2026-10-08",
+          "quoted_text": "가상의 두 번째 발언 문장입니다",
+          "locator": "본문 3문단",
+          "retrieved_at": "2026-10-10T07:45:00+09:00",
+          "content_hash": "0000000000000000000000000000000000000000000000000000000000000005",
+          "independence_group": "FAKE-PHARM-2002"
+        }
+      ],
+      "conflicts": [
+        "두 매체는 같은 행사를 취재했으므로 사건 독립성은 없고 보도 독립성만 있음"
+      ],
+      "audit_run_id": "coverage-audit-2026-10-10",
+      "created_by": "Monitoring Coverage Auditor",
+      "status": "needs_review",
+      "effective_from": null,
+      "reviewer": null,
+      "reviewed_at": null,
+      "decision_reason": null,
+      "created_at": "2026-10-10T07:50:07+09:00",
+      "updated_at": "2026-10-10T07:50:07+09:00"
+    },
+    {
+      "proposal_id": "AUD-F1A000000002",
+      "proposal_type": "role_change",
+      "dedupe_key": "role_change:P-FAKE-INST-PARK:가상원:가상관리실:부장:2026-07-01",
+      "priority": "high",
+      "summary": "박가상 후보 직책을 가상원 가상관리실 부장으로 공식 확인하여 검증 전환 제안",
+      "rationale": "합성 데이터: 공식 인사 보도자료(E3) 1건이 직책·부서·발효일을 직접 확인한다.",
+      "proposed_change": {
+        "person_id": "P-FAKE-INST-PARK",
+        "organization": "가상원",
+        "department": "가상관리실",
+        "role": "부장"
+      },
+      "evidence": [
+        {
+          "url": "https://gov.example-news.test/press/personnel-1",
+          "publisher": "가상원",
+          "source_class": "official",
+          "evidence_level": "E3",
+          "publication_date": "2026-06-30",
+          "effective_date": "2026-07-01",
+          "quoted_text": "가상관리실장 박가상",
+          "locator": "보도자료 인사 명단",
+          "retrieved_at": "2026-10-10T07:45:00+09:00",
+          "content_hash": "0000000000000000000000000000000000000000000000000000000000000003",
+          "independence_group": "FAKE-official-personnel"
+        }
+      ],
+      "conflicts": [],
+      "audit_run_id": "coverage-audit-2026-10-10",
+      "created_by": "Monitoring Coverage Auditor",
+      "status": "needs_review",
+      "effective_from": null,
+      "reviewer": null,
+      "reviewed_at": null,
+      "decision_reason": null,
+      "created_at": "2026-10-10T07:51:55+09:00",
+      "updated_at": "2026-10-10T07:51:55+09:00"
+    },
+    {
+      "proposal_id": "AUD-F1A000000003",
+      "proposal_type": "source_expansion",
+      "dedupe_key": "source_expansion:newsfake.example-news.test:top_tier_general",
+      "priority": "normal",
+      "summary": "약가 관련 보도를 연속 게재한 가상경제를 출처 확대 후보로 제안",
+      "rationale": "합성 데이터: 승인 레지스트리에 없는 매체에서 원문 2건과 발행자 식별을 확인했다.",
+      "proposed_change": {
+        "name": "가상경제",
+        "domain": "newsfake.example-news.test",
+        "source_group": "top_tier_general"
+      },
+      "evidence": [
+        {
+          "url": "https://newsfake.example-news.test/article/1",
+          "publisher": "가상경제",
+          "source_class": "off_list_media",
+          "evidence_level": "E1",
+          "publication_date": "2026-10-07",
+          "effective_date": "2026-10-07",
+          "quoted_text": "가상의 첫 번째 기사 문장입니다",
+          "locator": "기사 본문 첫 문단",
+          "retrieved_at": "2026-10-10T07:45:00+09:00",
+          "content_hash": "0000000000000000000000000000000000000000000000000000000000000001",
+          "independence_group": "FAKE-ECON-1"
+        },
+        {
+          "url": "https://newsfake.example-news.test/article/2",
+          "publisher": "가상경제",
+          "source_class": "off_list_media",
+          "evidence_level": "E1",
+          "publication_date": "2026-10-09",
+          "effective_date": "2026-10-08",
+          "quoted_text": "가상의 두 번째 기사 문장입니다",
+          "locator": "기사 본문 2문단",
+          "retrieved_at": "2026-10-10T07:45:00+09:00",
+          "content_hash": "0000000000000000000000000000000000000000000000000000000000000001",
+          "independence_group": "FAKE-ECON-2"
+        }
+      ],
+      "conflicts": [
+        "top_tier_general 분류 적합성은 사람 검토 필요"
+      ],
+      "audit_run_id": "coverage-audit-2026-10-10",
+      "created_by": "Monitoring Coverage Auditor",
+      "status": "needs_review",
+      "effective_from": null,
+      "reviewer": null,
+      "reviewed_at": null,
+      "decision_reason": null,
+      "created_at": "2026-10-10T07:50:25+09:00",
+      "updated_at": "2026-10-10T07:50:25+09:00"
+    }
+  ]
+}

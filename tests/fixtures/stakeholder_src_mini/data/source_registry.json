@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0",
+  "updated_at": "2026-10-08T00:00:00+09:00",
+  "sources": [
+    {
+      "source_id": "SRC-FAKE-GOV",
+      "name": "가상정부",
+      "domain": "gov.example-news.test",
+      "source_group": "official",
+      "status": "approved",
+      "effective_from": "2026-10-09"
+    },
+    {
+      "source_id": "SRC-FAKE-GENERAL",
+      "name": "가상종합일보",
+      "domain": "general.example-news.test",
+      "source_group": "top_tier_general",
+      "status": "approved",
+      "effective_from": "2026-10-09"
+    },
+    {
+      "source_id": "SRC-FAKE-TRADE-A",
+      "name": "가상뉴스",
+      "domain": "example-news.test",
+      "source_group": "healthcare_trade",
+      "status": "approved",
+      "effective_from": "2026-10-09"
+    },
+    {
+      "source_id": "SRC-FAKE-TRADE-B",
+      "name": "가상팜",
+      "domain": "pharm.example-news.test",
+      "source_group": "healthcare_trade",
+      "status": "approved",
+      "effective_from": "2026-10-09"
+    }
+  ]
+}

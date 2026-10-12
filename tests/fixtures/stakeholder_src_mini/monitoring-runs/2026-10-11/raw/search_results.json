@@ -1,0 +1,38 @@
+{
+  "retrieved_at": "2026-10-11T07:01:49+09:00",
+  "window_start_kst": "2026-10-10T07:00:46+09:00",
+  "window_end_kst": "2026-10-11T07:00:46+09:00",
+  "logs": [
+    {
+      "source_group": "official",
+      "domain": "gov.example-news.test",
+      "query": "site:gov.example-news.test (\"홍길동\" OR \"김가상\" OR \"박가상\") (약가 OR 건강보험 OR RWE) after:2026-10-08 before:2026-10-11",
+      "method": "site search (fixture)",
+      "searched_at_kst": "2026-10-10T07:01:49+09:00",
+      "result_count_seen": 0,
+      "likely_relevant_result_count": 0,
+      "opened_urls": [],
+      "new_quote_count": 0,
+      "status": "checked",
+      "attempts": [
+        "checked"
+      ]
+    },
+    {
+      "source_group": "top_tier_general",
+      "domain": "general.example-news.test",
+      "query": "site:general.example-news.test (\"홍길동\" OR \"김가상\" OR \"박가상\") (약가 OR 건강보험 OR RWE) after:2026-10-08 before:2026-10-11",
+      "method": "site search (fixture)",
+      "searched_at_kst": "2026-10-10T07:01:49+09:00",
+      "result_count_seen": 0,
+      "likely_relevant_result_count": 0,
+      "opened_urls": [],
+      "new_quote_count": 0,
+      "status": "checked",
+      "attempts": [
+        "checked"
+      ]
+    }
+  ],
+  "candidates": []
+}

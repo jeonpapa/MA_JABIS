@@ -1,0 +1,264 @@
+{
+  "schema_version": "1.1",
+  "run_id": "stakeholder-daily-2026-10-11",
+  "run_date_kst": "2026-10-11",
+  "executed_at_kst": "2026-10-11T07:02:50+09:00",
+  "window_start_kst": "2026-10-10T07:00:46+09:00",
+  "window_end_kst": "2026-10-11T07:00:46+09:00",
+  "lookback_mode": "daily_24h_with_late_discovery_overlap",
+  "run_status": "no_change",
+  "scope": {
+    "scope_snapshot_id": "a03961af2712476ba8f2c1c767dd6e7738f315a04f8a22850a4956330fac2794",
+    "people_registry_updated_at": "2026-10-08T00:00:00+09:00",
+    "source_registry_updated_at": "2026-10-08T00:00:00+09:00",
+    "people_registry_sha256": "fc91c586aa1795ee73941c396ab12831925cdaa500f8f277093362c6cbaa24cd",
+    "source_registry_sha256": "6db0911cf9190a6e71889c648a5eb67a6eaa5dae9f5570de7457b28da8698cc6",
+    "active_people": [
+      {
+        "person_id": "P-FAKE-GOV-HONG",
+        "name": "홍길동",
+        "organization": "가상부",
+        "organization_code": "FKGOV",
+        "department": "가상과",
+        "role": "과장",
+        "status": "active",
+        "verification_status": "verified",
+        "effective_from": "2026-10-09",
+        "aliases": [],
+        "topic_tags": [
+          "약가",
+          "건강보험 재정"
+        ],
+        "photo_url": null,
+        "photo_path": null,
+        "created_at": "2026-10-08T00:00:00+09:00",
+        "updated_at": "2026-10-08T00:00:00+09:00"
+      },
+      {
+        "person_id": "P-FAKE-INST-KIM",
+        "name": "김가상",
+        "organization": "가상원",
+        "organization_code": "FKINST",
+        "department": "가상평가실",
+        "role": "실장",
+        "status": "active",
+        "verification_status": "verified",
+        "effective_from": "2026-10-09",
+        "aliases": [],
+        "topic_tags": [
+          "RWE",
+          "성과평가"
+        ],
+        "photo_url": "https://cdn.example-news.test/photo/fake_kim.jpg",
+        "photo_path": null,
+        "created_at": "2026-10-08T00:00:00+09:00",
+        "updated_at": "2026-10-08T00:00:00+09:00"
+      },
+      {
+        "person_id": "P-FAKE-INST-PARK",
+        "name": "박가상",
+        "organization": "가상원",
+        "organization_code": "FKINST",
+        "department": "가상관리실",
+        "role": "부장 후보",
+        "status": "active",
+        "verification_status": "candidate",
+        "effective_from": "2026-10-09",
+        "aliases": [],
+        "topic_tags": [
+          "신약 접근성"
+        ],
+        "photo_url": null,
+        "photo_path": null,
+        "created_at": "2026-10-08T00:00:00+09:00",
+        "updated_at": "2026-10-08T00:00:00+09:00"
+      }
+    ],
+    "approved_sources": [
+      {
+        "source_id": "SRC-FAKE-GOV",
+        "name": "가상정부",
+        "domain": "gov.example-news.test",
+        "source_group": "official",
+        "status": "approved",
+        "effective_from": "2026-10-09"
+      },
+      {
+        "source_id": "SRC-FAKE-GENERAL",
+        "name": "가상종합일보",
+        "domain": "general.example-news.test",
+        "source_group": "top_tier_general",
+        "status": "approved",
+        "effective_from": "2026-10-09"
+      },
+      {
+        "source_id": "SRC-FAKE-TRADE-A",
+        "name": "가상뉴스",
+        "domain": "example-news.test",
+        "source_group": "healthcare_trade",
+        "status": "approved",
+        "effective_from": "2026-10-09"
+      },
+      {
+        "source_id": "SRC-FAKE-TRADE-B",
+        "name": "가상팜",
+        "domain": "pharm.example-news.test",
+        "source_group": "healthcare_trade",
+        "status": "approved",
+        "effective_from": "2026-10-09"
+      }
+    ],
+    "existing_context_checked": true,
+    "previous_daily_run": "stakeholder-daily-2026-10-10"
+  },
+  "search_summary": {
+    "active_people_searched": 3,
+    "approved_domains_searched": 4,
+    "logical_queries": 4,
+    "official_domains_checked": 1,
+    "top_tier_general_domains_checked": 1,
+    "healthcare_trade_domains_checked": 2,
+    "search_result_items_seen": 0,
+    "likely_relevant_candidates": 0,
+    "original_pages_opened": 0,
+    "new_independent_quotes": 0,
+    "duplicates_removed": 0
+  },
+  "events": [],
+  "statements": [],
+  "role_only_records": [],
+  "candidate_updates": [],
+  "source_records": [
+    {
+      "source_record_id": "SEARCH-AGGREGATE-2026-10-11",
+      "title": "승인 도메인 직접검색 원응답 묶음(합성)",
+      "local_path": "monitoring-runs/2026-10-11/raw/search_results.json",
+      "method": "fixture",
+      "access_class": "public",
+      "evidence_level": "search_log_only",
+      "retrieved_at": "2026-10-11T07:01:49+09:00",
+      "content_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "limitations": [
+        "검색 원응답 및 질의 로그이며 기사 본문 증거가 아님"
+      ]
+    }
+  ],
+  "search_log": [
+    {
+      "source_group": "official",
+      "domain": "gov.example-news.test",
+      "query": "site:gov.example-news.test (\"홍길동\" OR \"김가상\" OR \"박가상\") (약가 OR 건강보험 OR RWE) after:2026-10-08 before:2026-10-11",
+      "method": "site search (fixture)",
+      "searched_at_kst": "2026-10-10T07:01:49+09:00",
+      "result_count_seen": 0,
+      "likely_relevant_result_count": 0,
+      "opened_urls": [],
+      "new_quote_count": 0,
+      "status": "checked",
+      "attempts": [
+        "checked"
+      ]
+    },
+    {
+      "source_group": "top_tier_general",
+      "domain": "general.example-news.test",
+      "query": "site:general.example-news.test (\"홍길동\" OR \"김가상\" OR \"박가상\") (약가 OR 건강보험 OR RWE) after:2026-10-08 before:2026-10-11",
+      "method": "site search (fixture)",
+      "searched_at_kst": "2026-10-10T07:01:49+09:00",
+      "result_count_seen": 0,
+      "likely_relevant_result_count": 0,
+      "opened_urls": [],
+      "new_quote_count": 0,
+      "status": "checked",
+      "attempts": [
+        "checked"
+      ]
+    }
+  ],
+  "coverage_matrix": [
+    {
+      "event_id": null,
+      "source_group": "official",
+      "source_id": "SRC-FAKE-GOV",
+      "domain": "gov.example-news.test",
+      "status": "checked_no_result",
+      "reason": "합성 픽스처: 관련 원문 후보 없음"
+    },
+    {
+      "event_id": null,
+      "source_group": "top_tier_general",
+      "source_id": "SRC-FAKE-GENERAL",
+      "domain": "general.example-news.test",
+      "status": "checked_no_result",
+      "reason": "합성 픽스처: 관련 원문 후보 없음"
+    },
+    {
+      "event_id": null,
+      "source_group": "healthcare_trade",
+      "source_id": "SRC-FAKE-TRADE-A",
+      "domain": "example-news.test",
+      "status": "checked_no_result",
+      "reason": "합성 픽스처: 관련 원문 후보 없음"
+    },
+    {
+      "event_id": null,
+      "source_group": "healthcare_trade",
+      "source_id": "SRC-FAKE-TRADE-B",
+      "domain": "pharm.example-news.test",
+      "status": "checked_no_result",
+      "reason": "합성 픽스처: 관련 원문 후보 없음"
+    }
+  ],
+  "source_saturation": {
+    "status": "met",
+    "reason": "합성 픽스처: 승인 도메인 4개를 모두 직접 검색했고 신규 독립 발언이 없었다.",
+    "groups": [
+      {
+        "source_group": "official",
+        "checked": 1,
+        "required": 1,
+        "new_quote_count": 0
+      },
+      {
+        "source_group": "top_tier_general",
+        "checked": 1,
+        "required": 1,
+        "new_quote_count": 0
+      },
+      {
+        "source_group": "healthcare_trade",
+        "checked": 2,
+        "required": 2,
+        "new_quote_count": 0
+      }
+    ]
+  },
+  "limitations": [
+    "합성 일일 창",
+    "합성 픽스처이며 실제 검색 결과가 아니다"
+  ],
+  "quality_control": {
+    "active_people_all_searched": true,
+    "verbatim_character_check": "not_applicable_no_quotes",
+    "quote_summary_analysis_separated": true,
+    "event_date_publication_date_separated": "not_applicable_no_events",
+    "role_statement_separated": true,
+    "same_event_multisource_comparison": "not_applicable_no_events",
+    "source_unique_quotes_preserved": "not_applicable_no_quotes",
+    "direct_search_log_present": true,
+    "syndicated_duplicates_removed": "not_applicable_no_articles",
+    "policy_status_not_overstated": true,
+    "url_locator_present": "not_applicable_no_statements",
+    "access_failures_and_gaps_disclosed": true,
+    "source_saturation_assessed": true,
+    "canonical_dedupe_checked": true,
+    "json_parse_validated": true
+  },
+  "next_run": {
+    "scheduled_kst": "2026-10-12T07:00:00+09:00",
+    "actions": [
+      "실행일 effective_from 기준 활성 스코프 재평가",
+      "지연 게시 자료를 late_discovery로 확인"
+    ]
+  }
+}

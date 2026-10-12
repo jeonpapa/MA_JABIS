@@ -21,6 +21,8 @@ python-dotenv>=1.0.0
 # 별도 non-fatal 단계에서 설치(scrapling 이 lxml>=6 을 끌어와도 core 배포를 막지 않도록 분리).
 python-dateutil>=2.9.0
 markdown>=3.6
+# Stakeholder 인물 사진 업로드(EXIF 회전·크롭·WEBP 재인코딩) — 없으면 프로덕션에서 사진 업로드 500
+Pillow>=10,<13
 pdfplumber>=0.11.0
 pypdf>=4.2.0
 numpy>=1.26.0

@@ -1,0 +1,151 @@
+{
+  "schema_version": "1.0",
+  "audit_run_id": "coverage-audit-2026-10-10",
+  "run_date_kst": "2026-10-10",
+  "executed_at_kst": "2026-10-10T07:41:05+09:00",
+  "completed_at_kst": "2026-10-10T07:55:00+09:00",
+  "run_status": "degraded",
+  "upstream_status": {
+    "daily_monitoring": {
+      "run_id": "stakeholder-daily-2026-10-10",
+      "run_status": "no_change",
+      "source_saturation": "met",
+      "approved_domains_checked": 4,
+      "active_people_searched": 3,
+      "note": "합성 픽스처"
+    },
+    "pre_run_context_script": {
+      "status": "failed",
+      "error": "Script not found (fixture)",
+      "impact": "연속성 컨텍스트 불완전 — degraded 유지"
+    }
+  },
+  "claim": "합성 감사: 공식 인사 원문으로 박가상의 직책을 확인했고, 신규 발언자 1명과 off-list 매체 1개를 사람 검토용 제안으로 등록했다.",
+  "why_this_matters": "잘못된 직책 덮어쓰기와 낮은 품질 출처의 자동 승격은 정책 인텔리전스의 책임 귀속을 훼손한다. (합성)",
+  "scope_counts": {
+    "audited_people_count": 3,
+    "audited_source_count": 4,
+    "off_list_domains_followed_up": 1,
+    "raw_search_records": 4,
+    "media_full_text_acquired": 2,
+    "official_profile_api_records_acquired": 1,
+    "official_personnel_pages_acquired": 1,
+    "new_proposals": 3,
+    "deduplicated_proposals": 0,
+    "failed_proposal_attempts": 0
+  },
+  "axes": {
+    "source_expansion": {
+      "status": "proposal_created",
+      "search_log": [],
+      "findings": [
+        {
+          "name": "가상경제",
+          "domain": "newsfake.example-news.test",
+          "finding": "합성",
+          "proposal_id": "AUD-F1A000000003"
+        }
+      ],
+      "not_promoted": []
+    },
+    "role_change": {
+      "status": "proposal_created",
+      "search_log": {
+        "people": [
+          "홍길동",
+          "김가상",
+          "박가상"
+        ]
+      },
+      "findings": [
+        {
+          "person_id": "P-FAKE-INST-PARK",
+          "name": "박가상",
+          "proposal_id": "AUD-F1A000000002"
+        }
+      ]
+    },
+    "new_person": {
+      "status": "proposal_created",
+      "findings": [
+        {
+          "name": "최가상",
+          "proposal_id": "AUD-F1A000000001"
+        }
+      ]
+    }
+  },
+  "evidence_register": [
+    {
+      "url": "https://gov.example-news.test/press/personnel-1",
+      "method": "normal_extract",
+      "access_class": "public",
+      "evidence_level": "full_text",
+      "retrieved_at": "2026-10-10T07:52:00+09:00",
+      "content_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "use": "박가상 공식 직책·발효일"
+    }
+  ],
+  "proposal_summary": {
+    "created": 3,
+    "deduplicated": 0,
+    "validation_error_not_created": {
+      "count": 0,
+      "detail": ""
+    },
+    "human_review_required": [
+      {
+        "proposal_id": "AUD-F1A000000002",
+        "proposal_type": "role_change",
+        "priority": "high",
+        "subject": "박가상",
+        "status": "needs_review",
+        "evidence_level": "E3",
+        "review_note": "합성"
+      },
+      {
+        "proposal_id": "AUD-F1A000000001",
+        "proposal_type": "new_person",
+        "priority": "high",
+        "subject": "최가상",
+        "status": "needs_review",
+        "evidence_level": "E3",
+        "review_note": "합성"
+      },
+      {
+        "proposal_id": "AUD-F1A000000003",
+        "proposal_type": "source_expansion",
+        "priority": "normal",
+        "subject": "가상경제",
+        "status": "needs_review",
+        "evidence_level": "E1",
+        "review_note": "합성"
+      }
+    ]
+  },
+  "adversarial_review": {
+    "claim_reviewed": "3개 제안이 정책 계약을 충족하는가 (합성)",
+    "contract": "합성",
+    "review_method": "합성 픽스처 — 실제 검토 아님",
+    "findings": [],
+    "stop_condition": "n/a"
+  },
+  "access_failures": [
+    {
+      "resource": "pre-run context script",
+      "status": "missing",
+      "impact": "run degraded"
+    }
+  ],
+  "limitations": [
+    "합성 픽스처이며 실제 감사 결과가 아니다"
+  ],
+  "quality_control": {
+    "json_parse_validated": true,
+    "all_urls_http_or_https": true,
+    "proposal_ids_retrieved_from_api": true,
+    "local_paths_and_hashes_checked": true,
+    "verbatim_summary_analysis_separated": true,
+    "registry_not_mutated": true
+  }
+}

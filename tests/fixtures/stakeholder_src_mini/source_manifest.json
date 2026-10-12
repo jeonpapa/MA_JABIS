@@ -1,0 +1,97 @@
+{
+  "project": "합성-Stakeholder-픽스처",
+  "scope_start_kst": "2025-10-08",
+  "scope_end_kst": "2026-10-08",
+  "retrieved_at_kst": "2026-10-08T19:31:12+09:00",
+  "sources": [
+    {
+      "source_id": "SRC-FAKE-20260903-HONG",
+      "title": "가상 협회 약가 토론 가상 기사",
+      "url": "https://example-news.test/news/1",
+      "source_type": "trade_press_full_article",
+      "evidence_grade": "C-quote",
+      "access_status": "acquired_and_text_extracted",
+      "local_path": "sources/raw/fake_20260903_hong.html",
+      "sha256": "7ef8139beda0c64c60a808e3548faedf4d32bd9cf1dd1de0dfaaf97430d91b5c",
+      "text_path": "sources/fake_20260903_hong.txt",
+      "text_sha256": "889431ae513ca248a03cc699df7335e6bc0cc3f445949c451a640fe81f6c35b2",
+      "event_date": "2026-09-03",
+      "publication_date": "2026-09-03",
+      "last_live_check": {
+        "checked_at": "2026-10-08T19:50:34+09:00",
+        "http_status": 200,
+        "content_type": "text/html; charset=utf-8"
+      }
+    },
+    {
+      "source_id": "SRC-FAKE-20260619-RWE",
+      "title": "가상 RWE 심포지엄 가상 보도자료",
+      "url": "https://gov.example-news.test/press/rwe-1",
+      "source_type": "official_press_release",
+      "evidence_grade": "B-summary",
+      "access_status": "acquired_and_text_extracted",
+      "local_path": "sources/raw/fake_20260619_rwe.html",
+      "sha256": "e80db5a6afe3e656b4bb9326b4438c35ffac9200e9666df6a5dfe8e15d4afa2c",
+      "text_path": "sources/fake_20260619_rwe.txt",
+      "text_sha256": "27887d0202e482013758f742753421a57c18469d6b1ce0f7fc9d144f78a74450",
+      "event_date": "2026-06-19",
+      "publication_date": "2026-06-19",
+      "last_live_check": {
+        "checked_at": "2026-10-08T19:50:34+09:00",
+        "http_status": 200,
+        "content_type": "text/html; charset=utf-8"
+      }
+    },
+    {
+      "source_id": "USER-INPUT-FAKE-LIST",
+      "title": "가상 모니터링 리스트 이미지 (1x1 placeholder)",
+      "url": null,
+      "source_type": "user_provided_image",
+      "evidence_grade": "Candidate-only",
+      "access_status": "local_preserved",
+      "local_path": "sources/user_input/list.png",
+      "sha256": "e124007e0371a272f11e7fbc2414aff5a1095f3a46ad29771ea1bf3f8a5b07ca",
+      "scope_note": "공식 직제·직책·발언 근거로 단독 사용하지 않음"
+    }
+  ],
+  "withheld_claims": [
+    {
+      "claim": "가상 정책으로 연간 약 100억원 절감",
+      "reason": "공식 1차 출처와 정책 범위가 확정되지 않음"
+    }
+  ],
+  "artifacts": [
+    {
+      "name": "topic_timeline_canonical",
+      "path": "2026-10-08_주제별_인물발언_타임라인_정본.md",
+      "sha256": "0b9ffbe24d8123270780d2151f93b8f8d29797dca9e27ee4db77b8891562ffa5",
+      "bytes": 2280,
+      "description": "주제별·날짜별 인물 발언, 직접인용, 내용, 해석, 증거등급 및 출처 검증대장 (합성)"
+    },
+    {
+      "path": "scripts/verify_repository.py",
+      "sha256": "d0bb0bad48957f125bc2224405137cf0e9cc7095ca404eb01b4b0bae7b8cb771",
+      "bytes": 2947,
+      "description": "JSON, source provenance, artifact SHA-256 및 바이트 크기 검증 스크립트"
+    }
+  ],
+  "evidence_grade_vocabulary": [
+    "A",
+    "B-quote",
+    "B-summary",
+    "C-quote",
+    "C-summary",
+    "Role-only",
+    "Candidate-only"
+  ],
+  "topic_timeline_update": {
+    "updated_at": "2026-10-12T10:26:10+09:00",
+    "date_window": "2025-10-08/2026-10-08",
+    "live_urls_checked": 2,
+    "live_urls_http_200": 2,
+    "quote_validation": "합성 픽스처 — 정확 부분문자열 검사 대상 인용 1건",
+    "gapfill": "합성",
+    "red_team": "합성 픽스처이며 실제 검토 아님"
+  },
+  "updated_at_kst": "2026-10-12T10:26:10+09:00"
+}

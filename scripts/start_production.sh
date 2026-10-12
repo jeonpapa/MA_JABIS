@@ -14,7 +14,8 @@ mkdir -p logs data/db data/cache data/dashboard data/raw data/reimb \
          data/foreign/exchange_rate data/foreign/us data/foreign/jp \
          data/foreign/it data/foreign/fr data/foreign/ch data/foreign/uk \
          data/foreign/de data/foreign/ca data/research \
-         data/policy_intelligence/reports data/policy_intelligence/manifests
+         data/policy_intelligence/reports data/policy_intelligence/manifests \
+         data/stakeholder/photos data/stakeholder/.sync
 
 # Policy Intelligence report/template seed — blank templates are bundled in git;
 # private ingested mail/document artifacts remain only on the mounted volume.
