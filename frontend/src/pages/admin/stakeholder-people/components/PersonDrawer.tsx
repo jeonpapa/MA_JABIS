@@ -1,11 +1,12 @@
 import { useEffect } from 'react';
 import { headlineQuoteOf, TOPIC_LABELS, type SVPerson, type SVPersonDetail } from '@/api/stakeholder';
 import PersonAvatar from '@/pages/stakeholder-signals/components/PersonAvatar';
-import { btnDanger, btnGhost, btnPrimary } from '@/pages/admin/stakeholder-audit/components/ui';
-import { fmtDateTime } from '@/pages/admin/stakeholder-audit/components/uiHelpers';
+import { btnDanger, btnGhost, btnPrimary, fmtDateTime } from '@/pages/admin/stakeholder-audit/components/uiHelpers';
+import { badge, closeBtn, errorBox, scrim, tone } from '@/pages/stakeholder-signals/theme/sv';
 
 // 인물 상세 드로어 (스케치 003). 삭제 기능은 없다(일시중지로만 — 소스와 동일).
 // photo_url(언론 CDN)은 admin 상세에 오더라도 **텍스트 메타로만** 표시한다(이미지·링크로 렌더링 금지).
+// 화이트 톤(스케치 003 .drawer): 우측 470px, 옅은 스크림, 회색 닫기, 72px 프로필, 105px 상세 그리드, 파란 안내.
 
 const ROLE_STATUS_LABELS: Record<string, string> = {
   scheduled: '적용 예정',
@@ -17,25 +18,28 @@ const ROLE_STATUS_LABELS: Record<string, string> = {
 export function StatusBadge({ status }: { status?: string | null }) {
   const active = status === 'active';
   return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold whitespace-nowrap ${
-        active ? 'bg-[#00E5CC]/10 text-[#00E5CC]' : 'bg-[#1E2530] text-[#8B9BB4]'
-      }`}
-    >
+    <span className={`${badge} !text-[11px] !px-[9px] !py-[5px] ${active ? tone.ok : tone.neutral}`}>
       {active ? '● 활성' : '일시중지'}
     </span>
   );
 }
 
-export function VerifyTag({ status }: { status?: string | null }) {
-  return status === 'verified' ? (
-    <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap bg-[#3B82F6]/10 text-[#60A5FA]">
+/** 확인 상태. compact = 스케치 003 .verify 한 줄 텍스트(검증됨 / 후보 단계 — 주황), 기본은 배지. */
+export function VerifyTag({ status, compact = false }: { status?: string | null; compact?: boolean }) {
+  const verified = status === 'verified';
+  if (compact) {
+    return (
+      <span className={`text-[11px] ${verified ? 'text-sv-muted' : 'text-sv-warn-fg font-semibold'}`}>
+        {verified ? '검증됨' : '후보 단계'}
+      </span>
+    );
+  }
+  return verified ? (
+    <span className={`${badge} ${tone.info}`}>
       <i className="ri-verified-badge-line"></i>검증됨
     </span>
   ) : (
-    <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap bg-[#F59E0B]/10 text-[#F59E0B]">
-      후보 · 공식 직책 확인 필요
-    </span>
+    <span className={`${badge} ${tone.warn}`}>후보 · 공식 직책 확인 필요</span>
   );
 }
 
@@ -85,46 +89,46 @@ export default function PersonDrawer({
     ['발언 블록', typeof p.statements_count === 'number' ? `${p.statements_count}건` : '—'],
     ['최근 변경', `${fmtDateTime(p.updated_at)}${p.updated_by ? ` · ${p.updated_by}` : ''}`],
     ['등록 경로', `${p.origin ?? '—'}${p.discovered_from_proposal ? ` · 제안 ${p.discovered_from_proposal}` : ''}`],
-    ['인물 ID', <span key="id" className="font-mono">{p.person_id}</span>],
+    ['인물 ID', <span key="id" className="font-mono text-[12px]">{p.person_id}</span>],
   ];
 
   return (
     <>
-      <div className="fixed inset-0 z-[55] bg-black/40" onClick={onClose} />
+      <div className={`fixed inset-0 z-[55] ${scrim}`} onClick={onClose} />
       <aside
-        className="fixed right-0 top-0 z-[56] h-full w-full max-w-md bg-[#11161F] border-l border-[#1E2530] flex flex-col"
+        className="fixed right-0 top-0 z-[56] h-full w-full sm:w-[min(470px,94vw)] bg-sv-surface shadow-sv-drawer flex flex-col"
         aria-label="모니터링 대상 상세"
       >
-        <div className="flex items-center justify-between px-5 py-3 border-b border-[#1E2530]">
-          <span className="text-[11px] text-[#8B9BB4]">모니터링 대상 상세</span>
-          <button onClick={onClose} aria-label="상세 닫기" className="text-[#8B9BB4] hover:text-white cursor-pointer">
+        <div className="flex items-center justify-between px-7 pt-6 pb-2">
+          <span className="text-[12px] text-sv-muted">모니터링 대상 상세</span>
+          <button onClick={onClose} aria-label="상세 닫기" className={closeBtn}>
             <i className="ri-close-line text-lg"></i>
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-          <div className="flex items-center gap-3">
-            <PersonAvatar key={`${p.person_id}-${photoVersion}`} personId={p.person_id} name={p.name} hasPhoto={p.has_photo} size="lg" />
+        <div className="flex-1 overflow-y-auto px-7 pb-5 space-y-4">
+          <div className="flex items-center gap-4 my-4">
+            <PersonAvatar key={`${p.person_id}-${photoVersion}`} personId={p.person_id} name={p.name} hasPhoto={p.has_photo} size="xl" />
             <div className="min-w-0">
-              <h2 className="text-lg font-bold text-white truncate">{p.name}</h2>
-              <p className="text-xs text-[#8B9BB4] truncate">
+              <h2 className="text-[22px] font-extrabold text-sv-ink truncate">{p.name}</h2>
+              <p className="text-[13px] text-sv-ink-2 truncate">
                 {p.organization} · {p.role}
               </p>
-              <div className="mt-1">
+              <div className="mt-1.5">
                 <StatusBadge status={p.status} />
               </div>
             </div>
           </div>
 
-          <dl className="grid grid-cols-[6rem_1fr] gap-x-3 gap-y-1.5 text-xs">
+          <dl className="grid grid-cols-[105px_1fr] gap-x-3 gap-y-3 py-4 border-t border-sv-line-soft text-[13px]">
             {grid.map(([k, v]) => (
               <div key={k} className="contents">
-                <dt className="text-[#8B9BB4]">{k}</dt>
-                <dd className="text-white break-words">{v}</dd>
+                <dt className="text-sv-muted">{k}</dt>
+                <dd className="text-sv-ink font-bold break-words">{v}</dd>
               </div>
             ))}
           </dl>
 
-          <div className="rounded-lg bg-[#3B82F6]/10 px-3 py-2 text-[11px] leading-relaxed text-[#93C5FD]">
+          <div className={`rounded-lg px-3.5 py-3 text-[13px] leading-relaxed ${tone.notice}`}>
             {p.status === 'active'
               ? `이 인물은 ${p.effective_from ?? '익일'} 모니터링부터 계속 포함됩니다.`
               : `일시중지 상태는 ${p.effective_from ?? '익일'} 모니터링부터 적용됩니다. 기존 수집 데이터는 유지됩니다.`}{' '}
@@ -132,34 +136,34 @@ export default function PersonDrawer({
           </div>
 
           {p.photo_url && (
-            <div className="rounded-lg border border-[#1E2530] px-3 py-2">
-              <p className="text-[10px] font-semibold text-[#8B9BB4]">출처 사진 링크 (메타데이터 · 표시하지 않음)</p>
-              <p className="mt-0.5 font-mono text-[10px] text-[#4A5568] break-all select-all">{p.photo_url}</p>
-              <p className="mt-0.5 text-[10px] text-[#4A5568]">언론사 사진은 저작권상 화면에 쓰지 않습니다. 필요하면 내부 사진을 업로드하세요.</p>
+            <div className="rounded-lg border border-sv-line bg-sv-surface-2 px-3.5 py-2.5">
+              <p className="text-[11px] font-bold text-sv-text">출처 사진 링크 (메타데이터 · 표시하지 않음)</p>
+              <p className="mt-0.5 font-mono text-[11px] text-sv-muted break-all select-all">{p.photo_url}</p>
+              <p className="mt-0.5 text-[11px] text-sv-muted">언론사 사진은 저작권상 화면에 쓰지 않습니다. 필요하면 내부 사진을 업로드하세요.</p>
             </div>
           )}
 
           <section>
-            <h3 className="text-xs font-bold text-white mb-1.5">직책 이력</h3>
+            <h3 className="text-[13px] font-extrabold text-sv-ink mb-2">직책 이력</h3>
             {loading && !detail ? (
-              <div className="h-10 rounded bg-[#1E2530] animate-pulse" />
+              <div className="h-10 rounded bg-sv-surface-3 animate-pulse" />
             ) : error ? (
-              <p className="text-[11px] text-red-400">상세를 불러오지 못했습니다 — {error}</p>
+              <p className={errorBox}>상세를 불러오지 못했습니다 — {error}</p>
             ) : (p.role_history ?? []).length === 0 ? (
-              <p className="text-[11px] text-[#4A5568]">기록된 직책 변경이 없습니다.</p>
+              <p className="text-[12px] text-sv-muted">기록된 직책 변경이 없습니다.</p>
             ) : (
               <ol className="space-y-1.5">
                 {(p.role_history ?? []).map((h, i) => (
-                  <li key={h.id ?? i} className="rounded-lg border border-[#1E2530] px-3 py-2 text-[11px]">
+                  <li key={h.id ?? i} className="rounded-lg border border-sv-line px-3 py-2 text-[12px]">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded bg-[#1E2530] px-1.5 py-0.5 text-[10px] font-semibold text-[#C9D1DD]">
+                      <span className={`${badge} ${h.status === 'applied' ? tone.ok : h.status === 'scheduled' ? tone.info : h.status === 'failed' ? tone.bad : tone.neutral}`}>
                         {ROLE_STATUS_LABELS[h.status ?? ''] ?? h.status ?? '—'}
                       </span>
-                      <span className="text-white">
+                      <span className="text-sv-ink">
                         {h.organization} · {h.department} · {h.role}
                       </span>
                     </div>
-                    <p className="mt-0.5 text-[#8B9BB4]">
+                    <p className="mt-0.5 text-sv-muted">
                       {h.effective_from ?? '—'} ~ {h.effective_to ?? ''}
                       {h.proposal_id ? ` · 제안 ${h.proposal_id}` : ''}
                     </p>
@@ -171,16 +175,27 @@ export default function PersonDrawer({
 
           {(p.recent_statements ?? []).length > 0 && (
             <section>
-              <h3 className="text-xs font-bold text-white mb-1.5">최근 발언</h3>
+              <h3 className="text-[13px] font-extrabold text-sv-ink mb-2">최근 발언</h3>
               <ul className="space-y-1.5">
                 {(p.recent_statements ?? []).map(s => {
                   const hq = headlineQuoteOf(s);
                   return (
-                    <li key={s.statement_id} className="rounded-lg border border-[#1E2530] px-3 py-2 text-[11px]">
-                      <p className="text-[#8B9BB4]">
+                    <li key={s.statement_id} className="rounded-lg border border-sv-line px-3 py-2 text-[12px]">
+                      <p className="text-sv-muted">
                         {s.event?.event_date ?? '—'} · {TOPIC_LABELS[s.topic ?? ''] ?? s.topic ?? '—'} · {s.event?.title ?? ''}
                       </p>
-                      <p className="mt-0.5 text-[#E2E8F0] line-clamp-2">{hq?.quote_text ?? s.summary_text ?? '—'}</p>
+                      <p className="mt-0.5 text-sv-ink-2 line-clamp-2">
+                        {(hq || s.summary_text) && (
+                          <span
+                            className={`mr-1.5 rounded px-1.5 py-px text-[10px] font-bold ${hq ? tone.info : tone.neutral}`}
+                          >
+                            {hq ? '인용' : '요약'}
+                          </span>
+                        )}
+                        <span data-verbatim={hq ? 'true' : undefined} className={hq ? '' : 'italic'}>
+                          {hq?.quote_text ?? s.summary_text ?? '—'}
+                        </span>
+                      </p>
                     </li>
                   );
                 })}
@@ -188,7 +203,7 @@ export default function PersonDrawer({
             </section>
           )}
         </div>
-        <div className="border-t border-[#1E2530] px-5 py-3 grid grid-cols-2 gap-2">
+        <div className="border-t border-sv-line-soft px-7 py-4 grid grid-cols-2 gap-2">
           <button className={btnPrimary} onClick={onEdit}>
             <i className="ri-edit-line"></i>편집
           </button>

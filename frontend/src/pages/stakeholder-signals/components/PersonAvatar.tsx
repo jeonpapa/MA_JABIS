@@ -5,10 +5,12 @@ import { fetchPersonPhotoObjectUrl } from '@/api/stakeholder';
 // 인증 라우트(/api/stakeholder/people/<id>/photo)에서 blob 으로 받아 그린다.
 // 언론 CDN 링크는 어떤 경우에도 쓰지 않는다(stakeholder_verbatim_rules.md §5).
 
-const SIZE: Record<'sm' | 'md' | 'lg', string> = {
-  sm: 'w-7 h-7 text-[11px]',
-  md: 'w-9 h-9 text-xs',
-  lg: 'w-12 h-12 text-sm',
+// 스케치 .avatar 크기: 워크벤치 행 32 · 타임라인/인물 행 40 · 상세 56 · 드로어 프로필 72
+const SIZE: Record<'sm' | 'md' | 'lg' | 'xl', string> = {
+  sm: 'w-8 h-8 text-[11px]',
+  md: 'w-10 h-10 text-[12px]',
+  lg: 'w-14 h-14 text-[15px]',
+  xl: 'w-[72px] h-[72px] text-[23px]',
 };
 
 function initialsOf(name?: string | null): string {
@@ -26,7 +28,7 @@ export default function PersonAvatar({
   name?: string | null;
   personId?: string | null;
   hasPhoto?: boolean | null;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg' | 'xl';
 }) {
   const [src, setSrc] = useState<string | null>(null);
 
@@ -45,7 +47,7 @@ export default function PersonAvatar({
 
   return (
     <span
-      className={`${SIZE[size]} flex-shrink-0 rounded-full overflow-hidden flex items-center justify-center bg-[#1E2530] text-[#8B9BB4] font-bold border border-[#2A3545]`}
+      className={`${SIZE[size]} flex-shrink-0 rounded-full overflow-hidden flex items-center justify-center bg-sv-avatar-bg text-sv-avatar-fg font-extrabold ring-1 ring-sv-avatar-ring`}
       aria-hidden={src ? undefined : true}
     >
       {src ? (

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { btn, btnDanger as svBtnDanger, btnDark, input, pill } from '@/pages/stakeholder-signals/theme/sv';
 
 // admin 스테이크홀더 페이지 공용 순수 헬퍼·훅 (컴포넌트 파일과 분리 — react-refresh 규칙).
 
@@ -15,12 +16,15 @@ export function fmtDay(s?: string | null): string {
   return s.slice(0, 10);
 }
 
+// admin 스테이크홀더 버튼·입력 별칭 — 스케치 003/004 .btn.primary(검정) / .btn / .btn.danger / .field input
+export const btnPrimary = btnDark;
+export const btnGhost = btn;
+export const btnDanger = svBtnDanger;
+export const inputCls = input;
+
+/** 스케치 003/004 .chip — 알약형, 활성은 검정 */
 export function chipCls(active: boolean): string {
-  return `inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors ${
-    active
-      ? 'bg-[#00E5CC]/10 text-[#00E5CC] border border-[#00E5CC]/30'
-      : 'border border-[#1E2530] bg-[#161B27] text-[#8B9BB4] hover:text-white'
-  }`;
+  return pill(active);
 }
 
 export interface ToastState {

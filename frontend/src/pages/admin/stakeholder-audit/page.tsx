@@ -26,10 +26,12 @@ import {
 import ProposalCard, { type CardError } from './components/ProposalCard';
 import RunsPanel, { RunStatus } from './components/RunsPanel';
 import IntegrityPanel from './components/IntegrityPanel';
-import { btnGhost, btnPrimary, ReasonModal, StatCard, Toast } from './components/ui';
-import { chipCls, fmtDateTime, useToast } from './components/uiHelpers';
+import { ReasonModal, StatCard, Toast } from './components/ui';
+import { btnGhost, btnPrimary, chipCls, fmtDateTime, useToast } from './components/uiHelpers';
+import { boxCard, errorBox, focusRing, panel, tone } from '@/pages/stakeholder-signals/theme/sv';
+import { SvHero, SvMain, SvPage, SvTopBar } from '@/pages/stakeholder-signals/theme/SvPage';
 
-// 모니터링 감사 (스케치 004) — /admin/stakeholder-audit
+// 모니터링 감사 (스케치 004, 화이트 톤 .sv-light) — /admin/stakeholder-audit
 //   감사 에이전트(외부)는 제안만 넣고, 승인·반려·충돌 확인은 여기서 admin 이 사유와 함께 한다.
 //   승인 → scheduled(익일 효력) → 매일 sync 잡의 apply_scheduled 가 applied 로 반영.
 //   서버 오류는 {code, message, details} — 한국어 message 를 그대로 보여준다.
@@ -267,7 +269,7 @@ export default function AdminStakeholderAuditPage() {
   };
 
   if (!authChecked) {
-    return <div className="min-h-screen bg-[#0D1117]" />;
+    return <SvPage>{null}</SvPage>;
   }
 
   const latestMon = monRuns.data[0];
@@ -275,85 +277,82 @@ export default function AdminStakeholderAuditPage() {
   const lastSync = overview?.integrity?.last_sync_at ?? integrity.data?.last_sync_at ?? null;
 
   return (
-    <div className="min-h-screen bg-[#0D1117] text-white">
-      <div className="px-4 sm:px-8 pt-8 pb-6 border-b border-[#1E2530]">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="w-5 h-5 flex items-center justify-center">
-                <i className="ri-shield-check-line text-[#00E5CC]"></i>
-              </span>
-              <h1 className="text-2xl font-bold text-white">모니터링 감사</h1>
+    <SvPage>
+      <SvMain>
+        <SvTopBar crumb="약가·건강보험 재정 / 모니터링 감사">
+          <span className={`rounded-lg px-3.5 py-2.5 text-[12px] ${tone.notice}`}>
+            <i className="ri-calendar-schedule-line mr-1"></i>승인 변경은 익일 07:00 KST부터 적용
+          </span>
+          <button className={btnGhost} onClick={() => void loadAll()}>
+            <i className="ri-refresh-line"></i>새로고침
+          </button>
+          <button className={btnPrimary} onClick={runSync} disabled={syncing}>
+            <i className={syncing ? 'ri-loader-4-line animate-spin' : 'ri-git-repository-line'}></i>
+            {syncing ? 'sync 중…' : '지금 sync'}
+          </button>
+        </SvTopBar>
+
+        <SvHero
+          alignTop
+          title="모니터링 감사·확장"
+          sub={
+            <>
+              전문 감사 에이전트가 검색 공백, 현재 직책 변동, 신규 관련 발언자를 독립적으로 점검합니다.
+              <br className="hidden sm:block" />
+              자동 발견은 정본을 바꾸지 않으며, 근거와 승인 게이트를 통과한 변경만 적용됩니다.
+            </>
+          }
+          aside={
+            <div className="grid grid-cols-2 gap-2.5 lg:w-[420px]">
+              <StatCard
+                label="검토 필요"
+                value={proposals.loading && !all.length ? '—' : `${openCount}건`}
+                tone={openCount > 0 ? 'text-sv-warn-fg' : undefined}
+                sub={`최근 감사 변경 ${fmtDateTime(updatedAt)}`}
+              />
+              <StatCard label="승인 출처" value={domainCount === null ? '—' : `${domainCount}개`} sub="현재 유효 출처 도메인" />
+              <StatCard
+                label="최근 모니터링 런"
+                value={latestMon?.run_date ?? '—'}
+                sub={
+                  latestMon ? (
+                    <span className="inline-flex flex-wrap items-center gap-1">
+                      <RunStatus status={latestMon.run_status} />
+                      <span>saturation</span>
+                      <RunStatus status={latestMon.saturation_status} />
+                    </span>
+                  ) : (
+                    '런 없음'
+                  )
+                }
+              />
+              <StatCard
+                label="최근 sync"
+                value={<span className="text-[15px]">{fmtDateTime(lastSync)}</span>}
+                sub={
+                  latestAud ? (
+                    <span className="inline-flex flex-wrap items-center gap-1">
+                      최근 감사 {latestAud.run_date} <RunStatus status={latestAud.run_status} />
+                    </span>
+                  ) : (
+                    '감사 런 없음'
+                  )
+                }
+              />
             </div>
-            <p className="text-[#8B9BB4] text-sm max-w-3xl">
-              감사 에이전트가 검색 공백·현재 직책 변동·신규 발언자를 점검해 제안합니다. 자동 발견은 정본을 바꾸지 않으며,
-              근거와 승인 게이트를 통과한 변경만 적용됩니다.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-lg bg-[#3B82F6]/10 px-3 py-2 text-[11px] font-semibold text-[#93C5FD]">
-              <i className="ri-calendar-schedule-line mr-1"></i>승인 변경은 익일부터 적용
-            </span>
-            <button className={btnGhost} onClick={() => void loadAll()}>
-              <i className="ri-refresh-line"></i>새로고침
-            </button>
-            <button className={btnPrimary} onClick={runSync} disabled={syncing}>
-              <i className={syncing ? 'ri-loader-4-line animate-spin' : 'ri-git-repository-line'}></i>
-              {syncing ? 'sync 중…' : '지금 sync'}
-            </button>
-          </div>
-        </div>
-      </div>
+          }
+        />
 
-      <div className="px-4 sm:px-8 py-6 space-y-5">
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-          <StatCard
-            label="검토 필요"
-            value={proposals.loading && !all.length ? '—' : `${openCount}건`}
-            tone={openCount > 0 ? 'text-[#F59E0B]' : 'text-white'}
-            sub={`최근 감사 변경 ${fmtDateTime(updatedAt)}`}
-          />
-          <StatCard label="승인 출처" value={domainCount === null ? '—' : `${domainCount}개`} sub="현재 유효 출처 도메인" />
-          <StatCard
-            label="최근 모니터링 런"
-            value={latestMon?.run_date ?? '—'}
-            sub={
-              latestMon ? (
-                <span className="inline-flex flex-wrap items-center gap-1">
-                  <RunStatus status={latestMon.run_status} />
-                  <span>saturation</span>
-                  <RunStatus status={latestMon.saturation_status} />
-                </span>
-              ) : (
-                '런 없음'
-              )
-            }
-          />
-          <StatCard
-            label="최근 sync"
-            value={<span className="text-base">{fmtDateTime(lastSync)}</span>}
-            sub={
-              latestAud ? (
-                <span className="inline-flex flex-wrap items-center gap-1">
-                  최근 감사 {latestAud.run_date} <RunStatus status={latestAud.run_status} />
-                </span>
-              ) : (
-                '감사 런 없음'
-              )
-            }
-          />
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <section className="grid grid-cols-1 md:grid-cols-3 gap-2.5 mb-[18px]">
           {PRINCIPLES.map(p => (
-            <div key={p.title} className="bg-[#161B27] rounded-2xl border border-[#1E2530] p-4">
-              <p className="text-xs font-bold text-white mb-1">{p.title}</p>
-              <p className="text-[11px] leading-relaxed text-[#8B9BB4]">{p.body}</p>
+            <div key={p.title} className={`${boxCard} p-4`}>
+              <b className="block text-[14px] font-extrabold text-sv-ink mb-1.5">{p.title}</b>
+              <p className="text-[12px] leading-[1.6] text-sv-text sv-ko">{p.body}</p>
             </div>
           ))}
-        </div>
+        </section>
 
-        <nav className="flex items-center gap-1 rounded-xl bg-[#161B27] border border-[#1E2530] p-1 w-fit" aria-label="감사 보기 전환">
+        <nav className="flex items-center gap-5 border-b border-sv-line mb-4 overflow-x-auto" aria-label="감사 보기 전환">
           {(
             [
               ['proposals', '감사 제안', 'ri-file-list-3-line'],
@@ -365,14 +364,14 @@ export default function AdminStakeholderAuditPage() {
               key={k}
               onClick={() => setTab(k)}
               aria-pressed={tab === k}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold cursor-pointer transition-colors ${
-                tab === k ? 'bg-[#00E5CC]/10 text-[#00E5CC]' : 'text-[#8B9BB4] hover:text-white hover:bg-[#1E2530]'
+              className={`-mb-px inline-flex items-center gap-1.5 border-b-2 px-0.5 py-2.5 text-[14px] font-bold whitespace-nowrap cursor-pointer transition-colors ${focusRing} ${
+                tab === k ? 'border-sv-ink text-sv-ink' : 'border-transparent text-sv-muted hover:text-sv-ink'
               }`}
             >
               <i className={icon}></i>
               {label}
               {k === 'proposals' && openCount > 0 && (
-                <span className="ml-0.5 rounded-full bg-[#F59E0B] px-1.5 text-[10px] font-bold text-[#0A0E1A]">{openCount}</span>
+                <span className={`ml-0.5 rounded-full px-1.5 text-[11px] font-extrabold ${tone.warn}`}>{openCount}</span>
               )}
             </button>
           ))}
@@ -380,65 +379,70 @@ export default function AdminStakeholderAuditPage() {
 
         {tab === 'proposals' && (
           <section className="space-y-3">
-            <div className="flex flex-col gap-2">
-              <div className="flex gap-2 overflow-x-auto pb-1" role="group" aria-label="상태 필터">
-                {STATUS_FILTERS.map(f => (
-                  <button
-                    key={f.key}
-                    className={chipCls(statusFilter === f.key)}
-                    onClick={() => setStatusFilter(f.key)}
-                    aria-pressed={statusFilter === f.key}
-                  >
-                    {f.label}
-                    <span className="opacity-70">{all.filter(p => f.match(p.status ?? '')).length}</span>
-                  </button>
-                ))}
+            <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-2">
+              <div className="flex flex-col gap-2 min-w-0">
+                <div className="flex gap-[7px] overflow-x-auto p-0.5" role="group" aria-label="상태 필터">
+                  {STATUS_FILTERS.map(f => (
+                    <button
+                      key={f.key}
+                      className={chipCls(statusFilter === f.key)}
+                      onClick={() => setStatusFilter(f.key)}
+                      aria-pressed={statusFilter === f.key}
+                    >
+                      {f.label}
+                      <span className="opacity-70">{all.filter(p => f.match(p.status ?? '')).length}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-[7px] overflow-x-auto p-0.5" role="group" aria-label="유형 필터">
+                  {TYPE_FILTERS.map(t => (
+                    <button
+                      key={t}
+                      className={chipCls(typeFilter === t)}
+                      onClick={() => setTypeFilter(t)}
+                      aria-pressed={typeFilter === t}
+                    >
+                      {t === 'all' ? '모든 유형' : PROPOSAL_TYPE_LABELS[t]}
+                      <span className="opacity-70">
+                        {t === 'all' ? byStatus.length : byStatus.filter(p => p.proposal_type === t).length}
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="flex gap-2 overflow-x-auto pb-1" role="group" aria-label="유형 필터">
-                {TYPE_FILTERS.map(t => (
-                  <button
-                    key={t}
-                    className={chipCls(typeFilter === t)}
-                    onClick={() => setTypeFilter(t)}
-                    aria-pressed={typeFilter === t}
-                  >
-                    {t === 'all' ? '모든 유형' : PROPOSAL_TYPE_LABELS[t]}
-                    <span className="opacity-70">
-                      {t === 'all' ? byStatus.length : byStatus.filter(p => p.proposal_type === t).length}
-                    </span>
-                  </button>
-                ))}
-              </div>
+              <span className="text-[12px] text-sv-muted whitespace-nowrap lg:pt-2.5">최근 감사 변경 {fmtDateTime(updatedAt)}</span>
             </div>
 
             {proposals.loading && !all.length ? (
-              <div className="space-y-3 animate-pulse">
+              <div className={`${panel} animate-pulse`}>
                 {[0, 1].map(i => (
-                  <div key={i} className="h-40 rounded-2xl bg-[#161B27] border border-[#1E2530]" />
+                  <div key={i} className="h-40 border-b border-sv-line-soft last:border-b-0 bg-sv-surface-2" />
                 ))}
               </div>
             ) : proposals.error ? (
-              <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-6 text-center">
-                <p className="text-sm font-bold text-red-400">감사 제안을 불러오지 못했습니다.</p>
-                <p className="mt-1 text-xs text-red-300">{proposals.error}</p>
+              <div className={`${panel} px-5 py-12 text-center`}>
+                <p className="text-sm font-bold text-sv-bad-fg">감사 제안을 불러오지 못했습니다.</p>
+                <p className={`mt-2 inline-block ${errorBox}`}>{proposals.error}</p>
               </div>
             ) : visible.length === 0 ? (
-              <div className="rounded-2xl border border-[#1E2530] bg-[#161B27] p-10 text-center">
-                <p className="text-sm font-bold text-white">현재 조건에 해당하는 감사 제안이 없습니다.</p>
-                <p className="mt-1 text-xs text-[#8B9BB4]">감사 에이전트는 매일 07:40 KST 에 점검하고, sync 잡이 08:20 에 가져옵니다.</p>
+              <div className={`${panel} px-5 py-12 text-center`}>
+                <p className="text-sm font-bold text-sv-ink">현재 조건에 해당하는 감사 제안이 없습니다.</p>
+                <p className="mt-1 text-[13px] text-sv-muted">감사 에이전트는 매일 07:40 KST 에 점검하고, sync 잡이 08:20 에 가져옵니다.</p>
               </div>
             ) : (
-              visible.map(p => (
-                <ProposalCard
-                  key={p.proposal_id}
-                  proposal={p}
-                  error={cardErrors[p.proposal_id] ?? null}
-                  highlight={highlights[p.proposal_id] ?? []}
-                  onApprove={() => setModal({ kind: 'approve', proposal: p })}
-                  onReject={() => setModal({ kind: 'reject', proposal: p })}
-                  onAck={c => setModal({ kind: 'ack', proposal: p, conflict: c })}
-                />
-              ))
+              <div className={`${panel} divide-y divide-sv-line-soft`} aria-live="polite">
+                {visible.map(p => (
+                  <ProposalCard
+                    key={p.proposal_id}
+                    proposal={p}
+                    error={cardErrors[p.proposal_id] ?? null}
+                    highlight={highlights[p.proposal_id] ?? []}
+                    onApprove={() => setModal({ kind: 'approve', proposal: p })}
+                    onReject={() => setModal({ kind: 'reject', proposal: p })}
+                    onAck={c => setModal({ kind: 'ack', proposal: p, conflict: c })}
+                  />
+                ))}
+              </div>
             )}
           </section>
         )}
@@ -448,7 +452,7 @@ export default function AdminStakeholderAuditPage() {
         {tab === 'integrity' && (
           <IntegrityPanel report={integrity.data} loading={integrity.loading} error={integrity.error} />
         )}
-      </div>
+      </SvMain>
 
       {modal && modal.kind !== 'ack' && (
         <ReasonModal
@@ -457,7 +461,7 @@ export default function AdminStakeholderAuditPage() {
           confirmLabel={modal.kind === 'approve' ? '승인' : '반려'}
           description={
             <>
-              <p className="text-white font-semibold">{modal.proposal.summary}</p>
+              <p className="text-sv-ink font-bold">{modal.proposal.summary}</p>
               <p className="mt-1">
                 {modal.kind === 'approve'
                   ? '승인하면 익일(KST)부터 적용 예정으로 바뀌고, 서버가 근거 기준을 다시 검증합니다.'
@@ -475,7 +479,7 @@ export default function AdminStakeholderAuditPage() {
           confirmLabel="확인 기록"
           description={
             <>
-              <p className="rounded-lg border border-[#F59E0B]/30 bg-[#F59E0B]/5 px-3 py-2 text-[#E2E8F0] whitespace-pre-wrap">
+              <p className="rounded-lg border border-sv-warn-line bg-sv-warn-soft px-3 py-2.5 text-sv-ink-2 whitespace-pre-wrap">
                 {modal.conflict.text}
               </p>
               <p className="mt-2">
@@ -489,6 +493,6 @@ export default function AdminStakeholderAuditPage() {
         />
       )}
       <Toast toast={toast} />
-    </div>
+    </SvPage>
   );
 }

@@ -1,19 +1,12 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { REASON_MAX, REASON_MIN } from '@/api/stakeholder';
-import type { ToastState } from './uiHelpers';
+import { boxCard, closeBtn, errorBox, input as inputCls, scrimStrong } from '@/pages/stakeholder-signals/theme/sv';
+import { btnDanger, btnGhost, btnPrimary, type ToastState } from './uiHelpers';
 
 // 모니터링 인물 관리·모니터링 감사(admin) 공용 UI — 모달 셸, 사유 입력 모달(prompt 금지), 확인 모달, 토스트.
-// 스타일은 기존 admin 페이지(service-requests / daily-mailing-kanban)의 다크 팔레트·입력 클래스를 따른다.
+// 스타일은 원 레포 스케치 003/004 의 화이트 톤(.btn/.btn.primary/.field/.modal/.toast) — theme/sv.ts 토큰만 쓴다.
+// 이 컴포넌트들은 .sv-light 래퍼(SvPage) 안에서만 렌더링된다.
 
-export const inputCls =
-  'w-full bg-[#0D1117] border border-[#1E2530] rounded-lg px-3 py-2 text-white text-xs placeholder-[#4A5568] focus:outline-none focus:border-[#00E5CC]/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
-
-export const btnPrimary =
-  'inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#00E5CC] px-3.5 py-2 text-xs font-bold text-[#0A0E1A] hover:bg-[#00E5CC]/90 cursor-pointer disabled:cursor-not-allowed disabled:bg-[#1E2530] disabled:text-[#4A5568] transition-colors';
-export const btnGhost =
-  'inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#1E2530] bg-[#161B27] px-3.5 py-2 text-xs font-semibold text-[#8B9BB4] hover:text-white hover:border-[#2A3545] cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 transition-colors';
-export const btnDanger =
-  'inline-flex items-center justify-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-3.5 py-2 text-xs font-semibold text-red-400 hover:bg-red-500/20 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 transition-colors';
 
 /** 기본 모달 셸: Esc·배경 클릭 닫기, aria-modal, 열릴 때 첫 입력 포커스. */
 export function Modal({
@@ -51,7 +44,7 @@ export function Modal({
   }, [onClose, busy]);
   return (
     <div
-      className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4"
+      className={`fixed inset-0 z-[60] ${scrimStrong} flex items-stretch sm:items-center justify-center p-0 sm:p-5`}
       onClick={() => !busy && onClose()}
     >
       <div
@@ -59,24 +52,21 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className={`bg-[#161B27] rounded-2xl border border-[#1E2530] w-full ${wide ? 'max-w-4xl' : 'max-w-lg'} max-h-[90vh] flex flex-col`}
+        className={`bg-sv-surface sm:rounded-xl shadow-sv-modal w-full ${wide ? 'sm:max-w-4xl' : 'sm:max-w-[580px]'} sm:max-h-[90vh] flex flex-col overflow-hidden`}
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between gap-3 px-5 pt-4 pb-3 border-b border-[#1E2530]">
-          <h2 id={titleId} className="text-white text-sm font-bold truncate">
+        <div className="flex-shrink-0 flex items-center justify-between gap-3 px-[22px] py-4 border-b border-sv-line-soft">
+          <h2 id={titleId} className="text-sv-ink text-[18px] font-extrabold truncate">
             {title}
           </h2>
-          <button
-            onClick={onClose}
-            disabled={busy}
-            aria-label="닫기"
-            className="text-[#8B9BB4] hover:text-white cursor-pointer disabled:opacity-40"
-          >
+          <button onClick={onClose} disabled={busy} aria-label="닫기" className={closeBtn}>
             <i className="ri-close-line text-lg"></i>
           </button>
         </div>
-        <div className="px-5 py-4 overflow-y-auto">{children}</div>
-        {footer && <div className="px-5 pb-4 pt-1 flex flex-wrap justify-end gap-2">{footer}</div>}
+        <div className="flex-1 min-h-0 px-[22px] py-5 overflow-y-auto">{children}</div>
+        {footer && (
+          <div className="flex-shrink-0 px-[22px] py-4 border-t border-sv-line-soft flex flex-wrap justify-end gap-2">{footer}</div>
+        )}
       </div>
     </div>
   );
@@ -142,9 +132,9 @@ export function ReasonModal({
         </>
       }
     >
-      {description && <div className="mb-3 text-xs text-[#8B9BB4] leading-relaxed">{description}</div>}
-      <label htmlFor={fieldId} className="block text-[#8B9BB4] text-[11px] font-semibold mb-1">
-        사유 <span className="text-[#4A5568] font-normal">({REASON_MIN}~{REASON_MAX}자, 처리 이력에 기록됩니다)</span>
+      {description && <div className="mb-4 text-[13px] text-sv-text leading-relaxed">{description}</div>}
+      <label htmlFor={fieldId} className="block text-sv-ink text-[12px] font-bold mb-1.5">
+        사유 <span className="text-sv-muted font-normal">({REASON_MIN}~{REASON_MAX}자, 처리 이력에 기록됩니다)</span>
       </label>
       <textarea
         id={fieldId}
@@ -158,16 +148,16 @@ export function ReasonModal({
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void submit();
         }}
       />
-      <div className="mt-1 flex justify-between text-[10px]">
-        <span className={tooShort && len > 0 ? 'text-[#F59E0B]' : 'text-[#4A5568]'}>
+      <div className="mt-1 flex justify-between text-[11px]">
+        <span className={tooShort && len > 0 ? 'text-sv-warn-fg font-semibold' : 'text-sv-muted'}>
           {tooShort ? `사유를 ${REASON_MIN}자 이상 입력해야 진행할 수 있습니다.` : tooLong ? `${REASON_MAX}자를 넘었습니다.` : ' '}
         </span>
-        <span className={tooLong ? 'text-red-400' : 'text-[#4A5568]'}>
+        <span className={tooLong ? 'text-sv-bad-fg font-semibold' : 'text-sv-muted'}>
           {len}/{REASON_MAX}
         </span>
       </div>
       {err && (
-        <p role="alert" className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300 whitespace-pre-wrap">
+        <p role="alert" className={`mt-3 whitespace-pre-wrap ${errorBox}`}>
           {err}
         </p>
       )}
@@ -219,9 +209,9 @@ export function ConfirmModal({
         </>
       }
     >
-      <div className="text-xs text-[#C9D1DD] leading-relaxed">{body}</div>
+      <div className="text-[13px] text-sv-ink-2 leading-relaxed">{body}</div>
       {err && (
-        <p role="alert" className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+        <p role="alert" className={`mt-3 ${errorBox}`}>
           {err}
         </p>
       )}
@@ -235,10 +225,8 @@ export function Toast({ toast }: { toast: ToastState | null }) {
     <div
       role="status"
       aria-live="polite"
-      className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] max-w-[90vw] rounded-xl px-4 py-3 text-xs font-semibold shadow-lg border ${
-        toast.tone === 'error'
-          ? 'bg-[#2A1418] border-red-500/40 text-red-300'
-          : 'bg-[#0F2A27] border-[#00E5CC]/40 text-[#00E5CC]'
+      className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] max-w-[90vw] rounded-lg px-4 py-3 text-[13px] font-semibold shadow-sv-toast ${
+        toast.tone === 'error' ? 'bg-sv-bad-fg text-sv-on-dark' : 'bg-sv-dark text-sv-on-dark'
       }`}
     >
       {toast.msg}
@@ -246,12 +234,13 @@ export function Toast({ toast }: { toast: ToastState | null }) {
   );
 }
 
+/** 스케치 004 .stat — 테두리 카드, 12px 라벨 + 19px 값. tone 은 값 글자색 클래스(sv 토큰). */
 export function StatCard({ label, value, sub, tone }: { label: string; value: ReactNode; sub?: ReactNode; tone?: string }) {
   return (
-    <div className="bg-[#161B27] rounded-2xl border border-[#1E2530] p-4 min-w-0">
-      <p className="text-[#8B9BB4] text-[11px] font-semibold">{label}</p>
-      <p className={`mt-1 text-2xl font-bold ${tone ?? 'text-white'} truncate`}>{value}</p>
-      {sub && <div className="mt-1 text-[11px] text-[#4A5568]">{sub}</div>}
+    <div className={`${boxCard} px-4 py-[13px] min-w-0`}>
+      <p className="text-sv-muted text-[12px]">{label}</p>
+      <p className={`mt-0.5 text-[19px] font-extrabold ${tone ?? 'text-sv-ink'} truncate`}>{value}</p>
+      {sub && <div className="mt-0.5 text-[11px] text-sv-muted">{sub}</div>}
     </div>
   );
 }

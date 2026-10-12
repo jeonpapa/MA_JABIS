@@ -13,13 +13,15 @@ import {
   type SVPersonDetail,
 } from '@/api/stakeholder';
 import PersonAvatar from '@/pages/stakeholder-signals/components/PersonAvatar';
-import { btnGhost, btnPrimary, ConfirmModal, inputCls, Modal, StatCard, Toast } from '@/pages/admin/stakeholder-audit/components/ui';
-import { chipCls, fmtDateTime, useToast } from '@/pages/admin/stakeholder-audit/components/uiHelpers';
+import { ConfirmModal, Modal, Toast } from '@/pages/admin/stakeholder-audit/components/ui';
+import { boxCard, errorBox, focusRing, panel, thead } from '@/pages/stakeholder-signals/theme/sv';
+import { SvHero, SvMain, SvPage, SvTopBar } from '@/pages/stakeholder-signals/theme/SvPage';
+import { btnGhost, btnPrimary, chipCls, fmtDateTime, inputCls, useToast } from '@/pages/admin/stakeholder-audit/components/uiHelpers';
 import PersonDrawer, { StatusBadge, VerifyTag } from './components/PersonDrawer';
 import PersonFormModal, { type SaveOutcome } from './components/PersonFormModal';
 import PhotoPicker, { type PhotoIntent } from './components/PhotoPicker';
 
-// 모니터링 인물 관리 (스케치 003) — /admin/stakeholder-people
+// 모니터링 인물 관리 (스케치 003, 화이트 톤 .sv-light) — /admin/stakeholder-people
 //   목록·등록·편집·일시중지/재개(삭제 없음)·사진 업로드(admin, 서버 WEBP 정규화).
 //   검증 인물의 기관·부서·직책은 감사 제안(직책 변경) 승인으로만 바뀐다 — 서버 409/422 문구를 그대로 보여준다.
 //   모든 변경은 익일 07:00 KST 모니터링부터 반영.
@@ -88,7 +90,7 @@ function PhotoModal({
         disabled={busy}
       />
       {err && (
-        <p role="alert" className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+        <p role="alert" className={`mt-3 ${errorBox}`}>
           {err}
         </p>
       )}
@@ -204,55 +206,44 @@ export default function AdminStakeholderPeoplePage() {
     void afterChange(o.person?.person_id ?? null);
   };
 
-  if (!authChecked) return <div className="min-h-screen bg-[#0D1117]" />;
+  if (!authChecked) return <SvPage>{null}</SvPage>;
+  const candidates = people.filter(p => p.verification_status !== 'verified').length;
+
+  const gridCols = 'lg:grid-cols-[minmax(230px,1.25fr)_minmax(170px,1fr)_minmax(150px,.8fr)_110px_125px_40px]';
 
   return (
-    <div className="min-h-screen bg-[#0D1117] text-white">
-      <div className="px-4 sm:px-8 pt-8 pb-6 border-b border-[#1E2530]">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="w-5 h-5 flex items-center justify-center">
-                <i className="ri-contacts-line text-[#00E5CC]"></i>
+    <SvPage>
+      <SvMain>
+        <SvTopBar crumb="약가·건강보험 재정 / 인물 관리">
+          <button className={btnGhost} onClick={() => void reload()}>
+            <i className="ri-refresh-line"></i>새로고침
+          </button>
+          <button className={btnPrimary} onClick={() => setDialog({ kind: 'form', person: null })}>
+            + 인물 등록
+          </button>
+        </SvTopBar>
+
+        <SvHero
+          title="모니터링 인물 관리"
+          sub="활성 인물은 익일부터 약가·건강보험 재정 일일 모니터링에 자동 반영됩니다. 삭제 대신 일시중지로 관리하며, 검증 인물의 직책 변경은 감사 제안 승인으로만 이뤄집니다."
+          aside={
+            <div className={`${boxCard} px-4 py-[13px] text-[12px] leading-[1.55] text-sv-text min-w-[220px]`}>
+              <span>현재 유효 활성 인물</span>
+              <b className="block text-[17px] font-extrabold text-sv-ink">
+                {typeof list?.active_effective_count === 'number' ? `${list.active_effective_count}명` : '—'}
+              </b>
+              <span className="block">최근 변경 {fmtDateTime(list?.updated_at)}</span>
+              <span className="block text-sv-muted">
+                등록 {counts.all} · 활성 {counts.active} · 일시중지 {counts.paused} ·{' '}
+                <span className={candidates ? 'text-sv-warn-fg font-semibold' : ''}>후보 {candidates}</span>
               </span>
-              <h1 className="text-2xl font-bold text-white">모니터링 인물 관리</h1>
             </div>
-            <p className="text-[#8B9BB4] text-sm max-w-3xl">
-              활성 인물은 익일부터 약가·건강보험 재정 일일 모니터링에 자동 반영됩니다. 삭제 대신 일시중지로 관리하며, 검증
-              인물의 직책 변경은 감사 제안 승인으로만 이뤄집니다.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button className={btnGhost} onClick={() => void reload()}>
-              <i className="ri-refresh-line"></i>새로고침
-            </button>
-            <button className={btnPrimary} onClick={() => setDialog({ kind: 'form', person: null })}>
-              <i className="ri-user-add-line"></i>인물 등록
-            </button>
-          </div>
-        </div>
-      </div>
+          }
+        />
 
-      <div className="px-4 sm:px-8 py-6 space-y-5">
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-          <StatCard
-            label="현재 유효 활성 인물"
-            value={typeof list?.active_effective_count === 'number' ? `${list.active_effective_count}명` : '—'}
-            tone="text-[#00E5CC]"
-            sub="오늘 기준 효력이 있는 활성 인물"
-          />
-          <StatCard label="레지스트리 갱신" value={<span className="text-base">{fmtDateTime(list?.updated_at)}</span>} sub="마지막 등록·수정 시각" />
-          <StatCard label="등록 인물" value={`${counts.all}명`} sub={`활성 ${counts.active} · 일시중지 ${counts.paused}`} />
-          <StatCard
-            label="후보(미검증)"
-            value={`${people.filter(p => p.verification_status !== 'verified').length}명`}
-            sub="공식 직책 확인 전"
-          />
-        </div>
-
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-          <div className="relative flex-1 max-w-md">
-            <i className="ri-search-line absolute left-3 top-1/2 -translate-y-1/2 text-[#4A5568] text-sm"></i>
+        <section className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-[13px]">
+          <div className="relative flex-1 max-w-[420px]">
+            <i className="ri-search-line absolute left-3 top-1/2 -translate-y-1/2 text-sv-muted text-sm" aria-hidden="true"></i>
             <input
               value={query}
               onChange={e => setQuery(e.target.value)}
@@ -261,7 +252,7 @@ export default function AdminStakeholderPeoplePage() {
               className={`${inputCls} !pl-9`}
             />
           </div>
-          <div className="flex gap-2 overflow-x-auto" role="group" aria-label="상태 필터">
+          <div className="flex gap-[7px] overflow-x-auto p-0.5" role="group" aria-label="상태 필터">
             {(
               [
                 ['all', '전체'],
@@ -275,10 +266,10 @@ export default function AdminStakeholderPeoplePage() {
               </button>
             ))}
           </div>
-        </div>
+        </section>
 
-        <section className="bg-[#161B27] rounded-2xl border border-[#1E2530] overflow-hidden" aria-live="polite">
-          <div className="hidden lg:grid grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(0,1.3fr)_7rem_9rem_1.5rem] gap-3 px-5 py-2.5 border-b border-[#1E2530] text-[10px] font-semibold text-[#4A5568]">
+        <section className={panel} aria-live="polite">
+          <div className={`hidden lg:grid ${gridCols} gap-3.5 px-[18px] py-3 ${thead}`}>
             <div>인물</div>
             <div>기관·부서</div>
             <div>직책</div>
@@ -287,22 +278,22 @@ export default function AdminStakeholderPeoplePage() {
             <div></div>
           </div>
           {loading && !list ? (
-            <div className="p-5 space-y-3 animate-pulse">
+            <div className="animate-pulse">
               {[0, 1, 2].map(i => (
-                <div key={i} className="h-12 rounded-lg bg-[#1E2530]" />
+                <div key={i} className="h-[77px] border-t border-sv-line-soft bg-sv-surface-2" />
               ))}
             </div>
           ) : error ? (
-            <div className="p-10 text-center">
-              <p className="text-sm font-bold text-red-400">인물 목록을 불러오지 못했습니다.</p>
-              <p className="mt-1 text-xs text-red-300">{error}</p>
+            <div className="px-5 py-14 text-center">
+              <p className="text-sm font-bold text-sv-bad-fg">인물 목록을 불러오지 못했습니다.</p>
+              <p className="mt-1 text-[13px] text-sv-bad-fg">{error}</p>
             </div>
           ) : visible.length === 0 ? (
-            <div className="p-10 text-center">
-              <p className="text-sm font-bold text-white">
+            <div className="px-5 py-14 text-center">
+              <p className="text-sm font-bold text-sv-ink">
                 {people.length ? '검색 조건에 맞는 인물이 없습니다.' : '등록된 인물이 없습니다.'}
               </p>
-              <p className="mt-1 text-xs text-[#8B9BB4]">
+              <p className="mt-1 text-[13px] text-sv-muted">
                 {people.length ? '검색어를 지우거나 다른 상태를 선택해 주세요.' : '"인물 등록" 으로 추가하거나 sync 를 기다려 주세요.'}
               </p>
             </div>
@@ -320,11 +311,11 @@ export default function AdminStakeholderPeoplePage() {
                     openPerson(p.person_id);
                   }
                 }}
-                className={`grid grid-cols-[minmax(0,1fr)_auto] lg:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(0,1.3fr)_7rem_9rem_1.5rem] gap-3 items-center px-5 py-3 border-b border-[#1E2530] last:border-b-0 cursor-pointer hover:bg-white/5 ${
-                  selectedId === p.person_id ? 'bg-[#00E5CC]/5' : ''
+                className={`grid grid-cols-[minmax(0,1fr)_auto] ${gridCols} gap-3.5 items-center px-[18px] py-[15px] border-t border-sv-line-soft cursor-pointer hover:bg-sv-hover ${focusRing} focus-visible:-outline-offset-2 ${
+                  selectedId === p.person_id ? 'bg-sv-selected' : ''
                 }`}
               >
-                <div className="flex items-center gap-3 min-w-0">
+                <div className="flex items-center gap-[11px] min-w-0">
                   <PersonAvatar
                     key={`${p.person_id}-${photoVersions[p.person_id] ?? 0}`}
                     personId={p.person_id}
@@ -332,33 +323,38 @@ export default function AdminStakeholderPeoplePage() {
                     hasPhoto={p.has_photo}
                   />
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-white truncate">{p.name}</p>
-                    <div className="mt-0.5">
-                      <VerifyTag status={p.verification_status} />
-                    </div>
-                    <p className="lg:hidden mt-0.5 text-[11px] text-[#8B9BB4] truncate">
+                    <p className="text-[15px] font-bold text-sv-ink truncate">{p.name}</p>
+                    <p className="text-[11px] text-sv-muted truncate">
+                      {p.verification_status === 'verified' ? '공식 근거 확인' : '후보 · 공식 직책 확인 필요'}
+                    </p>
+                    <p className="lg:hidden mt-0.5 text-[12px] text-sv-text truncate">
                       {p.organization} · {p.role}
                     </p>
                   </div>
                 </div>
                 <div className="hidden lg:block min-w-0">
-                  <p className="text-xs text-white truncate">{p.organization}</p>
-                  <p className="text-[11px] text-[#8B9BB4] truncate">{p.department}</p>
+                  <p className="text-[13px] font-bold text-sv-ink truncate">{p.organization}</p>
+                  <p className="text-[11px] text-sv-muted truncate">{p.department}</p>
                 </div>
-                <div className="hidden lg:block text-xs text-[#C9D1DD] truncate">{p.role}</div>
+                <div className="hidden lg:block text-[13px] text-sv-ink-2 truncate">{p.role}</div>
                 <div>
                   <StatusBadge status={p.status} />
+                  <div className="mt-1">
+                    <VerifyTag status={p.verification_status} compact />
+                  </div>
                 </div>
-                <div className="hidden lg:block text-[11px] text-[#8B9BB4]">
+                <div className="hidden lg:block text-[12px] text-sv-ink-2">
                   {fmtDateTime(p.updated_at)}
-                  <span className="block text-[10px] text-[#4A5568]">{p.effective_from ? `${p.effective_from}부터 반영` : ''}</span>
+                  <span className="block text-[11px] text-sv-muted">{p.effective_from ? `${p.effective_from}부터 반영` : ''}</span>
                 </div>
-                <i className="hidden lg:block ri-more-2-fill text-[#4A5568]" aria-hidden="true"></i>
+                <span className="hidden lg:block text-[21px] leading-none text-sv-muted text-center" aria-hidden="true">
+                  ⋯
+                </span>
               </div>
             ))
           )}
         </section>
-      </div>
+      </SvMain>
 
       {selected && (
         <PersonDrawer
@@ -446,6 +442,6 @@ export default function AdminStakeholderPeoplePage() {
       )}
 
       <Toast toast={toast} />
-    </div>
+    </SvPage>
   );
 }

@@ -10,8 +10,10 @@ import {
   type SVPersonDetail,
   type SVPersonInput,
 } from '@/api/stakeholder';
-import { btnGhost, btnPrimary, inputCls, Modal } from '@/pages/admin/stakeholder-audit/components/ui';
+import { Modal } from '@/pages/admin/stakeholder-audit/components/ui';
+import { btnGhost, btnPrimary, inputCls } from '@/pages/admin/stakeholder-audit/components/uiHelpers';
 import PhotoPicker, { type PhotoIntent } from './PhotoPicker';
+import { errorBox, fieldLabel, hint, tone } from '@/pages/stakeholder-signals/theme/sv';
 
 // 인물 등록·편집 모달 (스케치 003).
 //   - 등록은 항상 candidate(서버가 강제). 확인 상태 select 의 '검증됨' 은 비활성 — 감사 근거 승인으로만.
@@ -127,9 +129,9 @@ export default function PersonFormModal({
 
   const field = (k: TextField, opts: { list?: string } = {}) => (
     <div>
-      <label htmlFor={`${formId}-${k}`} className="block text-[#8B9BB4] text-[11px] font-semibold mb-1">
-        {LABELS[k]} <span className="text-red-400">*</span>
-        {locked(k) && <i className="ri-lock-line ml-1 text-[#4A5568]" title="검증 인물 — 감사 제안 승인으로만 변경"></i>}
+      <label htmlFor={`${formId}-${k}`} className={fieldLabel}>
+        {LABELS[k]} <span className="text-sv-bad-fg">*</span>
+        {locked(k) && <i className="ri-lock-line ml-1 text-sv-muted" title="검증 인물 — 감사 제안 승인으로만 변경"></i>}
       </label>
       <input
         id={`${formId}-${k}`}
@@ -146,7 +148,7 @@ export default function PersonFormModal({
         className={inputCls}
         autoComplete="off"
       />
-      {fieldErr[k] && <p className="mt-1 text-[11px] text-red-400">{fieldErr[k]}</p>}
+      {fieldErr[k] && <p className="mt-1 text-[12px] text-sv-bad-fg">{fieldErr[k]}</p>}
     </div>
   );
 
@@ -177,22 +179,22 @@ export default function PersonFormModal({
           disabled={busy}
         />
 
-        <div className="rounded-lg bg-[#3B82F6]/10 px-3 py-2 text-[11px] leading-relaxed text-[#93C5FD]" role="note">
+        <div className={`rounded-lg px-3.5 py-3 text-[13px] leading-relaxed ${tone.notice}`} role="note">
           <b>익일 07:00 KST 부터 반영</b> — 활성 등록·정보 변경·일시중지는 모두 다음날 모니터링부터 적용됩니다. 기존 수집
           데이터는 유지됩니다.
         </div>
 
         {verified && (
-          <div className="rounded-lg border border-[#F59E0B]/30 bg-[#F59E0B]/5 px-3 py-2 text-[11px] leading-relaxed text-[#F59E0B]">
+          <div className={`rounded-lg border border-sv-warn-line px-3.5 py-3 text-[13px] leading-relaxed ${tone.warn}`}>
             검증된 인물입니다. 기관·부서·직책은 공식 근거가 있는 <b>직책 변경 감사 제안</b>을 승인해야 바뀝니다 —{' '}
-            <Link to="/admin/stakeholder-audit" className="underline">
+            <Link to="/admin/stakeholder-audit" className="underline font-bold">
               모니터링 감사
             </Link>
             .
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3.5">
           {field('name')}
           <div>
             {field('organization', { list: `${formId}-orgs` })}
@@ -205,8 +207,8 @@ export default function PersonFormModal({
           {field('department')}
           {field('role')}
           <div>
-            <label htmlFor={`${formId}-status`} className="block text-[#8B9BB4] text-[11px] font-semibold mb-1">
-              모니터링 상태 <span className="text-red-400">*</span>
+            <label htmlFor={`${formId}-status`} className={fieldLabel}>
+              모니터링 상태 <span className="text-sv-bad-fg">*</span>
             </label>
             <select
               id={`${formId}-status`}
@@ -220,7 +222,7 @@ export default function PersonFormModal({
             </select>
           </div>
           <div>
-            <label htmlFor={`${formId}-verif`} className="block text-[#8B9BB4] text-[11px] font-semibold mb-1">
+            <label htmlFor={`${formId}-verif`} className={fieldLabel}>
               인물 확인 상태
             </label>
             <select id={`${formId}-verif`} value={verified ? 'verified' : 'candidate'} disabled className={inputCls}>
@@ -229,13 +231,13 @@ export default function PersonFormModal({
                 검증됨 — 감사 근거 승인으로만
               </option>
             </select>
-            <p className="mt-1 text-[10px] text-[#4A5568]">확인 상태는 직접 바꿀 수 없습니다(감사 근거 승인으로만 검증).</p>
+            <p className={`mt-1 ${hint}`}>확인 상태는 직접 바꿀 수 없습니다(감사 근거 승인으로만 검증).</p>
           </div>
         </div>
 
         <div>
-          <label htmlFor={`${formId}-aliases`} className="block text-[#8B9BB4] text-[11px] font-semibold mb-1">
-            다른 표기 <span className="text-[#4A5568] font-normal">(선택, 쉼표로 구분)</span>
+          <label htmlFor={`${formId}-aliases`} className={fieldLabel}>
+            다른 표기 <span className="text-sv-muted font-normal">(선택, 쉼표로 구분)</span>
           </label>
           <input
             id={`${formId}-aliases`}
@@ -247,8 +249,8 @@ export default function PersonFormModal({
           />
         </div>
         <div>
-          <label htmlFor={`${formId}-tags`} className="block text-[#8B9BB4] text-[11px] font-semibold mb-1">
-            주제 태그 <span className="text-[#4A5568] font-normal">(쉼표로 구분{editing ? '' : ' · 비우면 기본 태그'})</span>
+          <label htmlFor={`${formId}-tags`} className={fieldLabel}>
+            주제 태그 <span className="text-sv-muted font-normal">(쉼표로 구분{editing ? '' : ' · 비우면 기본 태그'})</span>
           </label>
           <input
             id={`${formId}-tags`}
@@ -260,7 +262,7 @@ export default function PersonFormModal({
         </div>
 
         {formErr && (
-          <p role="alert" className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300 whitespace-pre-wrap">
+          <p role="alert" className={`whitespace-pre-wrap ${errorBox}`}>
             {formErr}
           </p>
         )}

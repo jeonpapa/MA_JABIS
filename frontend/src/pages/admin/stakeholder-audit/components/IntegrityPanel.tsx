@@ -1,6 +1,7 @@
 import type { SVIntegrityProblem, SVIntegrityReport } from '@/api/stakeholder';
 import { IntegrityBadge } from '@/pages/stakeholder-signals/components/GradeBadge';
 import { fmtDateTime } from './uiHelpers';
+import { boxCard, card, errorBox, thead } from '@/pages/stakeholder-signals/theme/sv';
 
 // 출처 무결성 패널 — GET /api/admin/stakeholder/integrity
 //   {summary, last_sync_at, counts, artifact_counts, problems[], artifact_problems[]}
@@ -31,22 +32,25 @@ function CountsRow({ title, counts }: { title: string; counts?: Record<string, n
   return (
     <div>
       <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
-        <p className="text-[11px] font-semibold text-[#8B9BB4]">{title}</p>
+        <p className="text-[12px] font-bold text-sv-text">{title}</p>
         {entries.length > 0 && (
-          <p className="text-[11px] text-[#8B9BB4]">
-            일치 <span className={verified === checkable ? 'text-[#00E5CC] font-bold' : 'text-red-400 font-bold'}>{verified}/{checkable}</span>
-            <span className="text-[#4A5568]"> (로컬 원문 없음 제외)</span>
+          <p className="text-[12px] text-sv-text">
+            일치 <span className={verified === checkable ? 'text-sv-ok-fg font-extrabold' : 'text-sv-bad-fg font-extrabold'}>{verified}/{checkable}</span>
+            <span className="text-sv-muted"> (로컬 원문 없음 제외)</span>
           </p>
         )}
       </div>
       {entries.length === 0 ? (
-        <p className="text-xs text-[#4A5568]">집계 없음(아직 sync 전일 수 있습니다).</p>
+        <p className="text-[13px] text-sv-muted">집계 없음(아직 sync 전일 수 있습니다).</p>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
           {entries.map(([k, v]) => (
-            <div key={k} className="rounded-xl bg-[#0D1117] border border-[#1E2530] px-3 py-2">
-              <p className="text-[10px] text-[#8B9BB4]">{STATUS_LABELS[k] ?? k}</p>
-              <p className={`text-lg font-bold ${BAD.has(k) && v > 0 ? 'text-red-400' : 'text-white'}`}>{v}</p>
+            <div
+              key={k}
+              className={`rounded-lg border px-3 py-2 ${BAD.has(k) && v > 0 ? 'border-sv-bad-line bg-sv-bad-bg' : 'border-sv-line bg-sv-surface'}`}
+            >
+              <p className="text-[11px] text-sv-muted">{STATUS_LABELS[k] ?? k}</p>
+              <p className={`text-[19px] font-extrabold ${BAD.has(k) && v > 0 ? 'text-sv-bad-fg' : 'text-sv-ink'}`}>{v}</p>
             </div>
           ))}
         </div>
@@ -58,13 +62,13 @@ function CountsRow({ title, counts }: { title: string; counts?: Record<string, n
 function ProblemTable({ title, rows, artifact }: { title: string; rows: SVIntegrityProblem[]; artifact?: boolean }) {
   if (!rows.length) return null;
   return (
-    <section className="bg-[#161B27] rounded-2xl border border-red-500/30 overflow-hidden">
-      <h3 className="px-4 py-3 border-b border-[#1E2530] text-xs font-bold text-red-400">
+    <section className="bg-sv-surface rounded-[10px] border-2 border-sv-bad-strong overflow-hidden">
+      <h3 className="px-4 py-3 border-b border-sv-bad-line bg-sv-bad-bg text-[13px] font-extrabold text-sv-bad-fg">
         {title} {rows.length}건
       </h3>
       <div className="overflow-x-auto">
-        <table className="w-full text-[11px]">
-          <thead className="text-left text-[10px] text-[#4A5568]">
+        <table className="w-full text-[12px]">
+          <thead className={`${thead} text-left`}>
             <tr>
               <th className="px-3 py-2 font-semibold">{artifact ? '경로' : '출처'}</th>
               <th className="px-3 py-2 font-semibold">상태</th>
@@ -75,22 +79,22 @@ function ProblemTable({ title, rows, artifact }: { title: string; rows: SVIntegr
           </thead>
           <tbody>
             {rows.map((r, i) => (
-              <tr key={r.source_id ?? r.path ?? i} className="border-t border-[#1E2530] align-top">
-                <td className="px-3 py-2 text-white break-all">
+              <tr key={r.source_id ?? r.path ?? i} className="border-t border-sv-line-soft align-top">
+                <td className="px-3 py-2 text-sv-ink font-semibold break-all">
                   {artifact ? r.path : r.source_id}
-                  {!artifact && r.title && <span className="block text-[#8B9BB4]">{r.title}</span>}
+                  {!artifact && r.title && <span className="block font-normal text-sv-text">{r.title}</span>}
                 </td>
                 <td className="px-3 py-2">
                   <IntegrityBadge status={r.integrity_status} />
                 </td>
-                <td className="px-3 py-2 font-mono text-[10px] text-[#8B9BB4] break-all">
+                <td className="px-3 py-2 font-mono text-[11px] text-sv-text break-all">
                   {artifact ? r.name ?? '—' : [r.local_path, r.text_path].filter(Boolean).join(' · ') || '—'}
                 </td>
-                <td className="px-3 py-2 font-mono text-[10px] text-[#8B9BB4]" title={r.sha256 ?? undefined}>
+                <td className="px-3 py-2 font-mono text-[11px] text-sv-text" title={r.sha256 ?? undefined}>
                   {shortSha(r.sha256)}
                   {!artifact && r.text_sha256 && <span className="block" title={r.text_sha256}>txt {shortSha(r.text_sha256)}</span>}
                 </td>
-                <td className="px-3 py-2 text-[#8B9BB4] whitespace-nowrap">{fmtDateTime(r.integrity_checked_at)}</td>
+                <td className="px-3 py-2 text-sv-text whitespace-nowrap">{fmtDateTime(r.integrity_checked_at)}</td>
               </tr>
             ))}
           </tbody>
@@ -110,11 +114,11 @@ export default function IntegrityPanel({
   error: string | null;
 }) {
   if (loading) {
-    return <div className="h-32 rounded-2xl bg-[#161B27] border border-[#1E2530] animate-pulse" />;
+    return <div className={`h-32 ${boxCard} animate-pulse`} />;
   }
   if (error) {
     return (
-      <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-xs text-red-300">
+      <div className={errorBox}>
         무결성 요약을 불러오지 못했습니다 — {error}
       </div>
     );
@@ -129,26 +133,26 @@ export default function IntegrityPanel({
 
   return (
     <div className="space-y-4">
-      <div className="bg-[#161B27] rounded-2xl border border-[#1E2530] p-4 space-y-4">
+      <div className={`${card} p-4 sm:p-5 space-y-5`}>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-xs font-bold text-white">출처 무결성</h3>
-          <span className="text-[11px] text-[#8B9BB4]">마지막 sync {fmtDateTime(report.last_sync_at)}</span>
+          <h3 className="text-[14px] font-extrabold text-sv-ink">출처 무결성</h3>
+          <span className="text-[12px] text-sv-muted">마지막 sync {fmtDateTime(report.last_sync_at)}</span>
         </div>
         <CountsRow title="원문 출처(sv_source)" counts={report.counts} />
         <CountsRow title="정본·산출물(sv_artifact)" counts={report.artifact_counts} />
         {problems.length === 0 && artProblems.length === 0 && (
-          <p className="text-[11px] text-[#00E5CC]">
+          <p className="text-[12px] font-bold text-sv-ok-fg">
             <i className="ri-shield-check-line mr-1"></i>불일치·누락 파일 없음
           </p>
         )}
         {summaryScalars.length > 0 && (
           <details>
-            <summary className="cursor-pointer text-[11px] text-[#8B9BB4] hover:text-white">sync 무결성 요약(원본)</summary>
-            <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[11px]">
+            <summary className="cursor-pointer text-[12px] font-semibold text-sv-text hover:text-sv-ink">sync 무결성 요약(원본)</summary>
+            <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[12px]">
               {summaryScalars.map(([k, v]) => (
                 <div key={k} className="contents">
-                  <dt className="text-[#8B9BB4] font-mono">{k}</dt>
-                  <dd className="text-white break-all">{v === null ? '—' : String(v)}</dd>
+                  <dt className="text-sv-muted font-mono">{k}</dt>
+                  <dd className="text-sv-ink break-all">{v === null ? '—' : String(v)}</dd>
                 </div>
               ))}
             </dl>

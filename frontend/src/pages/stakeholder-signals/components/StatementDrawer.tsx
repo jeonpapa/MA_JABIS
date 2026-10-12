@@ -14,6 +14,7 @@ import {
 } from '@/api/stakeholder';
 import { GradeBadge, IntegrityBadge, LocatorMatchBadge } from './GradeBadge';
 import PersonAvatar from './PersonAvatar';
+import { btnDark, closeBtn, focusRing, linkBtn, scrim } from '../theme/sv';
 
 // 발언 블록 상세 — 타임라인 드로어와 워크벤치 우측 패널이 같은 본문을 쓴다.
 //
@@ -22,6 +23,8 @@ import PersonAvatar from './PersonAvatar';
 //   2) 인용마다 증거등급 · 출처 링크 · 무결성(integrity_status) · 원문 대조(locator_match) 배지.
 //      locator_match==='none' 은 숨기지 않고 "원문 불일치" 경고로 드러낸다.
 //   3) 원문은 locator 창 발췌(≤600자)만 — 전문 링크 없음.
+// 라이트 팔레트(스케치 001 드로어 · 002 상세 패널): 인용=파란 인용 패널, 귀속요약=회색 패널, 분석=보라 테두리 패널,
+// 한계=주황 패널, 원문 불일치=빨간 테두리·경고문.
 
 const DEFAULT_COPYRIGHT =
   '원문 저작권은 각 발행기관·언론사에 있습니다. 내부 검증과 출처(provenance) 보존 목적으로만 발췌를 제공합니다.';
@@ -46,14 +49,14 @@ function SourceLink({ prov, fallbackUrl }: { prov?: SVProvenance | null; fallbac
   const href = safeHttpUrl(prov?.url) ?? safeHttpUrl(fallbackUrl);
   const label = prov?.title || prov?.source_id || '원문 출처';
   if (!href) {
-    return <span className="text-[11px] text-[#8B9BB4]">{label}</span>;
+    return <span className="text-[12px] text-sv-text">{label}</span>;
   }
   return (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex items-center gap-1 text-[11px] text-[#00E5CC] hover:underline min-w-0"
+      className={`inline-flex items-center gap-1 text-[12px] font-semibold text-sv-accent-ink hover:underline min-w-0 ${focusRing}`}
       title={href}
       onClick={e => e.stopPropagation()}
     >
@@ -66,14 +69,14 @@ function SourceLink({ prov, fallbackUrl }: { prov?: SVProvenance | null; fallbac
 function ExcerptBox({ excerpt }: { excerpt: SVExcerpt }) {
   const { text, clamped } = clampExcerpt(excerpt.text);
   return (
-    <div className="mt-2 rounded-lg border border-[#2A3545] bg-[#0A0E1A] p-3">
-      <p className="text-[10px] font-semibold text-[#4A5568] mb-1.5">
-        원문 발췌 · locator 창 (최대 {EXCERPT_MAX_CHARS}자)
-        {excerpt.locator && <code className="ml-1.5 font-mono text-[#8B9BB4]">{excerpt.locator}</code>}
+    <div className="mt-2 rounded-lg border border-sv-line bg-sv-surface-2 p-3.5">
+      <p className="text-[11px] font-bold text-sv-muted mb-1.5">
+        원문 발췌 · locator 창 <span className="whitespace-nowrap">(최대 {EXCERPT_MAX_CHARS}자)</span>
+        {excerpt.locator && <code className="block mt-0.5 font-mono font-normal text-sv-text break-all">{excerpt.locator}</code>}
       </p>
-      <p className="text-[12px] leading-relaxed text-[#C9D1DC] whitespace-pre-wrap break-words">
+      <p className="text-[12.5px] leading-[1.75] text-sv-ink-2 whitespace-pre-wrap break-words">
         {text}
-        {clamped && <span className="text-[#4A5568]"> … (발췌 상한 {EXCERPT_MAX_CHARS}자)</span>}
+        {clamped && <span className="text-sv-muted"> … (발췌 상한 {EXCERPT_MAX_CHARS}자)</span>}
       </p>
     </div>
   );
@@ -85,11 +88,14 @@ function ExcerptToggle({
   locator,
   preloaded,
   label = '원문 발췌 보기',
+  prominent = false,
 }: {
   sourceId?: string | null;
   locator?: string | null;
   preloaded?: SVExcerpt | null;
   label?: string;
+  /** 스케치 002 .sourcebtn — 검정 전폭 버튼 */
+  prominent?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [excerpt, setExcerpt] = useState<SVExcerpt | null>(null);
@@ -130,18 +136,23 @@ function ExcerptToggle({
     <div>
       <button
         onClick={toggle}
-        className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#8B9BB4] hover:text-white cursor-pointer"
+        className={
+          prominent
+            ? `${btnDark} w-full`
+            : `inline-flex items-center gap-1 text-[12px] font-bold text-sv-text hover:text-sv-ink cursor-pointer ${focusRing}`
+        }
         aria-expanded={open}
       >
         <i className={open ? 'ri-arrow-up-s-line' : 'ri-file-text-line'}></i>
         {open ? '발췌 닫기' : label}
+        {prominent && !open && <span aria-hidden="true">↗</span>}
       </button>
       {open && loading && (
-        <p className="mt-2 text-[11px] text-[#8B9BB4]">
+        <p className="mt-2 text-[12px] text-sv-muted">
           <i className="ri-loader-4-line animate-spin mr-1"></i>발췌 불러오는 중…
         </p>
       )}
-      {open && err && <p className="mt-2 text-[11px] text-red-400">{err}</p>}
+      {open && err && <p className="mt-2 text-[12px] font-semibold text-sv-bad-fg">{err}</p>}
       {open && excerpt && <ExcerptBox excerpt={excerpt} />}
     </div>
   );
@@ -164,20 +175,20 @@ function QuoteCard({
   const grade = quote.evidence_grade || statementGrade;
   return (
     <div
-      className={`rounded-xl border p-3.5 ${
-        mismatch ? 'border-red-500/50 bg-red-500/5' : 'border-[#1E2530] bg-[#0D1117]'
+      className={`rounded-lg p-4 ${
+        mismatch ? 'border-2 border-sv-bad-strong bg-sv-bad-bg' : 'bg-sv-accent-soft'
       }`}
     >
       {mismatch && (
-        <p className="mb-2 flex items-start gap-1.5 text-[11px] font-semibold text-red-400">
+        <p className="mb-2.5 flex items-start gap-1.5 rounded-md bg-sv-bad-solid px-2.5 py-2 text-[12px] font-bold text-sv-bad-fg">
           <i className="ri-error-warning-fill mt-px"></i>
           원문 불일치 — 이 인용 문구를 근거 원문에서 찾지 못했습니다. 인용·보고 전 원문 확인이 필요합니다.
         </p>
       )}
       {/* verbatim: 저장된 그대로. 가공 금지. */}
       <blockquote
-        className={`border-l-[3px] pl-3 font-serif text-[14px] leading-relaxed text-white whitespace-pre-wrap break-words ${
-          mismatch ? 'border-red-400' : 'border-[#00E5CC]'
+        className={`border-l-[3px] pl-3.5 text-[14px] leading-[1.85] text-sv-ink whitespace-pre-wrap break-words ${
+          mismatch ? 'border-sv-bad-strong' : 'border-sv-accent'
         }`}
         data-verbatim="true"
       >
@@ -191,7 +202,7 @@ function QuoteCard({
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
         <SourceLink prov={prov} />
         {quote.locator && (
-          <code className="text-[10px] font-mono text-[#4A5568] break-all" title="인용 위치 (source_locator)">
+          <code className="text-[11px] font-mono text-sv-muted break-all" title="인용 위치 (source_locator)">
             {quote.locator}
           </code>
         )}
@@ -251,18 +262,18 @@ export function StatementDetailPanel({
   if (loading) {
     return (
       <div className="space-y-3 animate-pulse" aria-busy="true">
-        <div className="h-5 w-1/2 rounded bg-[#1E2530]" />
-        <div className="h-20 rounded-xl bg-[#1E2530]" />
-        <div className="h-4 w-3/4 rounded bg-[#1E2530]" />
-        <div className="h-4 w-2/3 rounded bg-[#1E2530]" />
+        <div className="h-5 w-1/2 rounded bg-sv-surface-3" />
+        <div className="h-20 rounded-lg bg-sv-surface-3" />
+        <div className="h-4 w-3/4 rounded bg-sv-surface-3" />
+        <div className="h-4 w-2/3 rounded bg-sv-surface-3" />
       </div>
     );
   }
   if (error || !detail) {
     return (
       <div className="py-10 text-center">
-        <p className="text-sm text-red-400">{error || '불러오지 못했습니다.'}</p>
-        <button onClick={() => setTick(t => t + 1)} className="mt-3 text-sm text-[#00E5CC] hover:underline cursor-pointer">
+        <p className="text-sm font-semibold text-sv-bad-fg">{error || '불러오지 못했습니다.'}</p>
+        <button onClick={() => setTick(t => t + 1)} className={`mt-3 text-sm ${linkBtn}`}>
           다시 시도
         </button>
       </div>
@@ -284,15 +295,24 @@ export function StatementDetailPanel({
   return (
     <div className="space-y-5">
       {/* 인물 헤더 */}
-      <div className="flex items-start gap-3">
+      {isWb && eventTitle && (
+        <h2 className="text-[20px] font-extrabold tracking-[-0.7px] leading-[1.45] text-sv-ink sv-ko">{eventTitle}</h2>
+      )}
+      <div className={`flex items-center gap-3 ${isWb ? 'pb-4 border-b border-sv-line-soft' : ''}`}>
         <PersonAvatar name={detail.speaker_name} personId={personId} hasPhoto={hasPhoto} size="lg" />
         <div className="min-w-0 flex-1">
-          <h2 className="text-white font-bold text-lg leading-tight">{detail.speaker_name || '발언자 미상'}</h2>
-          <p className="text-[#8B9BB4] text-xs mt-0.5">{detail.speaker_role_at_event || '당시 직책 미기재'}</p>
+          {isWb ? (
+            <b className="block text-[15px] text-sv-ink">{detail.speaker_name || '발언자 미상'}</b>
+          ) : (
+            <h2 className="text-[22px] font-extrabold tracking-[-0.8px] leading-tight text-sv-ink">
+              {detail.speaker_name || '발언자 미상'}
+            </h2>
+          )}
+          <p className="text-sv-muted text-[12px] mt-0.5">{detail.speaker_role_at_event || '당시 직책 미기재'}</p>
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             <GradeBadge grade={detail.evidence_grade} gradeClass={detail.grade_class} />
             {detail.topic && (
-              <span className="rounded bg-[#1E2530] px-1.5 py-0.5 text-[10px] text-[#8B9BB4]">
+              <span className="rounded-full bg-sv-surface-3 px-2 py-[3px] text-[10px] font-bold text-sv-text">
                 {topicLabels[detail.topic] ?? detail.topic}
               </span>
             )}
@@ -302,9 +322,9 @@ export function StatementDetailPanel({
 
       {/* verbatim */}
       <section>
-        <p className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#00E5CC]">
+        <p className="mb-2 flex flex-wrap items-center gap-1.5 text-[11px] font-extrabold text-sv-accent-ink">
           <i className="ri-double-quotes-l"></i>원문 인용 · verbatim
-          <span className="font-normal normal-case tracking-normal text-[#4A5568]">— 원문 그대로, 교정 없음</span>
+          <span className="font-normal text-sv-muted">— 원문 그대로, 교정 없음</span>
         </p>
         {quotes.length > 0 ? (
           <div className="space-y-2.5">
@@ -320,7 +340,7 @@ export function StatementDetailPanel({
             ))}
           </div>
         ) : (
-          <p className="rounded-xl border border-dashed border-[#2A3545] px-3 py-3 text-[12px] text-[#8B9BB4]">
+          <p className="rounded-lg border border-dashed border-sv-line-strong px-3 py-3 text-[12px] text-sv-text">
             확보된 직접인용이 없습니다. 아래 내용은 기자·기관의 귀속요약이며 발언 원문이 아닙니다.
           </p>
         )}
@@ -328,60 +348,60 @@ export function StatementDetailPanel({
 
       {/* summary — 인용 아님 */}
       {detail.summary_text && (
-        <section className="rounded-xl bg-[#1E2530]/60 p-3.5">
-          <p className="mb-1.5 text-[11px] font-bold text-[#8B9BB4]">
-            귀속요약 · summary <span className="font-normal text-[#4A5568]">— 기자·기관 요약, 인용 아님</span>
+        <section className="rounded-lg bg-sv-surface-3 p-3.5">
+          <p className="mb-1.5 text-[11px] font-extrabold text-sv-text">
+            귀속요약 · summary <span className="font-normal text-sv-muted">— 기자·기관 요약, 인용 아님</span>
           </p>
-          <p className="text-[13px] leading-relaxed text-[#C9D1DC] whitespace-pre-wrap">{detail.summary_text}</p>
+          <p className="text-[13px] leading-[1.75] text-sv-ink-2 whitespace-pre-wrap">{detail.summary_text}</p>
         </section>
       )}
 
       {/* analysis — 해석 */}
       {detail.analysis_text && (
-        <section className="rounded-xl border border-[#8B5CF6]/30 bg-[#8B5CF6]/10 p-3.5">
-          <p className="mb-1.5 text-[11px] font-bold text-[#A78BFA]">
+        <section className="rounded-lg border border-sv-violet-line bg-sv-violet-bg p-3.5">
+          <p className="mb-1.5 text-[11px] font-extrabold text-sv-violet-fg">
             {isWb ? '정책적 의미' : '판단'} · analysis{' '}
-            <span className="font-normal text-[#7C6BA8]">— 분석가 해석, 발언 아님</span>
+            <span className="font-normal text-sv-muted">— 분석가 해석, 발언 아님</span>
           </p>
-          <p className="text-[13px] leading-relaxed text-[#DDD6FE] whitespace-pre-wrap">{detail.analysis_text}</p>
+          <p className="text-[13px] leading-[1.75] text-sv-ink-2 whitespace-pre-wrap">{detail.analysis_text}</p>
         </section>
       )}
 
       {(detail.limitation_text || detail.policy_status) && (
-        <section className="rounded-xl border border-[#F59E0B]/30 bg-[#F59E0B]/10 p-3.5 space-y-2">
+        <section className="rounded-lg bg-sv-warn-soft p-3.5 space-y-2 text-sv-warn-soft-fg">
           {detail.limitation_text && (
             <div>
-              <p className="mb-1 text-[11px] font-bold text-[#F59E0B]">{isWb ? '해석 한계' : '한계'}</p>
-              <p className="text-[13px] leading-relaxed text-[#FDE68A] whitespace-pre-wrap">{detail.limitation_text}</p>
+              <p className="mb-1 text-[12px] font-extrabold">{isWb ? '해석 한계' : '한계'}</p>
+              <p className="text-[13px] leading-[1.65] whitespace-pre-wrap">{detail.limitation_text}</p>
             </div>
           )}
           {detail.policy_status && (
             <div>
-              <p className="mb-1 text-[11px] font-bold text-[#F59E0B]">제도상태</p>
-              <p className="text-[13px] leading-relaxed text-[#FDE68A] whitespace-pre-wrap">{detail.policy_status}</p>
+              <p className="mb-1 text-[12px] font-extrabold">제도상태</p>
+              <p className="text-[13px] leading-[1.65] whitespace-pre-wrap">{detail.policy_status}</p>
             </div>
           )}
         </section>
       )}
 
       {/* 메타 */}
-      <section>
-        <dl className="grid grid-cols-[88px_1fr] gap-x-3 gap-y-1.5 text-[12px]">
-          <dt className="text-[#4A5568]">행사</dt>
-          <dd className="text-white">{eventTitle || '—'}</dd>
-          <dt className="text-[#4A5568]">행사일</dt>
-          <dd className="text-white">{fmtDate(eventDate)}</dd>
-          <dt className="text-[#4A5568]">게시일</dt>
-          <dd className="text-white">{fmtDate(detail.publication_date ?? provenance[0]?.publication_date)}</dd>
-          <dt className="text-[#4A5568]">당시 직책</dt>
-          <dd className="text-white">
+      <section className="border-t border-sv-line-soft pt-3.5">
+        <dl className="grid grid-cols-[90px_1fr] gap-x-3 gap-y-2 text-[12px]">
+          <dt className="text-sv-muted">행사</dt>
+          <dd className="text-sv-ink font-bold">{eventTitle || '—'}</dd>
+          <dt className="text-sv-muted">행사일</dt>
+          <dd className="text-sv-ink font-bold">{fmtDate(eventDate)}</dd>
+          <dt className="text-sv-muted">게시일</dt>
+          <dd className="text-sv-ink font-bold">{fmtDate(detail.publication_date ?? provenance[0]?.publication_date)}</dd>
+          <dt className="text-sv-muted">당시 직책</dt>
+          <dd className="text-sv-ink font-bold">
             {detail.speaker_role_at_event || '—'}
             {roleCheck && (
               <a
                 href={roleCheck}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="ml-2 text-[11px] text-[#00E5CC] hover:underline"
+                className={`ml-2 text-[11px] font-semibold text-sv-accent-ink hover:underline ${focusRing}`}
               >
                 직책 확인 출처 <i className="ri-external-link-line"></i>
               </a>
@@ -392,40 +412,40 @@ export function StatementDetailPanel({
 
       {/* 출처 감사 */}
       <section>
-        <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-[#8B9BB4]">
+        <p className="mb-2 text-[11px] font-bold text-sv-muted">
           {isWb ? '증거·출처' : '출처 감사'}
         </p>
         {provenance.length === 0 && (
-          <p className="text-[12px] text-[#8B9BB4]">등록된 출처가 없습니다.</p>
+          <p className="text-[12px] text-sv-text">등록된 출처가 없습니다.</p>
         )}
         <div className="space-y-2">
           {provenance.map(p => {
             const live = p.last_live_check;
             return (
-              <div key={p.source_id} className="rounded-xl border border-[#1E2530] bg-[#0D1117] p-3 space-y-1.5">
+              <div key={p.source_id} className="rounded-lg border border-sv-line bg-sv-surface-2 p-3.5 space-y-1.5">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <IntegrityBadge status={p.integrity_status} />
                   <GradeBadge grade={p.evidence_grade} compact />
-                  <span className="text-[10px] text-[#8B9BB4]">{sourceTypeLabel(p.source_type)}</span>
+                  <span className="text-[11px] text-sv-text">{sourceTypeLabel(p.source_type)}</span>
                 </div>
                 <SourceLink prov={p} />
-                <dl className="grid grid-cols-[88px_1fr] gap-x-3 gap-y-0.5 text-[11px]">
-                  <dt className="text-[#4A5568]">게시일</dt>
-                  <dd className="text-[#C9D1DC]">{fmtDate(p.publication_date)}</dd>
-                  <dt className="text-[#4A5568]">출처 ID</dt>
-                  <dd className="text-[#C9D1DC] font-mono break-all">{p.source_id}</dd>
-                  <dt className="text-[#4A5568]">원문 SHA-256</dt>
-                  <dd className="text-[#C9D1DC] font-mono" title={p.sha256 || ''}>{shortSha(p.sha256)}</dd>
+                <dl className="grid grid-cols-[92px_1fr] gap-x-3 gap-y-1 text-[11px]">
+                  <dt className="text-sv-muted">게시일</dt>
+                  <dd className="text-sv-ink-2">{fmtDate(p.publication_date)}</dd>
+                  <dt className="text-sv-muted">출처 ID</dt>
+                  <dd className="text-sv-ink-2 font-mono break-all">{p.source_id}</dd>
+                  <dt className="text-sv-muted">원문 SHA-256</dt>
+                  <dd className="text-sv-ink-2 font-mono" title={p.sha256 || ''}>{shortSha(p.sha256)}</dd>
                   {p.text_sha256 && (
                     <>
-                      <dt className="text-[#4A5568]">텍스트 SHA-256</dt>
-                      <dd className="text-[#C9D1DC] font-mono" title={p.text_sha256}>{shortSha(p.text_sha256)}</dd>
+                      <dt className="text-sv-muted">텍스트 SHA-256</dt>
+                      <dd className="text-sv-ink-2 font-mono" title={p.text_sha256}>{shortSha(p.text_sha256)}</dd>
                     </>
                   )}
                   {live && (
                     <>
-                      <dt className="text-[#4A5568]">라이브 확인</dt>
-                      <dd className="text-[#C9D1DC]">
+                      <dt className="text-sv-muted">라이브 확인</dt>
+                      <dd className="text-sv-ink-2">
                         {fmtDateTime(live.checked_at)}
                         {live.http_status != null && ` · HTTP ${live.http_status}`}
                       </dd>
@@ -442,11 +462,12 @@ export function StatementDetailPanel({
             locator={excerptLocator}
             preloaded={detail.excerpt}
             label={isWb ? '원문 및 인용 위치 열기' : '원문 발췌 보기'}
+            prominent={isWb}
           />
         </div>
       </section>
 
-      <p className="border-t border-[#1E2530] pt-3 text-[10px] leading-relaxed text-[#4A5568]">
+      <p className="border-t border-sv-line-soft pt-3 text-[11px] leading-relaxed text-sv-muted">
         <i className="ri-copyright-line mr-1"></i>
         {copyrightNotice || DEFAULT_COPYRIGHT}
       </p>
@@ -481,15 +502,11 @@ export default function StatementDrawer({
 
   return (
     <div className="fixed inset-0 z-[60] flex justify-end" role="dialog" aria-modal="true" aria-label="발언 상세">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <aside className="relative h-full w-full max-w-xl overflow-y-auto border-l border-[#1E2530] bg-[#161B27] px-6 py-5 shadow-2xl">
-        <div className="mb-4 flex items-center justify-between">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-[#4A5568]">발언 상세</span>
-          <button
-            ref={closeRef}
-            onClick={onClose}
-            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-[#8B9BB4] hover:bg-[#1E2530] hover:text-white cursor-pointer"
-          >
+      <div className={`absolute inset-0 ${scrim}`} onClick={onClose} />
+      <aside className="relative h-full w-full sm:w-[min(520px,94vw)] overflow-y-auto bg-sv-surface px-7 py-6 shadow-sv-drawer">
+        <div className="mb-5 flex items-center justify-between">
+          <span className="text-[12px] text-sv-muted">발언 상세</span>
+          <button ref={closeRef} onClick={onClose} className={closeBtn}>
             닫기 <i className="ri-close-line"></i>
           </button>
         </div>

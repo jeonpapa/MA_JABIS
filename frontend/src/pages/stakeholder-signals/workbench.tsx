@@ -15,12 +15,16 @@ import SignalsHeader from './components/SignalsHeader';
 import PersonAvatar from './components/PersonAvatar';
 import { GradeBadge, LocatorMatchBadge } from './components/GradeBadge';
 import { StatementDetailPanel } from './components/StatementDrawer';
+import { closeBtn, focusRing, linkBtn, scrimStrong } from './theme/sv';
+import { SvPage } from './theme/SvPage';
 
 // Stakeholder Signals — 분석가 워크벤치 (스케치 002 이식).
 // 좌: 필터(기관·주제·증거·기간) / 중: 주제 레인 스트림 / 우: 발언 상세(모바일은 모달).
 // 기관 분류는 서버 ORG_PATTERNS 가 권위 — 기관별 `org=` 조회 결과로 statement_id → 기관 집합을 만든다
 // (클라이언트에 패턴을 복제하지 않는다). 주제·증거 필터는 행 필드(topic, grade_class)로 클라이언트에서 거른다.
-// "검증 큐"·"내보내기" 는 사용자 결정으로 보류.
+// "검증 큐"·"내보내기"·검색창 은 사용자 결정(편집·검증 큐 보류)에 따라 두지 않는다.
+// 스케치 002 레이아웃: 흰 상단 바 / 좌 248px 필터(우측 경계선) · 중앙 #fafafa 스트림 · 우 390px 상세(좌측 경계선),
+// 넓은 화면에서는 세 칸이 각자 스크롤된다.
 
 const OTHER_ORG = '__other__';
 const ORG_OPTIONS = [...ORG_FILTERS, { key: OTHER_ORG, label: '기타(국회·학계 등)' }];
@@ -84,12 +88,12 @@ function CheckRow({
   onChange: () => void;
 }) {
   return (
-    <label className="flex items-center justify-between gap-2 py-1 text-[12px] text-[#C9D1DC] cursor-pointer">
-      <span className="flex items-center gap-2 min-w-0">
-        <input type="checkbox" checked={checked} onChange={onChange} className="accent-[#00E5CC] cursor-pointer" />
-        <span className="truncate">{label}</span>
+    <label className="flex items-center justify-between gap-2 py-[7px] text-[13px] text-sv-text cursor-pointer hover:text-sv-ink">
+      <span className="truncate">{label}</span>
+      <span className="flex items-center gap-1.5 flex-shrink-0">
+        <input type="checkbox" checked={checked} onChange={onChange} className="accent-sv-ink cursor-pointer w-[15px] h-[15px]" />
+        {typeof count === 'number' && <i className="w-4 text-[11px] text-sv-muted">{count}</i>}
       </span>
-      {typeof count === 'number' && <span className="text-[10px] text-[#4A5568]">{count}</span>}
     </label>
   );
 }
@@ -192,6 +196,7 @@ export default function StakeholderWorkbenchPage() {
     if (!isDesktop) setMobileOpen(true);
   };
   const closeMobile = useCallback(() => setMobileOpen(false), []);
+  const selected = useMemo(() => rows.find(r => r.statement_id === selectedId) ?? null, [rows, selectedId]);
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -203,16 +208,18 @@ export default function StakeholderWorkbenchPage() {
   }, [mobileOpen, closeMobile]);
 
   const scope = overview?.scope;
+  const groupCls = 'pb-4 lg:mb-4 lg:border-b border-sv-line-soft min-w-0';
+  const groupTitle = 'text-[12px] font-extrabold text-sv-ink mt-1 mb-1.5';
 
   return (
-    <div className="min-h-screen bg-[#0D1117] text-white">
+    <SvPage className="!bg-sv-surface">
       <SignalsHeader view="workbench" overview={overview} />
 
-      <div className="px-8 py-6 grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)_420px] gap-5 items-start">
-        {/* 좌 필터 */}
-        <aside className="bg-[#161B27] rounded-2xl border border-[#1E2530] p-4 space-y-5 lg:sticky lg:top-4">
-          <div>
-            <h3 className="text-[10px] font-semibold uppercase tracking-wider text-[#4A5568] mb-1.5">기관</h3>
+      <div className="grid grid-cols-1 lg:grid-cols-[248px_minmax(0,1fr)] xl:grid-cols-[248px_minmax(0,1fr)_390px] xl:h-[calc(100vh-62px)]">
+        {/* 좌 필터 — 좁은 화면에서는 위쪽 4칸 그리드 */}
+        <aside className="border-b lg:border-b-0 lg:border-r border-sv-line px-4 sm:px-5 py-5 grid grid-cols-2 md:grid-cols-4 lg:block gap-x-5 xl:overflow-y-auto">
+          <div className={groupCls}>
+            <h3 className={groupTitle}>기관</h3>
             {ORG_OPTIONS.map(o => (
               <CheckRow
                 key={o.key}
@@ -223,8 +230,8 @@ export default function StakeholderWorkbenchPage() {
               />
             ))}
           </div>
-          <div>
-            <h3 className="text-[10px] font-semibold uppercase tracking-wider text-[#4A5568] mb-1.5">주제</h3>
+          <div className={groupCls}>
+            <h3 className={groupTitle}>주제</h3>
             {topicList.map(t => (
               <CheckRow
                 key={t.slug}
@@ -234,8 +241,8 @@ export default function StakeholderWorkbenchPage() {
               />
             ))}
           </div>
-          <div>
-            <h3 className="text-[10px] font-semibold uppercase tracking-wider text-[#4A5568] mb-1.5">증거 등급</h3>
+          <div className={groupCls}>
+            <h3 className={groupTitle}>증거 상태</h3>
             {GRADE_OPTIONS.map(g => (
               <CheckRow
                 key={g}
@@ -245,46 +252,46 @@ export default function StakeholderWorkbenchPage() {
               />
             ))}
           </div>
-          <div>
-            <h3 className="text-[10px] font-semibold uppercase tracking-wider text-[#4A5568] mb-1.5">기간</h3>
-            <p className="text-[12px] text-[#C9D1DC]">
+          <div className={groupCls}>
+            <h3 className={groupTitle}>기간</h3>
+            <p className="py-[7px] text-[13px] text-sv-text">
               {scope?.start || scope?.end ? `${fmtDate(scope?.start)} — ${fmtDate(scope?.end)}` : '—'}
             </p>
-            <p className="mt-0.5 text-[10px] text-[#4A5568]">공개자료 기준 조사기간</p>
+            <p className="text-[11px] text-sv-muted">공개자료 기준 조사기간</p>
           </div>
         </aside>
 
         {/* 중앙 주제 레인 */}
-        <main className="space-y-4 min-w-0">
-          <div>
-            <h2 className="text-white font-bold text-base">주제별 발언 스트림</h2>
-            <p className="text-[11px] text-[#4A5568]">
-              같은 발언이 여러 주제에 걸치면 각 주제에 교차 표시합니다. 행사 수는 레인 안에서 중복 없이 셉니다.
+        <main className="min-w-0 bg-sv-surface-2 px-4 sm:px-6 py-[22px] xl:overflow-y-auto">
+          <div className="mb-[18px]">
+            <h1 className="text-[23px] font-extrabold tracking-[-1px] text-sv-ink mb-1">주제별 발언 스트림</h1>
+            <p className="text-[13px] text-sv-muted sv-ko">
+              동일 발언은 관련 주제에 교차 표시하며, 행사 수는 레인 안에서 중복 없이 셉니다.
             </p>
           </div>
 
           {loading && (
-            <div className="space-y-3 animate-pulse" aria-busy="true">
-              {[0, 1, 2].map(i => (
-                <div key={i} className="h-28 rounded-2xl bg-[#161B27] border border-[#1E2530]" />
+            <div className="space-y-2 animate-pulse" aria-busy="true">
+              {[0, 1, 2, 3].map(i => (
+                <div key={i} className="h-[60px] rounded-lg bg-sv-surface shadow-sv-card" />
               ))}
             </div>
           )}
           {!loading && error && (
-            <div className="rounded-2xl border border-[#1E2530] bg-[#161B27] py-10 text-center">
-              <p className="text-sm text-red-400">발언 목록을 {error}</p>
-              <button onClick={() => setTick(t => t + 1)} className="mt-2 text-sm text-[#00E5CC] hover:underline cursor-pointer">
+            <div className="rounded-lg bg-sv-surface shadow-sv-card py-10 text-center">
+              <p className="text-sm font-semibold text-sv-bad-fg">발언 목록을 {error}</p>
+              <button onClick={() => setTick(t => t + 1)} className={`mt-2 text-sm ${linkBtn}`}>
                 다시 시도
               </button>
             </div>
           )}
           {!loading && !error && rows.length === 0 && (
-            <p className="rounded-2xl border border-[#1E2530] bg-[#161B27] py-10 text-center text-sm text-[#4A5568]">
+            <p className="rounded-lg bg-sv-surface shadow-sv-card py-10 text-center text-sm text-sv-muted">
               아직 동기화된 발언이 없습니다.
             </p>
           )}
           {!loading && !error && rows.length > 0 && filtered.length === 0 && (
-            <p className="rounded-2xl border border-[#1E2530] bg-[#161B27] py-10 text-center text-sm text-[#4A5568]">
+            <p className="rounded-lg bg-sv-surface shadow-sv-card py-10 text-center text-sm text-sv-muted">
               필터 조건에 맞는 발언이 없습니다.
             </p>
           )}
@@ -294,10 +301,10 @@ export default function StakeholderWorkbenchPage() {
             lanes
               .filter(l => l.items.length > 0)
               .map(lane => (
-                <section key={lane.slug} className="bg-[#161B27] rounded-2xl border border-[#1E2530] p-4">
-                  <div className="mb-3 flex items-baseline justify-between gap-2">
-                    <h3 className="text-[13px] font-bold text-white">{lane.label}</h3>
-                    <span className="text-[10px] text-[#4A5568]">
+                <section key={lane.slug} className="mb-[22px]">
+                  <div className="mb-2.5 flex items-baseline justify-between gap-2">
+                    <h2 className="text-[13px] font-extrabold text-sv-ink">{lane.label}</h2>
+                    <span className="flex-shrink-0 text-[12px] text-sv-muted">
                       발언 {lane.items.length} · 행사 {lane.eventCount}
                     </span>
                   </div>
@@ -321,13 +328,15 @@ export default function StakeholderWorkbenchPage() {
                               select(r.statement_id);
                             }
                           }}
-                          className={`grid grid-cols-[76px_minmax(0,170px)_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border px-3 py-2.5 cursor-pointer transition-colors focus:outline-none ${
+                          className={`grid grid-cols-[72px_minmax(0,1fr)_auto] min-[1800px]:grid-cols-[80px_minmax(0,170px)_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 rounded-lg bg-sv-surface px-3.5 py-[13px] cursor-pointer transition-shadow ${focusRing} ${
                             active
-                              ? 'border-[#00E5CC]/60 bg-[#00E5CC]/5'
-                              : 'border-[#1E2530] bg-[#0D1117] hover:border-[#2A3545] focus:border-[#2A3545]'
+                              ? 'shadow-[0_0_0_2px_var(--sv-focus)]'
+                              : mismatch
+                                ? 'shadow-[0_0_0_1px_var(--sv-bad-line)] hover:shadow-[0_0_0_2px_var(--sv-focus)]'
+                                : 'shadow-sv-card hover:shadow-[0_0_0_2px_var(--sv-focus)]'
                           }`}
                         >
-                          <span className="text-[11px] font-mono text-[#8B9BB4]">{fmtDate(r.event?.event_date)}</span>
+                          <span className="text-[12px] font-mono text-sv-text">{fmtDate(r.event?.event_date)}</span>
                           <span className="flex items-center gap-2 min-w-0">
                             <PersonAvatar
                               name={r.person?.name ?? r.speaker_name}
@@ -336,29 +345,32 @@ export default function StakeholderWorkbenchPage() {
                               size="sm"
                             />
                             <span className="min-w-0">
-                              <b className="block text-[12px] text-white truncate">{r.speaker_name || '—'}</b>
-                              <small className="block text-[10px] text-[#8B9BB4] truncate">
+                              <b className="block text-[13px] text-sv-ink truncate">{r.speaker_name || '—'}</b>
+                              <small className="block text-[11px] text-sv-text truncate">
                                 {r.speaker_role_at_event || '직책 미기재'}
                               </small>
                             </span>
                           </span>
-                          <span className="min-w-0">
+                          <span className="justify-self-end min-[1800px]:order-last">
+                            <GradeBadge grade={r.evidence_grade} gradeClass={r.grade_class} compact />
+                          </span>
+                          <span className="min-w-0 sv-ko col-start-2 col-span-2 min-[1800px]:col-start-auto min-[1800px]:col-span-1">
                             {headline ? (
-                              <span className="block text-[12px] leading-snug text-[#C9D1DC] line-clamp-2">
-                                <span className="mr-1 rounded bg-[#1E2530] px-1 py-px text-[9px] font-semibold text-[#4A5568]">
+                              <span className="block text-[13px] leading-[1.55] text-sv-ink-2 line-clamp-2">
+                                <span className="mr-1.5 rounded bg-sv-neutral-bg px-1.5 py-px text-[10px] font-bold text-sv-neutral-fg">
                                   요약
                                 </span>
                                 {headline}
                               </span>
                             ) : hq ? (
                               <span
-                                className="block font-serif text-[12px] leading-snug text-white line-clamp-2 whitespace-pre-wrap"
+                                className="block text-[13px] leading-[1.55] text-sv-ink line-clamp-2 whitespace-pre-wrap"
                                 data-verbatim="true"
                               >
                                 {hq.quote_text}
                               </span>
                             ) : (
-                              <span className="text-[12px] text-[#4A5568]">—</span>
+                              <span className="text-[12px] text-sv-muted">—</span>
                             )}
                             {mismatch && (
                               <span className="mt-1 inline-block">
@@ -366,7 +378,6 @@ export default function StakeholderWorkbenchPage() {
                               </span>
                             )}
                           </span>
-                          <GradeBadge grade={r.evidence_grade} gradeClass={r.grade_class} compact />
                         </article>
                       );
                     })}
@@ -375,10 +386,13 @@ export default function StakeholderWorkbenchPage() {
               ))}
         </main>
 
-        {/* 우측 상세 (xl 이상) */}
+        {/* 우측 상세 (xl 이상) — 스케치 .detail */}
         {isDesktop && (
-          <aside className="bg-[#161B27] rounded-2xl border border-[#1E2530] p-5 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto">
-            <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#4A5568]">발언 상세</p>
+          <aside className="border-l border-sv-line bg-sv-surface p-[22px] xl:overflow-y-auto">
+            <div className="mb-4 flex items-center justify-between text-[11px] text-sv-muted">
+              <span>발언 상세</span>
+              {selected?.evidence_grade && <span>{selected.evidence_grade}</span>}
+            </div>
             {selectedId ? (
               <StatementDetailPanel
                 statementId={selectedId}
@@ -387,23 +401,20 @@ export default function StakeholderWorkbenchPage() {
                 variant="workbench"
               />
             ) : (
-              <p className="py-10 text-center text-sm text-[#4A5568]">발언을 선택하면 상세가 표시됩니다.</p>
+              <p className="py-10 text-center text-sm text-sv-muted">발언을 선택하면 상세가 표시됩니다.</p>
             )}
           </aside>
         )}
       </div>
 
-      {/* 좁은 화면: 상세는 모달 */}
+      {/* 좁은 화면: 상세는 하단 시트/모달 */}
       {!isDesktop && mobileOpen && selectedId && (
-        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4" role="dialog" aria-modal="true" aria-label="발언 상세">
+        <div className={`fixed inset-0 z-[60] flex items-end sm:items-center justify-center ${scrimStrong} p-0 sm:p-4`} role="dialog" aria-modal="true" aria-label="발언 상세">
           <div className="absolute inset-0" onClick={closeMobile} />
-          <div className="relative w-full sm:max-w-xl max-h-[92vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl border border-[#1E2530] bg-[#161B27] p-5">
-            <div className="mb-3 flex items-center justify-between">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-[#4A5568]">발언 상세</span>
-              <button
-                onClick={closeMobile}
-                className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-[#8B9BB4] hover:bg-[#1E2530] hover:text-white cursor-pointer"
-              >
+          <div className="relative w-full sm:max-w-xl max-h-[92vh] overflow-y-auto rounded-t-xl sm:rounded-xl bg-sv-surface shadow-sv-modal p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <span className="text-[12px] text-sv-muted">발언 상세</span>
+              <button onClick={closeMobile} className={closeBtn}>
                 닫기 <i className="ri-close-line"></i>
               </button>
             </div>
@@ -416,6 +427,6 @@ export default function StakeholderWorkbenchPage() {
           </div>
         </div>
       )}
-    </div>
+    </SvPage>
   );
 }
