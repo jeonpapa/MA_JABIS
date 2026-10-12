@@ -46,7 +46,7 @@ PROPOSAL_STATUSES = ("needs_review", "needs_evidence", "approved", "scheduled", 
 OPEN_PROPOSAL_STATUSES = ("needs_review", "needs_evidence")
 DEDUPE_BLOCKING_STATUSES = ("needs_review", "needs_evidence", "scheduled")   # 소스 create_audit_proposal 의 409 기준
 PROPOSAL_ORIGINS = ("import", "agent_api", "dashboard")
-ROLE_HISTORY_STATUSES = ("scheduled", "applied", "superseded")
+ROLE_HISTORY_STATUSES = ("scheduled", "applied", "superseded", "failed")   # failed: 반영 실패로 대기 해제(T2b)
 ORIGINS = ("import", "dashboard", "audit", "agent_api", "canonical_md")
 EVIDENCE_GRADES = ("A", "B-quote", "B-summary", "C-quote", "C-summary", "Role-only", "Candidate-only")
 INTEGRITY_STATUSES = ("verified", "mismatch", "missing", "no_local", "unchecked")
@@ -56,7 +56,7 @@ DEFAULT_TOPIC_TAGS = ["약가", "건강보험 재정"]   # 소스 PersonInput �
 
 TABLES = ("sv_meta", "sv_person", "sv_person_role_history", "sv_source_domain", "sv_source", "sv_artifact", "sv_event",
           "sv_statement", "sv_quote", "sv_monitoring_run", "sv_audit_run", "sv_audit_proposal",
-          "sv_audit_proposal_event", "sv_sync_file")
+          "sv_audit_proposal_event", "sv_audit_conflict_ack", "sv_sync_file")
 
 
 class StoreError(Exception):
@@ -81,6 +81,18 @@ class NotFoundError(StoreError):
     """404."""
     status = 404
 
+
+# 직책 이력 DDL — SCHEMA_SQL 과 CHECK 어휘 마이그레이션(_migrate_role_history)이 같은 문자열을 쓴다.
+_ROLE_HISTORY_DDL = """CREATE TABLE IF NOT EXISTS {name} (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    person_id      TEXT NOT NULL,
+    organization   TEXT, department TEXT, role TEXT,
+    effective_from TEXT, effective_to TEXT,
+    status         TEXT NOT NULL CHECK (status IN ('scheduled','applied','superseded','failed')),
+    proposal_id    TEXT, evidence_json TEXT, approved_at TEXT, applied_at TEXT
+);"""
+_ROLE_HISTORY_INDEX = ("CREATE INDEX IF NOT EXISTS idx_sv_role_hist_person "
+                       "ON sv_person_role_history(person_id, status);")
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS sv_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);
@@ -109,15 +121,7 @@ CREATE TABLE IF NOT EXISTS sv_person (
     updated_at           TEXT NOT NULL,
     UNIQUE (name, organization)
 );
-CREATE TABLE IF NOT EXISTS sv_person_role_history (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    person_id      TEXT NOT NULL,
-    organization   TEXT, department TEXT, role TEXT,
-    effective_from TEXT, effective_to TEXT,
-    status         TEXT NOT NULL CHECK (status IN ('scheduled','applied','superseded')),
-    proposal_id    TEXT, evidence_json TEXT, approved_at TEXT, applied_at TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_sv_role_hist_person ON sv_person_role_history(person_id, status);
+{role_history_ddl}
 
 CREATE TABLE IF NOT EXISTS sv_source_domain (
     source_id      TEXT PRIMARY KEY,
@@ -213,10 +217,19 @@ CREATE TABLE IF NOT EXISTS sv_audit_proposal_event (   -- append-only 감사 기
     detail TEXT, created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sv_proposal_event ON sv_audit_proposal_event(proposal_id, id);
+CREATE TABLE IF NOT EXISTS sv_audit_conflict_ack (     -- 충돌별 확인(T2b, 사용자 결정 2026-10-12). 승인 전 모든 index 필요
+    proposal_id     TEXT NOT NULL,
+    conflict_index  INTEGER NOT NULL CHECK (conflict_index >= 0),
+    conflict_text   TEXT NOT NULL,                     -- 확인 당시 문구 스냅숏 — 지금 문구와 다르면 그 확인은 무효
+    reason          TEXT NOT NULL,
+    acknowledged_by TEXT NOT NULL,
+    acknowledged_at TEXT NOT NULL,
+    PRIMARY KEY (proposal_id, conflict_index)
+);
 CREATE TABLE IF NOT EXISTS sv_sync_file (              -- 볼륨 미러 색인: 경로 → git blob sha / sha256
     path TEXT PRIMARY KEY, blob_sha TEXT NOT NULL, sha256 TEXT, bytes INTEGER, synced_at TEXT NOT NULL
 );
-"""
+""".replace("{role_history_ddl}", _ROLE_HISTORY_DDL.format(name="sv_person_role_history") + "\n" + _ROLE_HISTORY_INDEX)
 
 
 # ── 시간 ─────────────────────────────────────────────────────────────────────────
@@ -263,9 +276,38 @@ def ensure_tables(db_path: str | Path = DEFAULT_DB_PATH) -> None:
         conn = connect(p)
         try:
             conn.executescript(SCHEMA_SQL)
+            _migrate_role_history(conn)
         finally:
             conn.close()
         _ENSURED.add(key)
+
+
+def _migrate_role_history(conn: sqlite3.Connection) -> None:
+    """T1 스키마(CHECK 에 'failed' 없음)로 만들어진 sv_person_role_history 를 행·id 보존한 채 재구성. 멱등.
+
+    SQLite 는 CHECK 를 ALTER 할 수 없으므로 새 테이블 생성 → 복사 → 교체 → 인덱스 재생성을 한 BEGIN IMMEDIATE 로."""
+    def stale() -> bool:
+        r = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='sv_person_role_history'").fetchone()
+        return r is not None and "'failed'" not in (r[0] or "")
+
+    if not stale():
+        return
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        if stale():                                    # 다른 프로세스가 먼저 끝냈을 수 있다
+            cols = ",".join(("id",) + _ROLE_HIST_COLS)
+            conn.execute("DROP TABLE IF EXISTS sv_person_role_history__new")
+            conn.execute(_ROLE_HISTORY_DDL.format(name="sv_person_role_history__new"))
+            conn.execute(f"INSERT INTO sv_person_role_history__new ({cols}) SELECT {cols} FROM sv_person_role_history")
+            conn.execute("DROP TABLE sv_person_role_history")
+            conn.execute("ALTER TABLE sv_person_role_history__new RENAME TO sv_person_role_history")
+            conn.execute(_ROLE_HISTORY_INDEX)
+            logger.info("sv_person_role_history: status CHECK 에 'failed' 추가(테이블 재구성)")
+        conn.execute("COMMIT")
+    except BaseException:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
 
 
 @contextmanager
@@ -780,6 +822,40 @@ def list_proposal_events(proposal_id: str, *, db_path: str | Path = DEFAULT_DB_P
     with _reader(conn, db_path) as c:
         return [dict(r) for r in c.execute(
             "SELECT * FROM sv_audit_proposal_event WHERE proposal_id=? ORDER BY id", (proposal_id,))]
+
+
+# ── 충돌 확인 (sv_audit_conflict_ack) ────────────────────────────────────────────────
+
+_ACK_COLS = ("proposal_id", "conflict_index", "conflict_text", "reason", "acknowledged_by", "acknowledged_at")
+
+
+def put_conflict_ack_row(conn: sqlite3.Connection, row: dict) -> None:
+    """호출자 트랜잭션 안에서 (proposal_id, conflict_index) 확인 1행을 쓴다(있으면 교체). 교체 허용 여부(유효한 확인은
+    덮어쓰지 않음)는 호출자(approval.acknowledge_conflict)가 판정한다 — 이력은 sv_audit_proposal_event 에 남는다."""
+    for k in _ACK_COLS:
+        if row.get(k) is None or row.get(k) == "":
+            raise ValidationError(f"충돌 확인 필수 필드 누락: {k}", "BAD_ACK")
+    conn.execute(f"INSERT INTO sv_audit_conflict_ack ({','.join(_ACK_COLS)}) VALUES ({','.join('?' * len(_ACK_COLS))}) "
+                 "ON CONFLICT(proposal_id, conflict_index) DO UPDATE SET conflict_text=excluded.conflict_text, "
+                 "reason=excluded.reason, acknowledged_by=excluded.acknowledged_by, "
+                 "acknowledged_at=excluded.acknowledged_at", [row[k] for k in _ACK_COLS])
+
+
+def list_conflict_acks(proposal_id: str | None = None, *, proposal_ids: Iterable[str] | None = None,
+                       db_path: str | Path = DEFAULT_DB_PATH, conn: sqlite3.Connection | None = None) -> list[dict]:
+    """확인 행 목록(proposal_id → conflict_index 순). proposal_id 하나, proposal_ids 여러 개, 둘 다 없으면 전부."""
+    sql, args = "SELECT * FROM sv_audit_conflict_ack WHERE 1=1", []
+    if proposal_id is not None:
+        sql += " AND proposal_id=?"
+        args.append(proposal_id)
+    if proposal_ids is not None:
+        ids = list(proposal_ids)
+        if not ids:
+            return []
+        sql += f" AND proposal_id IN ({','.join('?' * len(ids))})"
+        args += ids
+    with _reader(conn, db_path) as c:
+        return [dict(r) for r in c.execute(sql + " ORDER BY proposal_id, conflict_index", args)]
 
 
 # ── 런 (모니터링·감사) ──────────────────────────────────────────────────────────────

@@ -2,8 +2,13 @@
 
 정책(MONITORING_AUDIT_AGENT_POLICY.md · agents/rules/stakeholder_verbatim_rules.md §3-A/§3-B):
 에이전트는 제안만, 승인·반려는 사람(admin). source_expansion 은 official 이면 공식 E3+, 그 외 E2+; role_change 는
-공식 E3+; new_person 은 E2+ 이고 등록은 항상 candidate. conflicts 가 있으면 승인 불가(반려만). 효력은 익일(KST).
+공식 E3+; new_person 은 E2+ 이고 등록은 항상 candidate. 효력은 익일(KST).
 scheduled → applied 는 소스에 없던 단계로, apply_scheduled(today) 가 매일 sync 잡 안에서 돈다.
+
+충돌(T2b, 사용자 결정 2026-10-12 "충돌별 확인 후 승인"): 소스는 conflicts 가 하나라도 있으면 무조건 422 였으나, 실제 제안의
+conflicts 대부분이 검토 메모(감사 degraded·매체 전사 수준·창 밖 게시일)라 아무것도 승인할 수 없었다. 이제 admin 이 충돌마다
+사유와 함께 acknowledge_conflict 로 확인해야 하고, **모든 index 가 지금 문구와 같은 스냅숏으로 확인**돼야 승인 게이트가 열린다
+(아니면 422 CONFLICTS_UNACKNOWLEDGED). 그 뒤 근거 불변식은 그대로 적용된다. 확인 기록은 sv_audit_conflict_ack + 이벤트.
 
 구조
 - 불변식은 **순수 함수**: has_evidence · normalize_domain · validate_proposal_input · check_decidable · plan_approval.
@@ -23,7 +28,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
-from typing import Any, Iterator, Protocol
+from typing import Any, Iterable, Iterator, Protocol
 from urllib.parse import urlparse
 
 from . import store
@@ -43,11 +48,13 @@ _EVIDENCE_OPT_FIELDS = ("publication_date", "effective_date", "retrieved_at", "c
 
 
 class ApprovalError(store.StoreError):
-    """라우트가 그대로 HTTP 로 옮기는 오류. status: 404 · 409 · 422."""
+    """라우트가 그대로 HTTP 로 옮기는 오류. status: 404 · 409 · 422. details: 기계가 읽을 부가정보(없으면 None) —
+    예: CONFLICTS_UNACKNOWLEDGED 는 {"unacknowledged": [index, ...]}."""
 
-    def __init__(self, status: int, message: str, code: str = "APPROVAL"):
+    def __init__(self, status: int, message: str, code: str = "APPROVAL", details: dict | None = None):
         super().__init__(message, code)
         self.status = status
+        self.details = details
 
 
 @contextmanager
@@ -171,11 +178,11 @@ def validate_proposal_input(body: Any) -> dict:
             "conflicts": list(conflicts), "audit_run_id": run_id, "created_by": created_by}
 
 
-def _validate_decision(reviewer: Any, reason: Any) -> tuple[str, str]:
-    """소스 AuditDecisionInput: reviewer 1~80, reason 2~1000. reviewer 는 라우트가 인증 토큰 sub 로 넣는다."""
+def _validate_decision(reviewer: Any, reason: Any, label: str = "검토 사유") -> tuple[str, str]:
+    """소스 AuditDecisionInput: reviewer 1~80, reason 2~1000(strip 후). reviewer 는 라우트가 인증 토큰 sub 로 넣는다."""
     reason_s = reason.strip() if isinstance(reason, str) else ""
     if not REASON_MIN <= len(reason_s) <= REASON_MAX:
-        raise ApprovalError(422, f"검토 사유는 {REASON_MIN}~{REASON_MAX}자로 입력해 주세요.", "BAD_REASON")
+        raise ApprovalError(422, f"{label}는 {REASON_MIN}~{REASON_MAX}자로 입력해 주세요.", "BAD_REASON")
     reviewer_s = reviewer.strip() if isinstance(reviewer, str) else ""
     if not 1 <= len(reviewer_s) <= REVIEWER_MAX:
         raise ApprovalError(422, "검토자 정보가 올바르지 않습니다.", "BAD_REVIEWER")
@@ -280,15 +287,53 @@ def _plan_new_person(proposal: dict, change: dict, facts: ApprovalFacts, effecti
             "updated_by": reviewer, "created_at": ts, "updated_at": ts}
 
 
-def plan_approval(proposal: dict | None, facts: ApprovalFacts, *, effective_from: str, ts: str,
-                  reviewer: str) -> dict:
-    """소스 approve_audit_proposal 의 검사 순서 그대로: 404 → 상태 409 → conflicts 422 → 유형별 분기.
+# ── 충돌 확인 (순수) ────────────────────────────────────────────────────────────────
 
-    반환: {"kind": "source_domain"|"role_history"|"person", "row": <삽입할 행>}. DB 를 건드리지 않는다."""
+def _acks_by_index(acks: Iterable[dict] | None) -> dict[int, dict]:
+    return {a["conflict_index"]: a for a in acks or [] if isinstance(a, dict) and "conflict_index" in a}
+
+
+def conflicts_status(proposal: dict, acks: Iterable[dict] | None) -> list[dict]:
+    """제안의 conflicts 목록 index 마다 확인 상태. 확인은 **스냅숏(conflict_text)이 지금 문구와 정확히 같을 때만** 유효 —
+    다르면 stale=True·acknowledged=False(확인 아래에서 충돌을 바꿔치기할 수 없다). 반환 항목:
+    {index, text, acknowledged, stale, by, at, reason} (미확인·무효면 by/at/reason=None). T6 UI 표시용."""
+    by_idx = _acks_by_index(acks)
+    out = []
+    for i, text in enumerate(proposal.get("conflicts") or []):
+        ack = by_idx.get(i)
+        ok = ack is not None and ack.get("conflict_text") == text
+        out.append({"index": i, "text": text, "acknowledged": ok, "stale": ack is not None and not ok,
+                    "by": ack["acknowledged_by"] if ok else None, "at": ack["acknowledged_at"] if ok else None,
+                    "reason": ack["reason"] if ok else None})
+    return out
+
+
+def unacknowledged_conflicts(proposal: dict, acks: Iterable[dict] | None) -> list[int]:
+    return [s["index"] for s in conflicts_status(proposal, acks) if not s["acknowledged"]]
+
+
+def check_conflicts_acknowledged(proposal: dict, acks: Iterable[dict] | None) -> None:
+    """모든 충돌 index 가 유효하게 확인됐는지. 아니면 422 CONFLICTS_UNACKNOWLEDGED(미확인 index 를 메시지·details 에)."""
+    status = conflicts_status(proposal, acks)
+    missing = [s["index"] for s in status if not s["acknowledged"]]
+    if not missing:
+        return
+    listed = ", ".join(f"#{i}" for i in missing)
+    msg = f"확인되지 않은 충돌이 있어 승인할 수 없습니다(미확인: {listed}). 충돌마다 사유와 함께 확인해 주세요."
+    if any(s["stale"] for s in status):
+        msg += " (충돌 문구가 바뀌어 무효가 된 확인 포함)"
+    raise ApprovalError(422, msg, "CONFLICTS_UNACKNOWLEDGED", {"unacknowledged": missing})
+
+
+def plan_approval(proposal: dict | None, facts: ApprovalFacts, *, effective_from: str, ts: str,
+                  reviewer: str, acks: Iterable[dict] | None = None) -> dict:
+    """검사 순서: 404 → 상태 409 → 충돌 확인 422(T2b — 소스는 conflicts 비어 있지 않으면 무조건 422) → 유형별 분기.
+
+    acks: 이 제안의 충돌 확인 행들(sv_audit_conflict_ack). 반환: {"kind": "source_domain"|"role_history"|"person",
+    "row": <삽입할 행>}. DB 를 건드리지 않는다."""
     check_decidable(proposal, "approve")
     assert proposal is not None
-    if proposal.get("conflicts"):
-        raise ApprovalError(422, "미해결 충돌이 있는 제안은 승인할 수 없습니다.", "CONFLICTS")
+    check_conflicts_acknowledged(proposal, acks)
     change = proposal.get("proposed_change") or {}
     ptype = proposal.get("proposal_type")
     if ptype == "source_expansion":
@@ -323,12 +368,16 @@ def create_proposal(body: Any, *, origin: str, actor: str | None = None,
 
 def approve(proposal_id: str, *, reviewer: str, reason: str, db_path: str | Path = store.DEFAULT_DB_PATH) -> dict:
     """소스 approve_audit_proposal. 부수 행 삽입 + scheduled 전이(effective_from=익일) + 'approved' 이벤트를 한 트랜잭션으로.
-    반환: 갱신된 제안. 오류: 404 · 409(상태·중복·대기·동시결정) · 422(사유·충돌·근거·필드)."""
+    충돌 확인 행도 같은 트랜잭션에서 읽는다 — 동시 acknowledge 와 직렬화되어 미확인 충돌로 승인되는 일이 없다.
+    반환: 갱신된 제안(+ conflicts_status). 오류: 404 · 409(상태·중복·대기·동시결정) ·
+    422(사유·CONFLICTS_UNACKNOWLEDGED·근거·필드)."""
     reviewer, reason = _validate_decision(reviewer, reason)
     with _store_errors(), store.transaction(db_path) as conn:
         proposal = store.get_proposal(proposal_id, conn=conn)
         effective_from, ts = store.tomorrow_kst(), store._ts()
-        plan = plan_approval(proposal, _ConnFacts(conn), effective_from=effective_from, ts=ts, reviewer=reviewer)
+        acks = store.list_conflict_acks(proposal_id, conn=conn)          # 같은 BEGIN IMMEDIATE 안 — 확인과 직렬화
+        plan = plan_approval(proposal, _ConnFacts(conn), effective_from=effective_from, ts=ts, reviewer=reviewer,
+                             acks=acks)
         if plan["kind"] == "source_domain":
             store.insert_source_domain_row(conn, plan["row"], origin="audit")
         elif plan["kind"] == "role_history":
@@ -343,7 +392,85 @@ def approve(proposal_id: str, *, reviewer: str, reason: str, db_path: str | Path
         if cur.rowcount != 1:
             raise ApprovalError(409, "현재 상태에서는 승인할 수 없습니다.", "RACE")
         store.add_proposal_event_row(conn, proposal_id, actor=reviewer, event="approved", detail=reason)
-        return store.get_proposal(proposal_id, conn=conn)
+        return _view(conn, proposal_id)
+
+
+def _view(conn: sqlite3.Connection, proposal_id: str) -> dict | None:
+    p = store.get_proposal(proposal_id, conn=conn)
+    if p is None:
+        return None
+    return _attach_status(p, store.list_conflict_acks(proposal_id, conn=conn))
+
+
+def _attach_status(p: dict, acks: Iterable[dict]) -> dict:
+    status = conflicts_status(p, acks)
+    return {**p, "conflicts_status": status,
+            "conflicts_unacknowledged": [s["index"] for s in status if not s["acknowledged"]]}
+
+
+def proposal_view(proposal_id: str, *, db_path: str | Path = store.DEFAULT_DB_PATH,
+                  conn: sqlite3.Connection | None = None) -> dict | None:
+    """제안 + conflicts_status(index 별 확인 상태) + conflicts_unacknowledged(미확인 index 목록). 없으면 None."""
+    if conn is not None:
+        return _view(conn, proposal_id)
+    with store._reader(None, db_path) as c:
+        return _view(c, proposal_id)
+
+
+def with_conflicts_status(proposals: list[dict], *, db_path: str | Path = store.DEFAULT_DB_PATH,
+                          conn: sqlite3.Connection | None = None) -> list[dict]:
+    """목록 라우트용 일괄 부착(쿼리 1회)."""
+    acks = store.list_conflict_acks(proposal_ids=[p["proposal_id"] for p in proposals], db_path=db_path, conn=conn)
+    grouped: dict[str, list[dict]] = {}
+    for a in acks:
+        grouped.setdefault(a["proposal_id"], []).append(a)
+    return [_attach_status(p, grouped.get(p["proposal_id"], [])) for p in proposals]
+
+
+def list_conflict_acks(proposal_id: str, *, db_path: str | Path = store.DEFAULT_DB_PATH,
+                       conn: sqlite3.Connection | None = None) -> list[dict]:
+    """이 제안의 확인 행(conflict_index 순): {proposal_id, conflict_index, conflict_text, reason, acknowledged_by,
+    acknowledged_at}. 무효(stale) 판정은 conflicts_status/proposal_view 가 한다."""
+    return store.list_conflict_acks(proposal_id, db_path=db_path, conn=conn)
+
+
+def _validate_index(index: Any, conflicts: list) -> int:
+    if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < len(conflicts):
+        n = len(conflicts)
+        rng = f"0~{n - 1}" if n else "없음(충돌 없는 제안)"
+        raise ApprovalError(422, f"충돌 index 가 올바르지 않습니다: {index!r} (유효 범위 {rng})", "BAD_CONFLICT_INDEX")
+    return index
+
+
+def acknowledge_conflict(proposal_id: str, index: int, *, reviewer: str, reason: str,
+                         db_path: str | Path = store.DEFAULT_DB_PATH) -> dict:
+    """충돌 하나를 사유와 함께 확인(T2b). 한 BEGIN IMMEDIATE 안에서: 404 → 열린 상태(needs_review|needs_evidence)만,
+    아니면 409 STATE → index 422 → 이미 유효한 확인이 있으면 409 ALREADY_ACKNOWLEDGED(원 확인 보존; 문구가 바뀌어
+    무효가 된 확인은 교체) → 확인 행(지금 문구 스냅숏) + 'conflict_acknowledged' 이벤트. 반환: proposal_view."""
+    reviewer, reason = _validate_decision(reviewer, reason, label="확인 사유")
+    with _store_errors(), store.transaction(db_path) as conn:
+        proposal = store.get_proposal(proposal_id, conn=conn)
+        if proposal is None:
+            raise ApprovalError(404, "감사 제안을 찾을 수 없습니다.", "NOT_FOUND")
+        if proposal.get("status") not in OPEN_PROPOSAL_STATUSES:
+            raise ApprovalError(409, "현재 상태에서는 충돌을 확인할 수 없습니다.", "STATE")
+        conflicts = proposal.get("conflicts") or []
+        idx = _validate_index(index, conflicts)
+        text = conflicts[idx]
+        if not isinstance(text, str):
+            raise ApprovalError(422, "충돌 항목이 문자열이 아닙니다.", "BAD_CONFLICT_INDEX")
+        prev = _acks_by_index(store.list_conflict_acks(proposal_id, conn=conn)).get(idx)
+        if prev is not None and prev["conflict_text"] == text:
+            raise ApprovalError(409, f"이미 확인된 충돌입니다: #{idx} ({prev['acknowledged_by']})",
+                                "ALREADY_ACKNOWLEDGED")
+        ts = store._ts()
+        store.put_conflict_ack_row(conn, {"proposal_id": proposal_id, "conflict_index": idx, "conflict_text": text,
+                                          "reason": reason, "acknowledged_by": reviewer, "acknowledged_at": ts})
+        detail = f"#{idx}: {reason} | 충돌: {text}"
+        if prev is not None:
+            detail += " | 문구 변경으로 이전 확인 교체"
+        store.add_proposal_event_row(conn, proposal_id, actor=reviewer, event="conflict_acknowledged", detail=detail)
+        return _view(conn, proposal_id)
 
 
 def reject(proposal_id: str, *, reviewer: str, reason: str, db_path: str | Path = store.DEFAULT_DB_PATH) -> dict:
@@ -427,8 +554,12 @@ def _mark_failed(proposal_id: str, exc: BaseException, actor: str, db_path: str 
                                "WHERE proposal_id=? AND status='scheduled'", (ts, proposal_id))
             if cur.rowcount != 1:
                 return False
+            # 대기 직책 이력 행을 종결(failed) — 남겨 두면 그 인물의 이후 직책 변경이 PENDING_ROLE_CHANGE 409 로 영구 차단된다
+            released = conn.execute("UPDATE sv_person_role_history SET status='failed' "
+                                    "WHERE proposal_id=? AND status='scheduled'", (proposal_id,)).rowcount
+            note = f" | 직책 이력 {released}행 failed 처리(대기 해제)" if released else ""
             store.add_proposal_event_row(conn, proposal_id, actor=actor, event="application_failed",
-                                         detail=detail[:1000])
+                                         detail=detail[:1000 - len(note)] + note)
             return True
     except Exception:  # noqa: BLE001 — 실패 기록 실패도 잡을 죽이지 않는다
         logger.warning("apply_scheduled: %s 실패 기록 불가", proposal_id, exc_info=True)

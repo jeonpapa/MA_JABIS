@@ -296,7 +296,13 @@
 - `source_expansion`: 공식 출처는 `source_class=='official'` + 증거수준 {E3, E4}, 그 외는 {E2, E3, E4}. 도메인(`normalize_domain`)은 경로·쿼리·fragment 를 거부하고, 근거 URL 의 hostname 과 일치해야 하며, 레지스트리에 이미 있는 도메인은 409.
 - `role_change`: 공식 근거 {E3, E4} 필수, 같은 인물에 `scheduled` 직책 변경이 있으면 409, `role` 이 비어 있으면 422.
 - `new_person`: 증거수준 {E2, E3, E4}, `name`·`organization`·`department`·`role` 전부 필요, 같은 기관 동명이인은 409, 등록은 **항상 `candidate`**.
-- 공통: `conflicts` 가 비어 있지 않으면 승인 불가(422), `needs_review`·`needs_evidence` 상태만 승인·반려 가능, 승인 효력(`effective_from`)은 **익일(KST)**. 동시 승인은 `UPDATE … WHERE status IN (…)` rowcount 0 → 409.
+- 공통: `needs_review`·`needs_evidence` 상태만 승인·반려 가능, 승인 효력(`effective_from`)은 **익일(KST)**. 동시 승인은 `UPDATE … WHERE status IN (…)` rowcount 0 → 409.
+- **충돌별 확인 후 승인 (사용자 결정 2026-10-12, T2b)** — 소스 규칙("`conflicts` 가 비어 있지 않으면 무조건 422, 반려만")을 대체한다.
+  - 규칙: `conflicts` 의 **모든 index** 를 admin 이 하나씩 사유(2~1000자, strip 후)와 함께 확인(`acknowledge_conflict`)해야 승인 게이트가 열린다. 하나라도 미확인이면 `422 CONFLICTS_UNACKNOWLEDGED`(메시지·`details.unacknowledged` 에 미확인 index). 검사 순서는 404 → 상태 409 → 충돌 확인 422 → 유형별 근거 규칙.
+  - 확인은 충돌 게이트**만** 연다. 근거 불변식(E2/E3·공식 출처·도메인 일치·중복 409·대기 직책 409·필드 422)은 확인 여부와 무관하게 그대로 적용된다 — 예: 실데이터 `source_expansion`(E1 ×3)은 모든 충돌을 확인해도 `422 EVIDENCE`.
+  - 기록: `sv_audit_conflict_ack`(proposal_id, conflict_index) 1행 = 확인 당시 `conflict_text` 스냅숏 + `reason` + `acknowledged_by` + `acknowledged_at`, 그리고 확인마다 `conflict_acknowledged` 이벤트(append-only). 스냅숏이 지금 그 index 의 문구와 다르면 그 확인은 **무효**(`stale`) — 확인 아래에서 충돌을 바꿔치기할 수 없다. 무효 확인은 재확인으로 교체되고(이벤트 추가), 유효한 확인은 덮어쓸 수 없다(`409 ALREADY_ACKNOWLEDGED`).
+  - 열린 상태(`needs_review`·`needs_evidence`)에서만 확인 가능(아니면 `409 STATE`). 확인과 승인은 같은 `BEGIN IMMEDIATE` 로 직렬화되므로, 승인 트랜잭션이 읽은 시점에 빠진 확인이 있으면 승인은 422 이고 미확인 상태로 승인되는 경합은 없다. 반려는 충돌·확인을 보지 않는다(그대로).
+  - 근거: 실제 감사 제안 6건 전부에 conflicts 가 있었고, 대부분이 모순이 아니라 검토 메모였다("pre-run context script 부재로 감사 상태 degraded", "직접발언은 … 매체 전사 수준으로 취급", "기사 게시일은 … 창 시작 전이므로 당일 실행 누락으로 분류하지 않음"). 소스 규칙대로면 어떤 제안도 승인할 수 없었다. 사용자는 충돌을 일괄 무시하지 않고 **충돌마다 사람이 읽고 사유를 남기는** 방식을 택했다 — 감사 에이전트가 적은 우려가 감사 기록에서 사라지지 않는다.
 - 검증(`verified`) 인물의 소속·부서·직책은 PUT 으로 직접 수정할 수 없다(409). 직책 변경은 `role_change` 제안 경로로만 한다.
 - 열린 `dedupe_key` 는 부분 유니크 인덱스로 1건만 허용한다 (에이전트 POST 는 중복 시 409).
 
@@ -305,7 +311,7 @@
 - 승인 → `scheduled`(익일 효력) → 매일 sync 잡의 `apply_scheduled(today)` 가 `applied` 로 반영한다.
 - `role_change` 적용: 현재 직책을 `sv_person_role_history(applied, effective_to=오늘)` 로 내리고 새 직책을 적용하며 `verification_status='verified'` 로 전환한다. 근거: 승인 자체가 공식 E3+ 근거를 요구하고(감사축 2 — 공식 인사자료가 직책 승인 최소기준), 후보 표기(`후보`·`candidate`)는 이 공식 근거로 해소된다. 과거 행사 발언의 당시 직책(`speaker_role_at_event`)은 바꾸지 않는다.
 - `new_person` / `source_expansion`: 행이 승인 시점에 이미 만들어져 있으므로 제안 상태만 `applied` 로 바꾼다. 신규 인물은 `candidate` 로 시작하며 공식 직책 근거가 별도로 확인되기 전에는 `verified` 로 자동 승격하지 않는다.
-- 반영 실패는 `application_failed` + 이벤트로 남기고 잡을 죽이지 않는다.
+- 반영 실패는 `application_failed` + 이벤트로 남기고 잡을 죽이지 않는다. `role_change` 반영 실패 시 그 제안의 `scheduled` 직책 이력 행은 `failed`(종결 상태)로 바꿔 대기를 해제한다 — 남겨 두면 그 인물의 이후 직책 변경이 `409 PENDING_ROLE_CHANGE` 로 영구히 막힌다. 실패 사실은 제안 상태·`application_failed` 이벤트(해제 행 수 포함)·`failed` 이력 행으로 계속 보인다. (`sv_person_role_history.status` 어휘: `scheduled|applied|superseded|failed`; 구 스키마 DB 는 `ensure_tables` 가 행·id 보존 재구성으로 마이그레이션.)
 
 ### 3-C. 감사 에이전트 권한 경계
 

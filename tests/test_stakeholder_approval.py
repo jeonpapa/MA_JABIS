@@ -3,7 +3,7 @@
 소스 대응표(분기 → 테스트):
 - create_audit_proposal: pydantic AuditProposalInput/AuditEvidence 422 → test_validate_proposal_input_*;
   열린 dedupe_key 409 → test_create_proposal_dedupes_open_keys / test_create_proposal_dedupe_blocks_scheduled_not_closed
-- approve_audit_proposal: 404 / 상태 409 / conflicts 422 / source_expansion(근거 422·도메인 422·필드 422·중복 409·URL 422)
+- approve_audit_proposal: 404 / 상태 409 / 미확인 충돌 422(T2b) / source_expansion(근거 422·도메인 422·필드 422·중복 409·URL 422)
   / role_change(근거 422·인물 404·직책 422·대기 409) / new_person(근거 422·필드 422·동명 409)
 - reject_audit_proposal: 404 / 상태 409
 - AuditDecisionInput: reason 길이 422 → test_decision_reason_validation
@@ -220,11 +220,13 @@ def test_check_decidable_open_and_missing():
 
 
 def test_plan_approval_conflicts_checked_before_type_rules():
-    """소스 순서: 상태 409 → conflicts 422 → 유형별 근거. 근거가 없어도 충돌 문구가 먼저 나온다."""
+    """순서: 상태 409 → 충돌 확인 422 → 유형별 근거. 근거가 없어도 미확인 충돌 문구가 먼저 나온다.
+    (T2b: 소스의 무조건 422 'CONFLICTS' 는 '충돌별 확인 후 승인' 으로 바뀜 — tests/test_stakeholder_conflict_ack.py)"""
     with pytest.raises(ap.ApprovalError) as ei:
         ap.plan_approval(_p("new_person", {}, [], conflicts=["x"]), _Facts(), effective_from="d", ts="t",
                          reviewer="r")
-    assert ei.value.status == 422 and ei.value.message == "미해결 충돌이 있는 제안은 승인할 수 없습니다."
+    assert ei.value.status == 422 and ei.value.code == "CONFLICTS_UNACKNOWLEDGED"
+    assert ei.value.message == "확인되지 않은 충돌이 있어 승인할 수 없습니다(미확인: #0). 충돌마다 사유와 함께 확인해 주세요."
 
 
 def test_plan_approval_outputs():
