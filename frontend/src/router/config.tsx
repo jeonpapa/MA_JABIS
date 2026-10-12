@@ -24,6 +24,8 @@ import AdminDailyMailingKanbanPage from '@/pages/admin/daily-mailing-kanban/page
 import AdminHomeBrandsPage from '@/pages/admin/home-brands/page';
 import AdminServiceRequestsPage from '@/pages/admin/service-requests/page';
 import AdminAgentTasksPage from '@/pages/admin/agent-tasks/page';
+import AdminStakeholderPeoplePage from '@/pages/admin/stakeholder-people/page';
+import AdminStakeholderAuditPage from '@/pages/admin/stakeholder-audit/page';
 
 const routes: RouteObject[] = [
   { path: '/login', element: <LoginPage /> },
@@ -49,6 +51,8 @@ const routes: RouteObject[] = [
   { path: '/admin/home-brands', element: <AdminHomeBrandsPage /> },
   { path: '/admin/service-requests', element: <AdminServiceRequestsPage /> },
   { path: '/admin/agent-tasks', element: <AdminAgentTasksPage /> },
+  { path: '/admin/stakeholder-people', element: <AdminStakeholderPeoplePage /> },
+  { path: '/admin/stakeholder-audit', element: <AdminStakeholderAuditPage /> },
   { path: '*', element: <NotFound /> },
 ];
 

@@ -13,6 +13,7 @@ import {
 } from '@/utils/authUsers';
 import { getTabVisibility, setTabVisibility, isTabVisible } from '@/utils/tabVisibility';
 import { fetchOutboxCount } from '@/api/serviceRequests';
+import { fetchPendingProposalCount, SV_PROPOSALS_CHANGED_EVENT } from '@/api/stakeholder';
 
 export interface NavItem {
   path: string;
@@ -47,6 +48,8 @@ export const adminNavItems: NavItem[] = [
   { path: '/admin/home-brands', label: '홈 브랜드 관리', icon: 'ri-capsule-line' },
   { path: '/admin/service-requests', label: '서비스 보완 요청', icon: 'ri-customer-service-2-line' },
   { path: '/admin/agent-tasks', label: '운영 원장', icon: 'ri-robot-line' },
+  { path: '/admin/stakeholder-people', label: '모니터링 인물 관리', icon: 'ri-contacts-line' },
+  { path: '/admin/stakeholder-audit', label: '모니터링 감사', icon: 'ri-shield-check-line' },
 ];
 
 type SettingsTab = 'account' | 'users' | 'tabs';
@@ -101,6 +104,27 @@ export default function Sidebar() {
       window.clearInterval(timer);
     };
     // location.pathname: 라우트 이동 시 재조회 (sent 처리 직후 배지 최신화)
+  }, [adminMode, location.pathname]);
+
+  // 모니터링 감사 미검토 제안(needs_review + needs_evidence) 배지 — admin 전용, 같은 폴링 패턴.
+  // 감사 페이지가 승인·반려 직후 SV_PROPOSALS_CHANGED_EVENT 를 쏘면 즉시 재조회. 실패 시 0(배지 없음).
+  const [svPendingCount, setSvPendingCount] = useState(0);
+  useEffect(() => {
+    if (!adminMode) return;
+    let cancelled = false;
+    const refresh = () => {
+      void fetchPendingProposalCount().then(n => {
+        if (!cancelled) setSvPendingCount(n);
+      });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 60_000);
+    window.addEventListener(SV_PROPOSALS_CHANGED_EVENT, refresh);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener(SV_PROPOSALS_CHANGED_EVENT, refresh);
+    };
   }, [adminMode, location.pathname]);
 
   // 현재 경로가 숨겨진 탭이면 홈으로 리다이렉트
@@ -303,6 +327,14 @@ export default function Sidebar() {
                         title={`미처리 요청(outbox) ${outboxCount}건`}
                       >
                         {outboxCount > 99 ? '99+' : outboxCount}
+                      </span>
+                    )}
+                    {item.path === '/admin/stakeholder-audit' && svPendingCount > 0 && (
+                      <span
+                        className="ml-auto flex-shrink-0 min-w-[18px] h-[18px] px-1.5 flex items-center justify-center rounded-full bg-[#F59E0B] text-[#0A0E1A] text-[10px] font-bold leading-none"
+                        title={`미검토 감사 제안 ${svPendingCount}건`}
+                      >
+                        {svPendingCount > 99 ? '99+' : svPendingCount}
                       </span>
                     )}
                   </NavLink>

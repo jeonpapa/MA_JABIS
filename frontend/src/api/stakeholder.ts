@@ -343,11 +343,38 @@ export interface SVProposalEvent {
 export interface SVProposalEvidence {
   url?: string | null;
   publisher?: string | null;
+  /** 증거수준 E0~E4 (소스 AuditEvidence.evidence_level). `level` 은 구 표기 폴백. */
+  evidence_level?: string | null;
   level?: string | null;
   source_class?: string | null;
   quoted_text?: string | null;
   locator?: string | null;
+  publication_date?: string | null;
+  effective_date?: string | null;
+  retrieved_at?: string | null;
+  independence_group?: string | null;
   [k: string]: unknown;
+}
+
+/** 충돌 index 별 확인 상태 (T2b approval.conflicts_status). stale = 확인 뒤 충돌 문구가 바뀌어 확인이 무효. */
+export interface SVConflictStatus {
+  index: number;
+  text: string;
+  acknowledged: boolean;
+  stale?: boolean;
+  by?: string | null;
+  at?: string | null;
+  reason?: string | null;
+}
+
+/** 확인 기록 행 (GET …/conflict-acks). stale 이 된 이전 확인의 당시 문구·사유를 보여줄 때 쓴다. */
+export interface SVConflictAck {
+  proposal_id?: string;
+  conflict_index: number;
+  conflict_text?: string | null;
+  reason?: string | null;
+  acknowledged_by?: string | null;
+  acknowledged_at?: string | null;
 }
 
 export interface SVProposal {
@@ -360,6 +387,10 @@ export interface SVProposal {
   proposed_change?: Record<string, unknown> | null;
   evidence?: SVProposalEvidence[] | null;
   conflicts?: unknown[] | null;
+  /** 서버(T2b) 부착 — 충돌마다 확인 상태. 없으면 클라이언트는 모든 충돌을 미확인으로 본다(보수적). */
+  conflicts_status?: SVConflictStatus[] | null;
+  /** 미확인(또는 stale) 충돌 index. 비어 있어야 승인 가능. */
+  conflicts_unacknowledged?: number[] | null;
   audit_run_id?: string | null;
   created_by?: string | null;
   status?: string;
@@ -416,14 +447,16 @@ function qs(params: Record<string, string | number | null | undefined>): string 
   return s ? `?${s}` : '';
 }
 
-/** 증거등급 → 배지 클래스. 서버 grade_class 우선, 없으면 첫 토큰(`C-quote/C-summary` → c). */
+/** 증거등급 → 배지 클래스. 서버 grade_class 우선, 없으면 첫 토큰으로(`C-quote/C-summary` → c).
+ *  서버 grade_class_of_token 과 같은 규칙: 토큰이 정확히 A/B/C 이거나 `A-`/`B-`/`C-` 로 시작해야 그 군이다 —
+ *  `Candidate-only` 는 C 로 시작하지만 C 군이 아니라 role. */
 export function gradeClassOf(grade?: string | null, serverClass?: string | null): SVGradeClass {
   const sc = (serverClass || '').toLowerCase();
   if (sc === 'a' || sc === 'b' || sc === 'c' || sc === 'role') return sc;
-  const g = (grade || '').trim();
-  if (g.startsWith('A')) return 'a';
-  if (g.startsWith('B')) return 'b';
-  if (g.startsWith('C')) return 'c';
+  const tok = (grade || '').split(/[/+]/)[0]?.trim() ?? '';
+  for (const k of ['A', 'B', 'C'] as const) {
+    if (tok === k || tok.startsWith(`${k}-`)) return k.toLowerCase() as SVGradeClass;
+  }
   return 'role';
 }
 
@@ -597,19 +630,240 @@ export function fetchRun(kind: SVRunKind, runId: string): Promise<SVRunDetail> {
 }
 
 // ── admin (T7b 화면용) ──────────────────────────────────────────────────────
+//
+// 오류 형식: admin 라우트는 `{code, message, details}`(T2b ApprovalError) 또는 기존 관례 `{error, code}` 를 돌려준다.
+// client.ts 의 ApiError 는 `error` 만 읽고 details 를 버리므로, admin 호출은 svRequest 로 감싸
+// 한국어 `message`(없으면 `error`)·`code`·`details` 를 그대로 보존한다(화면이 서버 문구를 그대로 보여준다).
+
+/** 승인·반려·충돌 확인 사유 길이 (approval.REASON_MIN / REASON_MAX — 서버와 동일). */
+export const REASON_MIN = 2;
+export const REASON_MAX = 1000;
+
+/** 사진 업로드 허용 형식·상한 (서버 photos.normalize 가 WEBP 640×640 으로 재인코딩; 415/413 은 서버 문구 그대로). */
+export const PHOTO_ACCEPT = ['image/jpeg', 'image/png', 'image/webp'] as const;
+export const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
+
+/** 열린(결정 대기) 제안 상태 — 사이드바 배지·"검토 필요" 칩의 정의. */
+export const OPEN_PROPOSAL_STATUSES = ['needs_review', 'needs_evidence'] as const;
+
+export const PROPOSAL_TYPE_LABELS: Record<string, string> = {
+  source_expansion: '매체 확장',
+  role_change: '현재 직책 변경',
+  new_person: '신규 인물',
+};
+
+export const PROPOSAL_STATUS_LABELS: Record<string, string> = {
+  needs_review: '검토 필요',
+  needs_evidence: '근거 보완',
+  approved: '승인',
+  scheduled: '적용 예정',
+  applied: '적용 완료',
+  application_failed: '적용 실패',
+  rejected: '반려',
+  superseded: '대체됨',
+};
+
+export const PROPOSAL_EVENT_LABELS: Record<string, string> = {
+  created: '생성',
+  conflict_acknowledged: '충돌 확인',
+  approved: '승인',
+  rejected: '반려',
+  applied: '반영',
+  application_failed: '반영 실패',
+};
+
+export const SOURCE_GROUP_LABELS: Record<string, string> = {
+  official: '공식',
+  top_tier_general: '종합 일간지',
+  healthcare_trade: '보건의료 전문지',
+  discovered_additional: '추가 발견',
+};
+
+/** 사이드바 배지 갱신 신호 — 감사 페이지가 결정 직후 발행, Sidebar 가 구독(60초 폴링을 기다리지 않게). */
+export const SV_PROPOSALS_CHANGED_EVENT = 'sv-proposals-changed';
+
+export function notifyProposalsChanged(): void {
+  try {
+    window.dispatchEvent(new Event(SV_PROPOSALS_CHANGED_EVENT));
+  } catch {
+    /* 비브라우저 환경 — 무시 */
+  }
+}
+
+export class SVApiError extends ApiError {
+  details: Record<string, unknown> | null;
+  constructor(message: string, status: number, code?: string, details?: Record<string, unknown> | null) {
+    super(message, status, code);
+    this.name = 'SVApiError';
+    this.details = details ?? null;
+  }
+}
+
+function toSvError(status: number, data: unknown): SVApiError {
+  const d = (data && typeof data === 'object' ? data : {}) as {
+    message?: unknown;
+    error?: unknown;
+    code?: unknown;
+    details?: unknown;
+  };
+  const pick = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : '');
+  const message =
+    pick(d.message) ||
+    pick(d.error) ||
+    (typeof data === 'string' && data.trim() && data.length < 400 ? data.trim() : '') ||
+    `요청을 처리하지 못했습니다 (HTTP ${status})`;
+  const code = pick(d.code) || undefined;
+  const details = d.details && typeof d.details === 'object' ? (d.details as Record<string, unknown>) : null;
+  return new SVApiError(message, status, code, details);
+}
+
+async function svRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  let payload: FormData | string | undefined;
+  if (body instanceof FormData) {
+    payload = body; // multipart 경계는 브라우저가 Content-Type 에 넣는다
+  } else if (body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+    payload = JSON.stringify(body);
+  }
+  const res = await fetch(path, { method, headers, body: payload });
+  const text = await res.text();
+  let data: unknown = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = text;
+    }
+  }
+  if (!res.ok) {
+    if (res.status === 401) clearAuth();
+    throw toSvError(res.status, data);
+  }
+  return data as T;
+}
+
+/** 화면 표시용 오류 문구 — 서버 한국어 message 우선. */
+export function svErrorMessage(e: unknown, fallback = '요청을 처리하지 못했습니다.'): string {
+  if (e instanceof Error && e.message) return e.message;
+  return fallback;
+}
+
+/** CONFLICTS_UNACKNOWLEDGED 422 의 details.unacknowledged → index 목록 (그 외 오류는 []). */
+export function unacknowledgedFromError(e: unknown): number[] {
+  if (!(e instanceof SVApiError) || e.code !== 'CONFLICTS_UNACKNOWLEDGED') return [];
+  const raw = e.details?.unacknowledged;
+  return Array.isArray(raw) ? raw.filter((n): n is number => typeof n === 'number' && Number.isInteger(n)) : [];
+}
+
+/** 제안의 충돌 상태 — 서버 conflicts_status 우선. 없으면(구 서버) conflicts 문자열을 전부 미확인으로 본다. */
+export function conflictsOf(p: SVProposal): { status: SVConflictStatus[]; unacknowledged: number[] } {
+  if (Array.isArray(p.conflicts_status)) {
+    const status = p.conflicts_status.filter(c => c && typeof c.index === 'number');
+    const unack = Array.isArray(p.conflicts_unacknowledged)
+      ? p.conflicts_unacknowledged.filter(n => typeof n === 'number')
+      : status.filter(c => !c.acknowledged).map(c => c.index);
+    return { status, unacknowledged: unack };
+  }
+  const status = (p.conflicts ?? []).map((c, i) => ({
+    index: i,
+    text: typeof c === 'string' ? c : JSON.stringify(c),
+    acknowledged: false,
+    stale: false,
+  }));
+  return { status, unacknowledged: status.map(c => c.index) };
+}
+
+export function evidenceLevelOf(e: SVProposalEvidence): string {
+  return (e.evidence_level || e.level || '').toString().trim() || '—';
+}
+
+/**
+ * 근거 기준 **참고 표시** (승인 판정 아님 — 최종 판정은 서버 approval.plan_approval).
+ * approval.has_evidence 와 같은 규칙으로 기준 충족 여부를 미리 보여준다:
+ *   source_expansion: 공식 출처군이면 공식 E3+, 아니면 E2+ / role_change: 공식 E3+ / new_person: E2+ ;
+ *   인정 항목은 publisher·locator 가 모두 있어야 한다.
+ */
+export function evidenceGate(p: SVProposal): { required: string; met: boolean; summary: string } {
+  const ev = (p.evidence ?? []).filter((e): e is SVProposalEvidence => !!e && typeof e === 'object');
+  const counts: Record<string, number> = {};
+  ev.forEach(e => {
+    const l = evidenceLevelOf(e);
+    counts[l] = (counts[l] ?? 0) + 1;
+  });
+  const summary = Object.keys(counts).length
+    ? Object.entries(counts)
+        .sort(([a], [b]) => b.localeCompare(a))
+        .map(([l, n]) => `${l}×${n}`)
+        .join(' · ')
+    : '근거 없음';
+  const group = String((p.proposed_change ?? {})['source_group'] ?? '');
+  let levels = ['E2', 'E3', 'E4'];
+  let official = false;
+  if (p.proposal_type === 'role_change' || (p.proposal_type === 'source_expansion' && group === 'official')) {
+    levels = ['E3', 'E4'];
+    official = true;
+  }
+  const met = ev.some(
+    e =>
+      levels.includes(evidenceLevelOf(e)) &&
+      (!official || e.source_class === 'official') &&
+      !!e.publisher &&
+      !!e.locator,
+  );
+  return { required: official ? '공식 E3 이상' : 'E2 이상', met, summary };
+}
 
 export function adminListProposals(params: { status?: string; type?: string } = {}): Promise<SVProposalList> {
-  return api
-    .get<SVProposalList>(`/api/admin/stakeholder/proposals${qs(params)}`)
-    .then(r => ({ ...r, proposals: r?.proposals ?? [] }));
+  return svRequest<SVProposalList>('GET', `/api/admin/stakeholder/proposals${qs(params)}`).then(r => ({
+    ...r,
+    proposals: r?.proposals ?? [],
+  }));
+}
+
+/** 사이드바 배지 — 열린 제안(needs_review + needs_evidence) 수. admin 전용 호출, 실패 시 0(배지 없음). */
+export async function fetchPendingProposalCount(): Promise<number> {
+  try {
+    const r = await adminListProposals();
+    const open = (r.proposals ?? []).filter(p =>
+      (OPEN_PROPOSAL_STATUSES as readonly string[]).includes(p.status ?? ''),
+    ).length;
+    const n = r.proposals.length ? open : (r.pending_count ?? 0);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  } catch {
+    return 0;
+  }
 }
 
 export function adminApprove(id: string, reason: string): Promise<SVProposal> {
-  return api.post<SVProposal>(`/api/admin/stakeholder/proposals/${encodeURIComponent(id)}/approve`, { reason });
+  return svRequest<SVProposal>('POST', `/api/admin/stakeholder/proposals/${encodeURIComponent(id)}/approve`, {
+    reason,
+  });
 }
 
 export function adminReject(id: string, reason: string): Promise<SVProposal> {
-  return api.post<SVProposal>(`/api/admin/stakeholder/proposals/${encodeURIComponent(id)}/reject`, { reason });
+  return svRequest<SVProposal>('POST', `/api/admin/stakeholder/proposals/${encodeURIComponent(id)}/reject`, {
+    reason,
+  });
+}
+
+/** 충돌 1건 확인(T2b). index 는 0-based. 200 → proposal_view(제안 + conflicts_status + conflicts_unacknowledged). */
+export function adminAckConflict(id: string, index: number, reason: string): Promise<SVProposal> {
+  return svRequest<SVProposal>(
+    'POST',
+    `/api/admin/stakeholder/proposals/${encodeURIComponent(id)}/conflicts/${index}/ack`,
+    { reason },
+  );
+}
+
+export async function adminListConflictAcks(id: string): Promise<SVConflictAck[]> {
+  const r = await svRequest<{ items?: SVConflictAck[] }>(
+    'GET',
+    `/api/admin/stakeholder/proposals/${encodeURIComponent(id)}/conflict-acks`,
+  );
+  return r?.items ?? [];
 }
 
 /** 관리 목록 — 같은 GET /api/stakeholder/people (admin 토큰이면 서버가 admin 필드를 더한다). */
@@ -618,58 +872,77 @@ export function adminListPeople(params: { status?: string; q?: string } = {}): P
 }
 
 export function adminCreatePerson(input: SVPersonInput): Promise<SVPersonDetail> {
-  return api.post<SVPersonDetail>('/api/admin/stakeholder/people', input);
+  return svRequest<SVPersonDetail>('POST', '/api/admin/stakeholder/people', input);
 }
 
 export function adminUpdatePerson(id: string, input: SVPersonInput): Promise<SVPersonDetail> {
-  return api.put<SVPersonDetail>(`/api/admin/stakeholder/people/${encodeURIComponent(id)}`, input);
+  return svRequest<SVPersonDetail>('PUT', `/api/admin/stakeholder/people/${encodeURIComponent(id)}`, input);
 }
 
 export function adminSetStatus(id: string, status: 'active' | 'paused'): Promise<SVPersonDetail> {
-  return api.patch<SVPersonDetail>(`/api/admin/stakeholder/people/${encodeURIComponent(id)}/status`, { status });
+  return svRequest<SVPersonDetail>('PATCH', `/api/admin/stakeholder/people/${encodeURIComponent(id)}/status`, {
+    status,
+  });
 }
 
-/** multipart `photo` — client.ts 는 JSON 전용이라 fetch 직접(Authorization 헤더). 415/413 은 ApiError. */
+/** multipart `photo`. 서버가 WEBP 로 정규화. 415/413 은 서버 문구 그대로 SVApiError. */
 export async function adminUploadPhoto(id: string, file: File): Promise<SVPersonDetail> {
   const fd = new FormData();
   fd.append('photo', file);
-  const token = getToken();
-  const res = await fetch(`/api/admin/stakeholder/people/${encodeURIComponent(id)}/photo`, {
-    method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    body: fd,
-  });
-  const text = await res.text();
-  let data: unknown = null;
-  if (text) {
-    try { data = JSON.parse(text); } catch { data = text; }
-  }
-  if (!res.ok) {
-    const d = (data && typeof data === 'object' ? data : {}) as { error?: string; code?: string };
-    if (res.status === 401) clearAuth();
-    throw new ApiError(d.error || `HTTP ${res.status}`, res.status, d.code);
-  }
+  const r = await svRequest<SVPersonDetail>(
+    'POST',
+    `/api/admin/stakeholder/people/${encodeURIComponent(id)}/photo`,
+    fd,
+  );
   photoCache.delete(id);
-  return data as SVPersonDetail;
+  return r;
 }
 
 export async function adminDeletePhoto(id: string): Promise<SVPersonDetail> {
-  const r = await api.delete<SVPersonDetail>(`/api/admin/stakeholder/people/${encodeURIComponent(id)}/photo`);
+  const r = await svRequest<SVPersonDetail>('DELETE', `/api/admin/stakeholder/people/${encodeURIComponent(id)}/photo`);
   photoCache.delete(id);
   return r;
 }
 
 export async function adminSourceDomains(): Promise<{ effective_count?: number; items: SVSourceDomain[] }> {
-  const r = await api.get<{ effective_count?: number; items?: SVSourceDomain[] }>(
+  const r = await svRequest<{ effective_count?: number; items?: SVSourceDomain[] }>(
+    'GET',
     '/api/admin/stakeholder/source-domains',
   );
   return { ...r, items: r?.items ?? [] };
 }
 
-export function adminIntegrity(): Promise<Record<string, unknown>> {
-  return api.get<Record<string, unknown>>('/api/admin/stakeholder/integrity');
+/** 실제 T6 응답: sv_meta 요약 + 상태별 개수 + 문제(mismatch/missing) 행. sources_total 은 no_local 제외(서버 정의). */
+export interface SVIntegrityProblem {
+  source_id?: string;
+  path?: string;
+  name?: string | null;
+  title?: string | null;
+  integrity_status?: string | null;
+  integrity_checked_at?: string | null;
+  local_path?: string | null;
+  text_path?: string | null;
+  sha256?: string | null;
+  text_sha256?: string | null;
 }
 
+export interface SVIntegrityReport {
+  /** sv_meta.integrity_summary_json (sync 소유 — 모양 가변) */
+  summary?: Record<string, unknown> | null;
+  last_sync_at?: string | null;
+  /** sv_source integrity_status → 개수 */
+  counts?: Record<string, number> | null;
+  /** sv_artifact integrity_status → 개수 */
+  artifact_counts?: Record<string, number> | null;
+  problems?: SVIntegrityProblem[] | null;
+  artifact_problems?: SVIntegrityProblem[] | null;
+}
+
+export function adminIntegrity(): Promise<SVIntegrityReport> {
+  return svRequest<SVIntegrityReport>('GET', '/api/admin/stakeholder/integrity');
+}
+
+/** runbooks.run("stakeholder_data_sync") 결과. T8 전에는 503 {code:'RUNBOOK_MISSING'}. */
 export function adminSync(): Promise<Record<string, unknown>> {
-  return api.post<Record<string, unknown>>('/api/admin/stakeholder/sync');
+  return svRequest<Record<string, unknown>>('POST', '/api/admin/stakeholder/sync');
 }
