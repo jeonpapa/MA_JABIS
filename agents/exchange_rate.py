@@ -7,6 +7,7 @@
 - HIRA 조정가 공식 계산기 포함
 """
 
+import asyncio
 import logging
 import os
 import re
@@ -187,6 +188,9 @@ async def _download_keb_excel(start_str: str, end_str: str, save_path: Path, hea
         context = await browser.new_context(accept_downloads=True)
         page = await context.new_page()
 
+        # 다이얼로그(경고창 등) 자동 닫기
+        page.on("dialog", lambda d: asyncio.create_task(d.dismiss()))
+
         await page.goto(KEB_PAGE_URL, wait_until="networkidle", timeout=30_000)
 
         # iframe 찾기
@@ -199,41 +203,67 @@ async def _download_keb_excel(start_str: str, end_str: str, save_path: Path, hea
         if target_frame is None:
             raise RuntimeError("KEB 평균환율 iframe을 찾지 못했습니다.")
 
-        start_display = f"{start_str[:4]}-{start_str[4:6]}-{start_str[6:]}"
-        end_display   = f"{end_str[:4]}-{end_str[4:6]}-{end_str[6:]}"
+        end_display = f"{end_str[:4]}-{end_str[4:6]}-{end_str[6:]}"
 
-        # JavaScript로 폼 값을 한 번에 설정하고 조회 실행
-        await target_frame.evaluate(f"""() => {{
-            // 1) 조회구분: 기간평균 (value=4)
-            const rdoPeriod = document.getElementById('inqDvCd_p');
-            if (rdoPeriod) {{ rdoPeriod.checked = true; rdoPeriod.click(); }}
+        # 시작일이 휴일/공휴일(예: 10월 3일 개천절)인 경우 KEB는 '해당 입력일자가 적절하지 않습니다' 에러(OCOM23466)를
+        # 반환하고 엑셀 다운로드가 0바이트가 된다. 유효한 영업일 데이터를 받을 때까지 최대 5일까지 하루씩 미뤄가며 재시도한다.
+        cur_start = date(int(start_str[:4]), int(start_str[4:6]), int(start_str[6:]))
+        search_ok = False
+        final_start_display = f"{start_str[:4]}-{start_str[4:6]}-{start_str[6:]}"
 
-            // 2) 고시회차: 최종 (tmpPbldDvCd_2, value=0).
-            //    주의: tmpPbldDvCd_1(value=1)=최초, tmpPbldDvCd_2(value=0)=최종.
-            //    inputCheck() 가 제출 시 radiobox.getCheckedValue(tmpPbldDvCd) 로
-            //    pbldDvCd hidden 을 재생성하므로 *라디오 체크가 결정적* (hidden 수동
-            //    설정값은 덮어써짐). 반드시 tmpPbldDvCd_2 를 체크해야 최종값이 조회됨.
-            document.getElementsByName('tmpPbldDvCd').forEach(
-                r => {{ r.checked = (r.id === 'tmpPbldDvCd_2'); }}
-            );
+        for _ in range(6):
+            s_str = cur_start.strftime("%Y%m%d")
+            s_display = cur_start.strftime("%Y-%m-%d")
 
-            // 3) 조회기간 설정
-            const setVal = (id, v) => {{ const el = document.getElementById(id); if(el) el.value = v; }};
-            setVal('inqStrDt',    '{start_str}');
-            setVal('inqEndDt',    '{end_str}');
-            setVal('tmpInqStrDt_p', '{start_display}');
-            setVal('tmpInqEndDt_p', '{end_display}');
-            setVal('pbldDvCd', '0');  // 최종 (inputCheck 가 라디오값으로 재생성하나 일관성 위해 명시)
-        }}""")
-        await page.wait_for_timeout(500)
-        logger.info("[환율] 폼 설정 완료: %s ~ %s", start_display, end_display)
+            # JavaScript로 폼 값을 한 번에 설정하고 조회 실행
+            await target_frame.evaluate(f"""() => {{
+                // 1) 조회구분: 기간평균 (value=4)
+                const rdoPeriod = document.getElementById('inqDvCd_p');
+                if (rdoPeriod) {{ rdoPeriod.checked = true; rdoPeriod.click(); }}
 
-        # ── 4) 조회 실행
-        await target_frame.evaluate(
-            "pbk.foreign.rate.pbld.avg.search(document.forms['inqFrm'])"
-        )
-        await page.wait_for_timeout(4000)
-        logger.info("[환율] 조회 완료")
+                // 2) 고시회차: 최종 (tmpPbldDvCd_2, value=0).
+                //    주의: tmpPbldDvCd_1(value=1)=최초, tmpPbldDvCd_2(value=0)=최종.
+                //    inputCheck() 가 제출 시 radiobox.getCheckedValue(tmpPbldDvCd) 로
+                //    pbldDvCd hidden 을 재생성하므로 *라디오 체크가 결정적* (hidden 수동
+                //    설정값은 덮어써짐). 반드시 tmpPbldDvCd_2 를 체크해야 최종값이 조회됨.
+                document.getElementsByName('tmpPbldDvCd').forEach(
+                    r => {{ r.checked = (r.id === 'tmpPbldDvCd_2'); }}
+                );
+
+                // 3) 조회기간 설정
+                const setVal = (id, v) => {{ const el = document.getElementById(id); if(el) el.value = v; }};
+                setVal('inqStrDt',    '{s_str}');
+                setVal('inqEndDt',    '{end_str}');
+                setVal('tmpInqStrDt_p', '{s_display}');
+                setVal('tmpInqEndDt_p', '{end_display}');
+                setVal('pbldDvCd', '0');  // 최종 (inputCheck 가 라디오값으로 재생성하나 일관성 위해 명시)
+            }}""")
+            await page.wait_for_timeout(300)
+
+            # ── 4) 조회 실행 및 응답 검증
+            async with page.expect_response(
+                lambda r: "wpfxd651_06i_01.do" in r.url and "excel" not in r.url,
+                timeout=15_000,
+            ) as resp_info:
+                await target_frame.evaluate(
+                    "pbk.foreign.rate.pbld.avg.search(document.forms['inqFrm'])"
+                )
+            resp = await resp_info.value
+            body = await resp.text()
+
+            if "errorCode" not in body:
+                final_start_display = s_display
+                search_ok = True
+                logger.info("[환율] 폼 설정 및 조회 완료: %s ~ %s", s_display, end_display)
+                break
+
+            logger.warning("[환율] 조회 실패 (영업일 아님 의심: %s) — 다음 영업일 시도", s_display)
+            cur_start += timedelta(days=1)
+
+        if not search_ok:
+            raise RuntimeError(f"KEB 평균환율 조회 실패: 유효한 영업일 시작일을 찾지 못했습니다 ({start_str} ~ {end_str})")
+
+        await page.wait_for_timeout(2000)
 
         # ── 5) 엑셀 다운로드 (임시 경로 — 검증 통과 후 fetch_keb_excel 이 최종 이름으로 바꾼다)
         async with page.expect_download(timeout=30_000) as dl_info:
@@ -242,7 +272,7 @@ async def _download_keb_excel(start_str: str, end_str: str, save_path: Path, hea
             )
         download = await dl_info.value
         await download.save_as(str(save_path))
-        logger.info("[환율] 엑셀 수신: %s (%d bytes)", save_path.name, save_path.stat().st_size)
+        logger.info("[환율] 엑셀 수신 (%s ~ %s): %s (%d bytes)", final_start_display, end_display, save_path.name, save_path.stat().st_size)
 
         await context.close()
         await browser.close()
