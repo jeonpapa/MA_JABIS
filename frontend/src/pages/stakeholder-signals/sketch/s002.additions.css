@@ -32,3 +32,6 @@
 .sx2 .detail.in-modal { display: block; border: 0; padding: 0; overflow: visible; }
 .sx2 .detail.in-modal .detail-top { display: none; }
 .sx2 .detail.in-modal h2 { margin-top: 0; }
+
+/* 대쉬보드 사이드바(240px)만큼 좁아진 중앙에서 보기 탭이 두 줄로 깨지지 않게 */
+.sx2 .viewtabs { flex: 0 0 auto; white-space: nowrap; }
