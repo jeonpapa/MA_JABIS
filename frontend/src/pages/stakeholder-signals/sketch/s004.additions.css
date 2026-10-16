@@ -1,0 +1,27 @@
+/*
+ * 스케치 004 대쉬보드 추가분 — 하드 제약(충돌별 확인 → 승인 게이트, 서버 거부 문구)과 오류 토스트.
+ * 스케치 시각 언어(검토 필요 #fff2d8/#7a5600, .change 회색 상자, .btn) 그대로. 스케치 수치는 s004.css(생성본).
+ */
+.sx4 { min-height: 100vh; }
+.sx4 .toast.error { background: #b42318; }
+
+/* 서버 거부(EVIDENCE·CONFLICTS_UNACKNOWLEDGED 등) — 카드에 서버 문구 그대로 */
+.sx4 .server-error { margin: 0 0 12px; padding: 12px 14px; border-radius: 8px; background: #f6eaea; color: #8c3434; font-size: 12px; line-height: 1.65; white-space: pre-wrap; }
+.sx4 .server-error b { display: block; margin-bottom: 2px; }
+.sx4 .server-error code { margin-left: 6px; font: 11px monospace; }
+
+/* 충돌·검토 메모 — 충돌마다 확인(사유) 후에만 승인 */
+.sx4 .conflicts { margin-top: 12px; border-radius: 8px; background: #fff8e8; padding: 12px; font-size: 12px; line-height: 1.65; }
+.sx4 .conflicts > b { display: block; color: #7a5600; margin-bottom: 6px; }
+.sx4 .conflict { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px; align-items: start; padding: 8px 0; border-top: 1px solid #f1e3bf; }
+.sx4 .conflict:first-of-type { border-top: 0; }
+.sx4 .conflict.hl { outline: 2px solid #d92d20; outline-offset: 2px; border-radius: 6px; }
+.sx4 .conflict .c-text { color: #555; white-space: pre-wrap; overflow-wrap: anywhere; }
+.sx4 .conflict .c-meta { display: block; margin-top: 3px; color: #777; }
+.sx4 .conflict .c-meta s { opacity: .7; }
+.sx4 .conflict .c-side { display: flex; align-items: center; gap: 6px; }
+.sx4 .conflict .btn { min-height: 30px; padding: 5px 10px; font-size: 12px; }
+.sx4 .status-ack { background: #eaf7ee; color: #226b39; }
+.sx4 .status-stale { background: #fff2d8; color: #7a5600; }
+.sx4 .status-todo { background: #f6eaea; color: #8c3434; }
+.sx4 .btn[disabled] { opacity: .45; cursor: not-allowed; }

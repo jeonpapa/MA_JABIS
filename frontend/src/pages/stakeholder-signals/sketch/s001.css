@@ -1,0 +1,121 @@
+/* AUTO-GENERATED from dashboard-sketches/001-leadership-timeline/index.html — 값은 스케치 그대로(verbatim).
+ * 모든 선택자를 .sx1 로 스코프, body→.sx1, 스케치 자체 좌측 nav(.app/.side/.brand/.nav/.side-foot)는 제외(사용자 결정: 대쉬보드 사이드바 유지).
+ * 직접 고치지 말 것 — 대쉬보드 추가분은 s001.additions.css 에 둔다. */
+.sx1 * {box-sizing:border-box}
+.sx1 {margin:0;background:#f7f7f7;color:#171717;font-family:"Noto Sans KR","Apple SD Gothic Neo",sans-serif;font-size:14px}
+.sx1 .main {padding:0 34px 52px;max-width:1500px}
+.sx1 .top {height:72px;display:flex;align-items:center;justify-content:space-between}
+.sx1 .crumb {font-size:13px;color:#737373}
+.sx1 .actions {display:flex;gap:8px}
+.sx1 .btn {padding:9px 13px;border:0;border-radius:7px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.1);font-weight:600}
+.sx1 .btn.dark {background:#171717;color:#fff}
+.sx1 .hero {display:flex;justify-content:space-between;align-items:flex-end;margin:20px 0 22px}
+.sx1 .hero h1 {font-size:30px;letter-spacing:-1.5px;margin:0 0 8px}
+.sx1 .hero p {margin:0;color:#666}
+.sx1 .stamp {text-align:right;color:#777;font-size:12px}
+.sx1 .metrics {display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.sx1 .card {background:#fff;border-radius:10px;box-shadow:0 0 0 1px rgba(0,0,0,.08),0 2px 2px rgba(0,0,0,.03);padding:17px}
+.sx1 .metric .label {color:#777;font-size:12px}
+.sx1 .metric strong {display:block;font-size:27px;margin:8px 0 4px;letter-spacing:-1px}
+.sx1 .delta {font-size:11px;color:#777}
+.sx1 .delta b {color:#0a72ef}
+.sx1 .signal {margin:18px 0;display:grid;grid-template-columns:1.4fr 1fr;gap:12px}
+.sx1 .headline {padding:20px;display:grid;grid-template-columns:minmax(0,1fr) 152px;gap:20px;align-items:center}
+.sx1 .eyebrow {font-size:11px;font-weight:800;color:#0a72ef;margin-bottom:10px}
+.sx1 .headline h2 {font-size:20px;letter-spacing:-.6px;margin:0 0 10px}
+.sx1 .headline p {color:#555;line-height:1.7;margin:0}
+.sx1 .signal-photo {margin:0}
+.sx1 .signal-photo img {width:152px;height:112px;object-fit:cover;border-radius:8px;display:block}
+.sx1 .signal-photo figcaption {font-size:10px;color:#5f6368;line-height:1.45;margin-top:6px}
+.sx1 .mini-list {padding:5px 17px}
+.sx1 .mini {padding:13px 0;border-bottom:1px solid #eee}
+.sx1 .mini:last-child {border:0}
+.sx1 .mini span {float:right;color:#999;font-size:11px}
+.sx1 .mini b {font-size:13px}
+.sx1 .tabs {display:flex;gap:6px;margin:25px 0 12px}
+.sx1 .tab {border:0;background:#fff;border-radius:999px;padding:8px 12px;box-shadow:0 0 0 1px #e7e7e7;font-weight:600;color:#666;cursor:pointer}
+.sx1 .tab.active {background:#171717;color:#fff}
+.sx1 .table {background:#fff;border-radius:10px;box-shadow:0 0 0 1px rgba(0,0,0,.08);overflow:hidden}
+.sx1 .thead, .sx1 .row {display:grid;grid-template-columns:92px 150px 230px 155px 1fr 82px;align-items:center;gap:12px;word-break:keep-all}
+.sx1 .thead {padding:11px 16px;background:#f7f7f7;color:#666;font-size:11px}
+.sx1 .row {padding:15px 16px;border-top:1px solid #e8e8e8;cursor:pointer;transition:.15s}
+.sx1 .row:nth-child(odd) {background:#fdfdfd}
+.sx1 .row:hover {background:#fafcff}
+.sx1 .date {font-family:monospace;font-size:12px}
+.sx1 .org {font-weight:700}
+.sx1 .person {display:grid;grid-template-columns:40px 1fr;gap:9px;align-items:center}
+.sx1 .person b {display:block}
+.sx1 .person small {color:#5f6368;font-size:11px;line-height:1.35}
+.sx1 .avatar {position:relative;width:40px;height:40px;border-radius:50%;overflow:hidden;background:#eef1f5;color:#344054;display:grid;place-items:center;font-weight:800;font-size:12px;box-shadow:0 0 0 1px #dde2e8}
+.sx1 .avatar img {width:100%;height:100%;object-fit:cover}
+.sx1 .avatar.panel-left img, .sx1 .avatar.panel-right img {position:absolute;width:1000%;height:auto;max-width:none;object-fit:initial;top:-6%;transform:none}
+.sx1 .avatar.panel-left img {left:-129%}
+.sx1 .avatar.panel-right img {left:-768%}
+.sx1 .quote {line-height:1.55;color:#383838}
+.sx1 .badge {display:inline-block;border-radius:999px;padding:5px 8px;font-size:10px;font-weight:800}
+.sx1 .evidence-cell {display:flex;align-items:center;justify-content:space-between;gap:6px}
+.sx1 .row-more {font-size:18px;color:#777;opacity:0;transition:.15s}
+.sx1 .row:hover .row-more, .sx1 .row:focus .row-more {opacity:1}
+.sx1 .row:focus {outline:2px solid #2878f0;outline-offset:-2px;background:#f5f8ff}
+.sx1 .legend {display:flex;align-items:center;gap:12px;margin:-3px 0 10px;color:#555;font-size:11px}
+.sx1 .legend b {color:#171717}
+.sx1 .legend .dot {width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:4px}
+.sx1 .dot.a {background:#26a65b}
+.sx1 .dot.b {background:#2878f0}
+.sx1 .dot.c {background:#d88a0d}
+.sx1 .a {background:#eaf8ef;color:#16733b}
+.sx1 .b {background:#ebf5ff;color:#0068d6}
+.sx1 .c {background:#fff3dc;color:#9a5b00}
+.sx1 .drawer {position:fixed;right:-470px;top:0;width:455px;height:100vh;background:#fff;box-shadow:-10px 0 30px rgba(0,0,0,.12);padding:28px;transition:.25s;z-index:5;overflow:auto}
+.sx1 .drawer.open {right:0}
+.sx1 .drawer .close {float:right;border:0;background:#eee;border-radius:6px;padding:7px 10px}
+.sx1 .drawer h2 {font-size:22px;letter-spacing:-.8px;margin-top:52px}
+.sx1 .drawer blockquote {margin:18px 0;padding:18px;background:#f6f8ff;border-left:3px solid #0a72ef;line-height:1.8}
+.sx1 .meta {display:grid;grid-template-columns:90px 1fr;gap:8px;padding:14px 0;border-top:1px solid #eee;font-size:12px}
+.sx1 .meta span:nth-child(odd) {color:#888}
+.sx1 .source {margin-top:18px;padding:15px;background:#fafafa;border-radius:8px;color:#555;font-size:12px;line-height:1.7}
+.sx1 .policy-signal {margin:0 0 18px;padding:22px;border-left:4px solid #0a72ef}
+.sx1 .policy-head {display:flex;align-items:flex-start;justify-content:space-between;gap:18px}
+.sx1 .policy-head h2 {margin:5px 0 7px;font-size:21px;letter-spacing:-.7px}
+.sx1 .policy-head p {margin:0;color:#5f6368;line-height:1.65}
+.sx1 .signal-state {display:inline-flex;gap:6px;align-items:center;background:#fff3dc;color:#8b5700;border-radius:999px;padding:7px 10px;font-size:11px;font-weight:800;white-space:nowrap}
+.sx1 .confidence {display:flex;gap:7px;margin:14px 0}
+.sx1 .confidence span {background:#eef5ff;color:#145db5;padding:6px 9px;border-radius:6px;font-size:11px;font-weight:700}
+.sx1 .policy-grid {display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.sx1 .policy-box {background:#f8f9fb;border-radius:8px;padding:15px;border-top:3px solid #2878f0}
+.sx1 .policy-box+ .policy-box {border-top-color:#26a65b;background:#f7fbf8}
+.sx1 .policy-box h3 {font-size:12px;margin:0 0 9px}
+.sx1 .policy-box ul {margin:0;padding-left:17px;color:#4f5661;line-height:1.65;font-size:12px}
+.sx1 .policy-box li+li {margin-top:6px}
+.sx1 .policy-box small {display:block;color:#6b7280;margin-top:2px}
+.sx1 .contract {margin-top:12px;padding:13px 15px;background:#171717;color:#fff;border-radius:8px;font-size:12px;line-height:1.7}
+.sx1 .contract b {color:#87b9ff}
+.sx1 .policy-limit {margin:11px 0 0;color:#654500;background:#fff5d7;border:1px solid #efd58b;border-radius:7px;padding:11px 12px;font-size:11px;line-height:1.6}
+.sx1 .policy-limit b {font-size:12px}
+.sx1 .policy-links {margin-top:10px;font-size:11px;color:#777}
+.sx1 .policy-links a {color:#0a72ef;text-decoration:none;margin-right:12px}
+@media(max-width:950px) {
+  .sx1 .main {padding:0 16px;width:100%;min-width:0;max-width:100%}
+  .sx1 .top {height:auto;min-height:64px;gap:8px;min-width:0}
+  .sx1 .top>* {min-width:0}
+  .sx1 .crumb {max-width:210px;line-height:1.4;overflow-wrap:anywhere}
+  .sx1 .actions {flex:0 0 auto}
+  .sx1 .actions .btn:first-child {display:none}
+  .sx1 .hero {align-items:flex-start;gap:10px}
+  .sx1 .hero h1 {font-size:26px}
+  .sx1 .stamp {display:none}
+  .sx1 .metrics {grid-template-columns:repeat(2,minmax(0,1fr))}
+  .sx1 .signal {grid-template-columns:minmax(0,1fr)}
+  .sx1 .headline {grid-template-columns:minmax(0,1fr);min-width:0}
+  .sx1 .headline p {word-break:keep-all}
+  .sx1 .signal-photo img {width:100%;height:auto;max-height:220px}
+  .sx1 .policy-head {display:block}
+  .sx1 .signal-state {margin-top:10px}
+  .sx1 .policy-grid {grid-template-columns:1fr}
+  .sx1 .tabs {max-width:100%;overflow-x:auto;padding:2px;white-space:nowrap}
+  .sx1 .legend {flex-wrap:wrap;line-height:1.7}
+  .sx1 .thead {display:none}
+  .sx1 .row {grid-template-columns:76px minmax(0,1fr);gap:8px 10px}
+  .sx1 .row>*:nth-child(n+3) {grid-column:2}
+  .sx1 .drawer {width:94%}
+}

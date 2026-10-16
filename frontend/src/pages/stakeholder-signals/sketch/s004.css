@@ -1,0 +1,64 @@
+/* AUTO-GENERATED from dashboard-sketches/004-monitoring-audit/index.html — 값은 스케치 그대로(verbatim).
+ * 모든 선택자를 .sx4 로 스코프, body→.sx4, 스케치 자체 좌측 nav(.app/.side/.brand/.nav/.side-foot)는 제외(사용자 결정: 대쉬보드 사이드바 유지).
+ * 직접 고치지 말 것 — 대쉬보드 추가분은 s004.additions.css 에 둔다. */
+.sx4 * {box-sizing:border-box}
+.sx4 {margin:0;background:#f7f7f7;color:#171717;font-family:"Noto Sans KR","Apple SD Gothic Neo",sans-serif;font-size:14px}
+.sx4 .main {padding:0 34px 56px;max-width:1500px;min-width:0}
+.sx4 .top {min-height:72px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.sx4 .crumb {font-size:13px;color:#737373}
+.sx4 .hero {display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin:18px 0 20px}
+.sx4 .hero h1 {font-size:30px;letter-spacing:-1.4px;margin:0 0 8px}
+.sx4 .hero p {margin:0;color:#666;line-height:1.65}
+.sx4 .stats {display:grid;grid-template-columns:repeat(2,minmax(130px,1fr));gap:10px}
+.sx4 .stat {background:#fff;border:1px solid #e5e5e5;border-radius:10px;padding:13px 16px;color:#666;font-size:12px}
+.sx4 .stat b {display:block;color:#171717;font-size:19px;margin-top:3px}
+.sx4 .principles {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:18px}
+.sx4 .principle {background:#fff;border:1px solid #e5e5e5;border-radius:10px;padding:16px}
+.sx4 .principle b {display:block;margin-bottom:6px}
+.sx4 .principle p {margin:0;color:#666;font-size:12px;line-height:1.6}
+.sx4 .toolbar {display:flex;align-items:center;justify-content:space-between;gap:12px;margin:18px 0 12px}
+.sx4 .chips {display:flex;gap:7px;flex-wrap:wrap}
+.sx4 .chip, .sx4 .btn {border:0;border-radius:8px;padding:10px 14px;background:#fff;box-shadow:0 0 0 1px #ddd;font-weight:700;cursor:pointer;min-height:40px}
+.sx4 .chip.active {background:#171717;color:#fff;box-shadow:none}
+.sx4 .btn.primary {background:#171717;color:#fff;box-shadow:none}
+.sx4 .btn.danger {color:#9a3030}
+.sx4 .btn:focus-visible, .sx4 .chip:focus-visible, .sx4 a:focus-visible {outline:2px solid #2878f0;outline-offset:2px}
+.sx4 .panel {background:#fff;border:1px solid #e5e5e5;border-radius:10px;overflow:hidden}
+.sx4 .proposal {display:grid;grid-template-columns:minmax(0,1fr) auto;gap:20px;padding:20px;border-bottom:1px solid #eee}
+.sx4 .proposal:last-child {border-bottom:0}
+.sx4 .headline {display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.sx4 .headline h2 {font-size:17px;margin:0}
+.sx4 .badge {display:inline-flex;align-items:center;border-radius:999px;padding:5px 9px;font-size:11px;font-weight:800}
+.sx4 .type-source_expansion {background:#eaf2ff;color:#245ca6}
+.sx4 .type-role_change {background:#fff3db;color:#8a5b00}
+.sx4 .type-new_person {background:#eaf7ee;color:#226b39}
+.sx4 .status-needs_review, .sx4 .status-needs_evidence {background:#fff2d8;color:#7a5600}
+.sx4 .status-scheduled {background:#eaf7ee;color:#226b39}
+.sx4 .status-rejected {background:#f6eaea;color:#8c3434}
+.sx4 .meta {color:#777;font-size:12px;margin:8px 0;line-height:1.6}
+.sx4 .summary {font-weight:700;margin:8px 0}
+.sx4 .rationale {color:#555;line-height:1.7;white-space:pre-wrap}
+.sx4 .change {margin-top:12px;background:#f8f8f8;border-radius:8px;padding:12px;font-size:12px;line-height:1.65}
+.sx4 .evidence {display:grid;gap:7px;margin-top:12px}
+.sx4 .evidence a {display:block;color:#245ca6;text-decoration:none;overflow-wrap:anywhere}
+.sx4 .evidence small {color:#777}
+.sx4 .actions {display:flex;align-items:flex-start;gap:8px}
+.sx4 .empty {padding:48px 20px;text-align:center;color:#777}
+.sx4 .notice {background:#f0f5ff;border-radius:8px;padding:12px 14px;color:#3f526d;font-size:12px;line-height:1.6}
+.sx4 .toast {position:fixed;left:50%;bottom:24px;transform:translate(-50%,20px);background:#171717;color:#fff;border-radius:8px;padding:12px 16px;opacity:0;pointer-events:none;transition:.2s}
+.sx4 .toast.show {opacity:1;transform:translate(-50%,0)}
+@media(max-width:850px) {
+  .sx4 .main {padding:0 16px 40px;width:100%;min-width:0}
+  .sx4 .top {min-height:62px}
+  .sx4 .hero {align-items:flex-start;flex-direction:column}
+  .sx4 .hero h1 {font-size:26px}
+  .sx4 .stats {width:100%}
+  .sx4 .principles {grid-template-columns:1fr}
+  .sx4 .toolbar {align-items:stretch;flex-direction:column}
+  .sx4 .chips {overflow-x:auto;flex-wrap:nowrap}
+  .sx4 .chip {min-height:44px;white-space:nowrap}
+  .sx4 .proposal {grid-template-columns:1fr;padding:16px}
+  .sx4 .actions {display:grid;grid-template-columns:1fr 1fr}
+  .sx4 .actions .btn {min-height:48px}
+  .sx4 .rationale, .sx4 .change {overflow-wrap:anywhere}
+}

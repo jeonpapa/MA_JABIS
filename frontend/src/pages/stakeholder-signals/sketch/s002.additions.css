@@ -1,0 +1,34 @@
+/*
+ * 스케치 002 대쉬보드 추가분 — 실제 검색 입력, 하드 제약 요소(인용별 배지·원문 불일치·라벨·발췌), 데이터 상태,
+ * 좁은 화면 상세 모달. 스케치 수치는 s002.css(생성본).
+ */
+.sx2 { min-height: 100vh; }
+
+/* 스케치 .search(div) 를 같은 모양의 실제 입력으로 */
+.sx2 input.search { border: 0; font: inherit; color: #181818; min-width: 0; }
+.sx2 input.search::placeholder { color: #777; }
+.sx2 input.search:focus { outline: 2px solid #2878f0; outline-offset: -2px; }
+
+/* Role-only/후보 등급 알약 — 회색 */
+.sx2 .pill.role { background: #efefef; color: #555; }
+
+/* 스트림 카드 — 긴 원문 인용은 2줄로 접는다(전문은 상세), 원문 불일치는 숨기지 않음 */
+.sx2 .statement .clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.sx2 .statement .q-mismatch { display: block; margin-top: 5px; }
+.sx2 .lane-msg { padding: 28px 16px; text-align: center; color: #777; background: #fff; border-radius: 8px; box-shadow: 0 0 0 1px rgba(0,0,0,.08); }
+.sx2 .lane-msg.err { color: #b42318; }
+.sx2 .viewtabs button[aria-disabled='true'] { color: #aaa; }
+
+/* 상세 — 라벨 보조문구, 인용별 배지, 불일치 */
+.sx2 .label i { font-style: normal; font-weight: 400; color: #bbb; }
+.sx2 .label + div > .quote { margin-top: 8px; }
+.sx2 .quote.mismatch { background: #fef3f2; box-shadow: inset 3px 0 #d92d20; }
+.sx2 .quote.mismatch:before { color: #f04438; }
+.sx2 .q-marks { margin: -12px 0 16px; }
+.sx2 .no-quote { margin: 20px 0; padding: 12px 14px; border: 1px dashed #d8d8d8; border-radius: 8px; color: #555; font-size: 12px; line-height: 1.6; }
+.sx2 .detail .copy { margin: 14px 0 0; color: #999; font-size: 11px; line-height: 1.6; }
+
+/* 좁은 화면(스케치가 상세를 숨기는 폭) — 같은 상세를 모달 안에 */
+.sx2 .detail.in-modal { display: block; border: 0; padding: 0; overflow: visible; }
+.sx2 .detail.in-modal .detail-top { display: none; }
+.sx2 .detail.in-modal h2 { margin-top: 0; }

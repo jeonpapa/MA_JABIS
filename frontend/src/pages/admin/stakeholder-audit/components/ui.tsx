@@ -1,28 +1,24 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { REASON_MAX, REASON_MIN } from '@/api/stakeholder';
-import { boxCard, closeBtn, errorBox, input as inputCls, scrimStrong } from '@/pages/stakeholder-signals/theme/sv';
-import { btnDanger, btnGhost, btnPrimary, type ToastState } from './uiHelpers';
+import type { ToastState } from './uiHelpers';
 
-// 모니터링 인물 관리·모니터링 감사(admin) 공용 UI — 모달 셸, 사유 입력 모달(prompt 금지), 확인 모달, 토스트.
-// 스타일은 원 레포 스케치 003/004 의 화이트 톤(.btn/.btn.primary/.field/.modal/.toast) — theme/sv.ts 토큰만 쓴다.
-// 이 컴포넌트들은 .sv-light 래퍼(SvPage) 안에서만 렌더링된다.
+// 모니터링 인물 관리·모니터링 감사(admin) 공용 — 확인 모달, 사유 입력 모달, 토스트.
+// 스케치는 확인·사유에 브라우저 confirm()/prompt() 를 쓴다. 대쉬보드는 스케치 003 모달 수치(common.css .sxm)로
+// 같은 시각 언어의 모달을 띄운다(사유는 처리 이력에 남아야 해서 prompt 대신 입력 검증이 있는 모달).
+// 버튼은 각 화면 스케치의 .btn / .btn.primary / .btn.danger 를 그대로 쓴다. 토스트는 각 화면 스케치의 .toast.
 
-
-/** 기본 모달 셸: Esc·배경 클릭 닫기, aria-modal, 열릴 때 첫 입력 포커스. */
-export function Modal({
+function ModalShell({
   title,
   onClose,
+  busy,
   children,
   footer,
-  wide = false,
-  busy = false,
 }: {
-  title: ReactNode;
+  title: string;
   onClose: () => void;
+  busy: boolean;
   children: ReactNode;
-  footer?: ReactNode;
-  wide?: boolean;
-  busy?: boolean;
+  footer: ReactNode;
 }) {
   const titleId = useId();
   const boxRef = useRef<HTMLDivElement>(null);
@@ -32,10 +28,7 @@ export function Modal({
     };
     window.addEventListener('keydown', onKey);
     const t = window.setTimeout(() => {
-      const el = boxRef.current?.querySelector<HTMLElement>(
-        'textarea:not([disabled]), input:not([disabled]):not([type=file]), select:not([disabled])',
-      );
-      el?.focus();
+      boxRef.current?.querySelector<HTMLElement>('textarea:not([disabled]), button.primary, button.danger')?.focus();
     }, 30);
     return () => {
       window.removeEventListener('keydown', onKey);
@@ -43,39 +36,22 @@ export function Modal({
     };
   }, [onClose, busy]);
   return (
-    <div
-      className={`fixed inset-0 z-[60] ${scrimStrong} flex items-stretch sm:items-center justify-center p-0 sm:p-5`}
-      onClick={() => !busy && onClose()}
-    >
-      <div
-        ref={boxRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        className={`bg-sv-surface sm:rounded-xl shadow-sv-modal w-full ${wide ? 'sm:max-w-4xl' : 'sm:max-w-[580px]'} sm:max-h-[90vh] flex flex-col overflow-hidden`}
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex-shrink-0 flex items-center justify-between gap-3 px-[22px] py-4 border-b border-sv-line-soft">
-          <h2 id={titleId} className="text-sv-ink text-[18px] font-extrabold truncate">
-            {title}
-          </h2>
-          <button onClick={onClose} disabled={busy} aria-label="닫기" className={closeBtn}>
-            <i className="ri-close-line text-lg"></i>
+    <div className="sxm-wrap" onClick={() => !busy && onClose()}>
+      <div ref={boxRef} className="sxm" role="dialog" aria-modal="true" aria-labelledby={titleId} onClick={e => e.stopPropagation()}>
+        <div className="sxm-head">
+          <h2 id={titleId}>{title}</h2>
+          <button onClick={onClose} disabled={busy} aria-label="닫기">
+            ×
           </button>
         </div>
-        <div className="flex-1 min-h-0 px-[22px] py-5 overflow-y-auto">{children}</div>
-        {footer && (
-          <div className="flex-shrink-0 px-[22px] py-4 border-t border-sv-line-soft flex flex-wrap justify-end gap-2">{footer}</div>
-        )}
+        <div className="sxm-body">{children}</div>
+        <div className="sxm-actions">{footer}</div>
       </div>
     </div>
   );
 }
 
-/**
- * 사유 입력 모달 — 승인·반려·충돌 확인 공용. 사유 2~1000자(서버 REASON_MIN/MAX)를 클라이언트에서 먼저 막는다.
- * onSubmit 이 throw 하면 서버 문구를 모달 안에 그대로 보여주고 열어 둔다(사유 보존).
- */
+/** 사유 입력 모달 — 승인·반려·충돌 확인. 사유 2~1000자. onSubmit 이 throw 하면 서버 문구를 모달 안에 그대로 보여준다. */
 export function ReasonModal({
   title,
   description,
@@ -113,28 +89,24 @@ export function ReasonModal({
   };
 
   return (
-    <Modal
+    <ModalShell
       title={title}
       onClose={onClose}
       busy={busy}
       footer={
         <>
-          <button className={btnGhost} onClick={onClose} disabled={busy}>
+          <button className="btn" onClick={onClose} disabled={busy}>
             취소
           </button>
-          <button
-            className={tone === 'danger' ? btnDanger : btnPrimary}
-            onClick={submit}
-            disabled={tooShort || tooLong || busy}
-          >
+          <button className={`btn ${tone}`} onClick={submit} disabled={tooShort || tooLong || busy}>
             {busy ? '처리 중…' : confirmLabel}
           </button>
         </>
       }
     >
-      {description && <div className="mb-4 text-[13px] text-sv-text leading-relaxed">{description}</div>}
-      <label htmlFor={fieldId} className="block text-sv-ink text-[12px] font-bold mb-1.5">
-        사유 <span className="text-sv-muted font-normal">({REASON_MIN}~{REASON_MAX}자, 처리 이력에 기록됩니다)</span>
+      {description}
+      <label htmlFor={fieldId}>
+        사유 <span style={{ fontWeight: 400, color: '#777' }}>({REASON_MIN}~{REASON_MAX}자, 처리 이력에 기록됩니다)</span>
       </label>
       <textarea
         id={fieldId}
@@ -142,26 +114,25 @@ export function ReasonModal({
         onChange={e => setReason(e.target.value)}
         maxLength={REASON_MAX + 50}
         rows={4}
-        className={`${inputCls} resize-y`}
         placeholder="판단 근거를 적어 주세요."
         onKeyDown={e => {
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void submit();
         }}
       />
-      <div className="mt-1 flex justify-between text-[11px]">
-        <span className={tooShort && len > 0 ? 'text-sv-warn-fg font-semibold' : 'text-sv-muted'}>
+      <div className="sxm-count">
+        <span className={tooShort && len > 0 ? 'warn' : ''}>
           {tooShort ? `사유를 ${REASON_MIN}자 이상 입력해야 진행할 수 있습니다.` : tooLong ? `${REASON_MAX}자를 넘었습니다.` : ' '}
         </span>
-        <span className={tooLong ? 'text-sv-bad-fg font-semibold' : 'text-sv-muted'}>
+        <span>
           {len}/{REASON_MAX}
         </span>
       </div>
       {err && (
-        <p role="alert" className={`mt-3 whitespace-pre-wrap ${errorBox}`}>
+        <div role="alert" className="svx-err">
           {err}
-        </p>
+        </div>
       )}
-    </Modal>
+    </ModalShell>
   );
 }
 
@@ -194,53 +165,39 @@ export function ConfirmModal({
     }
   };
   return (
-    <Modal
+    <ModalShell
       title={title}
       onClose={onClose}
       busy={busy}
       footer={
         <>
-          <button className={btnGhost} onClick={onClose} disabled={busy}>
+          <button className="btn" onClick={onClose} disabled={busy}>
             취소
           </button>
-          <button className={tone === 'danger' ? btnDanger : btnPrimary} onClick={go} disabled={busy}>
+          <button className={`btn ${tone}`} onClick={go} disabled={busy}>
             {busy ? '처리 중…' : confirmLabel}
           </button>
         </>
       }
     >
-      <div className="text-[13px] text-sv-ink-2 leading-relaxed">{body}</div>
+      <p>{body}</p>
       {err && (
-        <p role="alert" className={`mt-3 ${errorBox}`}>
+        <div role="alert" className="svx-err">
           {err}
-        </p>
+        </div>
       )}
-    </Modal>
+    </ModalShell>
   );
 }
 
+/** 스케치 003/004 .toast(.show) — 마지막 문구를 유지해 사라지는 전환에서도 비지 않게. */
 export function Toast({ toast }: { toast: ToastState | null }) {
-  if (!toast) return null;
+  const last = useRef<ToastState | null>(null);
+  if (toast) last.current = toast;
+  const t = toast ?? last.current;
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] max-w-[90vw] rounded-lg px-4 py-3 text-[13px] font-semibold shadow-sv-toast ${
-        toast.tone === 'error' ? 'bg-sv-bad-fg text-sv-on-dark' : 'bg-sv-dark text-sv-on-dark'
-      }`}
-    >
-      {toast.msg}
-    </div>
-  );
-}
-
-/** 스케치 004 .stat — 테두리 카드, 12px 라벨 + 19px 값. tone 은 값 글자색 클래스(sv 토큰). */
-export function StatCard({ label, value, sub, tone }: { label: string; value: ReactNode; sub?: ReactNode; tone?: string }) {
-  return (
-    <div className={`${boxCard} px-4 py-[13px] min-w-0`}>
-      <p className="text-sv-muted text-[12px]">{label}</p>
-      <p className={`mt-0.5 text-[19px] font-extrabold ${tone ?? 'text-sv-ink'} truncate`}>{value}</p>
-      {sub && <div className="mt-0.5 text-[11px] text-sv-muted">{sub}</div>}
+    <div className={`toast${toast ? ' show' : ''}${t?.tone === 'error' ? ' error' : ''}`} role="status" aria-live="polite">
+      {t?.msg}
     </div>
   );
 }

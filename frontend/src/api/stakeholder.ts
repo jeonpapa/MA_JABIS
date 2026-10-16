@@ -10,7 +10,8 @@ import { api, ApiError, clearAuth, getToken } from './client';
 //   - 인물 사진은 인증 라우트 `/api/stakeholder/people/<id>/photo` 만 쓴다. 언론 CDN 링크는 렌더링 금지.
 
 export type SVGradeClass = 'a' | 'b' | 'c' | 'role';
-export type SVIntegrityStatus = 'verified' | 'mismatch' | 'missing' | 'no_local' | 'unchecked';
+/** excluded = manifest 에 있으나 sync 허용목록 밖이라 의도적으로 받지 않은 출처(실패 아님). */
+export type SVIntegrityStatus = 'verified' | 'mismatch' | 'missing' | 'no_local' | 'excluded' | 'unchecked';
 export type SVLocatorMatch = 'range' | 'file' | 'none' | 'unchecked';
 export type SVTopicSlug = 'price_reform' | 'access' | 'rwe' | 'finance' | 'negotiation';
 export type SVRunKind = 'monitoring' | 'audit';
@@ -78,6 +79,8 @@ export interface SVPersonRef {
 }
 
 export interface SVOverview {
+  /** 서버 기준일(KST) */
+  as_of?: string | null;
   scope?: { start?: string | null; end?: string | null } | null;
   kpi?: {
     events?: number;
@@ -627,6 +630,84 @@ export async function fetchRuns(kind: SVRunKind, limit = 10): Promise<SVRun[]> {
 
 export function fetchRun(kind: SVRunKind, runId: string): Promise<SVRunDetail> {
   return api.get<SVRunDetail>(`/api/stakeholder/runs/${kind}/${encodeURIComponent(runId)}`);
+}
+
+// ── 정책 시그널 (보험자 정책 방향성 예측) ────────────────────────────────────
+// 소스 repo `/api/signals`(data/policy_signals.json) 과 같은 모양. 확인된 근거(confirmed_evidence)와
+// 분석 추론(analyst_inference)·미확인 범위(not_confirmed)는 분리된 필드다 — 화면도 섞지 않는다(소스 README 규칙 6).
+// confirmed_evidence 의 locator_match·integrity_status·source 는 대쉬보드가 붙이는 필드(없을 수 있음).
+
+export interface SVSignalEvidence {
+  date?: string | null;
+  person?: string | null;
+  role_at_event?: string | null;
+  evidence_grade?: string | null;
+  /** direct_support | planned_policy | adjacent_context */
+  evidence_role?: string | null;
+  claim?: string | null;
+  source_id?: string | null;
+  locator?: string | null;
+  policy_status?: string | null;
+  scope_note?: string | null;
+  /** 근거 locator 유효성(claim 은 요약이라 문구 대조가 아님): range | file | none | unchecked */
+  locator_match?: SVLocatorMatch | string | null;
+  integrity_status?: SVIntegrityStatus | string | null;
+  source?: { publisher_title?: string | null; url?: string | null; publication_date?: string | null } | null;
+}
+
+export interface SVSignalBenefit {
+  benefit: string;
+  modality?: string | null;
+  rationale?: string | null;
+  basis_source_ids?: string[] | null;
+}
+
+export interface SVPolicySignal {
+  signal_id: string;
+  title: string;
+  institution?: string | null;
+  signal_type?: string | null;
+  /** analyst_hypothesis = 분석 가설(공식 선언 아님) */
+  status?: string | null;
+  as_of?: string | null;
+  /** 0.0–1.0 분석가 판단(보정된 확률 아님) — 화면은 0–10 으로 표시 */
+  direction_confidence?: number | null;
+  implementation_model_confidence?: number | null;
+  confidence_methodology?: {
+    scale?: string | null;
+    method?: string | null;
+    direction_basis?: string | null;
+    implementation_basis?: string | null;
+    limitation?: string | null;
+    reviewed_by?: string | null;
+    next_review_trigger?: string | null;
+  } | null;
+  thesis?: string | null;
+  confirmed_evidence?: SVSignalEvidence[] | null;
+  analyst_inference?: {
+    likely_contract_architecture?: string | null;
+    payer_benefits?: SVSignalBenefit[] | null;
+    most_likely_first_use?: string | null;
+    selective_use?: string | null;
+    composite_scope?: Record<string, string> | null;
+  } | null;
+  not_confirmed?: string | null;
+  watch_triggers?: string[] | null;
+}
+
+export interface SVSignalList {
+  /** invalid = 최신 시그널 파일이 검증에 실패 — signals 는 마지막 정상본. absent = 아직 시그널 파일 없음. */
+  import_status?: { state?: 'ok' | 'invalid' | 'absent' | string | null; error?: string | null } | null;
+  schema_version?: string | number | null;
+  updated_at?: string | null;
+  signal_count?: number | null;
+  signals: SVPolicySignal[];
+}
+
+export async function fetchSignals(): Promise<SVSignalList> {
+  const res = await api.get<SVSignalList>('/api/stakeholder/signals');
+  if (!res || !Array.isArray(res.signals)) throw new Error('signals missing');
+  return res;
 }
 
 // ── admin (T7b 화면용) ──────────────────────────────────────────────────────

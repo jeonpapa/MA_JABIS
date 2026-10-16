@@ -1,0 +1,79 @@
+/* AUTO-GENERATED from dashboard-sketches/002-analyst-workbench/index.html — 값은 스케치 그대로(verbatim).
+ * 모든 선택자를 .sx2 로 스코프, body→.sx2, 스케치 자체 좌측 nav(.app/.side/.brand/.nav/.side-foot)는 제외(사용자 결정: 대쉬보드 사이드바 유지).
+ * 직접 고치지 말 것 — 대쉬보드 추가분은 s002.additions.css 에 둔다. */
+.sx2 * {box-sizing:border-box}
+.sx2 {margin:0;font-family:"Noto Sans KR","Apple SD Gothic Neo",sans-serif;color:#181818;background:#fff;font-size:13px}
+.sx2 .top {height:62px;display:flex;align-items:center;padding:0 22px;border-bottom:1px solid #e8e8e8;gap:25px}
+.sx2 .logo {font-weight:800;font-size:16px}
+.sx2 .search {flex:1;max-width:520px;background:#f5f5f5;border-radius:7px;padding:10px 13px;color:#777}
+.sx2 .top button {border:0;background:#181818;color:#fff;padding:9px 13px;border-radius:6px}
+.sx2 .layout {display:grid;grid-template-columns:248px 1fr 390px;height:calc(100vh - 62px)}
+.sx2 .filters {border-right:1px solid #e9e9e9;padding:20px;overflow:auto}
+.sx2 .filters h3 {font-size:12px;margin:3px 0 10px}
+.sx2 .group {border-bottom:1px solid #eee;padding-bottom:17px;margin-bottom:17px}
+.sx2 .check {display:flex;align-items:center;justify-content:space-between;padding:7px 0;color:#555}
+.sx2 .check input {accent-color:#111}
+.sx2 .count {color:#aaa;font-size:11px}
+.sx2 .center {padding:22px 24px;overflow:auto;background:#fafafa}
+.sx2 .heading {display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:18px}
+.sx2 .heading h1 {font-size:23px;letter-spacing:-1px;margin:0 0 5px}
+.sx2 .heading p {margin:0;color:#777}
+.sx2 .viewtabs button {border:0;background:#fff;padding:8px 11px;box-shadow:0 0 0 1px #ddd}
+.sx2 .viewtabs button:first-child {background:#181818;color:#fff}
+.sx2 .lane {margin-bottom:22px}
+.sx2 .lane-title {display:flex;justify-content:space-between;margin:0 0 9px;font-weight:800}
+.sx2 .lane-title span {color:#999;font-weight:400}
+.sx2 .event {background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.08);border-radius:8px;margin-bottom:8px;padding:13px 14px;display:grid;grid-template-columns:80px 150px 1fr 84px;gap:12px;align-items:center;cursor:pointer}
+.sx2 .event:hover, .sx2 .event.active {box-shadow:0 0 0 2px #2878f0}
+.sx2 .date {font-family:monospace;color:#666}
+.sx2 .who {display:flex;align-items:center;gap:8px}
+.sx2 .who b {display:block}
+.sx2 .who small {color:#5f6368}
+.sx2 .mini-avatar {position:relative;width:32px;height:32px;flex:0 0 32px;border-radius:50%;overflow:hidden;background:#eef1f5;color:#344054;display:grid;place-items:center;font-weight:800;font-size:11px;box-shadow:0 0 0 1px #dde2e8}
+.sx2 .mini-avatar img, .sx2 .avatar img {width:100%;height:100%;object-fit:cover}
+.sx2 .panel-left img, .sx2 .panel-right img, .sx2 .stage-speaker img {position:absolute;height:auto;max-width:none;object-fit:initial;transform:none}
+.sx2 .panel-left img, .sx2 .panel-right img {width:1000%;top:-6%}
+.sx2 .panel-left img {left:-129%}
+.sx2 .panel-right img {left:-768%}
+.sx2 .stage-speaker img {width:1300%;left:-830%;top:-128%}
+.sx2 .statement, .sx2 .detail h2, .sx2 .who {word-break:keep-all}
+.sx2 .statement {line-height:1.55}
+.sx2 .pill {justify-self:end;border-radius:999px;padding:5px 8px;background:#eaf8ef;color:#16733b;font-size:10px;font-weight:800}
+.sx2 .pill.c {background:#fff3dc;color:#8b5700}
+.sx2 .pill.b {background:#eaf3ff;color:#075eb8}
+.sx2 .detail {border-left:1px solid #e9e9e9;padding:22px;overflow:auto}
+.sx2 .detail-top {display:flex;justify-content:space-between;color:#777;font-size:11px}
+.sx2 .detail h2 {font-size:20px;letter-spacing:-.7px;line-height:1.45;margin:20px 0 9px}
+.sx2 .person-card {display:flex;align-items:center;gap:12px;padding:13px 0 18px;border-bottom:1px solid #eee}
+.sx2 .avatar {position:relative;width:56px;height:56px;flex:0 0 56px;border-radius:50%;overflow:hidden;background:#eef1f5;color:#344054;display:grid;place-items:center;font-weight:800;box-shadow:0 0 0 1px #dde2e8}
+.sx2 .person-card b {display:block}
+.sx2 .person-card small {color:#777}
+.sx2 .quote {margin:20px 0;padding:18px;border-radius:8px;background:#f4f7ff;line-height:1.85;font-size:14px;position:relative}
+.sx2 .quote:before {content:'“';position:absolute;font-size:35px;color:#8ab5ff;left:8px;top:-6px}
+.sx2 .label {font-size:11px;color:#999;font-weight:700;margin-top:20px}
+.sx2 .analysis {line-height:1.75}
+.sx2 .warning {margin-top:15px;padding:12px;border-radius:7px;background:#fff8e8;color:#74521a;line-height:1.65}
+.sx2 .evidence {margin-top:12px;border:1px solid #e7e7e7;border-radius:8px;overflow:hidden}
+.sx2 .e-row {display:grid;grid-template-columns:92px 1fr;padding:10px;border-top:1px solid #eee}
+.sx2 .e-row:first-child {border:0}
+.sx2 .e-row span {color:#999}
+.sx2 .sourcebtn {margin-top:14px;width:100%;padding:10px;border:0;border-radius:6px;background:#181818;color:#fff;font-weight:700}
+@media(max-width:1050px) {
+  .sx2 .layout {grid-template-columns:210px 1fr}
+  .sx2 .detail {display:none}
+  .sx2 .event {grid-template-columns:70px 120px 1fr}
+  .sx2 .pill {display:none}
+}
+@media(max-width:700px) {
+  .sx2 .top {padding:0 16px;gap:10px}
+  .sx2 .search {display:none}
+  .sx2 .top button {margin-left:auto}
+  .sx2 .layout {grid-template-columns:1fr}
+  .sx2 .filters {display:none}
+  .sx2 .center {padding:16px}
+  .sx2 .heading {align-items:flex-start;gap:12px}
+  .sx2 .heading p {line-height:1.55}
+  .sx2 .viewtabs {display:none}
+  .sx2 .event {grid-template-columns:75px 1fr}
+  .sx2 .statement {grid-column:2}
+}

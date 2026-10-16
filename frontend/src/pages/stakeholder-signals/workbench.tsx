@@ -1,49 +1,56 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   fetchOverview,
   fetchStatements,
   gradeClassOf,
-  GRADE_CLASS_LABELS,
   headlineQuoteOf,
   ORG_FILTERS,
-  topicsFrom,
+  safeHttpUrl,
+  sourceTypeLabel,
+  TOPIC_LABELS,
+  TOPIC_ORDER,
   type SVGradeClass,
   type SVOverview,
+  type SVStatementDetail,
   type SVStatementRow,
 } from '@/api/stakeholder';
-import SignalsHeader from './components/SignalsHeader';
+import { getCurrentUser, isAdmin } from '@/utils/authUsers';
 import PersonAvatar from './components/PersonAvatar';
-import { GradeBadge, LocatorMatchBadge } from './components/GradeBadge';
-import { StatementDetailPanel } from './components/StatementDrawer';
-import { closeBtn, focusRing, linkBtn, scrimStrong } from './theme/sv';
-import { SvPage } from './theme/SvPage';
+import { LocatorMatchBadge } from './components/GradeBadge';
+import { integrityText, isMismatch, provenanceFor } from './components/evidence';
+import { ExcerptToggle, MismatchWarning, QuoteMarks } from './components/statementDetail';
+import { useStatementDetail } from './components/useStatementDetail';
+import RelationshipMapModal from './components/RelationshipMapModal';
+import { fmtDot, PREPARING, TOPIC_FILTER_LABELS } from './sketch/helpers';
+import './sketch/base.css';
+import './sketch/common.css';
+import './sketch/s002.css';
+import './sketch/s002.additions.css';
 
-// Stakeholder Signals — 분석가 워크벤치 (스케치 002 이식).
-// 좌: 필터(기관·주제·증거·기간) / 중: 주제 레인 스트림 / 우: 발언 상세(모바일은 모달).
-// 기관 분류는 서버 ORG_PATTERNS 가 권위 — 기관별 `org=` 조회 결과로 statement_id → 기관 집합을 만든다
-// (클라이언트에 패턴을 복제하지 않는다). 주제·증거 필터는 행 필드(topic, grade_class)로 클라이언트에서 거른다.
-// "검증 큐"·"내보내기"·검색창 은 사용자 결정(편집·검증 큐 보류)에 따라 두지 않는다.
-// 스케치 002 레이아웃: 흰 상단 바 / 좌 248px 필터(우측 경계선) · 중앙 #fafafa 스트림 · 우 390px 상세(좌측 경계선),
-// 넓은 화면에서는 세 칸이 각자 스크롤된다.
+// Stakeholder Signals — 애널리스트 워크벤치 = 스케치 002 그대로.
+//   흰 상단 바(로고·검색·"검증 큐") / 좌 248px 필터 · 중앙 #fafafa 주제 레인 · 우 390px 상세.
+//   "검증 큐" 는 보류 기능 — 모양 그대로 비활성(title "준비 중"). 검색창은 스트림을 거르는 실제 입력.
+//   보기 탭: 스트림(현재) · 인물(관리자 → 모니터링 인물 관리) · 관계도(관계도 모달).
+//   1050px 이하에서 스케치는 상세를 숨긴다 — 그때는 발언을 누르면 같은 상세를 모달로 연다.
 
 const OTHER_ORG = '__other__';
-const ORG_OPTIONS = [...ORG_FILTERS, { key: OTHER_ORG, label: '기타(국회·학계 등)' }];
-const GRADE_OPTIONS: SVGradeClass[] = ['a', 'b', 'c', 'role'];
-
-function fmtDate(s?: string | null): string {
-  if (!s) return '—';
-  return s.slice(0, 10).replace(/-/g, '.');
-}
+const GRADE_OPTIONS: { key: SVGradeClass; label: string; defaultOn: boolean }[] = [
+  { key: 'a', label: '공식 원문 A', defaultOn: true },
+  { key: 'b', label: '기관 인용 B', defaultOn: true },
+  { key: 'c', label: '언론 인용 C', defaultOn: true },
+  { key: 'role', label: '후보만 확인', defaultOn: false },
+];
+const DEFAULT_COPYRIGHT = '원문 저작권은 각 발행기관·언론사에 있습니다. 내부 검증과 출처(provenance) 보존 목적으로만 발췌를 제공합니다.';
 
 function firstSentence(s?: string | null): string {
   const t = (s || '').trim();
-  if (!t) return '';
   const m = t.match(/^(.+?[.!?。])(\s|$)/);
   return (m ? m[1] : t).slice(0, 160);
 }
 
-function useIsDesktop(): boolean {
-  const q = '(min-width: 1280px)';
+function useIsWide(): boolean {
+  const q = '(min-width: 1051px)';
   const [ok, setOk] = useState(() => (typeof window !== 'undefined' ? window.matchMedia(q).matches : true));
   useEffect(() => {
     const mq = window.matchMedia(q);
@@ -60,42 +67,13 @@ interface WbData {
 }
 
 async function loadWorkbench(): Promise<WbData> {
-  const [all, ...perOrg] = await Promise.all([
-    fetchStatements(),
-    ...ORG_FILTERS.map(o => fetchStatements({ org: o.key })),
-  ]);
+  const [all, ...perOrg] = await Promise.all([fetchStatements(), ...ORG_FILTERS.map(o => fetchStatements({ org: o.key }))]);
   const orgsById: Record<string, string[]> = {};
-  perOrg.forEach((items, i) => {
-    items.forEach(r => {
-      (orgsById[r.statement_id] ||= []).push(ORG_FILTERS[i].key);
-    });
-  });
+  perOrg.forEach((items, i) => items.forEach(r => (orgsById[r.statement_id] ||= []).push(ORG_FILTERS[i].key)));
   all.forEach(r => {
     if (!orgsById[r.statement_id]) orgsById[r.statement_id] = [OTHER_ORG];
   });
   return { rows: all, orgsById };
-}
-
-function CheckRow({
-  label,
-  checked,
-  count,
-  onChange,
-}: {
-  label: string;
-  checked: boolean;
-  count?: number;
-  onChange: () => void;
-}) {
-  return (
-    <label className="flex items-center justify-between gap-2 py-[7px] text-[13px] text-sv-text cursor-pointer hover:text-sv-ink">
-      <span className="truncate">{label}</span>
-      <span className="flex items-center gap-1.5 flex-shrink-0">
-        <input type="checkbox" checked={checked} onChange={onChange} className="accent-sv-ink cursor-pointer w-[15px] h-[15px]" />
-        {typeof count === 'number' && <i className="w-4 text-[11px] text-sv-muted">{count}</i>}
-      </span>
-    </label>
-  );
 }
 
 function toggle(set: Set<string>, k: string): Set<string> {
@@ -105,328 +83,423 @@ function toggle(set: Set<string>, k: string): Set<string> {
   return n;
 }
 
+function DetailBody({ detail, copyrightNotice }: { detail: SVStatementDetail; copyrightNotice?: string | null }) {
+  const provenance = detail.provenance ?? [];
+  const quotes = detail.quotes ?? [];
+  const first = provenance[0];
+  const firstQuote = quotes[0];
+  const href = safeHttpUrl(first?.url) ?? safeHttpUrl(detail.source_url);
+  return (
+    <>
+      <div className="detail-top">
+        <span>발언 상세</span>
+        <span>{detail.evidence_grade || '—'}</span>
+      </div>
+      <h2>{detail.event?.title ?? detail.event_title ?? '—'}</h2>
+      <div className="person-card">
+        <PersonAvatar
+          name={detail.person?.name ?? detail.speaker_name}
+          personId={detail.person?.person_id ?? detail.person_id}
+          hasPhoto={detail.person?.photo}
+          className="avatar"
+        />
+        <div>
+          <b>{detail.speaker_name || '발언자 미상'}</b>
+          <small>{detail.speaker_role_at_event || '당시 직책 미기재'}</small>
+        </div>
+      </div>
+
+      {quotes.length > 0 ? (
+        <>
+          <div className="label">
+            원문 인용 <i>verbatim — 원문 그대로, 교정 없음</i>
+          </div>
+          {quotes.map(q => (
+            <div key={q.quote_id}>
+              <div className={`quote${isMismatch(q.locator_match) ? ' mismatch' : ''}`} data-verbatim="true">
+                {q.quote_text}
+              </div>
+              <div className="q-marks">
+                <MismatchWarning match={q.locator_match} />
+                <QuoteMarks quote={q} prov={provenanceFor(q, provenance)} statementGrade={detail.evidence_grade} statementGradeClass={detail.grade_class} />
+              </div>
+            </div>
+          ))}
+        </>
+      ) : (
+        <div className="no-quote">확보된 직접인용이 없습니다. 아래 귀속요약은 기자·기관의 요약이며 발언 원문이 아닙니다.</div>
+      )}
+
+      {detail.summary_text && (
+        <>
+          <div className="label">
+            귀속요약 <i>summary — 기자·기관 요약, 인용 아님</i>
+          </div>
+          <div className="analysis">{detail.summary_text}</div>
+        </>
+      )}
+      {detail.analysis_text && (
+        <>
+          <div className="label">
+            정책적 의미 <i>analysis — 분석가 해석, 발언 아님</i>
+          </div>
+          <div className="analysis">{detail.analysis_text}</div>
+        </>
+      )}
+      {(detail.limitation_text || detail.policy_status) && (
+        <div className="warning">
+          {detail.limitation_text && (
+            <>
+              <b>해석 한계</b>
+              <br />
+              <span>{detail.limitation_text}</span>
+            </>
+          )}
+          {detail.policy_status && (
+            <>
+              {detail.limitation_text && <br />}
+              <b>제도상태</b>
+              <br />
+              <span>{detail.policy_status}</span>
+            </>
+          )}
+        </div>
+      )}
+
+      <div className="label">증거·출처</div>
+      <div className="evidence">
+        <div className="e-row">
+          <span>행사일</span>
+          <b>{fmtDot(detail.event?.event_date ?? detail.event_date)}</b>
+        </div>
+        <div className="e-row">
+          <span>게시일</span>
+          <b>{fmtDot(detail.publication_date ?? first?.publication_date)}</b>
+        </div>
+        <div className="e-row">
+          <span>출처 유형</span>
+          <b>{sourceTypeLabel(first?.source_type)}</b>
+        </div>
+        <div className="e-row">
+          <span>무결성</span>
+          <b>{first ? integrityText(first.integrity_status) : '—'}</b>
+        </div>
+        <div className="e-row">
+          <span>출처</span>
+          <b>
+            {href ? (
+              <a className="svx-link" href={href} target="_blank" rel="noopener noreferrer">
+                {first?.title || first?.source_id || '원문 출처'}
+              </a>
+            ) : (
+              first?.title || first?.source_id || '—'
+            )}
+          </b>
+        </div>
+      </div>
+      <ExcerptToggle
+        sourceId={detail.excerpt?.source_id ?? firstQuote?.source_id ?? first?.source_id}
+        locator={detail.excerpt?.locator ?? firstQuote?.locator}
+        preloaded={detail.excerpt}
+        label="원문 및 인용 위치 열기 ↗"
+        className="sourcebtn"
+      />
+      <p className="copy">{copyrightNotice || DEFAULT_COPYRIGHT}</p>
+    </>
+  );
+}
+
+function Detail({ statementId, copyrightNotice }: { statementId: string; copyrightNotice?: string | null }) {
+  const { detail, loading, error, retry } = useStatementDetail(statementId);
+  if (loading)
+    return (
+      <div className="detail-top">
+        <span>발언 상세</span>
+        <span>불러오는 중…</span>
+      </div>
+    );
+  if (error || !detail)
+    return (
+      <div className="svx-err">
+        {error || '불러오지 못했습니다.'}{' '}
+        <button type="button" className="svx-linkbtn" onClick={retry}>
+          다시 시도
+        </button>
+      </div>
+    );
+  return <DetailBody detail={detail} copyrightNotice={copyrightNotice} />;
+}
+
 export default function StakeholderWorkbenchPage() {
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
   const [overview, setOverview] = useState<SVOverview | null>(null);
   const [data, setData] = useState<WbData | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
-
-  const [orgs, setOrgs] = useState<Set<string>>(() => new Set(ORG_OPTIONS.map(o => o.key)));
-  const [topics, setTopics] = useState<Set<string> | null>(null); // null = 전체(주제 목록 확정 전)
-  const [grades, setGrades] = useState<Set<string>>(() => new Set(GRADE_OPTIONS));
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const isDesktop = useIsDesktop();
+  const [query, setQuery] = useState('');
+  const [orgs, setOrgs] = useState<Set<string>>(() => new Set([...ORG_FILTERS.map(o => o.key), OTHER_ORG]));
+  const [topics, setTopics] = useState<Set<string>>(() => new Set(TOPIC_ORDER));
+  const [grades, setGrades] = useState<Set<string>>(() => new Set(GRADE_OPTIONS.filter(g => g.defaultOn).map(g => g.key)));
+  const [selectedId, setSelectedId] = useState<string | null>(() => params.get('statement'));
+  const [modalOpen, setModalOpen] = useState(false);
+  const [showMap, setShowMap] = useState(false);
+  const isWide = useIsWide();
+  const admin = isAdmin(getCurrentUser());
 
   useEffect(() => {
     let cancelled = false;
     fetchOverview()
       .then(o => !cancelled && setOverview(o))
-      .catch(() => {/* 헤더 스탬프·기간만 비게 둔다 */});
-    return () => {
-      cancelled = true;
-    };
-  }, [tick]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
+      .catch(() => {/* 기간·검증 큐 수만 비운다 */});
     setError(null);
     loadWorkbench()
-      .then(d => {
-        if (!cancelled) setData(d);
-      })
-      .catch(() => {
-        if (!cancelled) setError('불러오지 못했습니다.');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+      .then(d => !cancelled && setData(d))
+      .catch(() => !cancelled && setError('발언 목록을 불러오지 못했습니다.'));
     return () => {
       cancelled = true;
     };
   }, [tick]);
 
-  const { list: topicList, labels: topicLabels } = useMemo(() => topicsFrom(overview), [overview]);
-  const activeTopics = useMemo(() => topics ?? new Set(topicList.map(t => t.slug)), [topics, topicList]);
   const rows = useMemo(() => data?.rows ?? [], [data]);
-
   const orgCounts = useMemo(() => {
     const c: Record<string, number> = {};
     rows.forEach(r => (data?.orgsById[r.statement_id] ?? []).forEach(o => (c[o] = (c[o] ?? 0) + 1)));
     return c;
   }, [rows, data]);
-
-  const filtered = useMemo(
-    () =>
-      rows.filter(r => {
-        const rOrgs = data?.orgsById[r.statement_id] ?? [OTHER_ORG];
-        if (!rOrgs.some(o => orgs.has(o))) return false;
-        if (r.topic && !activeTopics.has(r.topic)) return false;
-        if (!grades.has(gradeClassOf(r.evidence_grade, r.grade_class))) return false;
-        return true;
-      }),
-    [rows, data, orgs, activeTopics, grades],
+  const orgOptions = useMemo(
+    () => [...ORG_FILTERS, ...((orgCounts[OTHER_ORG] ?? 0) > 0 ? [{ key: OTHER_ORG, label: '기타(국회 등)' }] : [])],
+    [orgCounts],
   );
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return rows.filter(r => {
+      if (!(data?.orgsById[r.statement_id] ?? [OTHER_ORG]).some(o => orgs.has(o))) return false;
+      if (r.topic && !topics.has(r.topic)) return false;
+      if (!grades.has(gradeClassOf(r.evidence_grade, r.grade_class))) return false;
+      if (!q) return true;
+      const hay = [r.speaker_name, r.speaker_role_at_event, r.event?.title, headlineQuoteOf(r)?.quote_text, r.summary_text, TOPIC_LABELS[r.topic ?? '']]
+        .join(' ')
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [rows, data, orgs, topics, grades, query]);
 
   const lanes = useMemo(
     () =>
-      topicList
-        .filter(t => activeTopics.has(t.slug))
-        .map(t => {
-          const items = filtered.filter(r => r.topic === t.slug);
-          const events = new Set(items.map(r => r.event?.event_id).filter(Boolean));
-          return { ...t, items, eventCount: events.size };
-        }),
-    [topicList, activeTopics, filtered],
+      TOPIC_ORDER.filter(t => topics.has(t)).map(t => {
+        const items = filtered.filter(r => r.topic === t);
+        return { slug: t, label: TOPIC_LABELS[t], items, eventCount: new Set(items.map(r => r.event?.event_id).filter(Boolean)).size };
+      }),
+    [topics, filtered],
   );
 
-  // 데스크톱: 필터 결과의 첫 발언을 기본 선택(선택이 필터 밖으로 빠지면 다시 첫 항목)
+  // 넓은 화면: 선택이 없거나 필터 밖이면 첫 발언을 선택(스케치처럼 상세가 항상 채워져 있다)
   useEffect(() => {
-    if (!isDesktop) return;
-    const first = lanes.find(l => l.items.length > 0)?.items[0];
+    if (!isWide || !data) return;
     if (!selectedId || !filtered.some(r => r.statement_id === selectedId)) {
+      const first = lanes.find(l => l.items.length > 0)?.items[0];
       setSelectedId(first?.statement_id ?? null);
     }
-  }, [isDesktop, lanes, filtered, selectedId]);
+  }, [isWide, data, lanes, filtered, selectedId]);
+
+  // ?statement= 로 들어온 좁은 화면은 상세 모달을 바로 연다
+  useEffect(() => {
+    if (!isWide && params.get('statement')) setModalOpen(true);
+  }, [isWide, params]);
 
   const select = (id: string) => {
     setSelectedId(id);
-    if (!isDesktop) setMobileOpen(true);
+    if (!isWide) setModalOpen(true);
   };
-  const closeMobile = useCallback(() => setMobileOpen(false), []);
-  const selected = useMemo(() => rows.find(r => r.statement_id === selectedId) ?? null, [rows, selectedId]);
-
+  const closeModal = useCallback(() => setModalOpen(false), []);
   useEffect(() => {
-    if (!mobileOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeMobile();
-    };
+    if (!modalOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeModal();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [mobileOpen, closeMobile]);
+  }, [modalOpen, closeModal]);
 
   const scope = overview?.scope;
-  const groupCls = 'pb-4 lg:mb-4 lg:border-b border-sv-line-soft min-w-0';
-  const groupTitle = 'text-[12px] font-extrabold text-sv-ink mt-1 mb-1.5';
+  const queue = overview?.kpi?.people_candidates;
 
   return (
-    <SvPage className="!bg-sv-surface">
-      <SignalsHeader view="workbench" overview={overview} />
-
-      <div className="grid grid-cols-1 lg:grid-cols-[248px_minmax(0,1fr)] xl:grid-cols-[248px_minmax(0,1fr)_390px] xl:h-[calc(100vh-62px)]">
-        {/* 좌 필터 — 좁은 화면에서는 위쪽 4칸 그리드 */}
-        <aside className="border-b lg:border-b-0 lg:border-r border-sv-line px-4 sm:px-5 py-5 grid grid-cols-2 md:grid-cols-4 lg:block gap-x-5 xl:overflow-y-auto">
-          <div className={groupCls}>
-            <h3 className={groupTitle}>기관</h3>
-            {ORG_OPTIONS.map(o => (
-              <CheckRow
-                key={o.key}
-                label={o.label}
-                checked={orgs.has(o.key)}
-                count={data ? orgCounts[o.key] ?? 0 : undefined}
-                onChange={() => setOrgs(s => toggle(s, o.key))}
-              />
+    <div className="sxbase sx2">
+      <header className="top">
+        <div className="logo">Policy Signals / Analyst</div>
+        <input
+          className="search"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="⌕ 인물, 행사, 발언, 주제 검색"
+          aria-label="인물, 행사, 발언, 주제 검색"
+        />
+        <button aria-disabled="true" title={PREPARING} onClick={e => e.preventDefault()}>
+          검증 큐 {typeof queue === 'number' ? queue : ''}
+        </button>
+      </header>
+      <div className="layout">
+        <aside className="filters">
+          <div className="group">
+            <h3>기관</h3>
+            {orgOptions.map(o => (
+              <label className="check" key={o.key}>
+                {o.label}{' '}
+                <span>
+                  <input type="checkbox" checked={orgs.has(o.key)} onChange={() => setOrgs(s => toggle(s, o.key))} />{' '}
+                  <i className="count">{data ? orgCounts[o.key] ?? 0 : ''}</i>
+                </span>
+              </label>
             ))}
           </div>
-          <div className={groupCls}>
-            <h3 className={groupTitle}>주제</h3>
-            {topicList.map(t => (
-              <CheckRow
-                key={t.slug}
-                label={t.label}
-                checked={activeTopics.has(t.slug)}
-                onChange={() => setTopics(toggle(activeTopics, t.slug))}
-              />
+          <div className="group">
+            <h3>주제</h3>
+            {TOPIC_ORDER.map(t => (
+              <label className="check" key={t}>
+                {TOPIC_FILTER_LABELS[t]} <input type="checkbox" checked={topics.has(t)} onChange={() => setTopics(s => toggle(s, t))} />
+              </label>
             ))}
           </div>
-          <div className={groupCls}>
-            <h3 className={groupTitle}>증거 상태</h3>
+          <div className="group">
+            <h3>증거 상태</h3>
             {GRADE_OPTIONS.map(g => (
-              <CheckRow
-                key={g}
-                label={GRADE_CLASS_LABELS[g]}
-                checked={grades.has(g)}
-                onChange={() => setGrades(s => toggle(s, g))}
-              />
+              <label className="check" key={g.key}>
+                {g.label} <input type="checkbox" checked={grades.has(g.key)} onChange={() => setGrades(s => toggle(s, g.key))} />
+              </label>
             ))}
           </div>
-          <div className={groupCls}>
-            <h3 className={groupTitle}>기간</h3>
-            <p className="py-[7px] text-[13px] text-sv-text">
-              {scope?.start || scope?.end ? `${fmtDate(scope?.start)} — ${fmtDate(scope?.end)}` : '—'}
-            </p>
-            <p className="text-[11px] text-sv-muted">공개자료 기준 조사기간</p>
+          <div className="group">
+            <h3>기간</h3>
+            <div className="check">{scope?.start || scope?.end ? `${fmtDot(scope?.start)} — ${fmtDot(scope?.end)}` : '—'}</div>
           </div>
         </aside>
 
-        {/* 중앙 주제 레인 */}
-        <main className="min-w-0 bg-sv-surface-2 px-4 sm:px-6 py-[22px] xl:overflow-y-auto">
-          <div className="mb-[18px]">
-            <h1 className="text-[23px] font-extrabold tracking-[-1px] text-sv-ink mb-1">주제별 발언 스트림</h1>
-            <p className="text-[13px] text-sv-muted sv-ko">
-              동일 발언은 관련 주제에 교차 표시하며, 행사 수는 레인 안에서 중복 없이 셉니다.
-            </p>
+        <div className="center">
+          <div className="heading">
+            <div>
+              <h1>주제별 발언 스트림</h1>
+              <p>동일 발언은 관련 주제에 교차 표시하며, 행사는 중복 집계하지 않습니다.</p>
+            </div>
+            <div className="viewtabs">
+              <button aria-current="page">스트림</button>
+              <button
+                aria-disabled={admin ? undefined : 'true'}
+                title={admin ? '모니터링 인물 관리' : '관리자 전용'}
+                onClick={() => admin && navigate('/admin/stakeholder-people')}
+              >
+                인물
+              </button>
+              <button onClick={() => setShowMap(true)}>관계도</button>
+            </div>
           </div>
 
-          {loading && (
-            <div className="space-y-2 animate-pulse" aria-busy="true">
-              {[0, 1, 2, 3].map(i => (
-                <div key={i} className="h-[60px] rounded-lg bg-sv-surface shadow-sv-card" />
-              ))}
-            </div>
-          )}
-          {!loading && error && (
-            <div className="rounded-lg bg-sv-surface shadow-sv-card py-10 text-center">
-              <p className="text-sm font-semibold text-sv-bad-fg">발언 목록을 {error}</p>
-              <button onClick={() => setTick(t => t + 1)} className={`mt-2 text-sm ${linkBtn}`}>
+          {!data && !error && <div className="lane-msg">발언을 불러오는 중입니다.</div>}
+          {error && (
+            <div className="lane-msg err">
+              {error}{' '}
+              <button type="button" className="svx-linkbtn" onClick={() => setTick(t => t + 1)}>
                 다시 시도
               </button>
             </div>
           )}
-          {!loading && !error && rows.length === 0 && (
-            <p className="rounded-lg bg-sv-surface shadow-sv-card py-10 text-center text-sm text-sv-muted">
-              아직 동기화된 발언이 없습니다.
-            </p>
-          )}
-          {!loading && !error && rows.length > 0 && filtered.length === 0 && (
-            <p className="rounded-lg bg-sv-surface shadow-sv-card py-10 text-center text-sm text-sv-muted">
-              필터 조건에 맞는 발언이 없습니다.
-            </p>
-          )}
+          {data && rows.length === 0 && <div className="lane-msg">아직 동기화된 발언이 없습니다.</div>}
+          {data && rows.length > 0 && filtered.length === 0 && <div className="lane-msg">필터 조건에 맞는 발언이 없습니다.</div>}
 
-          {!loading &&
-            !error &&
-            lanes
-              .filter(l => l.items.length > 0)
-              .map(lane => (
-                <section key={lane.slug} className="mb-[22px]">
-                  <div className="mb-2.5 flex items-baseline justify-between gap-2">
-                    <h2 className="text-[13px] font-extrabold text-sv-ink">{lane.label}</h2>
-                    <span className="flex-shrink-0 text-[12px] text-sv-muted">
-                      발언 {lane.items.length} · 행사 {lane.eventCount}
-                    </span>
-                  </div>
-                  <div className="space-y-2">
-                    {lane.items.map(r => {
-                      const hq = headlineQuoteOf(r);
-                      const headline = firstSentence(r.summary_text);
-                      const active = selectedId === r.statement_id;
-                      const mismatch = (hq?.locator_match || '').toLowerCase() === 'none';
-                      return (
-                        <article
-                          key={r.statement_id}
-                          role="button"
-                          tabIndex={0}
-                          aria-label={`${r.speaker_name || '발언자'} 발언 상세 보기`}
-                          aria-pressed={active}
-                          onClick={() => select(r.statement_id)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault();
-                              select(r.statement_id);
-                            }
-                          }}
-                          className={`grid grid-cols-[72px_minmax(0,1fr)_auto] min-[1800px]:grid-cols-[80px_minmax(0,170px)_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 rounded-lg bg-sv-surface px-3.5 py-[13px] cursor-pointer transition-shadow ${focusRing} ${
-                            active
-                              ? 'shadow-[0_0_0_2px_var(--sv-focus)]'
-                              : mismatch
-                                ? 'shadow-[0_0_0_1px_var(--sv-bad-line)] hover:shadow-[0_0_0_2px_var(--sv-focus)]'
-                                : 'shadow-sv-card hover:shadow-[0_0_0_2px_var(--sv-focus)]'
-                          }`}
-                        >
-                          <span className="text-[12px] font-mono text-sv-text">{fmtDate(r.event?.event_date)}</span>
-                          <span className="flex items-center gap-2 min-w-0">
-                            <PersonAvatar
-                              name={r.person?.name ?? r.speaker_name}
-                              personId={r.person?.person_id}
-                              hasPhoto={r.person?.photo}
-                              size="sm"
-                            />
-                            <span className="min-w-0">
-                              <b className="block text-[13px] text-sv-ink truncate">{r.speaker_name || '—'}</b>
-                              <small className="block text-[11px] text-sv-text truncate">
-                                {r.speaker_role_at_event || '직책 미기재'}
-                              </small>
-                            </span>
+          {lanes
+            .filter(l => l.items.length > 0)
+            .map(lane => (
+              <section className="lane" key={lane.slug}>
+                <div className="lane-title">
+                  {lane.label}{' '}
+                  <span>
+                    발언 {lane.items.length} · 행사 {lane.eventCount}
+                  </span>
+                </div>
+                {lane.items.map(r => {
+                  const hq = headlineQuoteOf(r);
+                  const cls = gradeClassOf(r.evidence_grade, r.grade_class);
+                  const summary = firstSentence(r.summary_text);
+                  return (
+                    <article
+                      key={r.statement_id}
+                      className={`event${selectedId === r.statement_id ? ' active' : ''}`}
+                      tabIndex={0}
+                      role="button"
+                      aria-label={`${r.speaker_name || '발언자'} 발언 상세 보기`}
+                      onClick={() => select(r.statement_id)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          select(r.statement_id);
+                        }
+                      }}
+                    >
+                      <div className="date">{fmtDot(r.event?.event_date)}</div>
+                      <div className="who">
+                        <PersonAvatar name={r.person?.name ?? r.speaker_name} personId={r.person?.person_id} hasPhoto={r.person?.photo} className="mini-avatar" />
+                        <span>
+                          <b>{r.speaker_name || '—'}</b>
+                          <small>{r.speaker_role_at_event || '직책 미기재'}</small>
+                        </span>
+                      </div>
+                      <div className="statement">
+                        {hq ? (
+                          <span className="clamp" data-verbatim="true">
+                            {hq.quote_text}
                           </span>
-                          <span className="justify-self-end min-[1800px]:order-last">
-                            <GradeBadge grade={r.evidence_grade} gradeClass={r.grade_class} compact />
+                        ) : summary ? (
+                          <span className="clamp">
+                            <i className="svx-chip">요약</i>
+                            {summary}
                           </span>
-                          <span className="min-w-0 sv-ko col-start-2 col-span-2 min-[1800px]:col-start-auto min-[1800px]:col-span-1">
-                            {headline ? (
-                              <span className="block text-[13px] leading-[1.55] text-sv-ink-2 line-clamp-2">
-                                <span className="mr-1.5 rounded bg-sv-neutral-bg px-1.5 py-px text-[10px] font-bold text-sv-neutral-fg">
-                                  요약
-                                </span>
-                                {headline}
-                              </span>
-                            ) : hq ? (
-                              <span
-                                className="block text-[13px] leading-[1.55] text-sv-ink line-clamp-2 whitespace-pre-wrap"
-                                data-verbatim="true"
-                              >
-                                {hq.quote_text}
-                              </span>
-                            ) : (
-                              <span className="text-[12px] text-sv-muted">—</span>
-                            )}
-                            {mismatch && (
-                              <span className="mt-1 inline-block">
-                                <LocatorMatchBadge match="none" />
-                              </span>
-                            )}
+                        ) : (
+                          '—'
+                        )}
+                        {hq && isMismatch(hq.locator_match) && (
+                          <span className="q-mismatch">
+                            <LocatorMatchBadge match="none" />
                           </span>
-                        </article>
-                      );
-                    })}
-                  </div>
-                </section>
-              ))}
-        </main>
+                        )}
+                      </div>
+                      <div className={`pill${cls === 'a' ? '' : ` ${cls}`}`}>{r.evidence_grade || '—'}</div>
+                    </article>
+                  );
+                })}
+              </section>
+            ))}
+        </div>
 
-        {/* 우측 상세 (xl 이상) — 스케치 .detail */}
-        {isDesktop && (
-          <aside className="border-l border-sv-line bg-sv-surface p-[22px] xl:overflow-y-auto">
-            <div className="mb-4 flex items-center justify-between text-[11px] text-sv-muted">
+        <aside className="detail">
+          {selectedId ? (
+            <Detail statementId={selectedId} copyrightNotice={overview?.copyright_notice} />
+          ) : (
+            <div className="detail-top">
               <span>발언 상세</span>
-              {selected?.evidence_grade && <span>{selected.evidence_grade}</span>}
+              <span>{data ? '발언을 선택하세요' : ''}</span>
             </div>
-            {selectedId ? (
-              <StatementDetailPanel
-                statementId={selectedId}
-                copyrightNotice={overview?.copyright_notice}
-                topicLabels={topicLabels}
-                variant="workbench"
-              />
-            ) : (
-              <p className="py-10 text-center text-sm text-sv-muted">발언을 선택하면 상세가 표시됩니다.</p>
-            )}
-          </aside>
-        )}
+          )}
+        </aside>
       </div>
 
-      {/* 좁은 화면: 상세는 하단 시트/모달 */}
-      {!isDesktop && mobileOpen && selectedId && (
-        <div className={`fixed inset-0 z-[60] flex items-end sm:items-center justify-center ${scrimStrong} p-0 sm:p-4`} role="dialog" aria-modal="true" aria-label="발언 상세">
-          <div className="absolute inset-0" onClick={closeMobile} />
-          <div className="relative w-full sm:max-w-xl max-h-[92vh] overflow-y-auto rounded-t-xl sm:rounded-xl bg-sv-surface shadow-sv-modal p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <span className="text-[12px] text-sv-muted">발언 상세</span>
-              <button onClick={closeMobile} className={closeBtn}>
-                닫기 <i className="ri-close-line"></i>
+      {!isWide && modalOpen && selectedId && (
+        <div className="sxm-wrap" role="dialog" aria-modal="true" aria-label="발언 상세" onClick={closeModal}>
+          <div className="sxm" onClick={e => e.stopPropagation()}>
+            <div className="sxm-head">
+              <h2>발언 상세</h2>
+              <button onClick={closeModal} aria-label="닫기">
+                ×
               </button>
             </div>
-            <StatementDetailPanel
-              statementId={selectedId}
-              copyrightNotice={overview?.copyright_notice}
-              topicLabels={topicLabels}
-              variant="workbench"
-            />
+            <div className="sxm-body">
+              <div className="detail in-modal">
+                <Detail statementId={selectedId} copyrightNotice={overview?.copyright_notice} />
+              </div>
+            </div>
           </div>
         </div>
       )}
-    </SvPage>
+      {showMap && <RelationshipMapModal onClose={() => setShowMap(false)} />}
+    </div>
   );
 }

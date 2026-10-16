@@ -1,5 +1,4 @@
-import { useId, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useId, useRef, useState } from 'react';
 import {
   adminCreatePerson,
   adminDeletePhoto,
@@ -10,32 +9,20 @@ import {
   type SVPersonDetail,
   type SVPersonInput,
 } from '@/api/stakeholder';
-import { Modal } from '@/pages/admin/stakeholder-audit/components/ui';
-import { btnGhost, btnPrimary, inputCls } from '@/pages/admin/stakeholder-audit/components/uiHelpers';
 import PhotoPicker, { type PhotoIntent } from './PhotoPicker';
-import { errorBox, fieldLabel, hint, tone } from '@/pages/stakeholder-signals/theme/sv';
 
-// 인물 등록·편집 모달 (스케치 003).
-//   - 등록은 항상 candidate(서버가 강제). 확인 상태 select 의 '검증됨' 은 비활성 — 감사 근거 승인으로만.
-//   - 검증 인물의 기관·부서·직책은 직접 수정하지 않는다(입력 비활성). 서버도 409/422 로 막고, 그 문구를 그대로 보여준다.
-//   - 저장 후 사진 의도(업로드/삭제)를 반영. 정보 저장은 성공했는데 사진만 실패하면 부모에 알린다.
+// 스케치 003 인물 등록·수정 모달(.modal-wrap.open > .modal > .modal-head / form > .form / .modal-actions) 그대로.
+//   - 등록은 항상 candidate(서버 강제). 인물 확인 상태 select 의 '검증됨' 은 스케치처럼 선택 불가.
+//   - 검증 인물의 기관·부서·직책은 감사 제안 승인으로만 바뀐다 — 입력을 잠그고 .hint 로 알린다(서버도 409/422).
+//   - 주제 태그 입력은 스케치에 없다: 등록은 서버 기본값, 수정은 기존 값을 그대로 보낸다(빼면 서버가 기본값으로 덮음).
+//   - 저장 후 사진 의도(업로드/삭제)를 반영. 정보는 저장됐는데 사진만 실패하면 부모에 알린다.
 
 const LIMITS = { name: [2, 30], organization: [2, 80], department: [1, 120], role: [1, 80] } as const;
 const LABELS = { name: '이름', organization: '소속 기관', department: '부서', role: '직책' } as const;
 type TextField = keyof typeof LIMITS;
 
-/** datalist 3기관 — Signals 화면 기관 필터와 같은 표시명. */
-const ORG_OPTIONS = ORG_FILTERS.map(o => o.label);
-
 function norm(s: string): string {
   return s.split(/\s+/).filter(Boolean).join(' ');
-}
-
-function splitList(s: string): string[] {
-  return s
-    .split(',')
-    .map(x => x.trim())
-    .filter(Boolean);
 }
 
 export interface SaveOutcome {
@@ -58,7 +45,8 @@ export default function PersonFormModal({
 }) {
   const editing = !!person;
   const verified = person?.verification_status === 'verified';
-  const formId = useId();
+  const uid = useId();
+  const nameRef = useRef<HTMLInputElement>(null);
   const [f, setF] = useState({
     name: person?.name ?? '',
     organization: person?.organization ?? '',
@@ -66,42 +54,57 @@ export default function PersonFormModal({
     role: person?.role ?? '',
     status: (person?.status === 'paused' ? 'paused' : 'active') as 'active' | 'paused',
     aliases: (person?.aliases ?? []).join(', '),
-    topic_tags: (person?.topic_tags ?? []).join(', '),
   });
+  const [verif, setVerif] = useState(verified ? 'verified' : 'candidate');
   const [photo, setPhoto] = useState<PhotoIntent>({ kind: 'keep' });
   const [fieldErr, setFieldErr] = useState<Partial<Record<TextField, string>>>({});
-  const [formErr, setFormErr] = useState<string | null>(null);
+  const [formErr, setFormErr] = useState('');
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => nameRef.current?.focus(), 50);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !busy) onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.clearTimeout(t);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [onClose, busy]);
 
   const locked = (k: TextField) => verified && (k === 'organization' || k === 'department' || k === 'role');
 
-  const validate = (): boolean => {
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormErr('');
+    if (busy) return;
+    if (!norm(f.name) || !norm(f.organization) || !norm(f.department) || !norm(f.role)) {
+      setFormErr('이름, 소속 기관, 부서, 직책을 모두 입력해 주세요.');
+      return;
+    }
     const errs: Partial<Record<TextField, string>> = {};
     (Object.keys(LIMITS) as TextField[]).forEach(k => {
       const v = norm(f[k]);
-      if (editing && v && v === (person?.[k] ?? '')) return; // 서버와 같이: 그대로인 기존 값은 길이 규칙 면제
+      if (editing && v === (person?.[k] ?? '')) return; // 그대로인 기존 값은 길이 규칙 면제(서버와 같음)
       const [lo, hi] = LIMITS[k];
       if (v.length < lo || v.length > hi) errs[k] = `${LABELS[k]}은(는) ${lo}~${hi}자여야 합니다.`;
     });
     setFieldErr(errs);
-    return Object.keys(errs).length === 0;
-  };
+    if (Object.keys(errs).length) return;
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormErr(null);
-    if (busy || !validate()) return;
     const payload: SVPersonInput = {
       name: norm(f.name),
       organization: locked('organization') ? person!.organization ?? '' : norm(f.organization),
       department: locked('department') ? person!.department ?? '' : norm(f.department),
       role: locked('role') ? person!.role ?? '' : norm(f.role),
       status: f.status,
-      aliases: splitList(f.aliases),
+      aliases: f.aliases
+        .split(',')
+        .map(x => x.trim())
+        .filter(Boolean),
     };
-    // 편집 시 topic_tags 를 빼면 서버가 기본값으로 덮는다 — 항상 현재 값을 보낸다. 등록은 비우면 서버 기본값.
-    const tags = splitList(f.topic_tags);
-    if (editing || tags.length) payload.topic_tags = tags;
+    if (editing) payload.topic_tags = person?.topic_tags ?? [];
 
     setBusy(true);
     let saved: SVPersonDetail;
@@ -127,146 +130,113 @@ export default function PersonFormModal({
     onSaved({ person: saved, created: !editing, photoError, photoChanged });
   };
 
-  const field = (k: TextField, opts: { list?: string } = {}) => (
-    <div>
-      <label htmlFor={`${formId}-${k}`} className={fieldLabel}>
-        {LABELS[k]} <span className="text-sv-bad-fg">*</span>
-        {locked(k) && <i className="ri-lock-line ml-1 text-sv-muted" title="검증 인물 — 감사 제안 승인으로만 변경"></i>}
-      </label>
+  const field = (k: TextField, max: number, extra: { list?: string } = {}) => (
+    <div className="field">
+      <label htmlFor={`${uid}-${k}`}>{LABELS[k]} *</label>
       <input
-        id={`${formId}-${k}`}
+        id={`${uid}-${k}`}
+        ref={k === 'name' ? nameRef : undefined}
         value={f[k]}
+        maxLength={max}
+        required
+        autoComplete="off"
+        list={extra.list}
+        disabled={locked(k) || busy}
+        aria-invalid={!!fieldErr[k]}
         onChange={e => {
           const v = e.target.value;
           setF(s => ({ ...s, [k]: v }));
           if (fieldErr[k]) setFieldErr(m => ({ ...m, [k]: undefined }));
         }}
-        maxLength={LIMITS[k][1] + 20}
-        list={opts.list}
-        disabled={locked(k) || busy}
-        aria-invalid={!!fieldErr[k]}
-        className={inputCls}
-        autoComplete="off"
       />
-      {fieldErr[k] && <p className="mt-1 text-[12px] text-sv-bad-fg">{fieldErr[k]}</p>}
+      {k === 'role' && verified && <p className="hint">검증된 인물 — 기관·부서·직책은 직책 변경 감사 제안 승인으로만 바뀝니다.</p>}
+      <div className="error">{fieldErr[k]}</div>
     </div>
   );
 
   return (
-    <Modal
-      title={editing ? '인물 정보 수정' : '인물 등록'}
-      onClose={onClose}
-      busy={busy}
-      footer={
-        <>
-          <button type="button" className={btnGhost} onClick={onClose} disabled={busy}>
-            취소
+    <div className="modal-wrap open" role="dialog" aria-modal="true" aria-labelledby={`${uid}-title`}>
+      <div className="modal">
+        <div className="modal-head">
+          <h2 id={`${uid}-title`}>{editing ? '인물 정보 수정' : '인물 등록'}</h2>
+          <button onClick={onClose} disabled={busy} aria-label="등록창 닫기">
+            ×
           </button>
-          <button type="submit" form={formId} className={btnPrimary} disabled={busy}>
-            {busy ? '저장 중…' : editing ? '변경사항 저장' : '등록'}
-          </button>
-        </>
-      }
-    >
-      <form id={formId} onSubmit={submit} className="space-y-4" noValidate>
-        <PhotoPicker
-          personId={person?.person_id}
-          name={f.name}
-          hasPhoto={!!person?.has_photo}
-          photoVersion={photoVersion}
-          value={photo}
-          onChange={setPhoto}
-          disabled={busy}
-        />
-
-        <div className={`rounded-lg px-3.5 py-3 text-[13px] leading-relaxed ${tone.notice}`} role="note">
-          <b>익일 07:00 KST 부터 반영</b> — 활성 등록·정보 변경·일시중지는 모두 다음날 모니터링부터 적용됩니다. 기존 수집
-          데이터는 유지됩니다.
         </div>
-
-        {verified && (
-          <div className={`rounded-lg border border-sv-warn-line px-3.5 py-3 text-[13px] leading-relaxed ${tone.warn}`}>
-            검증된 인물입니다. 기관·부서·직책은 공식 근거가 있는 <b>직책 변경 감사 제안</b>을 승인해야 바뀝니다 —{' '}
-            <Link to="/admin/stakeholder-audit" className="underline font-bold">
-              모니터링 감사
-            </Link>
-            .
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 gap-3.5">
-          {field('name')}
-          <div>
-            {field('organization', { list: `${formId}-orgs` })}
-            <datalist id={`${formId}-orgs`}>
-              {ORG_OPTIONS.map(o => (
-                <option key={o} value={o} />
+        <form onSubmit={submit} noValidate>
+          <div className="form">
+            <PhotoPicker
+              personId={person?.person_id}
+              name={f.name}
+              hasPhoto={!!person?.has_photo}
+              photoVersion={photoVersion}
+              value={photo}
+              onChange={setPhoto}
+              disabled={busy}
+            />
+            <div className="notice" role="note">
+              <b>익일 07:00 KST부터 반영</b>
+              <br />
+              활성으로 저장한 인물은 다음날 모니터링부터 계속 포함됩니다.
+            </div>
+            {field('name', 30)}
+            {field('organization', 80, { list: `${uid}-orgs` })}
+            <datalist id={`${uid}-orgs`}>
+              {ORG_FILTERS.map(o => (
+                <option key={o.key} value={o.label} />
               ))}
             </datalist>
+            {field('department', 120)}
+            {field('role', 80)}
+            <div className="field">
+              <label htmlFor={`${uid}-status`}>모니터링 상태 *</label>
+              <select
+                id={`${uid}-status`}
+                value={f.status}
+                disabled={busy}
+                onChange={e => setF(s => ({ ...s, status: e.target.value as 'active' | 'paused' }))}
+              >
+                <option value="active">활성</option>
+                <option value="paused">일시중지</option>
+              </select>
+              <p className="hint">활성 등록·정보 변경·일시중지는 모두 익일 모니터링부터 적용됩니다. 기존 수집 데이터는 유지됩니다.</p>
+            </div>
+            <div className="field">
+              <label htmlFor={`${uid}-verif`}>인물 확인 상태</label>
+              <select id={`${uid}-verif`} value={verif} onChange={e => setVerif(e.target.value)} disabled={busy}>
+                <option value="candidate">후보 — 공식 직책 확인 전</option>
+                <option value="verified" disabled>
+                  검증됨 — 감사 근거 승인으로만 유지
+                </option>
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor={`${uid}-aliases`}>
+                다른 표기 <span className="muted">(선택)</span>
+              </label>
+              <input
+                id={`${uid}-aliases`}
+                value={f.aliases}
+                placeholder="쉼표로 구분"
+                disabled={busy}
+                onChange={e => setF(s => ({ ...s, aliases: e.target.value }))}
+              />
+              <p className="hint">동명이인 구분 또는 기사에 쓰이는 다른 표기만 입력합니다.</p>
+            </div>
+            <div className="error" role="alert">
+              {formErr}
+            </div>
           </div>
-          {field('department')}
-          {field('role')}
-          <div>
-            <label htmlFor={`${formId}-status`} className={fieldLabel}>
-              모니터링 상태 <span className="text-sv-bad-fg">*</span>
-            </label>
-            <select
-              id={`${formId}-status`}
-              value={f.status}
-              onChange={e => setF(s => ({ ...s, status: e.target.value as 'active' | 'paused' }))}
-              className={`${inputCls} cursor-pointer`}
-              disabled={busy}
-            >
-              <option value="active">활성</option>
-              <option value="paused">일시중지</option>
-            </select>
+          <div className="modal-actions">
+            <button className="btn" type="button" onClick={onClose} disabled={busy}>
+              취소
+            </button>
+            <button className="btn primary" type="submit" disabled={busy}>
+              {busy ? '저장 중…' : editing ? '변경사항 저장' : '등록'}
+            </button>
           </div>
-          <div>
-            <label htmlFor={`${formId}-verif`} className={fieldLabel}>
-              인물 확인 상태
-            </label>
-            <select id={`${formId}-verif`} value={verified ? 'verified' : 'candidate'} disabled className={inputCls}>
-              <option value="candidate">후보 — 공식 직책 확인 전</option>
-              <option value="verified" disabled>
-                검증됨 — 감사 근거 승인으로만
-              </option>
-            </select>
-            <p className={`mt-1 ${hint}`}>확인 상태는 직접 바꿀 수 없습니다(감사 근거 승인으로만 검증).</p>
-          </div>
-        </div>
-
-        <div>
-          <label htmlFor={`${formId}-aliases`} className={fieldLabel}>
-            다른 표기 <span className="text-sv-muted font-normal">(선택, 쉼표로 구분)</span>
-          </label>
-          <input
-            id={`${formId}-aliases`}
-            value={f.aliases}
-            onChange={e => setF(s => ({ ...s, aliases: e.target.value }))}
-            className={inputCls}
-            placeholder="동명이인 구분 또는 기사에 쓰이는 다른 표기"
-            disabled={busy}
-          />
-        </div>
-        <div>
-          <label htmlFor={`${formId}-tags`} className={fieldLabel}>
-            주제 태그 <span className="text-sv-muted font-normal">(쉼표로 구분{editing ? '' : ' · 비우면 기본 태그'})</span>
-          </label>
-          <input
-            id={`${formId}-tags`}
-            value={f.topic_tags}
-            onChange={e => setF(s => ({ ...s, topic_tags: e.target.value }))}
-            className={inputCls}
-            disabled={busy}
-          />
-        </div>
-
-        {formErr && (
-          <p role="alert" className={`whitespace-pre-wrap ${errorBox}`}>
-            {formErr}
-          </p>
-        )}
-      </form>
-    </Modal>
+        </form>
+      </div>
+    </div>
   );
 }

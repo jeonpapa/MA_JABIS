@@ -1,0 +1,50 @@
+/*
+ * 스케치 001 대쉬보드 추가분 — 스케치에 자리가 없는 하드 제약 요소와 데이터 상태만. 스케치 수치는 s001.css(생성본).
+ */
+
+/* 대쉬보드 셸 안에서 스케치 body 배경이 화면 전체를 덮도록 */
+.sx1 { min-height: 100vh; }
+
+/* Role-only 등급 배지(스케치 범례 3종 밖) — 회색 */
+.sx1 .role { background: #efefef; color: #555; }
+
+/* 헤드라인 사진 자리(152×112) — 언론 CDN 사진 대신 발언자 아바타(이니셜·인증 사진) */
+.sx1 .photo-stack { width: 152px; height: 112px; border-radius: 8px; background: #eef1f5; display: flex; align-items: center; justify-content: center; }
+.sx1 .photo-stack .avatar { margin-left: -8px; box-shadow: 0 0 0 2px #fff; }
+.sx1 .photo-stack .avatar:first-child { margin-left: 0; }
+
+/* 표 증거 칸 — 등급 배지 아래 무결성 배지, 인용 아래 원문 불일치 */
+.sx1 .ev-stack { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+.sx1 .ev-stack .svb { padding: 2px 6px; font-size: 9.5px; }
+.sx1 .quote .q-mismatch { display: block; margin-top: 6px; }
+.sx1 .row.row-msg { display: block; cursor: default; padding: 28px 16px; text-align: center; color: #777; }
+.sx1 .row.row-msg.err { color: #b42318; }
+
+/* 정책 시그널 — 신뢰도가 분석가 판단임을 밝히는 라벨, 추론 상자 표지, 근거별 대조·무결성 배지 */
+.sx1 .confidence .judgement { background: transparent; color: #6b7280; font-weight: 400; padding: 6px 2px; cursor: help; }
+.sx1 .policy-box h3 em { font-style: normal; font-weight: 400; color: #6b7280; }
+.sx1 .policy-box .ev-marks { margin-top: 4px; }
+.sx1 .policy-box .ev-open { font-size: 10px; margin-left: 2px; }
+.sx1 .policy-box .svx-excerpt { flex-basis: 100%; }
+.sx1 .policy-signal .import-note { margin: 0 0 10px; }
+
+/* 드로어 — 인용별 배지·원문 불일치·귀속요약/분석 라벨·발췌·워크벤치 진입 */
+.sx1 .drawer .drawer-label { margin-top: 18px; }
+.sx1 .drawer .drawer-label + div blockquote { margin-top: 8px; }
+.sx1 .drawer blockquote.mismatch { border-left-color: #d92d20; background: #fef3f2; }
+.sx1 .drawer .q-marks { margin: -8px 0 16px; }
+.sx1 .drawer .q-loc { display: block; margin-top: 5px; font: 11px monospace; color: #888; word-break: break-all; }
+.sx1 .drawer .no-quote { margin: 18px 0; padding: 12px 14px; border: 1px dashed #d8d8d8; border-radius: 8px; color: #555; font-size: 12px; line-height: 1.6; }
+.sx1 .drawer .meta i.note { display: block; margin-top: 2px; font-style: normal; font-weight: 400; color: #999; font-size: 11px; }
+.sx1 .drawer .meta .role-check { margin-left: 6px; font-weight: 600; font-size: 11px; }
+.sx1 .drawer .source + .source { margin-top: 8px; }
+.sx1 .drawer .src-excerpt { margin-top: 6px; }
+.sx1 .drawer .wb-link { margin: 16px 0 0; font-size: 12px; font-weight: 700; }
+.sx1 .drawer .copy { margin: 14px 0 0; color: #888; font-size: 11px; line-height: 1.6; }
+.sx1 .drawer h2.loading { color: #999; }
+
+@media (max-width: 950px) {
+  .sx1 .photo-stack { width: 100%; height: 112px; }
+  /* 스케치 결함 보정: 94% 폭 드로어가 right:-470px 로는 화면 밖으로 다 나가지 않아 닫힌 채 표를 가린다 */
+  .sx1 .drawer:not(.open) { right: -100%; }
+}

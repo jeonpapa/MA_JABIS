@@ -1,0 +1,103 @@
+/* AUTO-GENERATED from dashboard-sketches/003-people-management/index.html — 값은 스케치 그대로(verbatim).
+ * 모든 선택자를 .sx3 로 스코프, body→.sx3, 스케치 자체 좌측 nav(.app/.side/.brand/.nav/.side-foot)는 제외(사용자 결정: 대쉬보드 사이드바 유지).
+ * 직접 고치지 말 것 — 대쉬보드 추가분은 s003.additions.css 에 둔다. */
+.sx3 * {box-sizing:border-box}
+.sx3 {margin:0;background:#f7f7f7;color:#171717;font-family:"Noto Sans KR","Apple SD Gothic Neo",sans-serif;font-size:14px}
+.sx3 .main {padding:0 34px 56px;max-width:1500px;min-width:0}
+.sx3 .top {min-height:72px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.sx3 .crumb {font-size:13px;color:#737373}
+.sx3 .btn {border:0;border-radius:8px;padding:10px 14px;background:#fff;box-shadow:0 0 0 1px #ddd;font-weight:700;cursor:pointer;min-height:40px}
+.sx3 .btn.primary {background:#171717;color:#fff;box-shadow:none}
+.sx3 .btn.danger {color:#a33}
+.sx3 .btn:focus-visible, .sx3 .person-row:focus-visible, .sx3 .chip:focus-visible {outline:2px solid #2878f0;outline-offset:2px}
+.sx3 .hero {display:flex;align-items:end;justify-content:space-between;gap:20px;margin:18px 0 20px}
+.sx3 .hero h1 {font-size:30px;letter-spacing:-1.4px;margin:0 0 8px}
+.sx3 .hero p {margin:0;color:#666}
+.sx3 .status-card {background:#fff;border-radius:10px;box-shadow:0 0 0 1px #e5e5e5;padding:13px 16px;font-size:12px;line-height:1.55}
+.sx3 .status-card b {display:block;font-size:17px;color:#171717}
+.sx3 .toolbar {display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:13px}
+.sx3 .search {position:relative;flex:1;max-width:420px}
+.sx3 .search input {width:100%;border:1px solid #ddd;border-radius:8px;padding:11px 12px 11px 36px;background:#fff}
+.sx3 .search span {position:absolute;left:13px;top:10px;color:#888}
+.sx3 .chips {display:flex;gap:7px}
+.sx3 .chip {border:1px solid #ddd;background:#fff;border-radius:999px;padding:8px 12px;font-weight:700;color:#666;cursor:pointer}
+.sx3 .chip.active {background:#171717;color:#fff;border-color:#171717}
+.sx3 .panel {background:#fff;border-radius:10px;box-shadow:0 0 0 1px #e3e3e3;overflow:hidden}
+.sx3 .thead, .sx3 .person-row {display:grid;grid-template-columns:minmax(230px,1.25fr) minmax(170px,1fr) minmax(150px,.8fr) 110px 125px 46px;gap:14px;align-items:center}
+.sx3 .thead {padding:12px 18px;background:#f5f5f5;color:#777;font-size:11px}
+.sx3 .person-row {padding:15px 18px;border-top:1px solid #ececec;cursor:pointer}
+.sx3 .person-row:hover {background:#fafcff}
+.sx3 .identity {display:grid;grid-template-columns:46px minmax(0,1fr);gap:11px;align-items:center}
+.sx3 .avatar {width:46px;height:46px;border-radius:50%;overflow:hidden;background:#eef1f5;color:#344054;display:grid;place-items:center;font-weight:800;box-shadow:0 0 0 1px #dde2e8}
+.sx3 .avatar img {width:100%;height:100%;object-fit:cover}
+.sx3 .identity b {display:block;font-size:15px}
+.sx3 .identity small, .sx3 .muted {color:#747474;font-size:11px}
+.sx3 .badge {display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:6px 9px;font-size:11px;font-weight:800;width:max-content}
+.sx3 .badge.active {background:#eaf8ef;color:#16733b}
+.sx3 .badge.paused {background:#efefef;color:#666}
+.sx3 .verify {font-size:11px;color:#6b6b6b;margin-top:5px}
+.sx3 .verify.candidate {color:#9a5b00}
+.sx3 .more {border:0;background:transparent;font-size:21px;cursor:pointer;width:40px;height:40px;border-radius:8px}
+.sx3 .empty {padding:60px 20px;text-align:center;color:#777}
+.sx3 .drawer-backdrop {position:fixed;inset:0;background:rgba(0,0,0,.18);display:none;z-index:10}
+.sx3 .drawer-backdrop.open {display:block}
+.sx3 .drawer {position:fixed;right:-500px;top:0;width:min(470px,94vw);height:100vh;background:#fff;box-shadow:-12px 0 32px rgba(0,0,0,.13);padding:28px;z-index:11;transition:.22s;overflow:auto}
+.sx3 .drawer.open {right:0}
+.sx3 .drawer-head {display:flex;justify-content:space-between;gap:12px}
+.sx3 .drawer .close {border:0;background:#eee;border-radius:7px;width:40px;height:40px;font-size:19px}
+.sx3 .profile {display:flex;align-items:center;gap:16px;margin:25px 0}
+.sx3 .profile .avatar {width:72px;height:72px;font-size:23px}
+.sx3 .profile h2 {margin:0 0 5px;font-size:22px}
+.sx3 .detail-grid {display:grid;grid-template-columns:105px 1fr;gap:12px;padding:16px 0;border-top:1px solid #eee;font-size:13px}
+.sx3 .detail-grid span:nth-child(odd) {color:#777}
+.sx3 .notice {margin:15px 0;padding:14px;background:#f5f8ff;border-radius:8px;color:#315a91;line-height:1.6}
+.sx3 .drawer-actions {display:flex;gap:8px;margin-top:22px}
+.sx3 .modal-wrap {position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:20;display:none;align-items:center;justify-content:center;padding:20px}
+.sx3 .modal-wrap.open {display:flex}
+.sx3 .modal {background:#fff;width:min(580px,100%);height:min(94vh,780px);overflow:hidden;border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.2);display:flex;flex-direction:column}
+.sx3 .modal form {display:flex;flex:1;min-height:0;flex-direction:column}
+.sx3 .modal-head {flex:0 0 auto;position:sticky;top:0;background:#fff;padding:20px 22px;border-bottom:1px solid #eee;display:flex;align-items:center;justify-content:space-between;z-index:1}
+.sx3 .modal-head h2 {margin:0;font-size:20px}
+.sx3 .modal-head button {border:0;background:#eee;width:38px;height:38px;border-radius:7px;font-size:18px}
+.sx3 .form {padding:22px;flex:1;min-height:0;overflow-y:auto}
+.sx3 .photo-upload {display:flex;align-items:center;gap:16px;margin-bottom:20px}
+.sx3 .photo-upload .avatar {width:80px;height:80px;font-size:23px}
+.sx3 .photo-actions {display:flex;gap:7px;flex-wrap:wrap}
+.sx3 .photo-actions label {cursor:pointer}
+.sx3 .photo-actions input {display:none}
+.sx3 .field {display:grid;gap:7px;margin:14px 0}
+.sx3 .field label {font-weight:700}
+.sx3 .field input, .sx3 .field select {width:100%;border:1px solid #d8d8d8;border-radius:8px;padding:11px 12px;font:inherit}
+.sx3 .field input:focus, .sx3 .field select:focus {outline:2px solid #2878f0;border-color:transparent}
+.sx3 .hint {font-size:11px;color:#777;line-height:1.5}
+.sx3 .error {color:#b42318;font-size:12px;min-height:18px}
+.sx3 .modal-actions {flex:0 0 auto;background:#fff;padding:16px 22px;border-top:1px solid #eee;display:flex;justify-content:flex-end;gap:8px}
+.sx3 .toast {position:fixed;right:22px;bottom:22px;background:#171717;color:#fff;padding:13px 16px;border-radius:8px;z-index:30;display:none;box-shadow:0 8px 24px rgba(0,0,0,.2)}
+.sx3 .toast.show {display:block}
+.sx3 .skeleton {height:77px;background:linear-gradient(90deg,#fafafa,#f0f0f0,#fafafa);background-size:200%;animation:sx3-pulse 1.2s infinite;border-top:1px solid #eee}
+@keyframes sx3-pulse {to{background-position:-200% 0}}
+@media(max-width:850px) {
+  .sx3 .main {padding:0 16px 40px;width:100%;min-width:0}
+  .sx3 .top {min-height:62px}
+  .sx3 .crumb {max-width:190px}
+  .sx3 .hero {align-items:flex-start;flex-direction:column}
+  .sx3 .hero h1 {font-size:26px}
+  .sx3 .status-card {width:100%}
+  .sx3 .toolbar {align-items:stretch;flex-direction:column}
+  .sx3 .search {max-width:none}
+  .sx3 .chips {overflow-x:auto}
+  .sx3 .chip {min-height:44px}
+  .sx3 .thead {display:none}
+  .sx3 .person-row {grid-template-columns:minmax(0,1fr) 42px;gap:8px;padding:16px}
+  .sx3 .person-row>* {grid-column:1}
+  .sx3 .person-row .more {grid-column:2;grid-row:1;align-self:center;width:44px;height:44px}
+  .sx3 .person-row .org, .sx3 .person-row .role {margin-left:57px}
+  .sx3 .person-row .status-col {grid-column:1;margin-left:57px}
+  .sx3 .person-row .updated {grid-column:1;margin-left:57px}
+  .sx3 .person-row .updated, .sx3 .person-row .muted, .sx3 .person-row .verify, .sx3 .person-row .identity small {font-size:12px;line-height:1.5}
+  .sx3 .drawer {width:100%;max-width:none}
+  .sx3 .modal-wrap {padding:0;align-items:stretch}
+  .sx3 .modal {width:100%;max-height:none;height:100%;border-radius:0}
+  .sx3 .modal-actions .btn {min-height:48px;flex:1}
+  .sx3 .photo-upload {align-items:flex-start}
+}

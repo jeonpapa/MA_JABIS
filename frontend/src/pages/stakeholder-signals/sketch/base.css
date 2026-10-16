@@ -1,0 +1,31 @@
+/*
+ * 스케치(dashboard-sketches 001~004)는 순수 HTML 이라 브라우저 기본 스타일(UA)을 전제로 한다.
+ * 대쉬보드는 Tailwind preflight 가 h1·p·ul·button 등을 초기화하므로, 스케치 화면 루트(.sxbase) 안에서만
+ * Chrome UA 기본값을 되살린다. 스케치 규칙(.sxN .x — 클래스 2개)이 이 규칙(클래스 1개 + 요소)보다 항상 우선한다.
+ */
+.sxbase { line-height: normal; min-height: 100vh; }
+.sxbase h1 { font-size: 2em; font-weight: bold; margin: 0.67em 0; }
+.sxbase h2 { font-size: 1.5em; font-weight: bold; margin: 0.83em 0; }
+.sxbase h3 { font-size: 1.17em; font-weight: bold; margin: 1em 0; }
+.sxbase p { margin: 1em 0; }
+.sxbase ul { list-style: disc; margin: 1em 0; padding-left: 40px; }
+.sxbase blockquote { margin: 1em 40px; }
+.sxbase figure { margin: 1em 40px; }
+.sxbase dl { margin: 1em 0; }
+.sxbase img { display: inline; max-width: none; height: auto; vertical-align: baseline; }
+/* 폼 컨트롤 — UA: font: -webkit-small-control(13.333px system-ui), line-height normal, 검정 글자 */
+.sxbase button,
+.sxbase input,
+.sxbase select,
+.sxbase textarea {
+  font: 400 13.3333px system-ui, -apple-system, 'Apple SD Gothic Neo', sans-serif;
+  line-height: normal;
+  letter-spacing: normal;
+  color: #000;
+  margin: 0;
+}
+.sxbase button { padding: 1px 6px; background-color: #efefef; border: 2px outset #767676; }
+.sxbase ::placeholder { color: #757575; opacity: 1; }
+.sxbase a { color: #0000ee; text-decoration: underline; }
+/* 비활성(준비 중) 스케치 액션 — 모양은 스케치 그대로, 클릭만 막는다 */
+.sxbase [aria-disabled='true'] { cursor: not-allowed; }
