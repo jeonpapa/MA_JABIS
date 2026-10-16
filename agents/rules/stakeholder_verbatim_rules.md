@@ -17,6 +17,8 @@
 | 대쉬보드 소유 (DB 가 기록 원본) | `sv_person`, `sv_person_role_history`, `sv_source_domain`, `sv_audit_proposal`(+event) | 운영자(admin) 결정 | sync 는 **insert-if-absent 만**. 기존 행은 어떤 경우에도 UPDATE/덮어쓰기 하지 않는다 (승인·반려·효력일 보존) |
 | 에이전트 → 대쉬보드 API | 모니터링 스콥 pull, 감사 제안 POST | `role='agent'` 서비스 계정 | `/api/agent/stakeholder/registry`·`/api/agent/stakeholder/proposals` 만 허용 |
 
+- **정책 시그널(`data/policy_signals.json`)은 외부 에이전트 소유 읽기 전용 미러**다 — insert-if-absent 가 아니라 *내용이 바뀌면 교체*(§2-A). 대쉬보드는 시그널을 만들거나 고치지 않는다.
+- **excluded**: manifest 가 등재했지만 sync 허용목록(`agents/stakeholder/paths.py`) 밖인 경로(`stakeholder_service.py`, `dashboard-sketches/…`)는 설계상 미러하지 않는다. 무결성 판정은 `missing` 이 아니라 `excluded`(실패 아님, 별도 집계). **허용목록을 서비스 코드·스케치로 넓히지 않는다.**
 - **insert-if-absent 규약**: 소스 repo 의 `people_registry.json`·`source_registry.json`·`audit_proposals.json` 은 최초 1회 import 시드이며, 이후 동일 키(`person_id`·`domain`·`proposal_id`)가 DB 에 있으면 소스 쪽 값은 무시한다. 결정(승인·직책 변경·상태)은 대쉬보드에서만 일어난다.
 - 단방향 흐름: 외부 에이전트 산출물 → sync 잡 → DB/볼륨 → 대쉬보드. 대쉬보드 API 는 DB 만 읽는다. 파일 쓰기는 사진 업로드(볼륨 `photos/`) 하나뿐이다.
 - 쓰기는 모두 한 sqlite 트랜잭션(`BEGIN IMMEDIATE`)으로 — 승인은 제안 상태 전이와 부수 행(출처 추가 / `role_history` scheduled / 신규 인물)을 한 트랜잭션에서 처리한다.
@@ -202,6 +204,18 @@
 
 ---
 
+## 2-A. 정책 시그널 — 분석 가설 (대쉬보드 추가분)
+
+> 근거: 소스 repo README 규칙 6 "정책 방향성 예측은 `analyst_hypothesis`로 표시하고 공식 정책·직접 발언과 분리합니다." 스키마: 소스 `stakeholder_service.py` 의 `PolicySignalStore`(pydantic, `extra="forbid"`) — `agents/stakeholder/signals.py` 에 1:1 이식.
+
+- **세 층을 섞지 않는다.** `confirmed_evidence[]`(확인된 근거: 일자·인물·당시 직책·증거등급·근거역할·claim·source_id·locator) · `analyst_inference`(분석 추론: 계약구조·보험자 이점·첫 적용·선택 적용·복합 범위) · `not_confirmed`(미확인 범위)는 저장(`sv_signal_evidence` / `sv_policy_signal.analyst_inference_json` / `.not_confirmed`)·API·UI 어디서도 합치지 않는다. 추론을 근거 목록에 넣거나 근거 문장을 추론으로 다시 쓰지 않는다.
+- **`status='analyst_hypothesis'` 는 공식 정책도 직접 발언도 아니다.** 시그널은 발언 정본(`sv_statement`·`sv_quote`)으로 파싱하지 않으며, 정책 시그널 분석 MD(`*_정책시그널_*.md`)는 manifest 산출물(`sv_artifact`, 무결성 검증)로만 둔다. `evidence_role='planned_policy'`·`policy_status='planned_policy_pending_final_rules'` 근거는 확정·시행 제도로 표기하지 않는다(§2 원문 7.).
+- **confidence 는 분석자 판단이지 보정된 확률이 아니다.** `direction_confidence`·`implementation_model_confidence` ∈ [0,1](소스가 0–10 으로 표시). 방법론(`confidence_methodology`: scale·method·basis·limitation·reviewed_by·next_review_trigger)을 함께 보여주고 "확률 85%" 같은 표현을 쓰지 않는다.
+- **근거 locator 판정(`locator_match`)** — claim 은 요약(의역)이라 원문 문자열 대조를 하지 않는다. locator 가 **인용 출처의 추출 텍스트 안**을 가리키는지만 잰다: `range`(경로 = 그 source 의 `text_path`, 줄 범위가 파일 안·빈 줄만이 아님) · `file`(경로는 맞으나 범위 없음/파일 밖/빈 줄뿐) · `none`(source_id 가 manifest 에 없음·해석 불가·경로가 그 출처의 text_path 와 다름) · `unchecked`(볼륨에서 읽을 수 없음). 판정만 기록하고 **텍스트·locator 를 고치지 않는다**(고치는 것은 외부 에이전트 몫). 근거마다 그 출처의 `integrity_status` 를 함께 보인다.
+- **import 의미론**: 검증 통과 시 행 내용이 다를 때만 전체 교체(파일에서 사라진 시그널은 DB 에서도 사라진다). JSON 파싱·스키마 위반(미지 키·[0,1] 밖·필수 누락)·`signal_id` 중복이면 sync 오류로 보고하고 **이전 정상 시그널을 유지**한다(`sv_meta.policy_signals_status_json.state='invalid'`, API `import_status`). 파일이 없으면 `absent`(오류 아님).
+
+---
+
 ## 3. 감사 · 승인 규칙
 
 > 출처: 소스 repo `MONITORING_AUDIT_AGENT_POLICY.md`. 아래 본문은 원문 그대로이다. 이어지는 §3-A~§3-C 가 대쉬보드 쪽 추가분이다.
@@ -341,8 +355,10 @@
 | agent | `/api/agent/stakeholder/*` 한정 (스콥 pull·제안 POST). 그 외 라우트는 403 |
 
 - 원문 전문·원본 HTML/HWP 는 볼륨(`data/stakeholder/`)에만 두고, 외부 공개 라우트는 없다 (모두 `require_auth`).
-- provenance 사슬: `sv_quote.locator` → `sv_statement.source_ids_json` → `sv_source.sha256/text_sha256/url/last_live_check_json` → 볼륨 파일. sync 가 파일 SHA-256 을 재계산해 `integrity_status`(`verified|mismatch|missing|no_local`)를 쓰고, UI 의 "원문 SHA-256 일치" 배지는 `verified` 일 때만 켠다.
+- provenance 사슬: `sv_quote.locator` → `sv_statement.source_ids_json` → `sv_source.sha256/text_sha256/url/last_live_check_json` → 볼륨 파일. sync 가 파일 SHA-256 을 재계산해 `integrity_status`(`verified|mismatch|missing|no_local|unchecked|excluded`)를 쓰고, UI 의 "원문 SHA-256 일치" 배지는 `verified` 일 때만 켠다.
 - 인용문은 파서가 추출 텍스트에 대한 정확 부분문자열 검사 결과(`locator_match`: `range|file|none`)를 남긴다. `none` 이 나오면 파서·원문 결함으로 본다.
+- `excluded`(허용목록 밖 manifest 항목)와 `no_local`(원문 파일 없는 소스)은 실패가 아니다 — `stakeholder_source_integrity` 신선도는 `mismatch|missing` 만 센다.
+- 정책 시그널(`GET /api/stakeholder/signals`)은 user 등급. 근거별 `locator_match`·`integrity_status`·`source{publisher_title,url,publication_date}` 를 주고 `text_path`·`local_path` 는 주지 않는다.
 
 ---
 
@@ -368,6 +384,9 @@
 - 검토안·시범사업·향후 계획을 확정·시행 제도로 표기 (§2 원문 7. 최종 QC 게이트)
 - `source_saturation=partial` 을 전수 확인 완료로 표현
 - 재전재·동일 보도자료를 독립 증거로 합산
+- 정책 시그널의 근거·추론·미확인 층을 합치거나, `analyst_hypothesis` 를 공식 정책·직접 발언으로 표기, confidence 를 보정된 확률로 표기 (§2-A)
+- 무효한 `policy_signals.json` 때문에 이전 정상 시그널을 지우는 것, 근거 claim·locator 를 대쉬보드에서 고치는 것
+- sync 허용목록을 서비스 코드(`*.py`)·대시보드 스케치로 넓혀 `excluded` 를 없애는 것
 - 모듈 import 시 실제 DB(`data/db/drug_prices.db`)에 `sv_*` 테이블 생성 (`ensure_tables` 는 첫 호출에서 지연 실행)
 - 테스트에서 실제 DB·실제 볼륨(`data/stakeholder/`) 쓰기, 테스트 픽스처에 실제 매체명·실제 인물·실제 기사 문장 사용
 
@@ -377,5 +396,6 @@
 
 - **손실 없음 검증**: `scripts/stakeholder_verify_import.py --root <볼륨 root> --db <db> [--source-dir <소스>] [--json]` (Task 10) — 소스 `verify_repository.py` 의미론(JSON 파싱, manifest 경로·SHA-256, artifact 바이트) + 소스↔볼륨 SHA-256 미러 + DB 카운트(`sv_person`, `sv_source_domain`, `sv_audit_proposal`, 정본 인용 블록 수) 대조. 실패 문구 `missing manifest file` / `SHA-256 mismatch` / `artifact byte-size mismatch` 는 유지한다.
 - **합성 픽스처 회귀**: `tests/test_stakeholder_lossless.py` 가 `tests/fixtures/stakeholder_src_mini/` 로 같은 검증을 CI 에서 돈다. 픽스처를 고쳤으면 `python -I tests/fixtures/stakeholder_src_mini/_build.py` 로 해시를 재계산하고, 픽스처 루트에서 `python -I scripts/verify_repository.py` 가 `VALIDATION OK` 인지 확인한다.
+- **정책 시그널·excluded 회귀**: `tests/test_stakeholder_signals.py`(스키마 1:1·무효 파일 시 이전 정상본 유지·locator 판정·API 모양·구 스키마 `missing` → `excluded` 마이그레이션). 검증기 ⑦(`정책 시그널 …` 실패 문구, `exclusions.excluded_artifacts`)은 `tests/test_stakeholder_lossless.py`.
 - **불변식 표 테스트**: `tests/test_stakeholder_approval.py` — §3-A 각 항목에 대응. 재sync 가 운영자 결정을 덮어쓰지 않는지(`test_resync_never_overwrites_operator_decision`)는 `tests/test_stakeholder_sync.py`.
 - 신규 규칙·대규모 변경 시 `QualityGuardAgent.review_codebase()` 수동 실행으로 회귀 확인 (루트 `CLAUDE.md` 원칙).

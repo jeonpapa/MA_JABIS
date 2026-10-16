@@ -336,8 +336,52 @@ PRIMARY KEY(date, brand)
 | `GET /api/stakeholder/sources` | manifest 출처 목록(+`integrity_status`). `local_path`·`text_path` 는 admin 에게만 |
 | `GET /api/stakeholder/sources/<id>/excerpt?locator=sources/<file>.txt:<a>-<b>` | `{source_id, locator, text, start, end, chars, truncated}` (≤600자). 400 `BAD_LOCATOR`/`LOCATOR_MISMATCH`(locator 경로가 그 출처의 `text_path` 와 다름)/`LOCATOR_RANGE`, 404 `TEXT_MISSING` |
 | `GET /api/stakeholder/artifacts/relationship-map.svg` | 관계도 SVG (`Content-Security-Policy` 샌드박스) / 404 |
+| `GET /api/stakeholder/signals` | 정책 시그널(분석 가설) — 아래 **11-1a** 모양. 빈 DB 도 200 |
 | `GET /api/stakeholder/runs?kind=monitoring\|audit&limit=` | 런 요약 목록(payload 제외), `limit` 1~200 (기본 30). `kind` 오류 400 |
 | `GET /api/stakeholder/runs/<kind>/<run_id>` | `{...요약, payload(전체 JSON), md(런 .md 본문\|null)}` |
+
+### 11-1a. `GET /api/stakeholder/signals` (user)
+
+소스 repo `GET /api/signals` 와 같은 모양(`PolicySignalStore.model_dump()` — 선택 필드 `policy_status`·`scope_note` 는 없으면 `null` 로 **항상 존재**) + 대쉬보드 추가 키 4개(근거별 `locator_match`·`integrity_status`·`source`, 최상위 `import_status`). `signals[]` 는 `as_of` 문자열 내림차순(같은 날은 파일 순서). JSON 객체 키 순서는 보장하지 않는다(Flask 정렬).
+
+```jsonc
+{
+  "schema_version": "1.0" | null,          // 정상 import 가 한 번도 없으면 null
+  "updated_at": "2026-10-15T19:08:00+09:00" | null,
+  "signal_count": 1,
+  "import_status": {"state": "ok" | "invalid" | "absent", "error": null | "스키마 위반 2건 — …"},
+  //   invalid = 최신 파일이 검증 실패 → 아래 signals 는 마지막 정상본. absent = 파일 없음(구 스냅샷)
+  "signals": [{
+    "signal_id": "SIG-NHIS-FLEX-RSA-COMPOSITE-20261015",
+    "title": "…", "institution": "국민건강보험공단", "signal_type": "policy_direction_forecast",
+    "status": "analyst_hypothesis",        // 공식 정책·직접 발언 아님 — UI 에 '분석 가설' 로 표기
+    "as_of": "2026-10-15",
+    "direction_confidence": 0.85, "implementation_model_confidence": 0.65,   // [0,1] 분석자 판단, 보정 확률 아님 (소스 UI 는 ×10)
+    "confidence_methodology": {"scale","method","direction_basis","implementation_basis","limitation","reviewed_by","next_review_trigger"},
+    "thesis": "…",
+    "confirmed_evidence": [{                // 확인된 근거만
+      "date": "2025-11-28", "person": "보건복지부", "role_at_event": "…", "evidence_grade": "B-summary",
+      "evidence_role": "direct_support" | "planned_policy" | "adjacent_context" | …,
+      "claim": "…",                          // 파일 문자열 그대로(요약 — 직접인용 아님)
+      "source_id": "SRC-MOHW-20251128-1488072", "locator": "sources/mohw_20251128_flexible_pricing.txt:18-30",
+      "policy_status": "planned_policy_pending_final_rules" | null, "scope_note": "…" | null,
+      "locator_match": "range" | "file" | "none" | "unchecked",   // + 대쉬보드
+      "integrity_status": "verified" | "mismatch" | "missing" | "no_local" | "unchecked" | "excluded" | null,  // + 출처 무결성, 출처 미등재면 null
+      "source": {"publisher_title": "…", "url": "https://…", "publication_date": "2025-11-28"} | null       // + 출처 미등재면 null
+    }],
+    "analyst_inference": {                  // 분석 추론 — 근거와 섞지 않는다
+      "likely_contract_architecture": "…",
+      "payer_benefits": [{"benefit","modality","rationale","basis_source_ids":[…]}],
+      "most_likely_first_use": "…", "selective_use": "…",
+      "composite_scope": {"highest_likelihood": "…", "selective_retention": "…", "not_supported": "…"}  // 임의 str→str
+    },
+    "not_confirmed": "…",                    // 미확인 범위 — 근거와 섞지 않는다
+    "watch_triggers": ["…"]
+  }]
+}
+```
+
+`locator_match`: `range` locator 가 그 출처 `text_path` 안의 유효한 줄 범위 · `file` 경로는 맞으나 범위 없음/파일 밖/빈 줄 · `none` 출처 미등재·해석 불가·다른 파일을 가리킴 · `unchecked` 볼륨 파일 없음. `text_path`·`local_path` 는 응답에 없다(근거 원문 창은 `GET /api/stakeholder/sources/<source_id>/excerpt?locator=<locator>`). 오류: 401/403, 저장 원문이 스키마를 어기면 500 `SIGNALS_SCHEMA`(검증 통과분만 저장하므로 정상 운영에서는 없음).
 
 ### 11-2. Admin
 
@@ -357,7 +401,7 @@ PRIMARY KEY(date, brand)
 | `POST /api/admin/stakeholder/proposals/<id>/approve` `{reason}` | **모든 충돌이 현재 문구로 확인돼야 한다.** → `scheduled`(효력 익일 KST). 부수 행(출처 도메인/직책 이력 scheduled/신규 인물 candidate)과 상태 전이가 한 트랜잭션. 오류는 아래 표 |
 | `POST /api/admin/stakeholder/proposals/<id>/reject` `{reason}` | → `rejected`. 충돌·확인은 보지 않는다. 404 · 409 `STATE`/`RACE` · 422 `BAD_REASON` |
 | `GET /api/admin/stakeholder/source-domains` | `{effective_count, items}` |
-| `GET /api/admin/stakeholder/integrity` | `{summary, last_sync_at, counts, artifact_counts, problems:[{source_id, title, integrity_status, ...}], artifact_problems}` |
+| `GET /api/admin/stakeholder/integrity` | `{summary, last_sync_at, counts, artifact_counts, problems:[{source_id, title, integrity_status, ...}], artifact_problems, excluded:[{kind:'source'\|'artifact', id}]}`. `integrity_status` 어휘 `verified\|mismatch\|missing\|no_local\|unchecked\|excluded` — `excluded`(manifest 등재·sync 허용목록 밖, 설계상 미러 안 함)와 `no_local` 은 실패가 아니다. `summary.excluded[]` 에 사유 |
 | `POST /api/admin/stakeholder/sync` | 잡과 같은 경로로 sync 1회. 성공 200. 실패: 409 `SYNC_RUNNING` (잠금) · 503 `SYNC_CONFIG` (토큰·repo 설정) · 502 `SYNC_FAILED` · 503 `RUNBOOK_MISSING` |
 
 **승인 오류 코드** (`approve`; 검사 순서 = 404 → 상태 409 → 충돌 확인 422 → 유형별 근거·필드)
@@ -383,7 +427,8 @@ PRIMARY KEY(date, brand)
 | `POST /api/agent/stakeholder/proposals` | 감사 제안 접수 → **201** 저장된 제안(`proposal_id=AUD-<12hex>`, `status='needs_review'`). **409** `DUPLICATE`(같은 `dedupe_key` 의 열린 제안). **422** 검증 실패(`BAD_TYPE`·`BAD_PRIORITY`·`BAD_DEDUPE_KEY`·`BAD_SUMMARY`·`BAD_RATIONALE`·`BAD_CHANGE`·`BAD_EVIDENCE`·`BAD_URL`·`BAD_CONFLICTS`·...). 본문: `proposal_type`(`source_expansion\|role_change\|new_person`), `dedupe_key`(3~240), `priority`(`urgent\|high\|normal\|low`, 기본 `normal`), `summary`(3~1000), `rationale`(3~3000), `proposed_change`(객체), `evidence[]`(`url` 필수 http/https), `conflicts[]`(문자열), `audit_run_id`, `created_by`. 선언되지 않은 키(`status` 등)는 버린다 |
 | `GET /api/agent/stakeholder/proposals?audit_run_id=` | `{audit_run_id, items:[제안...]}` — 그 감사 런의 제안 (`audit_run_id` 생략 시 전체) |
 
-### 11-4. 신규 DB 테이블 (`sv_` 접두, 15개)
+### 11-4. 신규 DB 테이블 (`sv_` 접두, 17개)
 
-`sv_meta` · `sv_person` · `sv_person_role_history` · `sv_source_domain` · `sv_source` · `sv_artifact` · `sv_event` · `sv_statement` · `sv_quote` · `sv_monitoring_run` · `sv_audit_run` · `sv_audit_proposal` · `sv_audit_proposal_event` · `sv_audit_conflict_ack` · `sv_sync_file`.
+`sv_meta` · `sv_person` · `sv_person_role_history` · `sv_source_domain` · `sv_source` · `sv_artifact` · `sv_event` · `sv_statement` · `sv_quote` · `sv_monitoring_run` · `sv_audit_run` · `sv_audit_proposal` · `sv_audit_proposal_event` · `sv_audit_conflict_ack` · `sv_sync_file` · `sv_policy_signal` · `sv_signal_evidence`.
+정책 시그널 두 테이블은 `data/policy_signals.json` 의 읽기 전용 미러(내용이 바뀌면 전체 교체, 무효 파일이면 이전 정상본 유지). `overview.integrity.sources_total` 은 `no_local`·`excluded` 를 뺀 수.
 결정 테이블(`sv_person`·`sv_person_role_history`·`sv_source_domain`·`sv_audit_proposal`+event·`sv_audit_conflict_ack`)은 대쉬보드가 기록 원본이며 sync 는 insert-if-absent 만 한다. 나머지는 소스 repo 산출물의 미러다. 스키마 정의: `agents/stakeholder/store.py` `SCHEMA_SQL`.

@@ -51,11 +51,28 @@ API 계약: `docs/api_contract.md` §11.
 | 루트 `*_주제별_인물발언_타임라인_정본.md` | 정본 타임라인 | 결정론 파서 → `sv_event`·`sv_statement`·`sv_quote` (바뀐 sha 일 때만 `origin='canonical_md'` 행 교체) |
 | 루트 `*_부서-인물지도_정본.md` | 부서-인물지도 | §2.2 중요도표 → `sv_person.importance_score` |
 | 루트 `*.md`·`*.json`·`*.dot`·`*.svg`·`*.png`, `render_relationship_map.py` | 보강조사 기록·README·정책 문서·관계도 | 볼륨 파일 (+ manifest `artifacts[]` 에 있으면 `sv_artifact`) |
+| `data/policy_signals.json` | 정책 시그널(분석 가설) — 확인 근거·분석 추론·미확인 범위 분리 | 스키마 검증 → `sv_policy_signal`·`sv_signal_evidence` (내용이 바뀌면 전체 교체 — 아래 §정책 시그널 계약) |
+| 루트 `*_정책시그널_*.md` | 정책 시그널 분석 MD | 볼륨 파일 + manifest `artifacts[]` → `sv_artifact`(무결성). 발언 정본으로 파싱하지 **않는다** |
 | `data/`, `scripts/` | 레지스트리 JSON, `verify_repository.py` | 아래 참고 |
 
 **`data/*.json` 은 더 이상 기록 원본이 아니다.** `data/people_registry.json`·`data/source_registry.json`·`data/audit_proposals.json` 은
 **최초 1회 시드**로만 읽히고, 이후에는 같은 키(`person_id`·`domain`·`proposal_id`)가 DB 에 있으면 소스 쪽 값을 **무시**한다(insert-if-absent).
 JSON 을 계속 갱신해도 해롭지 않지만 대쉬보드의 승인·반려·상태·효력일을 바꾸지 못한다. 정본은 대쉬보드 DB 이다.
+
+### 정책 시그널 계약 (`data/policy_signals.json`)
+
+외부 에이전트 소유. 대쉬보드는 **읽기 전용 미러**다(insert-if-absent 가 아니다): 파일이 검증을 통과하고 내용이 바뀌면 시그널 전체를 교체하고, 파일에서 뺀 시그널은 대쉬보드에서도 사라진다.
+
+- **스키마 = 소스 `stakeholder_service.py` 의 `PolicySignalStore` 그대로**(pydantic `extra="forbid"`): 최상위 `schema_version`·`updated_at`·`signals[]` 만. 시그널마다 `signal_id`·`title`·`institution`·`signal_type`·`status`·`as_of`·`direction_confidence`·`implementation_model_confidence`(둘 다 **0 이상 1 이하**)·`confidence_methodology{scale,method,direction_basis,implementation_basis,limitation,reviewed_by,next_review_trigger}`·`thesis`·`confirmed_evidence[]`·`analyst_inference{likely_contract_architecture,payer_benefits[{benefit,modality,rationale,basis_source_ids[]}],most_likely_first_use,selective_use,composite_scope{str:str}}`·`not_confirmed`·`watch_triggers[]` 가 **필수**. 근거(`confirmed_evidence[]`)는 `date`·`person`·`role_at_event`·`evidence_grade`·`evidence_role`·`claim`·`source_id`·`locator` 필수, `policy_status`·`scope_note` 선택. **선언되지 않은 키는 어느 깊이에서든 거부**된다.
+- 대쉬보드 추가 제약: `signal_id` 는 파일 안에서 유일해야 한다.
+- 예측은 `status: "analyst_hypothesis"` 로, 공식 정책·직접 발언과 분리한다(소스 README 규칙 6). 근거·추론·미확인을 한 필드에 섞지 않는다. confidence 는 분석자 판단(보정 확률 아님)이며 `confidence_methodology` 에 근거를 적는다.
+- `confirmed_evidence[].source_id` 는 manifest `sources[]` 에 있어야 하고, `locator` 는 **그 출처의 `text_path`** 의 줄 범위(`sources/<file>.txt:<a>-<b>`)여야 한다. 대쉬보드는 근거마다 `locator_match`(`range|file|none|unchecked`)를 기록해 화면에 보이며 claim·locator 를 고치지 않는다 — `range` 가 아니면 상류에서 고친다.
+- **파일이 무효면**(JSON 깨짐·스키마 위반·중복 id) 그 sync 는 오류로 보고되고(잡 원장) 대쉬보드는 **마지막 정상 시그널을 계속 보여 준다**(`import_status.state='invalid'`). 고쳐서 커밋하면 다음 sync 가 교체한다.
+- 파일과 manifest `artifacts[]` 의 해시를 같은 커밋에서 갱신한다.
+
+### excluded — manifest 에 있지만 받지 않는 산출물
+
+`source_manifest.json` `artifacts[]`(또는 source 의 `local_path`/`text_path`)가 허용목록 밖 경로(`stakeholder_service.py`, `dashboard-sketches/…` 등)를 가리키면 대쉬보드는 그 파일을 **설계상 받지 않는다**. 무결성 판정은 `missing` 이 아니라 **`excluded`** — 실패가 아니고 별도로 집계된다(sync CLI `integrity: … excluded=`, 검증기 `exclusions.excluded_artifacts`, 신선도 `stakeholder_source_integrity` 근거 문구). 에이전트는 이 항목들을 manifest 에 계속 등재해도 된다. 허용목록은 서비스 코드·스케치로 넓히지 않는다.
 
 ### manifest 가 지켜야 하는 것 (무결성 판정 입력)
 
@@ -235,7 +252,7 @@ python scripts/stakeholder_verify_import.py --root data/stakeholder --db data/db
 fly ssh console -a ma-ai-dossier -C "python scripts/stakeholder_verify_import.py --root /app/data/stakeholder --db /app/data/db/drug_prices.db --json"
 ```
 
-기대: `failures: []`. 검사 항목은 JSON 파싱, manifest 경로·SHA-256, artifact 바이트, (선택) 소스↔볼륨 SHA-256 미러, DB 카운트(인물·출처 도메인·제안·출처·산출물·런·행사·정본 인용 블록)이다.
+기대: `failures: []`. 검사 항목은 JSON 파싱, manifest 경로·SHA-256, artifact 바이트, (선택) 소스↔볼륨 SHA-256 미러, DB 카운트(인물·출처 도메인·제안·출처·산출물·런·행사·정본 인용 블록), 정책 시그널(스키마·원문 객체·근거 claim 바이트 동일·locator 판정 재측정·파일 전체 재구성)이다. 허용목록 밖 manifest 항목은 실패가 아니라 `exclusions.excluded_artifacts`/`excluded_source_paths` 로 열거된다.
 실패 문구 `missing manifest file` / `SHA-256 mismatch` / `artifact byte-size mismatch` 는 소스 repo 의 `scripts/verify_repository.py` 와 같다 —
 **에이전트는 커밋 전에 소스 repo 안에서 `python -I scripts/verify_repository.py` 가 `VALIDATION OK` 인지 확인**하면 대쉬보드에서 mismatch 가 날 일이 거의 없다.
 
@@ -251,6 +268,7 @@ sync 결과를 미리 보려면(쓰기 없음): `python -m agents.stakeholder.sy
 3. 런 JSON(`monitoring-runs/<날짜>/`, `audit-runs/<날짜>/`)과 `.md` 를 커밋. `run_id`/`audit_run_id`·`run_date_kst` 필수.
 4. 정본 MD 를 고쳤으면 인용이 `locator` 줄 범위 추출 텍스트에서 **글자 그대로** 찾아지는지 확인(문장부호 포함) + manifest `artifacts[]` 해시 갱신.
 5. 소스 repo 에서 `python -I scripts/verify_repository.py` → `VALIDATION OK`.
+5-1. 정책 시그널을 고쳤으면 `data/policy_signals.json` 이 스키마(위 계약)를 지키는지, 근거 `locator` 가 그 출처 `text_path` 의 줄 범위인지 확인.
 6. 제안은 `POST /api/agent/stakeholder/proposals` 로만. `priority` 는 `urgent|high|normal|low`. 409 는 기존 제안 연결, 422 는 `code` 를 보고 수정.
 7. 감사 QC 에서 `GET /api/agent/stakeholder/proposals?audit_run_id=<id>` 로 접수된 제안을 재조회해 기록.
 

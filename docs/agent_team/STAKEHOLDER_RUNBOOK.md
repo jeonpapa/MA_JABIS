@@ -30,7 +30,7 @@ sync 는 결정 테이블(`sv_person`·`sv_person_role_history`·`sv_source_doma
 | 신선도 `stakeholder_monitoring_run` | 최신 `sv_monitoring_run.run_date` ≥ 오늘−2일 | 에이전트가 일일 모니터링을 안 올렸거나 sync 가 못 받음 | ops_incident, 런북 `stakeholder_data_sync` |
 | 신선도 `stakeholder_audit_run` | 최신 `sv_audit_run.run_date` ≥ 오늘−3일 | 감사 런 정체 | ops_incident, 런북 `stakeholder_data_sync` |
 | 신선도 `stakeholder_proposal_backlog` | 7일 넘게 `needs_review`/`needs_evidence` 인 제안 0건 | **사람 몫** — 승인·반려 대기 | improvement 과제 `…:backlog` 1건 (런북 없음) |
-| 신선도 `stakeholder_source_integrity` | `integrity_status IN ('mismatch','missing')` 인 출처 0건 | 원문 파일이 manifest 해시와 다르거나 없음 | ops_incident (priority 3), 런북 `stakeholder_data_sync` |
+| 신선도 `stakeholder_source_integrity` | `integrity_status IN ('mismatch','missing')` 인 출처·산출물 0건 (`no_local`·`excluded` 는 실패 아님) | 원문 파일이 manifest 해시와 다르거나 없음 | ops_incident (priority 3), 런북 `stakeholder_data_sync` |
 | 신선도 `stakeholder_quote_provenance` | `sv_quote.locator_match='none'` 0건 | 정본 인용문이 근거 원문(locator 줄 범위)에 글자 그대로 없음 — **외부 에이전트 몫**(정본 MD 수정 → 재sync 로 해소) | improvement 과제 1건(런북 없음 — 재sync 무효). 화면은 정상, 해당 인용만 "원문 불일치" |
 | 스모크 | 매일 07:50 (`platform_smoke`) | 화면 4개 `stakeholder-signals`, `stakeholder-signals/workbench`, `admin/stakeholder-people`, `admin/stakeholder-audit` + auth-gates 2(`/api/admin/stakeholder/proposals`·`/api/agent/stakeholder/registry` 가 user 토큰에 403) | 실패 체크 집합당 과제 1건 |
 
@@ -98,8 +98,10 @@ GitHub 5xx·네트워크·레이트리밋·`stakeholder sync already running (lo
 2. **`mismatch`**: 볼륨 파일이 manifest `sha256`/`text_sha256`/`bytes` 와 다름.
    - 볼륨 쪽 변조·손상이면 다음 sync 가 **자가 치유**한다(받을 당시 SHA-256 과 디스크가 다르면 원격 sha 가 같아도 다시 받는다). `sync --now` 한 번으로 확인.
    - 재수신 후에도 남으면 소스 repo 의 파일과 manifest 해시가 어긋난 것이다 → 외부 에이전트에게 소스 repo 에서 `python -I scripts/verify_repository.py` 를 돌려 고쳐 커밋하게 한다. 대쉬보드에서 해시를 맞추지 않는다.
-3. **`missing`**: 파일이 볼륨에 없음. 원인 후보 — 소스 repo 에 파일이 없음(manifest 만 갱신됨), 경로가 허용목록 밖/안전하지 않음(`rejected`), 20MB 초과, 총량 200MB 초과로 이월(`deferred`). `sync --dry-run` 의 `rejected`·`deferred`·`would_download` 로 구분.
+3. **`missing`**: 파일이 볼륨에 없음. 원인 후보 — 소스 repo 에 파일이 없음(manifest 만 갱신됨), 경로가 안전하지 않음(`rejected`), 20MB 초과, 총량 200MB 초과로 이월(`deferred`). `sync --dry-run` 의 `rejected`·`deferred`·`would_download` 로 구분.
 4. `no_local`(받아 둔 파일이 없는 출처, 예: video-only `SRC-BOK-NHIS-20251211-YT`)은 손실이 아니라 소스 상태다 — 과제 대상이 아니다.
+5. `excluded`(manifest 가 등재했지만 sync 허용목록 밖 — 예: `stakeholder_service.py`, `dashboard-sketches/001-leadership-timeline/index.html`)는 설계상 받지 않는 산출물이다 — 과제 대상이 아니다. 허용목록을 넓혀 "고치지" 않는다. (2026-10-15 소스 판부터 manifest 에 두 항목이 들어와, 이 상태가 생기기 전 코드는 이를 `missing` 으로 잘못 판정했다.)
+6. 정책 시그널 import 실패(`data/policy_signals.json 검증 실패 — 이전 정상 시그널 N건 유지`)는 sync 오류로 잡 원장에 남지만 재실행으로 풀리지 않는다 — 외부 에이전트가 파일을 스키마대로 고쳐 커밋해야 한다(`agents/ingest/STAKEHOLDER_SYNC_README.md` §정책 시그널 계약). 화면은 마지막 정상본 + `import_status.state='invalid'`.
 
 ### 4-4. 런 정체 (`stakeholder_monitoring_run` / `stakeholder_audit_run`)
 
