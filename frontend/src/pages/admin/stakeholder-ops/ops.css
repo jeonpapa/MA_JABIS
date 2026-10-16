@@ -1,0 +1,95 @@
+/*
+ * 모니터링 운영 현황(/admin/stakeholder-ops) — 스케치 004(.sx4) 위에 얹는 추가분.
+ * 스케치에 없는 화면이라 004 의 시각 언어(흰 카드 #e5e5e5 테두리·10px 라운드, 칩·버튼, .meta 회색 문구)와
+ * 001 의 표 수치(.thead #f7f7f7·11px, 행 15px 16px·#e8e8e8 구분선)만 써서 만든다. 모든 선택자는 .sxops 스코프.
+ */
+
+.sxops .hero a.svx-link { font-weight: 700; }
+
+/* 섹션 머리 — 004 .toolbar 배치 + .headline h2(17px) 크기 */
+.sxops .sec { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin: 26px 0 10px; }
+.sxops .sec h2 { font-size: 17px; margin: 0; letter-spacing: -.3px; }
+.sxops .sec p { margin: 4px 0 0; color: #777; font-size: 12px; line-height: 1.6; }
+.sxops .stats { grid-template-columns: repeat(2, minmax(130px, auto)); flex: 0 0 auto; }
+.sxops .stat b { white-space: nowrap; }
+.sxops .sec .side.chips { flex-wrap: nowrap; flex: 0 0 auto; }
+.sxops .sec .side { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+/* 동기화 카드 */
+.sxops .sync { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 20px; padding: 20px; }
+.sxops .kv { margin: 0; display: grid; grid-template-columns: 96px minmax(0,1fr); gap: 7px 14px; font-size: 13px; line-height: 1.6; }
+.sxops .kv dt { color: #777; }
+.sxops .kv dd { margin: 0; color: #171717; overflow-wrap: anywhere; }
+.sxops .sync .change { margin-top: 12px; }
+.sxops .sync .server-error { margin: 12px 0 0; }
+.sxops .sync .actions { align-items: center; }
+.sxops details summary { cursor: pointer; color: #555; font-size: 12px; font-weight: 700; margin-top: 10px; }
+.sxops pre.raw { margin: 8px 0 0; max-height: 320px; overflow: auto; background: #f8f8f8; border-radius: 8px; padding: 12px; font: 11px/1.55 monospace; color: #383838; white-space: pre-wrap; word-break: break-word; }
+
+/* 표 — 001 .thead/.row 수치 */
+.sxops .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+.sxops .tbl th { padding: 11px 16px; background: #f7f7f7; color: #666; font-size: 11px; font-weight: 400; text-align: left; white-space: nowrap; }
+.sxops .tbl td { padding: 13px 16px; border-top: 1px solid #e8e8e8; vertical-align: top; color: #383838; }
+.sxops .tbl tr:nth-child(even) td { background: #fdfdfd; }
+.sxops .tbl .num { text-align: right; font-variant-numeric: tabular-nums; }
+.sxops .tbl tbody tr.click { cursor: pointer; transition: .15s; }
+.sxops .tbl tbody tr.click:hover td { background: #fafcff; }
+.sxops .tbl tbody tr.click:focus-visible { outline: 2px solid #2878f0; outline-offset: -2px; }
+.sxops .tbl .date { font-family: monospace; font-size: 12px; white-space: nowrap; color: #171717; }
+.sxops .tbl .id { display: block; margin-top: 2px; font: 11px monospace; color: #888; white-space: nowrap; }
+.sxops .tbl .mono { font: 11px monospace; color: #555; word-break: break-all; }
+.sxops .tbl .clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.sxops .scroll { overflow-x: auto; }
+
+/* 무결성 */
+.sxops .integ { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.sxops .integ .panel { padding: 16px; }
+.sxops .integ-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.sxops .integ-head b { font-size: 14px; }
+.sxops .integ-head code { margin-left: 6px; font: 11px monospace; color: #888; }
+.sxops .ratio { font-size: 12px; color: #666; white-space: nowrap; }
+.sxops .ratio strong { font-size: 19px; margin-left: 4px; }
+.sxops .ratio .ok { color: #16733b; }
+.sxops .ratio .bad { color: #b42318; }
+.sxops .tiles { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 7px; }
+.sxops .tile { border-radius: 8px; padding: 9px 11px; background: #f8f8f8; font-size: 11px; color: #666; }
+.sxops .tile b { display: block; margin-top: 2px; font-size: 17px; color: #171717; }
+.sxops .tile.bad { background: #fee4e2; color: #b42318; }
+.sxops .tile.bad b { color: #b42318; }
+.sxops .tile.neutral { background: #fff; box-shadow: inset 0 0 0 1px #e5e5e5; }
+.sxops .tile.neutral b { color: #777; }
+.sxops .clean { margin: 10px 0 0; color: #16733b; font-size: 12px; font-weight: 700; }
+.sxops .bad-panel { border-color: #f04438; margin-top: 10px; }
+.sxops .bad-panel > b { display: block; padding: 12px 16px; background: #fee4e2; color: #b42318; font-size: 13px; }
+
+/* 의도적 제외·로컬 원문 없음 — 실패가 아니라 중립 회색 */
+.sxops .neutral-list { margin-top: 10px; background: #fafafa; }
+.sxops .neutral-list > b { display: block; padding: 12px 16px 2px; color: #555; font-size: 13px; }
+.sxops .neutral-list > p { margin: 0; padding: 0 16px 10px; color: #888; font-size: 12px; line-height: 1.6; }
+.sxops .neutral-list ul { list-style: none; margin: 0; padding: 0; }
+.sxops .neutral-list li { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 10px; align-items: start; padding: 10px 16px; border-top: 1px solid #eee; font-size: 12px; color: #555; }
+.sxops .neutral-list li code { font: 12px monospace; color: #383838; word-break: break-all; }
+.sxops .neutral-list li small { display: block; margin-top: 2px; color: #888; line-height: 1.5; }
+
+/* 정책 시그널 반입 */
+.sxops .signals { padding: 20px; }
+
+/* 런 상세 모달 — 대쉬보드 사이드바(z-50) 위로 */
+.sxops .sxm-wrap { z-index: 60; }
+/* 런 상세 모달 MD 본문 */
+.sxops pre.md { margin: 12px 0 0; max-height: 55vh; overflow: auto; background: #fafafa; border: 1px solid #ececec; border-radius: 8px; padding: 13px; font: 12px/1.7 ui-monospace, Menlo, monospace; color: #383838; white-space: pre-wrap; word-break: break-word; }
+
+.sxops .skel { height: 120px; background: #fff; border: 1px solid #e5e5e5; border-radius: 10px; }
+
+@media (max-width: 850px) {
+  .sxops .sec { flex-direction: column; align-items: stretch; }
+  .sxops .sec .side { justify-content: flex-start; }
+  .sxops .sync { grid-template-columns: 1fr; padding: 16px; }
+  .sxops .sync .actions { display: grid; grid-template-columns: 1fr; }
+  .sxops .sync .actions .btn { min-height: 48px; }
+  .sxops .integ { grid-template-columns: 1fr; }
+  .sxops .kv { grid-template-columns: 84px minmax(0,1fr); }
+}
+@media (max-width: 1180px) {
+  .sxops .integ { grid-template-columns: 1fr; }
+}

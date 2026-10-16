@@ -50,6 +50,7 @@ export const adminNavItems: NavItem[] = [
   { path: '/admin/agent-tasks', label: '운영 원장', icon: 'ri-robot-line' },
   { path: '/admin/stakeholder-people', label: '모니터링 인물 관리', icon: 'ri-contacts-line' },
   { path: '/admin/stakeholder-audit', label: '모니터링 감사', icon: 'ri-shield-check-line' },
+  { path: '/admin/stakeholder-ops', label: '모니터링 운영 현황', icon: 'ri-pulse-line' },
 ];
 
 type SettingsTab = 'account' | 'users' | 'tabs';

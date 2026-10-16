@@ -1017,6 +1017,22 @@ export interface SVIntegrityReport {
   artifact_counts?: Record<string, number> | null;
   problems?: SVIntegrityProblem[] | null;
   artifact_problems?: SVIntegrityProblem[] | null;
+  /** sync 허용목록 밖이라 의도적으로 받지 않은 출처·산출물 — 실패가 아니며 무결성 분모에서 뺀다. */
+  excluded?: SVIntegrityExcluded[] | null;
+}
+
+export interface SVIntegrityExcluded {
+  kind: 'source' | 'artifact' | string;
+  id: string;
+  /** integrity summary(sv_meta) 쪽에만 있는 사유 목록 */
+  reason?: string[] | string | null;
+}
+
+/** 수동 sync 응답 — 200 {ok, summary, detail}. 실패는 SVApiError(409 SYNC_RUNNING · 503 SYNC_CONFIG · 502 SYNC_FAILED · 503 RUNBOOK_MISSING). */
+export interface SVSyncResult {
+  ok?: boolean;
+  summary?: string | null;
+  detail?: Record<string, unknown> | null;
 }
 
 export function adminIntegrity(): Promise<SVIntegrityReport> {
@@ -1024,6 +1040,6 @@ export function adminIntegrity(): Promise<SVIntegrityReport> {
 }
 
 /** runbooks.run("stakeholder_data_sync") 결과. T8 전에는 503 {code:'RUNBOOK_MISSING'}. */
-export function adminSync(): Promise<Record<string, unknown>> {
-  return svRequest<Record<string, unknown>>('POST', '/api/admin/stakeholder/sync');
+export function adminSync(): Promise<SVSyncResult> {
+  return svRequest<SVSyncResult>('POST', '/api/admin/stakeholder/sync');
 }

@@ -26,6 +26,7 @@ import AdminServiceRequestsPage from '@/pages/admin/service-requests/page';
 import AdminAgentTasksPage from '@/pages/admin/agent-tasks/page';
 import AdminStakeholderPeoplePage from '@/pages/admin/stakeholder-people/page';
 import AdminStakeholderAuditPage from '@/pages/admin/stakeholder-audit/page';
+import AdminStakeholderOpsPage from '@/pages/admin/stakeholder-ops/page';
 
 const routes: RouteObject[] = [
   { path: '/login', element: <LoginPage /> },
@@ -53,6 +54,7 @@ const routes: RouteObject[] = [
   { path: '/admin/agent-tasks', element: <AdminAgentTasksPage /> },
   { path: '/admin/stakeholder-people', element: <AdminStakeholderPeoplePage /> },
   { path: '/admin/stakeholder-audit', element: <AdminStakeholderAuditPage /> },
+  { path: '/admin/stakeholder-ops', element: <AdminStakeholderOpsPage /> },
   { path: '*', element: <NotFound /> },
 ];
 
