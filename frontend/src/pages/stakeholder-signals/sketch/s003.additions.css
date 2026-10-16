@@ -7,3 +7,7 @@
 .sx3 .field input:disabled { background: #f5f5f5; color: #777; }
 .sx3 .photo-actions label[aria-disabled] { opacity: .5; pointer-events: none; }
 .sx3 .photo-upload .error { margin-top: 4px; }
+
+/* 스케치 모달·토스트는 대쉬보드 사이드바(fixed, z-50) 위로 — 스케치 원본 z-index 20/30 은 사이드바에 왼쪽이 가려진다 */
+.sx3 .modal-wrap { z-index: 60; }
+.sx3 .toast { z-index: 70; }

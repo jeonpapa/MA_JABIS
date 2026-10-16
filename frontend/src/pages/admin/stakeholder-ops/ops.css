@@ -74,8 +74,6 @@
 /* 정책 시그널 반입 */
 .sxops .signals { padding: 20px; }
 
-/* 런 상세 모달 — 대쉬보드 사이드바(z-50) 위로 */
-.sxops .sxm-wrap { z-index: 60; }
 /* 런 상세 모달 MD 본문 */
 .sxops pre.md { margin: 12px 0 0; max-height: 55vh; overflow: auto; background: #fafafa; border: 1px solid #ececec; border-radius: 8px; padding: 13px; font: 12px/1.7 ui-monospace, Menlo, monospace; color: #383838; white-space: pre-wrap; word-break: break-word; }
 
