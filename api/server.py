@@ -49,6 +49,9 @@ db = DrugPriceDB(BASE_DIR / "data" / "db" / "drug_prices.db")
 foreign_agent = ForeignPriceAgent(BASE_DIR)
 users_db = UsersDB(BASE_DIR / "data" / "db" / "users.db")
 app.register_blueprint(build_auth_blueprint(users_db))
+# Durable Aside queue: accepting a request never launches a browser in Flask.
+from api.price_request_routes import build_price_request_blueprint
+app.register_blueprint(build_price_request_blueprint(db.db_path, foreign_agent))
 try:  # Stakeholder & Verbatim (sv_*) — 모듈 미탑재 시 해당 엔드포인트만 비활성 (service_requests 선례)
     from api.stakeholder_routes import build_stakeholder_blueprint
     app.register_blueprint(build_stakeholder_blueprint())

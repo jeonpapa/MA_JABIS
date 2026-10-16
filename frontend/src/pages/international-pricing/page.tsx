@@ -8,11 +8,15 @@ import {
   fetchForeignDrugList,
   fetchPricingTab,
   resolveIdentity,
-  searchForeignLive,
   downloadForeignReport,
   PRICING_COUNTRY_CODE,
   a8ExcludeReasonLabel,
 } from '@/api/foreign';
+import PriceRequestPanel from './PriceRequestPanel';
+import type { PriceRequestPanelHandle } from './PriceRequestPanel';
+import OecdPrices from './OecdPrices';
+import { downloadPriceHistory } from '@/api/priceRequests';
+import type { PriceScope } from '@/api/priceRequests';
 import type {
   A8Pricing,
   Candidate,
@@ -55,16 +59,30 @@ interface Selection {
   identity?: { slug: string; brand: string; inn: string };
 }
 
+function readPricingDeepLink(): { query: string; scope: PriceScope; requestId: string } {
+  if (typeof window === 'undefined') return { query: '', scope: 'a8', requestId: '' };
+  const params = new URLSearchParams(window.location.search);
+  const query = (params.get('q') || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 160);
+  const scope: PriceScope = params.get('scope') === 'oecd' ? 'oecd' : 'a8';
+  const rawId = params.get('request') || '';
+  const requestId = /^[A-Za-z0-9_-]{1,128}$/.test(rawId) ? rawId : '';
+  return { query, scope, requestId };
+}
+
 export default function InternationalPricingPage() {
+  const [deepLink] = useState(readPricingDeepLink);
   const [isDark, setIsDark] = useState(false);
   const [newSearchQuery, setNewSearchQuery] = useState('');
   const [identityCandidates, setIdentityCandidates] = useState<Candidate[]>([]);
-  const [selected, setSelected] = useState<Selection | null>(null);
+  const [selected, setSelected] = useState<Selection | null>(() => deepLink.query ? { query: deepLink.query, canonical: '' } : null);
   const [searchDropdown, setSearchDropdown] = useState(false);
-  const [liveSearching, setLiveSearching] = useState(false);
-  const [liveError, setLiveError] = useState<string | null>(null);
-  const [researchingCountry, setResearchingCountry] = useState<string | null>(null); // 국가별 재검색 진행 중인 국가코드
+  const [scope, setScope] = useState<PriceScope>(deepLink.scope);
+  const [resultRevision, setResultRevision] = useState(0);
+  const requestPanelRef = useRef<PriceRequestPanelHandle>(null);
   const [deleting, setDeleting] = useState<string | null>(null); // 삭제 진행 중 queryName
+  const [historyDownloadBusy, setHistoryDownloadBusy] = useState<Record<string, boolean>>({});
+  const [historyDownloadErrors, setHistoryDownloadErrors] = useState<Record<string, string>>({});
+  const historyDownloadingRef = useRef(new Set<string>());
   const [showCalcLogic, setShowCalcLogic] = useState(false);     // 조정가 산출 로직 패널
   const [showReport, setShowReport] = useState(false);           // 리포트 다운로드 모달
   const [reportFmt, setReportFmt] = useState<'xlsx' | 'hwpx'>('xlsx');
@@ -109,7 +127,6 @@ export default function InternationalPricingPage() {
     setSelected(sel);
     setNewSearchQuery('');
     setSearchDropdown(false);
-    setLiveError(null);
     setShowCalcLogic(false);
   };
   const handleSelectHistory = (d: ForeignDrugListItem) =>
@@ -150,103 +167,25 @@ export default function InternationalPricingPage() {
     }
   };
 
-  // 라이브 스크레이프 — 비용이 크므로 (수 분) 명시적 confirm 뒤에만 실행
-  const runLiveSearch = async () => {
-    if (!selected || liveSearching) return;
-    const ok = window.confirm(
-      `'${displayName(selected.query)}' 해외약가 실시간 스크레이핑을 실행할까요?\n8개국 수집에 수 분이 소요됩니다.`,
-    );
-    if (!ok) return;
-    setLiveSearching(true);
-    setLiveError(null);
-    try {
-      await searchForeignLive(selected.query, undefined, undefined, selected.identity);
-      pricing.reload();
-      history.reload();
-    } catch (e) {
-      setLiveError(e instanceof Error ? e.message : String(e));
-      // 실패/타임아웃이어도 백엔드가 부분 저장했을 수 있으니 캐시 재조회
-      pricing.reload();
-      history.reload();
-    } finally {
-      setLiveSearching(false);
+  const handleDownloadHistory = async (queryName: string) => {
+    if (historyDownloadingRef.current.has(queryName)) return;
+    historyDownloadingRef.current.add(queryName);
+    setHistoryDownloadBusy(prev => ({ ...prev, [queryName]: true }));
+    setHistoryDownloadErrors(prev => ({ ...prev, [queryName]: '' }));
+    try { await downloadPriceHistory('a8', queryName); }
+    catch (error) { setHistoryDownloadErrors(prev => ({ ...prev, [queryName]: error instanceof Error ? error.message : String(error) })); }
+    finally {
+      historyDownloadingRef.current.delete(queryName);
+      setHistoryDownloadBusy(prev => ({ ...prev, [queryName]: false }));
     }
   };
 
-  // 국가별 재검색 — 특정 국가만 라이브 스크레이프(전체 캐시 유지). 서버 압축이 그 국가 최신 세션만 교체.
-  // 검색중 표시는 검색 + 리로드가 모두 끝날 때까지 유지한다. reload 는 fire-and-forget 이라
-  // finally 에서 바로 해제하면 리로드 도중(옛 데이터) 카드가 깜빡여 '새로고침'처럼 보임 →
-  // pricing.loading 이 true→false 로 떨어지는 순간(신규 데이터 도착) 검색중 해제 + 결과배지 확정.
-  const [researchElapsed, setResearchElapsed] = useState(0);
-  // 국가별 마지막 재검색 결과(다음 행동까지 지속): updated=가격확인, no_result=무결과(사유), failed=실패.
-  // label 은 첫 줄 제목 — 스크레이퍼 실패는 '수집 실패(로그인 오류)' 처럼, 정책 무결과는 '제도상 비공개/미등재' 로 구분한다.
-  type ResearchBadge = { kind: 'updated' | 'no_result' | 'failed'; reason?: string; label?: string; at: string };
-  const [researchResult, setResearchResult] = useState<Record<string, ResearchBadge>>({});
-  const awaitingReloadRef = useRef(false);
-  const prevPricingLoadingRef = useRef(pricing.loading);
-  // 검색 종료 시점에 확정할 결과(리로드 후 신규 데이터로 최종 판정)
-  const pendingResearchRef = useRef<
-    { cc: string; failed?: string; result?: import('@/api/foreign').CountryResult | null } | null
-  >(null);
-  useEffect(() => {
-    const wasLoading = prevPricingLoadingRef.current;
-    prevPricingLoadingRef.current = pricing.loading;
-    if (awaitingReloadRef.current && wasLoading && !pricing.loading) {
-      awaitingReloadRef.current = false;
-      const pend = pendingResearchRef.current;
-      pendingResearchRef.current = null;
-      setResearchingCountry(null);
-      if (pend) {
-        const now = new Date();
-        const at = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-        const cell = pricing.data?.a8Pricing?.[pend.cc];
-        let badge: ResearchBadge;
-        if (pend.failed) {
-          badge = { kind: 'failed', reason: pend.failed, at };
-        } else if (pend.result?.status === 'scraper_error') {
-          // 스크레이퍼 실패(로그인·의존성·403·시간 초과) — 제도상 공백이 아니다. 서버 error_label 을 그대로 쓴다.
-          badge = { kind: 'failed', label: `수집 실패(${pend.result.error_label || '오류'})`, reason: pend.result.error || pend.result.reason, at };
-        } else if (pend.result?.has_price || cell?.price != null) {
-          // 가격은 왔지만 서버 경고(구 캐시 사용·채널 일부 실패)가 있으면 배지에 같이 보인다 — "현 시점 가격" 이 아닐 수 있다
-          const warns = pend.result?.warnings ?? [];
-          badge = warns.length
-            ? { kind: 'updated', at, label: warns.map(w => w.warning_label).join(' · '), reason: warns.map(w => w.message).join(' / ') }
-            : { kind: 'updated', at };
-        } else {
-          const policy = pend.result?.policy || (!pend.result?.reason && !!pricing.data?.coverageNotes?.[pend.cc]?.policy);
-          const reason = pend.result?.reason
-            || pricing.data?.coverageNotes?.[pend.cc]?.policy
-            || '공개 소스에서 가격을 찾지 못함';
-          badge = { kind: 'no_result', label: policy ? '제도상 비공개/미등재' : '결과 없음', reason, at };
-        }
-        setResearchResult(prev => ({ ...prev, [pend.cc]: badge }));
-      }
-    }
-  }, [pricing.loading, pricing.data]);
-
-  const researchCountry = async (countryKey: string) => {
-    if (!selected || researchingCountry || liveSearching) return;
-    // 카드 키(usa/france/…) → 백엔드 국가코드(US/FR/…). 미변환 시 백엔드가
-    // AVAILABLE_COUNTRIES 에 없다고 판단해 422 "현재 구현된 국가가 없습니다" 반환.
-    const backendCode = PRICING_COUNTRY_CODE[countryKey] ?? countryKey;
-    setResearchingCountry(countryKey);
-    setResearchElapsed(0);
-    setLiveError(null);
-    // 이전 결과배지 제거(이번 검색 결과로 대체)
-    setResearchResult(prev => { const n = { ...prev }; delete n[countryKey]; return n; });
-    let failed: string | undefined;
-    let result: import('@/api/foreign').CountryResult | null = null;
-    try {
-      const outcome = await searchForeignLive(selected.query, [backendCode], sec => setResearchElapsed(sec), selected.identity);
-      result = outcome?.countryResults?.[backendCode] ?? null;
-    } catch (e) {
-      failed = e instanceof Error ? e.message : String(e);
-    }
-    // 검색 종료(성공/무결과/실패 무관) → 캐시 재조회. 리로드 완료 시 effect 가 검색중 해제 + 배지 확정.
-    pendingResearchRef.current = { cc: countryKey, failed, result };
-    awaitingReloadRef.current = true;
-    history.reload();
-    pricing.reload();
+  // 수집은 Aside 큐로만 접수. 캐시 표시·조정가 계산 경로는 그대로 유지한다.
+  const runLiveSearch = () => {
+    if (selected) requestPanelRef.current?.submit(undefined, selected);
+  };
+  const researchCountry = (countryKey: string) => {
+    if (selected) requestPanelRef.current?.submit([PRICING_COUNTRY_CODE[countryKey] ?? countryKey], selected);
   };
 
   // ── 스타일 토큰 (readdy 디자인 유지) ──
@@ -344,11 +283,11 @@ export default function InternationalPricingPage() {
               <span className={`w-5 h-5 flex items-center justify-center ${accentColor}`}><i className="ri-global-line"></i></span>
               <h1 className={`text-2xl font-bold ${textMain}`}>해외약가</h1>
             </div>
-            <p className={`${textSub} text-sm`}>A8 국가 급여 약가 — 국내 조정가 환산 (KEB 36개월 평균환율 기준)</p>
+            <p className={`${textSub} text-sm`}>A8 조정가 비교 / OECD·공단 추가국가 공개 가격 및 조사 요청</p>
           </div>
           <div className="flex items-center gap-3">
             <button onClick={() => { if (selected) { setReportErr(''); setShowReport(true); } }}
-              disabled={!selected}
+              disabled={!selected || scope !== 'a8'}
               className="flex items-center gap-2 bg-teal-600 text-white text-sm font-semibold px-4 py-2 rounded-lg cursor-pointer whitespace-nowrap hover:bg-teal-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
               <span className="w-4 h-4 flex items-center justify-center"><i className="ri-download-2-line text-sm"></i></span>리포트 다운로드
             </button>
@@ -362,6 +301,20 @@ export default function InternationalPricingPage() {
       </div>
 
       <div className="px-8 py-6 space-y-5">
+        <div role="tablist" aria-label="해외약가 국가 범위" className="flex gap-2">
+          {(['a8', 'oecd'] as const).map(value => <button key={value} role="tab" aria-selected={scope === value}
+            onClick={() => setScope(value)} className={"rounded-lg px-4 py-2 text-sm font-semibold " + (scope === value ? 'bg-teal-600 text-white' : pillBg + ' ' + pillText)}>
+            {value === 'a8' ? 'A8' : 'OECD·공단 추가국가'}
+          </button>)}
+        </div>
+        <PriceRequestPanel ref={requestPanelRef} targetRequestId={deepLink.requestId} scope={scope} query={selected?.query ?? ''} identity={selected?.identity} isDark={isDark}
+          onResultsChanged={request => {
+            history.reload();
+            if (request.scope === 'a8' && selected) pricing.reload();
+            setResultRevision(v => v + 1);
+          }} />
+        {scope === 'oecd' ? <OecdPrices query={selected?.query ?? ''} revision={resultRevision} isDark={isDark} /> : <>
+
         {/* History */}
         <div>
           <div className="flex items-center gap-2 mb-3">
@@ -383,7 +336,7 @@ export default function InternationalPricingPage() {
             <div className="grid grid-cols-4 gap-3">
               {historyItems.map(drug => (
                 <div key={drug.id} onClick={() => handleSelectHistory(drug)} role="button" tabIndex={0}
-                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') handleSelectHistory(drug); }}
+                  onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); handleSelectHistory(drug); } }}
                   className={`relative text-left p-4 rounded-2xl border transition-all cursor-pointer group ${selected?.query === drug.queryName ? accentBg + ' ' + accentBorder : historyCard + ' ' + historyCardHover}`}>
                   <button onClick={e => handleDeleteHistory(e, drug)} disabled={deleting === drug.queryName}
                     title="검색 이력 삭제 (가격·HTA·허가 캐시 전부)"
@@ -400,6 +353,14 @@ export default function InternationalPricingPage() {
                   <div className="space-y-1.5">
                     <div className="flex items-center gap-1.5"><span className={`w-3.5 h-3.5 flex items-center justify-center ${textMuted}`}><i className="ri-calendar-line text-xs"></i></span><span className={`text-xs ${textMuted}`}>{drug.lastSearchedAt}</span></div>
                     <div className="flex items-center gap-1.5"><span className={`w-3.5 h-3.5 flex items-center justify-center ${textMuted}`}><i className="ri-global-line text-xs"></i></span><span className={`text-xs truncate ${textMuted}`}>{drug.countryCount}개국 가격 캐시</span></div>
+                    <button type="button" disabled={historyDownloadBusy[drug.queryName]} aria-busy={!!historyDownloadBusy[drug.queryName]}
+                      aria-label={displayName(drug.queryName) + ' 현재 저장 캐시 Excel 다운로드'}
+                      onClick={e => { e.stopPropagation(); void handleDownloadHistory(drug.queryName); }}
+                      className={'rounded-lg border px-3 py-1.5 text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed ' + accentColor}>
+                      {historyDownloadBusy[drug.queryName] ? '다운로드 중…' : 'Excel 다운로드'}
+                    </button>
+                    <p className={'text-xs ' + textSub}>현재 저장 캐시 기준 · 요청 당시 스냅샷 아님</p>
+                    {historyDownloadErrors[drug.queryName] && <p role="alert" className="text-xs text-red-500 break-words">다운로드 실패: {historyDownloadErrors[drug.queryName]}</p>}
                   </div>
                 </div>
               ))}
@@ -412,7 +373,7 @@ export default function InternationalPricingPage() {
           <div className="flex items-center gap-2 mb-3">
             <span className={`w-4 h-4 flex items-center justify-center ${accentColor}`}><i className="ri-search-2-line text-sm"></i></span>
             <p className={`text-sm font-semibold ${textMain}`}>신규 검색</p>
-            <span className={`text-xs ${textMuted}`}>이력에 없는 제품은 캐시 조회 후 실시간 검색을 선택할 수 있습니다</span>
+            <span className={`text-xs ${textMuted}`}>이력에 없는 제품은 캐시 조회 후 조사 요청을 접수할 수 있습니다</span>
           </div>
           <div className="flex gap-3 relative">
             <div className="flex-1 relative">
@@ -456,7 +417,7 @@ export default function InternationalPricingPage() {
                     <button onClick={handleNewSearch}
                       className={`w-full flex items-center gap-3 px-4 py-3 transition-colors cursor-pointer text-left ${dropdownHover}`}>
                       <span className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${isDark ? 'bg-[#00E5CC]/10' : 'bg-teal-50'}`}><i className={`ri-search-line text-xs ${accentColor}`}></i></span>
-                      <div className="flex-1 min-w-0"><p className={`text-sm font-semibold ${textMain}`}>'{newSearchQuery.trim()}' 캐시 조회</p><p className={`text-xs ${textSub}`}>이력에 없는 제품 — 캐시 확인 후 실시간 검색 가능</p></div>
+                      <div className="flex-1 min-w-0"><p className={`text-sm font-semibold ${textMain}`}>'{newSearchQuery.trim()}' 캐시 조회</p><p className={`text-xs ${textSub}`}>이력에 없는 제품 · 캐시 확인 후 조사 요청 가능</p></div>
                     </button>
                   )}
                 </div>
@@ -494,13 +455,12 @@ export default function InternationalPricingPage() {
                       <div className={`rounded-2xl border px-5 py-4 flex items-center justify-between gap-4 ${cardBg} ${cardBorder}`}>
                         <div>
                           <p className={`text-sm font-semibold ${textMain}`}>캐시된 가격 데이터가 없습니다</p>
-                          <p className={`text-xs mt-0.5 ${textMuted}`}>실시간 스크레이핑은 8개국 수집에 수 분이 소요됩니다 — 필요한 경우에만 실행하세요</p>
-                          {liveError && <p className="text-xs mt-1 text-red-400">실시간 검색 실패: {liveError}</p>}
+                          <p className={`text-xs mt-0.5 ${textMuted}`}>위 패널에서 수신 이메일을 확인하고 A8 조사 요청을 접수하세요</p>
                         </div>
-                        <button onClick={runLiveSearch} disabled={liveSearching}
-                          className={`flex items-center gap-2 text-xs font-bold px-4 py-2.5 rounded-xl whitespace-nowrap transition-colors ${liveSearching ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-teal-600 text-white hover:bg-teal-700 cursor-pointer'}`}>
-                          <i className={liveSearching ? 'ri-loader-4-line animate-spin' : 'ri-radar-line'}></i>
-                          {liveSearching ? '실시간 수집 중… (수 분 소요)' : '실시간 검색 실행'}
+                        <button onClick={runLiveSearch}
+                          className="flex items-center gap-2 text-xs font-bold px-4 py-2.5 rounded-xl whitespace-nowrap transition-colors bg-teal-600 text-white hover:bg-teal-700 cursor-pointer">
+                          <i className="ri-radar-line"></i>
+                          A8 전체 조사 요청
                         </button>
                       </div>
                     )}
@@ -619,26 +579,19 @@ export default function InternationalPricingPage() {
                           const cell = activeA8[country.key];
                           const cov = pricing.data?.coverageNotes[country.key];
                           return (
-                            <div key={country.key} className={`relative p-5 ${idx % 4 !== 3 ? 'border-r' : ''} ${idx >= 4 ? 'border-t' : ''} ${divider} ${researchingCountry === country.key ? 'ring-2 ring-inset ring-teal-400/60' : ''}`}>
+                            <div key={country.key} className={`relative p-5 ${idx % 4 !== 3 ? 'border-r' : ''} ${idx >= 4 ? 'border-t' : ''} ${divider}`}>
                               <div className="flex items-center gap-2 mb-3"><span className="text-xl">{country.flag}</span><div className="flex-1 min-w-0"><p className={`text-xs font-semibold ${textMain}`}>{country.label}</p><p className={`text-xs ${textMuted}`}>{country.currency}</p></div>
                                 {cell?.reimbursed && <span className="text-xs px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200 font-semibold whitespace-nowrap" title={`급여 ${cell.reimbursedLabel}`}>급여{cell.reimbursedLabel === '조건부' ? '(조건부)' : ''}</span>}
                                 <button
                                   onClick={() => researchCountry(country.key)}
-                                  disabled={researchingCountry !== null || liveSearching}
-                                  title={`${country.label}만 재검색`}
-                                  className={`w-6 h-6 flex items-center justify-center rounded-lg shrink-0 transition-colors ${researchingCountry !== null || liveSearching ? 'text-gray-400 cursor-not-allowed' : `${textMuted} ${isDark ? 'hover:bg-[#1E2530] hover:text-teal-400' : 'hover:bg-gray-100 hover:text-teal-600'} cursor-pointer`}`}>
-                                  <i className={`text-sm ${researchingCountry === country.key ? 'ri-loader-4-line animate-spin' : 'ri-refresh-line'}`}></i>
+                                  title={`${country.label} 조사 요청 접수 (위 패널의 이메일 사용)`}
+                                  className={`w-6 h-6 flex items-center justify-center rounded-lg shrink-0 transition-colors ${textMuted} ${isDark ? 'hover:bg-[#1E2530] hover:text-teal-400' : 'hover:bg-gray-100 hover:text-teal-600'} cursor-pointer`}>
+                                  <i className="text-sm ri-refresh-line"></i>
                                 </button>
                               </div>
-                              {researchingCountry === country.key ? (
-                                <div className="flex flex-col items-center justify-center gap-1.5 py-4">
-                                  <i className="ri-loader-4-line animate-spin text-xl text-teal-500"></i>
-                                  <span className="text-xs font-bold text-teal-500">검색 중… {researchElapsed}초</span>
-                                  <span className={`text-[10px] ${textMuted}`}>실시간 수집 (수십 초 소요)</span>
-                                </div>
-                              ) : cell ? (
+                              {cell ? (
                                 <>
-                                  {cell.price != null ? (
+                                  {cell.price != null && cell.price > 0 ? (
                                     <p className={`text-lg font-bold mb-1 ${accentColor}`} title={cell.productName}>{getCurrencySymbol(cell.currency)}{cell.price.toLocaleString()}</p>
                                   ) : (
                                     <p className={`text-sm font-semibold mb-1 ${textSub}`}>가격 미공개</p>
@@ -655,7 +608,7 @@ export default function InternationalPricingPage() {
                                   {cell.dailyCostKrw != null && <p className={`text-xs ${textSub}`}>일일 {formatKrw(cell.dailyCostKrw)}{cell.dosingScheduleLabel ? ` (${cell.dosingScheduleLabel})` : ''}</p>}
                                   {cell.reimbursed && cell.reimbursedDate && <p className={`text-xs mt-1 ${textMuted}`}>급여 결정: {cell.reimbursedDate}</p>}
                                   {!cell.reimbursedKnown && <p className={`text-xs mt-1 ${textMuted}`}>급여정보 없음</p>}
-                                  {cell.price == null && (cov?.policy || cell.note) && <p className={`text-xs mt-1 leading-relaxed ${textMuted}`}>{cov?.policy || cell.note}</p>}
+                                  {(cell.price == null || cell.price <= 0) && (cov?.policy || cell.note) && <p className={`text-xs mt-1 leading-relaxed ${textMuted}`}>{cov?.policy || cell.note}</p>}
                                   {cell.sourceLabel && <p className={`text-xs mt-1 truncate ${textMuted}`} title={cell.sourceLabel}>{cell.sourceLabel}{cell.variantCount > 1 ? ` · 외 ${cell.variantCount - 1}건` : ''}</p>}
                                 </>
                               ) : (
@@ -664,30 +617,7 @@ export default function InternationalPricingPage() {
                                   {cov?.policy && <p className={`text-xs mt-1 leading-relaxed ${textMuted}`}>{cov.policy}</p>}
                                 </>
                               )}
-                              {/* 재검색 결과 배지 — 다음 행동까지 지속(무결과/실패/갱신 구분) */}
-                              {researchingCountry !== country.key && researchResult[country.key] && (() => {
-                                const r = researchResult[country.key];
-                                if (r.kind === 'updated') return (
-                                  <p className="text-[11px] mt-2 flex items-start gap-1 text-emerald-600" title={r.reason ? `${r.label} — ${r.reason}` : `재검색 완료 ${r.at}`}>
-                                    <i className="ri-checkbox-circle-fill mt-0.5 shrink-0"></i>
-                                    <span className="leading-snug">방금 갱신 · {r.at}{r.label && <><br /><span className="text-amber-600">경고: {r.label}</span></>}</span>
-                                  </p>
-                                );
-                                if (r.kind === 'no_result') return (
-                                  <p className={`text-[11px] mt-2 flex items-start gap-1 ${textMuted}`} title={r.reason}>
-                                    <i className="ri-information-line mt-0.5 shrink-0"></i>
-                                    <span className="leading-snug">{r.label ?? '결과 없음'} · {r.at}<br />{r.reason}</span>
-                                  </p>
-                                );
-                                return (
-                                  <button onClick={() => researchCountry(country.key)} disabled={researchingCountry !== null || liveSearching}
-                                    className="text-[11px] mt-2 flex items-start gap-1 text-rose-500 hover:underline disabled:no-underline disabled:opacity-60 text-left"
-                                    title={r.reason}>
-                                    <i className="ri-error-warning-fill mt-0.5 shrink-0"></i>
-                                    <span className="leading-snug">{r.label ?? '검색 실패'} · {r.at} — 다시 시도<br /><span className={textMuted}>{r.reason}</span></span>
-                                  </button>
-                                );
-                              })()}
+
                             </div>
                           );
                         })}
@@ -798,6 +728,7 @@ export default function InternationalPricingPage() {
             <p className={`text-xs ${textMuted}`}>신규 검색으로 성분명 또는 제품명을 입력하세요</p>
           </div>
         )}
+        </>}
       </div>
 
       {/* 리포트 다운로드 모달 — 형식 선택 + 국내 신청가 입력 */}

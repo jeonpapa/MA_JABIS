@@ -67,16 +67,22 @@ form_type 주입은 **스크레이퍼 + 에이전트 이중 보장**으로 캐�
 | CA | Ontario EAP HTML 테이블 | 불필요 | Tab(oral) + Inj Sol(injection) 혼재. 단일 연방 DB 없음 — 온타리오주 대표 |
 | US | Micromedex (Red Book) | 필요 | **WAC package price 우선** (ex-manufacturer). AWP 는 유통 마크업 포함이라 factory_ratio 0.74 와 중복 → fallback 만. `price_basis` 컬럼으로 식별 |
 
-## IT TrovaNorme(TNF) 결정문 채널 (2026-07-24, `it_aifa_tnf.py`)
+## IT TrovaNorme(TNF) 결정문 채널 (`it_aifa_tnf.py`, 2026-10-17 검증)
 
-기존 CSV 채널과 **병행**. `ForeignPriceAgent.search_one_country` 가 IT 일 때 `ItAifaTnfScraper` 를
-추가 실행해 raw_results 에 병합(둘 다 `SOURCE_TYPE="aifa_exfactory"` → ratio 1.0). 실패해도 CSV 유지.
+기존 CSV 채널과 **병행**. TNF 가격은 **결정문 PDF의 `Prezzo ex-factory (IVA esclusa)`** per pack만 사용한다. `Prezzo al pubblico (IVA inclusa)`는 별도 증빙 필드이며 가격 fallback 금지. 행·클래스 `source_type="aifa_exfactory"` → ratio 1.0.
 
-- **전량 공개 HTTP JSON API** (브라우저·로그인 불필요). AIFA cert 체인 불완전 → `requests(verify=False)`.
-- 파이프라인: ① `determina/tnf/parametrata?determinaTNFSource=true&parola={약제}` (자유텍스트. **축약 `dF`/`p` 는 서버가 무시** — 반드시 `parola`) → ② `determina/tnf/pubblicate/{id}` (datiFarmaco{성분·ATC·브랜드} + allegati + tipiAtto `A_H`=급여분류 결정) → ③ `determina/tnf/pubblicate/allegato/{allegatoId}` (**Accept 헤더를 json 이 아닌 pdf/`*` 로** — json 이면 500) → ④ confezione 블록 파싱.
-- **가격 = Prezzo ex-factory (IVA esclusa)** per pack. pack_count 는 confezione 설명("90 (3 x 30) compresse"→90, "1 flaconcino"→1) 에서 추출해 item 에 명시.
-- 결정문 선택: 가격결정문(tipiAtto `A_H` 또는 titolo 에 rimborsabilità/prezzo/classificazione/rinegoziazione) 중 datiFarmaco 가 검색어와 매칭되는 **최신** 1건.
-- **한계**: TNF 는 2025-01 이후 결정문만 보유 → 오래전 등재약(예: Januvia)은 최근 결정문이 없어 TNF 0건(기존 CSV 채널이 커버). 검증: welireg(belzutifan, CSV 미등재)=TNF만 1건 oral pack90, keytruda=CSV+TNF 공존.
+- **공개 HTTP API, 로그인 불필요**. AIFA 인증서 체인 문제로 `requests(verify=False)` 사용.
+- 검색: `ricerca/?pageSize=20&pageNum=0&sortColumn=dataPubblicazione&sortOrder=desc&determinaTNFSource=true&parola={약제}`. 2026-10-17 실제 응답의 `resourceList`, `pageNum`, `pageSize`, `totalElementNum` 확인. `page`/`size`가 아니라 **pageNum/pageSize**로 다음 페이지까지 수집하고 로컬에서도 최신 공시순 정렬한다. 실패를 0건으로 숨기지 않는다.
+- 상세: `determina/tnf/pubblicate/{id}` → `datiFarmaco`, `allegati`, `data`, `dataPubblicazione`, `dataEfficacia`. 첨부: `determina/tnf/pubblicate/allegato/{id}`; Accept는 PDF/binary (JSON이면 500 가능).
+- **검색 약제와 일치하는 결정문 전부를 최신 공시순으로 순회**. 브랜드/성분 전체 토큰 매칭, 불일치 약제 fallback 절대 금지. 다약제 결정문은 AIC6/AIC9 소유권으로 해당 약제의 confezione만 사용한다.
+- **약제 × AIC별 최신 유효 ex-factory를 병합**. 최신 결정문이 일부 포장만 다루거나 rettifica/무가격 문서이면 이전 결정문으로 계속 진행한다. 결정문 1건만 고르는 로직 금지. 주첨부 우선, 부속 첨부도 확인한다.
+- **날짜 분리**: `document_date`/`determina_date`=`data`, `publication_date`=`dataPubblicazione`, `effective_date`=`dataEfficacia`. 미래 효력일 또는 미래 공시일 행은 적용하지 않고 이전 문서를 확인한다. 효력일 미보고 시 None + `effective_date_status="not_reported"`; 공시일을 효력일로 위장하지 않는다.
+- **원문/증빙 보존**: 포장 설명 전체(120자 절단 금지), AIC, pack_count, `prezzo_ex_factory`, `prezzo_pubblico`, PDF 직접 URL, 결정문 ID/첨부 ID, `evidence_pages`(1-based, 페이지 경계 포함), `evidence_text` 및 상세 URL. `source_url`은 가격의 실제 PDF URL.
+- **실패 ≠ 0건**: 손상·텍스트 추출 불가/스캔 PDF는 `TnfPdfParseError`(OCR 필요). 읽을 수 있는 무가격 문서만 정상 0건. 다른 유효 문서가 있으면 계속하되 `channel_failed` 경고, 결과가 전혀 없으면 수집/파싱 예외 전파. OCR 자동 수행은 없음.
+- **단위 검증**: Keytruda 25mg/ml × 4ml IV의 1/2 flaconcini는 각각 pack_count=1/2, SC 395mg/790mg와 AIC로 분리. 농도/volume을 포장 개수로 사용하지 않는다. Welireg oral `90 (3 x 30) compresse`는 pack_count=90.
+- 실제 DET PRES/UPR 1185/2026 PDF pp.6–7: AIC 044386023/035/047/050의 ex-factory EUR **3,798.34 / 7,596.68 / 7,596.68 / 15,193.36**. 문서일 2026-09-03, TNF 공시일 2026-09-07, 효력일 2026-09-11을 각각 보존한다.
+- 회귀: `tests/test_it_tnf_request_prices.py` (오프라인 stdlib-only, 외부 의존성 stub을 독립 모듈 namespace에 격리). 가격·공중가 분리, 포장·AIC·페이지 증빙, 무가격 최신문서/이전 가격 병합, 미래 효력, 잘못된 약제, 스캔 실패, API 페이지·정렬 파라미터 검증.
+- **한계**: TNF는 2025-01 이후 문서 중심으로 오래된 등재약은 CSV 채널이 필요하다. 미공개 순약가/할인은 추정하지 않는다. 미보고 효력일은 검증되지 않은 채로 명시하며 미래 효력 판정 근거로 추정하지 않는다.
 
 ## IT AIFA CSV 캐시 TTL + 수집 경고 (2026-10-06, P1.6 수집 가능성)
 

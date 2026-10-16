@@ -69,7 +69,7 @@ def _extract_token() -> str | None:
 
 # 서비스 계정 역할: role=<이 값> 을 명시한 라우트에서만 통과한다. role 미지정(일반 사용자 API)은 403.
 # VPS 디스패처 자격증명이 새도 /api/agent/* 밖으로는 못 나간다(설계 §3·§8 권한 최소화).
-SERVICE_ROLES = frozenset({"agent"})
+SERVICE_ROLES = frozenset({"agent", "price_agent"})
 
 
 def require_auth(role: str | None = None):

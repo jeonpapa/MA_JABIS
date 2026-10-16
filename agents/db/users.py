@@ -72,7 +72,7 @@ class UsersDB:
         if len(password) < 4:
             raise ValueError("password must be >= 4 chars")
         # agent = 에이전트 팀 서비스 계정 (VPS 디스패처가 /api/agent/* 호출에 사용)
-        if role not in ("admin", "user", "agent"):
+        if role not in ("admin", "user", "agent", "price_agent"):
             raise ValueError("invalid role")
         pw_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
         now = datetime.utcnow().isoformat(timespec="seconds")

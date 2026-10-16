@@ -46,6 +46,11 @@ logs/
 
 # 에디터/도구 설정
 .claude/
+.agent-context/
+.agents/
+.gstack/
+.obsidian/
+.pytest_cache/
 .vscode/
 .idea/
 .DS_Store

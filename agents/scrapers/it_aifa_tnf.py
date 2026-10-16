@@ -1,31 +1,13 @@
+"""AIFA TrovaNorme: direct public ex-factory prices from determina PDFs.
+
+Verified ricerca API uses pageNum/pageSize and dataPubblicazione descending.
+Prices are per pack, IVA esclusa; pubblico is evidence only, never a fallback.
 """
-이탈리아 AIFA — TrovaNormeFarmaco (TNF) 결정문 채널
-
-기존 `it_aifa.py`(AIFA Class A/H CSV) 와 **병행**하는 신규 IT 가격 소스.
-CSV 는 등재 리스트 스냅샷인 반면, TNF 는 약가·급여 **결정문(determina) 원문**에서
-성분·제형·가격을 직접 확인한다 ("art. 8, comma 10, legge 537/1993" 분류·급여 결정).
-
-파이프라인 (전량 공개 HTTP JSON API — 브라우저·로그인 불필요):
-  1. 검색:  GET tnf-service/determina/tnf/parametrata?determinaTNFSource=true&parola={약제}
-            → 결정문 목록 (parola = 자유텍스트 필터. dF/pA 축약은 서버가 무시함)
-  2. 상세:  GET tnf-service/determina/tnf/pubblicate/{id}
-            → datiFarmaco[{denominazione, principiAttivi, atcs, aic6}] + allegati[{id, principale}]
-            + tipiAtto[{codice:"A_H"=급여분류(A-H) 결정}]  ← 가격 결정문 식별
-  3. 첨부:  GET tnf-service/determina/tnf/pubblicate/allegato/{allegatoId}  → 결정문 PDF
-  4. 파싱:  confezione 블록별 {제형·함량·경로, AIC, Classe, Prezzo ex-factory, Prezzo al pubblico}
-
-가격 기준: **Prezzo ex-factory (IVA esclusa)** 를 사용 → SOURCE_TYPE="aifa_exfactory"
-           (factory_ratio=1.0, 이미 공장도가). 결정문은 Classe 무관 ex-factory 를 명시하므로
-           기존 CSV Class H 로직과 동일 A8 기준으로 정합.
-
-로그인 불필요. AIFA 서버 인증서 체인이 불완전해 requests(verify=False) 사용
- (기존 it_aifa.py 도 동일 도메인, 공개 gov 문서).
-"""
-
+import io
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 import requests
@@ -33,65 +15,41 @@ import requests
 from .base import BaseScraper
 
 logger = logging.getLogger(__name__)
-
-# ────────────────────────────────────────────────────────────────────────────
-# 상수
-# ────────────────────────────────────────────────────────────────────────────
-
 TNF_SERVICE = "https://trovanorme.aifa.gov.it/tnf-service/"
-TNF_PORTAL  = "https://trovanorme.aifa.gov.it/"
-
-REQ_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept": "application/json",
-}
-
-# tipiAtto.codice — 가격/급여 결정문 (art.8 c.10)
-PRICE_ATTO_CODES = {"A_H"}  # "Modifica Classe di Rimborsabilità (classi A-H)"
-# titolo 보조 필터 (결정문 유형 문구)
-PRICE_TITLE_KW = ("rimborsabilit", "prezzo", "classificazione", "rinegoziazione")
-
-# 검색당 확인할 결정문 상세 최대 건수 (parola 필터가 이미 좁혀줌)
-MAX_DETERMINE_CHECK = 8
+TNF_PORTAL = "https://trovanorme.aifa.gov.it/"
+SEARCH_PAGE_SIZE = 20
+REQ_HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
 
 
-def _it_price(raw: str):
-    """이탈리아 통화 표기 → float. '16.066,49' → 16066.49 (dot=천, comma=소수)."""
-    s = (raw or "").strip().replace("\xa0", "").replace(" ", "")
-    if not s:
-        return None
-    s = s.replace(".", "").replace(",", ".")
+class TnfPdfParseError(RuntimeError):
+    """Unreadable/scanned or structurally unparsed PDF, not zero results."""
+
+
+def _date_value(value):
     try:
-        v = float(s)
-        return v if v > 0 else None
+        return date.fromisoformat(str(value)[:10]).isoformat()
+    except (ValueError, TypeError):
+        return None
+
+
+def _it_price(raw):
+    try:
+        value = float((raw or "").replace("\xa0", "").replace(" ", "").replace(".", "").replace(",", "."))
+        return value if value > 0 else None
     except ValueError:
         return None
 
 
-def _extract_pack_count(desc: str):
-    """confezione 설명에서 포장 수량 추출.
-    '... Blister 30 compresse' → 30, '3 flaconcini' → 3. 없으면 None."""
-    if not desc:
-        return None
-    # "90 (3 x 30) compresse" → 90 (총량), "30 compresse" → 30, "1 flaconcino" → 1.
-    # 수량 뒤 멀티팩 괄호(옵션)를 건너뛰고 제형 단위어와 매칭.
-    m = re.search(
-        r"(\d+)\s*(?:\([^)]*\)\s*)?"
-        r"(?:compresse|capsule|capsula|compressa|flaconcin[oi]|"
-        r"fiale|fiala|siringhe|siringa|penne|penna|bustine|bustina|cerotti)",
-        desc, re.I,
-    )
-    return int(m.group(1)) if m else None
+def _extract_pack_count(desc):
+    match = re.search(r"(\d+)\s*(?:\([^)]*\)\s*)?(?:compresse|capsule|capsula|compressa|flaconcin[oi]|fiale|fiala|siringhe|siringa|penne|penna|bustine|bustina|cerotti)\b", desc or "", re.I)
+    return int(match.group(1)) if match else None
 
 
 class ItAifaTnfScraper(BaseScraper):
-    COUNTRY        = "IT"
-    CURRENCY       = "EUR"
-    SOURCE_TYPE    = "aifa_exfactory"   # ex-factory → factory_ratio 1.0
-    SOURCE_LABEL   = "AIFA TrovaNorme (Determina prezzo, ex-factory)"
+    COUNTRY = "IT"
+    CURRENCY = "EUR"
+    SOURCE_LABEL = "AIFA TrovaNorme (Prezzo ex-factory IVA esclusa)"
+    SOURCE_TYPE = "aifa_exfactory"
     REQUIRES_LOGIN = False
 
     def __init__(self, cache_dir: Path = None, msd_only: bool = False, **kwargs):
@@ -102,226 +60,199 @@ class ItAifaTnfScraper(BaseScraper):
         self._session = requests.Session()
         self._session.headers.update(REQ_HEADERS)
         self._session.verify = False
-        try:  # AIFA cert 체인 경고 억제
+        try:
             requests.packages.urllib3.disable_warnings()
         except Exception:
             pass
 
-    async def login(self, page=None) -> None:
-        pass
+    def _api_json(self, path, **params):
+        response = self._session.get(TNF_SERVICE + path, params={"determinaTNFSource": "true", **params}, timeout=30)
+        response.raise_for_status()
+        return response.json()
 
-    async def logout(self, page=None) -> None:
-        pass
+    def _search_determine(self, query):
+        rows, seen, page_num = [], set(), 0
+        while True:
+            payload = self._api_json("ricerca/", parola=query, pageNum=page_num,
+                                     pageSize=SEARCH_PAGE_SIZE, sortColumn="dataPubblicazione", sortOrder="desc")
+            batch = payload.get("resourceList")
+            if not isinstance(batch, list):
+                raise RuntimeError("IT-TNF search: missing resourceList")
+            if not batch:
+                break
+            fresh = [r for r in batch if r.get("id") not in seen]
+            if not fresh:
+                raise RuntimeError("IT-TNF search: pagination did not advance")
+            rows.extend(fresh)
+            seen.update(r.get("id") for r in fresh)
+            total = payload.get("totalElementNum")
+            if (total is not None and len(rows) >= int(total)) or len(batch) < SEARCH_PAGE_SIZE:
+                break
+            page_num += 1
+        return sorted(rows, key=lambda r: (r.get("dataPubblicazione") or "", r.get("data") or ""), reverse=True)
 
-    # ── API helpers ─────────────────────────────────────────────────────────
-
-    def _api_json(self, path: str, **params) -> dict:
-        p = {"determinaTNFSource": "true", **params}
-        r = self._session.get(TNF_SERVICE + path, params=p, timeout=30)
-        r.raise_for_status()
-        return r.json()
-
-    def _search_determine(self, query: str) -> list[dict]:
-        """parola 자유텍스트로 결정문 목록 조회 (최신순)."""
-        try:
-            j = self._api_json(
-                "determina/tnf/parametrata",
-                parola=query, page=0, size=MAX_DETERMINE_CHECK,
-            )
-            return j.get("resourceList", []) or []
-        except Exception as e:
-            logger.warning("[IT-TNF] 검색 실패 '%s': %s", query, e)
-            return []
-
-    def _detail(self, det_id: str) -> dict:
+    def _detail(self, det_id):
         return self._api_json(f"determina/tnf/pubblicate/{det_id}")
 
-    def _download_allegato(self, allegato_id) -> bytes:
-        # 세션 기본 Accept=application/json 이면 PDF 엔드포인트가 500 → binary Accept 로 override
-        r = self._session.get(
-            TNF_SERVICE + f"determina/tnf/pubblicate/allegato/{allegato_id}",
-            headers={"Accept": "application/pdf,application/octet-stream,*/*"},
-            timeout=45,
-        )
-        r.raise_for_status()
-        return r.content
-
-    # ── 결정문 선택 ───────────────────────────────────────────────────────────
+    def _download_allegato(self, allegato_id):
+        response = self._session.get(TNF_SERVICE + f"determina/tnf/pubblicate/allegato/{allegato_id}",
+                                     headers={"Accept": "application/pdf,application/octet-stream,*/*"}, timeout=45)
+        response.raise_for_status()
+        return response.content
 
     @staticmethod
-    def _is_price_determina(detail: dict) -> bool:
-        codes = {a.get("codice") for a in (detail.get("tipiAtto") or [])}
-        if codes & PRICE_ATTO_CODES:
-            return True
-        title = (detail.get("titolo") or "").lower()
-        return any(k in title for k in PRICE_TITLE_KW)
+    def _matching_farms(detail, query):
+        q = (query or "").strip()
+        if not q:
+            return []
+        pattern = re.compile(r"(?<!\w)" + re.escape(q) + r"(?!\w)", re.I)
+        return [f for f in detail.get("datiFarmaco", []) or []
+                if any(pattern.search(str(n or "")) for n in
+                       [f.get("denominazione"), *(f.get("principiAttivi") or [])])]
 
     @staticmethod
-    def _matches_drug(detail: dict, query: str) -> bool:
-        q = (query or "").strip().lower()
-        for f in (detail.get("datiFarmaco") or []):
-            if q in (f.get("denominazione") or "").lower():
-                return True
-            for pa in (f.get("principiAttivi") or []):
-                if q in (pa or "").lower():
-                    return True
-        return False
-
-    # ── PDF 파싱 ──────────────────────────────────────────────────────────────
+    def _matches_drug(detail, query):
+        return bool(ItAifaTnfScraper._matching_farms(detail, query))
 
     @staticmethod
-    def _parse_confezioni(pdf_bytes: bytes) -> list[dict]:
-        """결정문 PDF → confezione 별 {desc, aic, classe, ex_factory, pubblico, pack}."""
-        import io
+    def _parse_text_pages(pages):
+        if not any((p or "").strip() for p in pages):
+            raise TnfPdfParseError("IT-TNF PDF has no extractable text (scanned/OCR required)")
+        txt, ranges = "", []
+        for number, text in enumerate(pages, 1):
+            start = len(txt)
+            txt += (text or "") + "\n"
+            ranges.append((number, start, len(txt)))
+        starts = list(re.finditer(r"\bConfezione\b", txt, re.I))
+        rows = []
+        for index, start in enumerate(starts):
+            end = starts[index + 1].start() if index + 1 < len(starts) else len(txt)
+            block = txt[start.start():end]
+            exf = re.search(r"Prezzo\s+ex[\s–-]*factory\s*\(\s*IVA\s+esclusa\s*\)\s*[:=]?\s*€\s*([\d.]+,\d{2})", block, re.I)
+            if not exf:
+                continue
+            aic = re.search(r"\bA\.?I\.?C\.?\s*(?:n\.?\s*)?[:]?\s*(\d{9})\b", block, re.I)
+            if not aic:
+                raise TnfPdfParseError("IT-TNF priced confezione has no valid AIC")
+            desc = re.sub(r"\s+", " ", block[len(start.group()):aic.start()]).strip(' :"“”')
+            cls = re.search(r"Classe di rimborsabilit[aà]\s*[:]?\s*([A-CH]{1,2})\b", block, re.I)
+            pub = re.search(r"Prezzo\s+al\s+pubblico\s*\(\s*IVA\s+inclusa\s*\)\s*[:=]?\s*€\s*([\d.]+,\d{2})", block, re.I)
+            price = _it_price(exf.group(1))
+            if price is None:
+                continue
+            evidence_end = pub.end() if pub else exf.end()
+            rows.append({"desc": desc, "aic": aic.group(1),
+                         "classe": cls.group(1).upper() if cls else "",
+                         "ex_factory": price, "pubblico": _it_price(pub.group(1)) if pub else None,
+                         "pack": _extract_pack_count(desc),
+                         "pages": [n for n, lo, hi in ranges if lo < start.start() + evidence_end and hi > start.start()],
+                         "evidence_text": block[:evidence_end].strip()})
+        if not rows and re.search(r"Prezzo\s+ex[\s–-]*factory", txt, re.I):
+            raise TnfPdfParseError("IT-TNF ex-factory label found but price/pack could not be parsed")
+        return rows
+
+    @staticmethod
+    def _parse_confezioni(pdf_bytes):
         try:
             import pdfplumber
             with pdfplumber.open(io.BytesIO(pdf_bytes)) as doc:
-                txt = "\n".join((p.extract_text() or "") for p in doc.pages)
-        except Exception as e:
-            logger.warning("[IT-TNF] PDF 파싱 실패: %s", e)
-            return []
+                pages = [p.extract_text() or "" for p in doc.pages]
+        except Exception as exc:
+            raise TnfPdfParseError(f"IT-TNF PDF extraction failed: {exc}") from exc
+        return ItAifaTnfScraper._parse_text_pages(pages)
 
-        rows = []
-        # "Confezione" 로 블록 분할 후 순차 필드 추출
-        for block in re.split(r"(?=Confezione)", txt):
-            if not block.startswith("Confezione"):
-                continue
-            exf = re.search(r"ex.?factory[^€]*€\s?([\d\.]+,\d+)", block, re.I)
-            if not exf:
-                continue  # 가격 없는 confezione (Classe C 등) skip
-            # desc = "Confezione" ~ "AIC" 사이 전체 (포장 수량 포함)
-            desc = re.search(r'Confezione\s*[:“"]?\s*(.+?)\s+AIC\s*n\.', block, re.S | re.I)
-            aic = re.search(r"AIC\s*n\.\s*([\d]+/?\w?)", block)
-            cls = re.search(r"Classe di rimborsabilit[aà]\s*([A-CH]{1,2})", block, re.I)
-            pub = re.search(r"pubblico[^€]*€\s?([\d\.]+,\d+)", block, re.I)
-            desc_s = re.sub(r"\s+", " ", desc.group(1)).strip('"“” ') if desc else ""
-            rows.append({
-                "desc":       desc_s[:120],
-                "aic":        aic.group(1) if aic else "",
-                "classe":     (cls.group(1).upper() if cls else ""),
-                "ex_factory": _it_price(exf.group(1)),
-                "pubblico":   _it_price(pub.group(1)) if pub else None,
-                "pack":       _extract_pack_count(desc_s),
-            })
-        return rows
-
-    # ── 메인 검색 ─────────────────────────────────────────────────────────────
-
-    async def search(self, query: str, page=None) -> list[dict]:
+    async def search(self, query, page=None):
+        self.warnings = []
         determine = self._search_determine(query)
-        if not determine:
-            logger.info("[IT-TNF] '%s' 결정문 없음", query)
-            return []
-
-        # 상세 확인 → 가격 결정문 + 약제 매칭. 최신순으로 첫 매칭 채택.
-        chosen = None
-        chosen_detail = None
-        for it in determine:
+        today = date.today().isoformat()
+        details, failures = [], []
+        for item in determine:
             try:
-                d = self._detail(it["id"])
-            except Exception as e:
-                logger.debug("[IT-TNF] 상세 실패 %s: %s", it.get("id"), e)
+                detail = self._detail(item["id"])
+            except Exception as exc:
+                failures.append(exc)
                 continue
-            if not self._is_price_determina(d):
+            if self._matches_drug(detail, query):
+                # Rectifications may have non-price tipiAtto; inspect all matching PDFs.
+                details.append((item, detail))
+        details.sort(key=lambda pair: (pair[1].get("dataPubblicazione") or pair[0].get("dataPubblicazione") or "",
+                                       pair[1].get("data") or pair[0].get("data") or ""), reverse=True)
+        results, seen = [], set()
+        for item, detail in details:
+            publication = _date_value(detail.get("dataPubblicazione") or item.get("dataPubblicazione"))
+            effective = _date_value(detail.get("dataEfficacia"))
+            document = _date_value(detail.get("data") or item.get("data"))
+            if (effective and effective > today) or (publication and publication > today):
                 continue
-            if self._matches_drug(d, query):
-                chosen, chosen_detail = it, d
-                break
-            if chosen is None:  # 매칭 없으면 최신 가격결정문 fallback 후보
-                chosen, chosen_detail = it, d
-
-        if not chosen_detail:
-            logger.info("[IT-TNF] '%s' 가격 결정문 없음", query)
-            return []
-
-        # datiFarmaco 에서 성분·브랜드
-        farms = chosen_detail.get("datiFarmaco") or []
-        brand = farms[0].get("denominazione") if farms else query
-        ings = sorted({pa for f in farms for pa in (f.get("principiAttivi") or [])})
-        ingredient = ", ".join(ings) if ings else ""
-        det_no = chosen_detail.get("numeroRepertorio") or chosen.get("titolo", "")
-        det_date = (chosen.get("dataPubblicazione") or "")[:10]
-
-        allegati = [a for a in (chosen_detail.get("allegati") or [])]
-        principale = next((a for a in allegati if a.get("principale")), allegati[0] if allegati else None)
-        if not principale:
-            logger.info("[IT-TNF] '%s' 첨부 PDF 없음 (%s)", query, det_no)
-            return []
-
-        try:
-            pdf = self._download_allegato(principale["id"])
-        except Exception as e:
-            logger.warning("[IT-TNF] '%s' 첨부 다운로드 실패: %s", query, e)
-            return []
-
-        confs = self._parse_confezioni(pdf)
-        if not confs:
-            logger.info("[IT-TNF] '%s' confezione 가격 없음 (%s)", query, det_no)
-            return []
-
-        src_url = f"{TNF_PORTAL}#/dettaglio/tnf/{chosen['id']}"
-        results = []
-        for c in confs:
-            results.append({
-                "product_name":    brand,
-                "ingredient":      ingredient,
-                "dosage_strength": c["desc"],
-                "dosage_form":     c["desc"],
-                "package_unit":    (f"{c['pack']}" if c["pack"] else ""),
-                "local_price":     c["ex_factory"],
-                "pack_count":      c["pack"],       # 명시 → 에이전트 per-unit 환산 최우선
-                "source_url":      src_url,
-                "extra": {
-                    "channel":        "tnf_determina",
-                    "aic":            c["aic"],
-                    "classe":         c["classe"],
-                    "price_kind":     "ex-factory",
-                    "prezzo_pubblico": c["pubblico"],
-                    "determina":      det_no,
-                    "determina_date": det_date,
-                    "atc":            sorted({a for f in farms for a in (f.get("atcs") or [])}),
-                    "source_type":    self.SOURCE_TYPE,
-                },
-            })
-        logger.info("[IT-TNF] '%s' → %s (%s): confezione %d건",
-                    query, brand, det_no, len(results))
+            farms = self._matching_farms(detail, query)
+            attachments = detail.get("allegati") or []
+            if not attachments:
+                failures.append(RuntimeError(f"IT-TNF missing PDF: {item['id']}"))
+                continue
+            for attachment in sorted(attachments, key=lambda a: not a.get("principale", False)):
+                pdf_url = TNF_SERVICE + f"determina/tnf/pubblicate/allegato/{attachment['id']}"
+                try:
+                    confs = self._parse_confezioni(self._download_allegato(attachment["id"]))
+                except Exception as exc:
+                    failures.append(exc)
+                    continue
+                for conf in confs:
+                    if conf.get("ex_factory") is None or conf["ex_factory"] <= 0:
+                        continue
+                    owners = [f for f in farms if (f.get("aic9") and conf["aic"] == str(f["aic9"]))
+                              or (f.get("aic6") and conf["aic"].startswith(str(f["aic6"])))]
+                    if not owners:
+                        if len(detail.get("datiFarmaco") or []) != 1:
+                            continue
+                        owner = farms[0]
+                        if owner.get("aic6") or owner.get("aic9"):
+                            continue
+                    else:
+                        owner = owners[0]
+                    brand = owner.get("denominazione") or query
+                    key = (brand.casefold(), conf["aic"])
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    results.append({
+                        "product_name": brand, "ingredient": ", ".join(owner.get("principiAttivi") or []),
+                        "dosage_strength": conf["desc"], "dosage_form": conf["desc"],
+                        "package_unit": str(conf["pack"]) if conf["pack"] else "",
+                        "local_price": conf["ex_factory"], "pack_count": conf["pack"],
+                        "source_type": self.SOURCE_TYPE, "source_url": pdf_url,
+                        "extra": {"channel": "tnf_determina", "aic": conf["aic"], "classe": conf["classe"],
+                                  "price_kind": "Prezzo ex-factory (IVA esclusa)",
+                                  "prezzo_ex_factory": conf["ex_factory"], "prezzo_pubblico": conf["pubblico"],
+                                  "determina": detail.get("numeroRepertorio") or item.get("titolo", ""),
+                                  "determina_id": item["id"], "determina_date": document,
+                                  "document_date": document, "publication_date": publication,
+                                  "effective_date": effective,
+                                  "effective_date_status": "reported" if effective else "not_reported",
+                                  "pdf_url": pdf_url, "attachment_id": attachment["id"],
+                                  "evidence_pages": conf.get("pages", []), "evidence_text": conf.get("evidence_text", ""),
+                                  "detail_url": f"{TNF_PORTAL}#/dettaglio/tnf/{item['id']}",
+                                  "atc": owner.get("atcs") or [], "source_type": self.SOURCE_TYPE}})
+        if failures:
+            if not results:
+                raise failures[0]
+            self.warnings.append({"warning_class": "channel_failed", "channel": "tnf_determina",
+                                  "message": "; ".join(str(e) for e in failures)})
         return results
 
-    async def refresh(self, _page=None) -> None:
-        logger.info("[IT-TNF] 공개 API 기반 — 캐시 없음")
+    async def refresh(self, _page=None):
+        logger.info("[IT-TNF] Public API, no cache")
 
-    # ── run() 오버라이드 — Playwright 없이 requests ──────────────────────────
-
-    async def run(self, query: str) -> list[dict]:
-        logger.info("[IT-TNF] TrovaNorme 검색 시작: '%s'", query)
+    async def run(self, query):
         searched_at = datetime.now().isoformat()
-        raw = await self.search(query)
         results = []
-        for item in raw:
-            form_type = self._resolve_form_type(item)
-            results.append({
-                "searched_at":         searched_at,
-                "query_name":          query,
-                "country":             self.COUNTRY,
-                "product_name":        item.get("product_name", ""),
-                "ingredient":          item.get("ingredient", ""),
-                "dosage_strength":     item.get("dosage_strength", ""),
-                "dosage_form":         item.get("dosage_form", ""),
-                "package_unit":        item.get("package_unit", ""),
-                "local_price":         item.get("local_price"),
-                "currency":            self.CURRENCY,
-                "exchange_rate":       None,
-                "exchange_rate_from":  None,
-                "exchange_rate_to":    None,
-                "factory_price_krw":   None,
-                "vat_rate":            None,
-                "distribution_margin": None,
-                "adjusted_price_krw":  None,
-                "pack_count":          item.get("pack_count"),
-                "source_url":          item.get("source_url", ""),
-                "source_label":        self.SOURCE_LABEL,
-                "raw_data":            json.dumps(item.get("extra", {}), ensure_ascii=False),
-                "form_type":           form_type,
-            })
-        logger.info("[IT-TNF] 결과: %d건", len(results))
+        for item in await self.search(query):
+            result = {key: item.get(key) for key in ("product_name", "ingredient", "dosage_strength", "dosage_form",
+                                                     "package_unit", "local_price", "pack_count", "source_url")}
+            result.update(searched_at=searched_at, query_name=query, country=self.COUNTRY, currency=self.CURRENCY,
+                          source_label=self.SOURCE_LABEL, source_type=self.SOURCE_TYPE,
+                          raw_data=json.dumps(item.get("extra", {}), ensure_ascii=False),
+                          form_type=self._resolve_form_type(item))
+            result.update({key: None for key in ("exchange_rate", "exchange_rate_from", "exchange_rate_to", "factory_price_krw",
+                                                 "vat_rate", "distribution_margin", "adjusted_price_krw")})
+            results.append(result)
         return results
