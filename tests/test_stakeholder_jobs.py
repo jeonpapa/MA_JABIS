@@ -241,6 +241,18 @@ def test_integrity_no_local_is_source_state_not_failure_and_artifacts_count(tmp_
     assert bad.stale and bad.observed == "1" and "x.svg" in bad.evidence and "외부 에이전트" in bad.evidence
 
 
+def test_integrity_excluded_is_counted_separately_not_failure(tmp_path):
+    """manifest 가 등재한 허용목록 밖 산출물(stakeholder_service.py·dashboard-sketches/…)은 excluded — ops 과제가 아니다."""
+    _seed(tmp_path / "d.db", "CREATE TABLE sv_source (source_id TEXT, integrity_status TEXT);"
+          "INSERT INTO sv_source VALUES ('S1','verified');"
+          "CREATE TABLE sv_artifact (path TEXT, integrity_status TEXT);"
+          "INSERT INTO sv_artifact VALUES ('a.md','verified'),('stakeholder_service.py','excluded'),"
+          "('dashboard-sketches/001-leadership-timeline/index.html','excluded');")
+    r = fr.check_stakeholder_source_integrity(_ctx(tmp_path))
+    assert r.stale is False and r.runbook is None and r.observed == "0"
+    assert "excluded 2건" in r.evidence and "stakeholder_service.py" in r.evidence and "허용목록 밖" in r.evidence
+
+
 def test_quote_provenance_none_is_improvement_owned_by_external_agent(tmp_path):
     _seed(tmp_path / "d.db", "CREATE TABLE sv_quote (quote_id TEXT, event_id TEXT, speaker_name TEXT, locator TEXT, locator_match TEXT);"
           "INSERT INTO sv_quote VALUES ('Q1','E1','홍길동','sources/a.txt:3-5','range'),"

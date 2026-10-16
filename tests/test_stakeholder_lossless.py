@@ -247,6 +247,68 @@ def test_manifest_meta_and_raw_round_trip(tmp_path):
     assert _starting(rep, f"manifest source 필드 불일치: {sid}")
 
 
+# ── ⑦ 정책 시그널 · excluded ─────────────────────────────────────────────────────
+
+SIG_NEW = "SIG-FAKE-NEWER-20261015"
+
+
+def test_fixture_signals_and_exclusions_counted(tmp_path):
+    root, db = _sync(tmp_path)
+    rep = v.verify(root, db, source_dir=FIX)
+    assert rep.failures == []
+    c = rep.counts
+    assert c["signals"] == 2 and c["signal_evidence"] == 4 and c["signal_claims_byte_exact"] == 4
+    assert c["signal_locator_match"] == {"range": 2, "file": 1, "none": 1, "unchecked": 0}
+    assert c["integrity"]["artifacts"]["excluded"] == 2 and c["integrity"]["artifacts"]["missing"] == 0
+    assert {e["path"] for e in rep.exclusions["excluded_artifacts"]} == {
+        "stakeholder_service.py", "dashboard-sketches/001-leadership-timeline/index.html"}
+    assert any("정책 시그널 근거 locator" in n for n in rep.notes)
+    assert not _starting(rep, "missing artifact file")
+
+
+def test_signal_claim_must_be_byte_exact(tmp_path):
+    root, db = _sync(tmp_path)
+    _sql(db, "UPDATE sv_signal_evidence SET claim = claim || ' ' WHERE signal_id=? AND idx=0", (SIG_NEW,))
+    rep = v.verify(root, db)
+    assert _starting(rep, f"정책 시그널 근거 원문 불일치: {SIG_NEW}[0].claim")
+
+
+def test_signal_locator_verdict_and_raw_round_trip(tmp_path):
+    root, db = _sync(tmp_path)
+    _sql(db, "UPDATE sv_signal_evidence SET locator_match='range' WHERE signal_id=? AND idx=2", (SIG_NEW,))
+    _sql(db, "UPDATE sv_policy_signal SET analyst_inference_json='{}' WHERE signal_id=?", (SIG_NEW,))
+    rep = v.verify(root, db)
+    assert _starting(rep, f"정책 시그널 locator 판정 불일치: {SIG_NEW}[2] DB=range 지금 측정=none")
+    assert _starting(rep, f"정책 시그널 필드 불일치: {SIG_NEW}.analyst_inference")
+
+
+def test_signal_missing_and_extra_rows_fail(tmp_path):
+    root, db = _sync(tmp_path)
+    _sql(db, "DELETE FROM sv_signal_evidence WHERE signal_id=?", (SIG_NEW,))
+    _sql(db, "DELETE FROM sv_policy_signal WHERE signal_id=?", (SIG_NEW,))
+    _sql(db, "INSERT INTO sv_policy_signal SELECT 'SIG-GHOST', 9, title, institution, signal_type, status, as_of, "
+             "direction_confidence, implementation_model_confidence, thesis, not_confirmed, analyst_inference_json, "
+             "confidence_methodology_json, watch_triggers_json, raw_json, imported_at FROM sv_policy_signal LIMIT 1")
+    rep = v.verify(root, db)
+    assert _starting(rep, f"정책 시그널 미반영: {SIG_NEW}")
+    assert _starting(rep, "DB 정책 시그널이 파일에 없음: SIG-GHOST")
+    assert _starting(rep, "정책 시그널 파일 재구성 불일치")
+
+
+def test_invalid_signals_file_on_volume_is_failure(tmp_path):
+    root, db = _sync(tmp_path)
+    shutil.copy(FIX / "_variants" / "policy_signals_invalid.json", root / "data" / "policy_signals.json")
+    rep = v.verify(root, db)
+    assert _starting(rep, "정책 시그널 스키마 위반: data/policy_signals.json")
+
+
+def test_excluded_artifact_recorded_as_missing_is_verdict_failure(tmp_path):
+    root, db = _sync(tmp_path)
+    _sql(db, "UPDATE sv_artifact SET integrity_status='missing' WHERE path='stakeholder_service.py'")
+    rep = v.verify(root, db)
+    assert _starting(rep, "integrity verdict 불일치: artifact stakeholder_service.py: DB=missing 지금 측정=excluded")
+
+
 # ── 미러 (--source-dir) ───────────────────────────────────────────────────────────
 
 def test_files_outside_allowlist_are_not_compared(tmp_path):
@@ -301,12 +363,25 @@ def test_real_source_import_is_lossless(tmp_path):
     rep = v.verify(root, db, source_dir=src)
     assert rep.failures == [], rep.failures
     c = rep.counts
-    # 구조 검사로 대조된 수치(실패 0 이 곧 일치) + 2026-10-12 스냅샷 실측값
+    snap = json.loads((src / "source_manifest.json").read_text(encoding="utf-8")).get("updated_at_kst")
+    # 스냅샷별 실측값(구조 검사로 대조된 수치 — 실패 0 이 곧 일치). 2026-10-15 판: 출처 3·산출물 4·정책 시그널 추가.
+    exp = {"2026-10-12T10:26:10+09:00": dict(sources=22, artifacts=10, verified=21, mirrored=374, signals=None,
+                                               excluded_artifacts=0),
+           "2026-10-15T19:08:00+09:00": dict(sources=25, artifacts=14, verified=24, mirrored=382, signals=1,
+                                               excluded_artifacts=2)}.get(snap)
+    if exp is None:
+        pytest.skip(f"실측값이 기록되지 않은 스냅샷({snap}) — 실패 0 만 확인")
     assert (c["people"], c["source_domains"], c["proposals"]) == (11, 32, 6)
-    assert (c["sources"], c["artifacts"], c["monitoring_runs"], c["audit_runs"]) == (22, 10, 3, 2)
-    assert c["integrity"]["sources"] == {"verified": 21, "mismatch": 0, "missing": 0, "no_local": 1, "unchecked": 0}
+    assert (c["sources"], c["artifacts"], c["monitoring_runs"], c["audit_runs"]) == (exp["sources"], exp["artifacts"], 3, 2)
+    assert c["integrity"]["sources"] == {"verified": exp["verified"], "mismatch": 0, "missing": 0, "no_local": 1,
+                                         "unchecked": 0, "excluded": 0}
+    assert c["integrity"]["artifacts"]["missing"] == 0
+    assert c["integrity"]["artifacts"]["excluded"] == exp["excluded_artifacts"] == len(rep.exclusions["excluded_artifacts"])
     assert (c["events"], c["statements"], c["quote_blocks_md"], c["quote_blocks_excluded"]) == (12, 33, 51, 1)
     assert c["quotes_db"] == 47 and c["locator_match"]["none"] == 1
     assert c["quotes_locator_none_known"] == 1 and c["quotes_locator_none_unknown"] == 0
-    assert c["mirrored_files"] == 374 and c["mirror_mismatch"] == 0 and len(rep.exclusions["rejected_paths"]) == 10
+    assert c["mirrored_files"] == exp["mirrored"] and c["mirror_mismatch"] == 0 and len(rep.exclusions["rejected_paths"]) == 10
     assert [e["source_id"] for e in rep.exclusions["no_local_sources"]] == ["SRC-BOK-NHIS-20251211-YT"]
+    assert c["signals"] == exp["signals"]
+    if exp["signals"]:
+        assert c["signal_evidence"] == 4 and c["signal_locator_match"]["range"] == 4

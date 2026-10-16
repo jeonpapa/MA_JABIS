@@ -63,6 +63,10 @@ def build_manifest() -> None:
                                 "content_type": "text/html; charset=utf-8"},
         }
 
+    def art(rel, description):
+        return {"path": rel, "description": description, "sha256": sha256_file(rel),
+                "bytes": (ROOT / rel).stat().st_size}
+
     manifest = {
         "project": "합성-Stakeholder-픽스처",
         "scope_start_kst": "2025-10-08",
@@ -90,6 +94,11 @@ def build_manifest() -> None:
             {"path": "scripts/verify_repository.py", "sha256": sha256_file("scripts/verify_repository.py"),
              "bytes": (ROOT / "scripts/verify_repository.py").stat().st_size,
              "description": "JSON, source provenance, artifact SHA-256 및 바이트 크기 검증 스크립트"},
+            art("data/policy_signals.json", "확인 근거·분석 추론·미확인 범위를 분리한 정책 시그널 데이터 (합성)"),
+            art("2026-10-15_정책시그널_합성.md", "정책 시그널 분석 MD (합성 — 정본 아님, 파싱 대상 아님)"),
+            # 아래 둘은 sync 허용목록 밖 — integrity_status='excluded' 픽스처(서비스 코드·대시보드 스케치)
+            art("stakeholder_service.py", "합성 서비스 코드 스텁 (허용목록 밖)"),
+            art("dashboard-sketches/001-leadership-timeline/index.html", "합성 리더십 스케치 (허용목록 밖)"),
         ],
         "evidence_grade_vocabulary": ["A", "B-quote", "B-summary", "C-quote", "C-summary", "Role-only", "Candidate-only"],
         "topic_timeline_update": {

@@ -73,6 +73,30 @@
       "sha256": "d0bb0bad48957f125bc2224405137cf0e9cc7095ca404eb01b4b0bae7b8cb771",
       "bytes": 2947,
       "description": "JSON, source provenance, artifact SHA-256 및 바이트 크기 검증 스크립트"
+    },
+    {
+      "path": "data/policy_signals.json",
+      "description": "확인 근거·분석 추론·미확인 범위를 분리한 정책 시그널 데이터 (합성)",
+      "sha256": "73b5d8c98f04125effa479c25461b4349e0fcaf37c8e523fd7475af80ba89b71",
+      "bytes": 5819
+    },
+    {
+      "path": "2026-10-15_정책시그널_합성.md",
+      "description": "정책 시그널 분석 MD (합성 — 정본 아님, 파싱 대상 아님)",
+      "sha256": "71b02b8b673ed2067d0af39ac651e3799242be40dae2fb92b1797cd47df8ba03",
+      "bytes": 397
+    },
+    {
+      "path": "stakeholder_service.py",
+      "description": "합성 서비스 코드 스텁 (허용목록 밖)",
+      "sha256": "a42cda25ac4731a394ef3f47fcb6e71dfd117ba41ded1a38797478b1ef474351",
+      "bytes": 122
+    },
+    {
+      "path": "dashboard-sketches/001-leadership-timeline/index.html",
+      "description": "합성 리더십 스케치 (허용목록 밖)",
+      "sha256": "67b7cc6f62456dc0de2032e18f3bb28ac619a3901c3569e7320432c43dea0c6f",
+      "bytes": 95
     }
   ],
   "evidence_grade_vocabulary": [

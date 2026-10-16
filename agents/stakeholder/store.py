@@ -49,14 +49,18 @@ PROPOSAL_ORIGINS = ("import", "agent_api", "dashboard")
 ROLE_HISTORY_STATUSES = ("scheduled", "applied", "superseded", "failed")   # failed: 반영 실패로 대기 해제(T2b)
 ORIGINS = ("import", "dashboard", "audit", "agent_api", "canonical_md")
 EVIDENCE_GRADES = ("A", "B-quote", "B-summary", "C-quote", "C-summary", "Role-only", "Candidate-only")
-INTEGRITY_STATUSES = ("verified", "mismatch", "missing", "no_local", "unchecked")
+# excluded: manifest 가 가리키지만 sync 허용목록 밖(paths.is_sync_allowed) — 설계상 미러하지 않는 경로(서비스 코드·스케치).
+# 실패가 아니라 별도 집계 상태다(missing 과 구분). 하위 호환: 구 CHECK 는 _migrate_integrity_vocab 이 재구성.
+INTEGRITY_STATUSES = ("verified", "mismatch", "missing", "no_local", "unchecked", "excluded")
 LOCATOR_MATCHES = ("range", "file", "none", "unchecked")
+SIGNAL_STATES = ("ok", "invalid", "absent")   # data/policy_signals.json 마지막 import 판정
 RUN_KINDS = ("monitoring", "audit")
 DEFAULT_TOPIC_TAGS = ["약가", "건강보험 재정"]   # 소스 PersonInput 기본값
 
 TABLES = ("sv_meta", "sv_person", "sv_person_role_history", "sv_source_domain", "sv_source", "sv_artifact", "sv_event",
           "sv_statement", "sv_quote", "sv_monitoring_run", "sv_audit_run", "sv_audit_proposal",
-          "sv_audit_proposal_event", "sv_audit_conflict_ack", "sv_sync_file")
+          "sv_audit_proposal_event", "sv_audit_conflict_ack", "sv_sync_file", "sv_policy_signal",
+          "sv_signal_evidence")
 
 
 class StoreError(Exception):
@@ -93,6 +97,27 @@ _ROLE_HISTORY_DDL = """CREATE TABLE IF NOT EXISTS {name} (
 );"""
 _ROLE_HISTORY_INDEX = ("CREATE INDEX IF NOT EXISTS idx_sv_role_hist_person "
                        "ON sv_person_role_history(person_id, status);")
+
+# manifest 미러 DDL — SCHEMA_SQL 과 integrity CHECK 어휘 마이그레이션(_migrate_integrity_vocab)이 같은 문자열을 쓴다.
+_INTEGRITY_CHECK = "CHECK (integrity_status IN ({}))".format(",".join(f"'{s}'" for s in INTEGRITY_STATUSES))
+_SOURCE_DDL = """CREATE TABLE IF NOT EXISTS {name} (                 -- source_manifest.json .sources[] 미러
+    source_id        TEXT PRIMARY KEY,
+    title TEXT, url TEXT, source_type TEXT, evidence_grade TEXT, access_status TEXT,
+    local_path TEXT, sha256 TEXT, text_path TEXT, text_sha256 TEXT, bytes INTEGER,
+    event_date TEXT, publication_date TEXT, publication_date_basis TEXT,
+    locator TEXT, limitation TEXT, scope_status TEXT, scope_note TEXT, video_limitation TEXT,
+    evidence_facets_json TEXT, official_video_json TEXT, last_live_check_json TEXT, known_timestamp TEXT,
+    raw_json TEXT,                                     -- manifest 항목 원문 그대로 (미지 키 포함 — 손실 없음)
+    integrity_status TEXT NOT NULL DEFAULT 'unchecked'
+        {check},
+    integrity_checked_at TEXT, manifest_sha256 TEXT, imported_at TEXT NOT NULL
+);"""
+_ARTIFACT_DDL = """CREATE TABLE IF NOT EXISTS {name} (               -- source_manifest.json .artifacts[] 미러
+    path TEXT PRIMARY KEY, name TEXT, description TEXT, sha256 TEXT, bytes INTEGER, raw_json TEXT,
+    integrity_status TEXT NOT NULL DEFAULT 'unchecked'
+        {check},
+    integrity_checked_at TEXT, imported_at TEXT NOT NULL
+);"""
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS sv_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);
@@ -135,24 +160,8 @@ CREATE TABLE IF NOT EXISTS sv_source_domain (
     created_at     TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS sv_source (                 -- source_manifest.json .sources[] 미러
-    source_id        TEXT PRIMARY KEY,
-    title TEXT, url TEXT, source_type TEXT, evidence_grade TEXT, access_status TEXT,
-    local_path TEXT, sha256 TEXT, text_path TEXT, text_sha256 TEXT, bytes INTEGER,
-    event_date TEXT, publication_date TEXT, publication_date_basis TEXT,
-    locator TEXT, limitation TEXT, scope_status TEXT, scope_note TEXT, video_limitation TEXT,
-    evidence_facets_json TEXT, official_video_json TEXT, last_live_check_json TEXT, known_timestamp TEXT,
-    raw_json TEXT,                                     -- manifest 항목 원문 그대로 (미지 키 포함 — 손실 없음)
-    integrity_status TEXT NOT NULL DEFAULT 'unchecked'
-        CHECK (integrity_status IN ('verified','mismatch','missing','no_local','unchecked')),
-    integrity_checked_at TEXT, manifest_sha256 TEXT, imported_at TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS sv_artifact (               -- source_manifest.json .artifacts[] 미러
-    path TEXT PRIMARY KEY, name TEXT, description TEXT, sha256 TEXT, bytes INTEGER, raw_json TEXT,
-    integrity_status TEXT NOT NULL DEFAULT 'unchecked'
-        CHECK (integrity_status IN ('verified','mismatch','missing','no_local','unchecked')),
-    integrity_checked_at TEXT, imported_at TEXT NOT NULL
-);
+{source_ddl}
+{artifact_ddl}
 
 CREATE TABLE IF NOT EXISTS sv_event (
     event_id TEXT PRIMARY KEY, event_date TEXT NOT NULL, title TEXT NOT NULL,
@@ -229,7 +238,35 @@ CREATE TABLE IF NOT EXISTS sv_audit_conflict_ack (     -- 충돌별 확인(T2b, 
 CREATE TABLE IF NOT EXISTS sv_sync_file (              -- 볼륨 미러 색인: 경로 → git blob sha / sha256
     path TEXT PRIMARY KEY, blob_sha TEXT NOT NULL, sha256 TEXT, bytes INTEGER, synced_at TEXT NOT NULL
 );
-""".replace("{role_history_ddl}", _ROLE_HISTORY_DDL.format(name="sv_person_role_history") + "\n" + _ROLE_HISTORY_INDEX)
+
+CREATE TABLE IF NOT EXISTS sv_policy_signal (          -- data/policy_signals.json .signals[] 미러 (외부 에이전트 소유)
+    signal_id TEXT PRIMARY KEY,
+    position  INTEGER NOT NULL,                        -- 파일 안 순서(0부터) — 무손실 재구성·동률 정렬 기준
+    title TEXT NOT NULL, institution TEXT NOT NULL, signal_type TEXT NOT NULL,
+    status TEXT NOT NULL,                              -- 'analyst_hypothesis' 등 — 공식 정책·직접 발언 아님
+    as_of TEXT NOT NULL,
+    direction_confidence REAL NOT NULL, implementation_model_confidence REAL NOT NULL,   -- 분석자 판단 [0,1], 보정 확률 아님
+    thesis TEXT NOT NULL,
+    not_confirmed TEXT NOT NULL,                       -- 미확인 범위 — 근거와 섞지 않는다
+    analyst_inference_json TEXT NOT NULL,              -- 분석 추론 — 근거와 섞지 않는다
+    confidence_methodology_json TEXT NOT NULL, watch_triggers_json TEXT NOT NULL,
+    raw_json TEXT NOT NULL,                            -- 시그널 객체 원문(sort_keys) — 손실 없음
+    imported_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sv_signal_evidence (        -- confirmed_evidence[] 1건 = 1행 (확인된 근거만)
+    signal_id TEXT NOT NULL, idx INTEGER NOT NULL,
+    date TEXT, person TEXT, role_at_event TEXT, evidence_grade TEXT, evidence_role TEXT,
+    claim TEXT NOT NULL,                               -- 파일 문자열 그대로(바이트 동일) — 고치지 않는다
+    source_id TEXT, locator TEXT, policy_status TEXT, scope_note TEXT,
+    locator_match TEXT NOT NULL DEFAULT 'unchecked'
+        CHECK (locator_match IN ('range','file','none','unchecked')),
+    locator_detail TEXT,
+    raw_json TEXT NOT NULL,
+    PRIMARY KEY (signal_id, idx)
+);
+""".replace("{role_history_ddl}", _ROLE_HISTORY_DDL.format(name="sv_person_role_history") + "\n" + _ROLE_HISTORY_INDEX) \
+   .replace("{source_ddl}", _SOURCE_DDL.format(name="sv_source", check=_INTEGRITY_CHECK)) \
+   .replace("{artifact_ddl}", _ARTIFACT_DDL.format(name="sv_artifact", check=_INTEGRITY_CHECK))
 
 
 # ── 시간 ─────────────────────────────────────────────────────────────────────────
@@ -277,6 +314,7 @@ def ensure_tables(db_path: str | Path = DEFAULT_DB_PATH) -> None:
         try:
             conn.executescript(SCHEMA_SQL)
             _migrate_role_history(conn)
+            _migrate_integrity_vocab(conn)
         finally:
             conn.close()
         _ENSURED.add(key)
@@ -308,6 +346,40 @@ def _migrate_role_history(conn: sqlite3.Connection) -> None:
         if conn.in_transaction:
             conn.execute("ROLLBACK")
         raise
+
+
+_INTEGRITY_TABLES = {"sv_source": _SOURCE_DDL, "sv_artifact": _ARTIFACT_DDL}
+
+
+def _migrate_integrity_vocab(conn: sqlite3.Connection) -> None:
+    """integrity_status CHECK 에 'excluded' 가 없는 구 sv_source/sv_artifact 를 행 보존한 채 재구성. 멱등.
+
+    SQLite 는 CHECK 를 ALTER 할 수 없다 — 새 테이블 생성 → 공통 컬럼 복사 → 교체를 테이블마다 한 BEGIN IMMEDIATE 로."""
+    def stale(table: str) -> bool:
+        r = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()
+        return r is not None and "'excluded'" not in (r[0] or "")
+
+    for table, ddl in _INTEGRITY_TABLES.items():
+        if not stale(table):
+            continue
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            if stale(table):                               # 다른 프로세스가 먼저 끝냈을 수 있다
+                tmp = f"{table}__new"
+                conn.execute(f"DROP TABLE IF EXISTS {tmp}")
+                conn.execute(ddl.format(name=tmp, check=_INTEGRITY_CHECK))
+                old_cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]
+                new_cols = {r[1] for r in conn.execute(f"PRAGMA table_info({tmp})")}
+                cols = ",".join(c for c in old_cols if c in new_cols)
+                conn.execute(f"INSERT INTO {tmp} ({cols}) SELECT {cols} FROM {table}")
+                conn.execute(f"DROP TABLE {table}")
+                conn.execute(f"ALTER TABLE {tmp} RENAME TO {table}")
+                logger.info("%s: integrity_status CHECK 에 'excluded' 추가(테이블 재구성)", table)
+            conn.execute("COMMIT")
+        except BaseException:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            raise
 
 
 @contextmanager
@@ -1363,3 +1435,73 @@ def registry_snapshot(*, today: date, db_path: str | Path = DEFAULT_DB_PATH,
         return _sha256_text(json.dumps(o, ensure_ascii=False, sort_keys=True))
 
     return {"as_of": t, "people": pub, "sources": sources, "people_sha256": sha(pub), "sources_sha256": sha(sources)}
+
+
+# ── 정책 시그널 (sv_policy_signal · sv_signal_evidence) ────────────────────────────────
+# data/policy_signals.json 은 외부 에이전트 소유 — 대쉬보드는 읽기 전용 미러(내용이 바뀌면 교체, insert-if-absent 아님).
+# 검증(스키마)은 agents/stakeholder/signals.py 가, 교체 판단은 sync._import_signals 가 한다. 여기는 저장·조회만.
+
+SIGNAL_COLS = ("signal_id", "position", "title", "institution", "signal_type", "status", "as_of",
+               "direction_confidence", "implementation_model_confidence", "thesis", "not_confirmed",
+               "analyst_inference_json", "confidence_methodology_json", "watch_triggers_json", "raw_json")
+SIGNAL_EVIDENCE_COLS = ("signal_id", "idx", "date", "person", "role_at_event", "evidence_grade", "evidence_role",
+                        "claim", "source_id", "locator", "policy_status", "scope_note", "locator_match",
+                        "locator_detail", "raw_json")
+
+
+def _signal_rows_snapshot(c: sqlite3.Connection) -> tuple[dict, dict]:
+    sig = {r["signal_id"]: tuple(r[k] for k in SIGNAL_COLS)
+           for r in c.execute(f"SELECT {','.join(SIGNAL_COLS)} FROM sv_policy_signal")}
+    ev: dict[str, list] = {}
+    for r in c.execute(f"SELECT {','.join(SIGNAL_EVIDENCE_COLS)} FROM sv_signal_evidence ORDER BY signal_id, idx"):
+        ev.setdefault(r["signal_id"], []).append(tuple(r[k] for k in SIGNAL_EVIDENCE_COLS))
+    return sig, ev
+
+
+def replace_policy_signals(signals: list[dict], evidence: list[dict], conn: sqlite3.Connection) -> int:
+    """시그널 전체 교체 — **호출자 트랜잭션 안에서만**. 행 내용(imported_at 제외)이 지금과 같으면 아무것도 쓰지 않는다.
+    반환: 바뀐 시그널 수(추가·변경·삭제). evidence 행의 locator_match 는 LOCATOR_MATCHES 어휘."""
+    if not conn.in_transaction:
+        raise RuntimeError("replace_policy_signals 는 store.transaction() 안에서 호출해야 합니다.")
+    ids = [s["signal_id"] for s in signals]
+    if len(set(ids)) != len(ids):
+        raise ValidationError("signal_id 가 중복됩니다.", "BAD_SIGNAL")
+    for e in evidence:
+        _check(e.get("locator_match"), LOCATOR_MATCHES, "locator_match")
+    want_sig = {s["signal_id"]: tuple(s.get(k) for k in SIGNAL_COLS) for s in signals}
+    want_ev: dict[str, list] = {}
+    for e in sorted(evidence, key=lambda x: (x["signal_id"], x["idx"])):
+        want_ev.setdefault(e["signal_id"], []).append(tuple(e.get(k) for k in SIGNAL_EVIDENCE_COLS))
+    have_sig, have_ev = _signal_rows_snapshot(conn)
+    changed = sum(1 for sid in set(want_sig) | set(have_sig)
+                  if want_sig.get(sid) != have_sig.get(sid) or want_ev.get(sid, []) != have_ev.get(sid, []))
+    if not changed:
+        return 0
+    ts = _ts()
+    conn.execute("DELETE FROM sv_signal_evidence")
+    conn.execute("DELETE FROM sv_policy_signal")
+    cols = SIGNAL_COLS + ("imported_at",)
+    for s in signals:
+        conn.execute(f"INSERT INTO sv_policy_signal ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
+                     [s.get(k) for k in SIGNAL_COLS] + [ts])
+    for e in evidence:
+        conn.execute(f"INSERT INTO sv_signal_evidence ({','.join(SIGNAL_EVIDENCE_COLS)}) "
+                     f"VALUES ({','.join('?' * len(SIGNAL_EVIDENCE_COLS))})", [e.get(k) for k in SIGNAL_EVIDENCE_COLS])
+    return changed
+
+
+def list_policy_signals(*, db_path: str | Path = DEFAULT_DB_PATH, conn: sqlite3.Connection | None = None) -> list[dict]:
+    """파일 순서(position). 각 행에 raw(원문 객체)·evidence(근거 행, idx 순)."""
+    with _reader(conn, db_path) as c:
+        rows = [dict(r) for r in c.execute("SELECT * FROM sv_policy_signal ORDER BY position, signal_id")]
+        ev: dict[str, list[dict]] = {}
+        for r in c.execute("SELECT * FROM sv_signal_evidence ORDER BY signal_id, idx"):
+            d = dict(r)
+            d["raw"] = _jo(d.pop("raw_json"))
+            ev.setdefault(d["signal_id"], []).append(d)
+    for r in rows:
+        r["raw"] = _jo(r.pop("raw_json"))
+        for k in ("analyst_inference", "confidence_methodology", "watch_triggers"):
+            r[k] = _jo(r.pop(f"{k}_json"))
+        r["evidence"] = ev.get(r["signal_id"], [])
+    return rows

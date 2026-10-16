@@ -24,7 +24,7 @@ from typing import Any, Callable, Iterator
 
 from flask import Blueprint, Response, jsonify, request, send_file
 
-from agents.stakeholder import approval, paths, photos, store
+from agents.stakeholder import approval, paths, photos, signals, store
 from api.auth import require_auth
 
 logger = logging.getLogger(__name__)
@@ -456,7 +456,7 @@ def build_stakeholder_blueprint(db_path: str | Path | None = None, *, root: str 
                                "topics": e.get("topics") or [], "speakers": e.get("speakers") or []}
                               for e in events[:3]],
             "integrity": {"sources_verified": integ.get("verified", 0),
-                          "sources_total": sum(v for k, v in integ.items() if k != "no_local"),
+                          "sources_total": sum(v for k, v in integ.items() if k not in ("no_local", "excluded")),
                           "mismatch": integ.get("mismatch", 0), "missing": integ.get("missing", 0),
                           "last_sync_at": last_sync_at},
             "copyright_notice": copyright_notice,
@@ -679,6 +679,25 @@ def build_stakeholder_blueprint(db_path: str | Path | None = None, *, root: str 
                 return resp
         raise store.NotFoundError("관계도 SVG 가 없습니다.", "NOT_FOUND")
 
+    @bp.get("/api/stakeholder/signals")
+    @require_auth()
+    @_handled
+    def signals_list():
+        """정책 시그널 — 소스 GET /api/signals 와 같은 모양 + 근거별 locator_match·integrity_status·source + import_status.
+        파일이 무효면 sync 가 이전 정상본을 남겨 두므로 여기서는 그것을 보여주고 import_status.state='invalid' 로 알린다."""
+        with conn_ctx() as c:
+            rows = store.list_policy_signals(conn=c)
+            sources = {s["source_id"]: s for s in store.list_sources(conn=c)}
+            status = store._jo(store.get_meta("policy_signals_status_json", conn=c)) or {}
+            meta = {"schema_version": store.get_meta("policy_signals_schema_version", conn=c),
+                    "updated_at": store.get_meta("policy_signals_updated_at", conn=c),
+                    "state": status.get("state"), "error": status.get("error")}
+        try:
+            data = signals.api_payload(rows, sources, meta)
+        except Exception as exc:  # noqa: BLE001 — 저장된 원문이 스키마를 어김(이론상 불가: 검증 통과분만 저장)
+            raise store.StoreError("정책 시그널 데이터 스키마가 올바르지 않습니다.", "SIGNALS_SCHEMA") from exc
+        return _user_json(data)
+
     @bp.get("/api/stakeholder/runs")
     @require_auth()
     @_handled
@@ -878,8 +897,13 @@ def build_stakeholder_blueprint(db_path: str | Path | None = None, *, root: str 
             art_problems = [dict(r) for r in c.execute(
                 "SELECT path, name, integrity_status, integrity_checked_at, sha256 FROM sv_artifact "
                 "WHERE integrity_status IN ('mismatch','missing') ORDER BY path")]
+            excluded = ([{"kind": "source", "id": r[0]} for r in c.execute(
+                "SELECT source_id FROM sv_source WHERE integrity_status='excluded' ORDER BY 1")]
+                + [{"kind": "artifact", "id": r[0]} for r in c.execute(
+                    "SELECT path FROM sv_artifact WHERE integrity_status='excluded' ORDER BY 1")])
         return jsonify({"summary": summary, "last_sync_at": last_sync, "counts": counts,
-                        "artifact_counts": art_counts, "problems": problems, "artifact_problems": art_problems})
+                        "artifact_counts": art_counts, "problems": problems, "artifact_problems": art_problems,
+                        "excluded": excluded})
 
     @bp.post("/api/admin/stakeholder/sync")
     @require_auth(role="admin")

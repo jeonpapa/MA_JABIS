@@ -23,6 +23,9 @@ python-dateutil>=2.9.0
 markdown>=3.6
 # Stakeholder 인물 사진 업로드(EXIF 회전·크롭·WEBP 재인코딩) — 없으면 프로덕션에서 사진 업로드 500
 Pillow>=10,<13
+# Stakeholder 정책 시그널 스키마 검증(소스 stakeholder_service.py 의 pydantic v2 모델 1:1 이식) — openai/anthropic 경유
+# 전이 의존이었으나 v2 API(ConfigDict) 를 직접 쓰므로 명시
+pydantic>=2,<3
 pdfplumber>=0.11.0
 pypdf>=4.2.0
 numpy>=1.26.0

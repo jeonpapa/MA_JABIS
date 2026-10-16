@@ -45,7 +45,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
-from . import approval, canonical_parse, paths, store
+from . import approval, canonical_parse, paths, signals, store
 
 logger = logging.getLogger(__name__)
 
@@ -63,15 +63,18 @@ COPYRIGHT_FALLBACK = "원문 저작권은 각 발행기관·언론사에 있으�
 _SKIP_WALK_DIRS = {".git", "__pycache__"}
 _MANIFEST_META_SCALARS = ("project", "scope_start_kst", "scope_end_kst", "retrieved_at_kst", "updated_at_kst")
 _MANIFEST_META_JSON = ("withheld_claims", "evidence_grade_vocabulary", "topic_timeline_update")
-_INTEGRITY_KEYS = ("verified", "mismatch", "missing", "no_local", "unchecked")
+_INTEGRITY_KEYS = store.INTEGRITY_STATUSES        # verified·mismatch·missing·no_local·unchecked·excluded
+EXCLUDED_REASON = "sync 허용목록 밖(설계상 미러하지 않음 — 서비스 코드·대시보드 스케치 등)"
 # 변경 판정에 쓰는 counts 키(두 번째 import 가 0 이어야 하는 것들)
 _CHANGE_KEYS = ("downloaded", "sources_changed", "artifacts_changed", "runs_changed", "canonical_reparsed",
+                "signals_changed",
                 "registry_new", "role_pending_imported", "person_links", "importance_changed", "meta_changed",
                 "scheduled_applied", "scheduled_failed")
 
 # 결과에 항상 실리는 counts 키(0 포함) — 잡 원장·CLI 가 같은 모양을 본다
 _COUNT_KEYS = ("listed", "rejected", "downloaded", "unchanged", "deferred", "orphaned", "fetch_failed",
-               "sources_changed", "artifacts_changed", "runs_changed", "canonical_reparsed", "registry_new",
+               "sources_changed", "artifacts_changed", "runs_changed", "canonical_reparsed", "signals_changed",
+               "registry_new",
                "registry_existing", "registry_skipped", "role_pending_imported", "person_links", "importance_changed",
                "meta_changed", "scheduled_applied", "scheduled_failed")
 
@@ -466,11 +469,16 @@ def _rel_file(root: Path, rel: Any) -> tuple[Path | None, str | None]:
 
 
 def _source_integrity(root: Path, src: dict) -> tuple[str, list[str]]:
-    """verified | mismatch | missing | no_local | unchecked (+사유). local_path↔sha256, text_path↔text_sha256,
-    bytes(있으면 local_path 크기). 하나라도 없으면 missing, 하나라도 다르면 mismatch(missing 이 우선)."""
+    """verified | mismatch | missing | no_local | unchecked | excluded (+사유). local_path↔sha256,
+    text_path↔text_sha256, bytes(있으면 local_path 크기). 하나라도 없으면 missing, 하나라도 다르면 mismatch(missing 이
+    우선). sync 허용목록 밖 경로는 대조하지 않는다 — 대조할 경로가 하나도 남지 않으면 excluded(실패 아님)."""
     pairs = [(k, h) for k, h in (("local_path", "sha256"), ("text_path", "text_sha256")) if src.get(k)]
     if not pairs:
         return "no_local", []
+    outside = [k for k, _ in pairs if not paths.is_sync_allowed(str(src.get(k)))]
+    pairs = [(k, h) for k, h in pairs if k not in outside]
+    if not pairs:
+        return "excluded", [f"{EXCLUDED_REASON}: {src[k]}" for k in outside]
     problems: list[str] = []
     missing = mismatch = False
     compared = 0
@@ -497,6 +505,10 @@ def _source_integrity(root: Path, src: dict) -> tuple[str, list[str]]:
 
 
 def _artifact_integrity(root: Path, a: dict) -> tuple[str, list[str]]:
+    """verified | mismatch | missing | unchecked | excluded. manifest 가 등재했지만 sync 허용목록 밖인 산출물
+    (stakeholder_service.py, dashboard-sketches/…)은 볼륨에 없는 게 정상이다 — missing 이 아니라 excluded."""
+    if isinstance(a.get("path"), str) and paths.is_safe_rel_path(a["path"]) and not paths.is_sync_allowed(a["path"]):
+        return "excluded", [f"{EXCLUDED_REASON}: {a['path']}"]
     f, why = _rel_file(root, a.get("path"))
     if f is None:
         return "missing", [why or ""]
@@ -525,7 +537,8 @@ def _import_manifest(root: Path, db_path: Path, ts: str, counts: Counter, errors
                      warnings: list[str]) -> dict:
     """source_manifest.json → sv_source · sv_artifact · sv_meta. 반환: 무결성 요약."""
     summary: dict[str, Any] = {"sources": dict.fromkeys(_INTEGRITY_KEYS, 0),
-                               "artifacts": dict.fromkeys(_INTEGRITY_KEYS, 0), "problems": [], "checked_at": ts}
+                               "artifacts": dict.fromkeys(_INTEGRITY_KEYS, 0), "problems": [], "excluded": [],
+                               "checked_at": ts}
     mpath = root / "source_manifest.json"
     if not mpath.is_file():
         errors.append("source_manifest.json 없음 — manifest·무결성 적재를 건너뜀")
@@ -548,7 +561,9 @@ def _import_manifest(root: Path, db_path: Path, ts: str, counts: Counter, errors
                 continue
             status, problems = _source_integrity(root, s)
             summary["sources"][status] += 1
-            if problems:
+            if status == "excluded":
+                summary["excluded"].append({"kind": "source", "id": s["source_id"], "reason": problems})
+            elif problems:
                 summary["problems"].append({"kind": "source", "id": s["source_id"], "status": status,
                                             "detail": problems})
             if store.upsert_source(s, integrity_status=status, integrity_checked_at=ts, manifest_sha256=msha,
@@ -560,7 +575,9 @@ def _import_manifest(root: Path, db_path: Path, ts: str, counts: Counter, errors
                 continue
             status, problems = _artifact_integrity(root, a)
             summary["artifacts"][status] += 1
-            if problems:
+            if status == "excluded":
+                summary["excluded"].append({"kind": "artifact", "id": a["path"], "reason": problems})
+            elif problems:
                 summary["problems"].append({"kind": "artifact", "id": a["path"], "status": status,
                                             "detail": problems})
             if store.upsert_artifact(a, integrity_status=status, integrity_checked_at=ts, conn=c) != "unchanged":
@@ -696,6 +713,52 @@ def _import_registry(root: Path, db_path: Path, counts: Counter, errors: list[st
             counts["registry_new" if new else "registry_existing"] += 1
             for item in p.get("pending_role_changes") or []:
                 _import_pending_role(c, p["person_id"], item, counts, warnings)
+
+
+# ── 정책 시그널 ──────────────────────────────────────────────────────────────────
+
+def _signals_status(c, state: str, error: str | None, file_sha: str | None, counts: Counter) -> None:
+    if _set_meta_if_changed(c, "policy_signals_status_json", {"state": state, "error": error, "file_sha256": file_sha}):
+        counts["meta_changed"] += 1
+
+
+def _import_signals(root: Path, db_path: Path, counts: Counter, errors: list[str], warnings: list[str]) -> None:
+    """data/policy_signals.json → sv_policy_signal·sv_signal_evidence. 외부 에이전트 소유 — 읽기 전용 미러:
+    검증 통과 시 내용이 다를 때만 전체 교체(signals_changed), 매 실행 근거 locator 를 다시 잰다(출처가 바뀌면 판정도).
+    검증 실패(JSON·스키마·signal_id 중복)는 errors 에 남기고 **이전 정상 행을 그대로 둔다**(대쉬보드는 마지막 정상본 표시,
+    import_status.state='invalid'). 파일이 없으면(구 스냅샷) 아무 행도 만들지 않는다."""
+    f = root / signals.SIGNALS_REL
+    with store.transaction(db_path) as c:
+        if not f.is_file():
+            _signals_status(c, "absent", None, None, counts)
+            return
+        raw = f.read_bytes()
+        sha = _sha256(raw)
+        try:
+            data = json.loads(raw.decode("utf-8"))
+            validated = signals.validate_payload(data)
+        except (ValueError, signals.SignalSchemaError) as exc:   # UnicodeDecodeError·JSONDecodeError ⊂ ValueError
+            kept = c.execute("SELECT COUNT(*) FROM sv_policy_signal").fetchone()[0]
+            msg = f"{exc}"[:500]
+            errors.append(f"{signals.SIGNALS_REL} 검증 실패 — 이전 정상 시그널 {kept}건 유지(외부 에이전트가 파일을 고쳐 "
+                          f"커밋하면 다음 sync 가 교체): {msg}")
+            _signals_status(c, "invalid", msg, sha, counts)
+            return
+        sources = {r["source_id"]: dict(r) for r in c.execute("SELECT source_id, text_path FROM sv_source")}
+        sig_rows, ev_rows, warns = signals.build_rows(data, validated, root, sources)
+        warnings.extend(warns)
+        counts["signals_changed"] += store.replace_policy_signals(sig_rows, ev_rows, c)
+        for k, v in (("policy_signals_sha256", sha), ("policy_signals_schema_version", validated.schema_version),
+                     ("policy_signals_updated_at", validated.updated_at)):
+            if _set_meta_if_changed(c, k, v):
+                counts["meta_changed"] += 1
+        _signals_status(c, "ok", None, sha, counts)
+    counts["signals"] = len(sig_rows)
+    counts["signal_evidence"] = len(ev_rows)
+    off = [e for e in ev_rows if e["locator_match"] != "range"]
+    if off:
+        warnings.append(f"정책 시그널 근거 locator 범위 불일치 {len(off)}건: "
+                        + "; ".join(f"{e['signal_id']}[{e['idx']}] {e['locator_match']}" for e in off[:5]))
 
 
 # ── 정본 · 결합 ───────────────────────────────────────────────────────────────────
@@ -855,7 +918,7 @@ def _relink_and_importance(root: Path, db_path: Path, counts: Counter, warnings:
 def import_snapshot(root: str | Path, db_path: str | Path, *, today: date | None = None,
                     tree_sha: str | None = None) -> dict:
     """볼륨 root(소스 repo 와 같은 상대경로)를 sv_* 에 멱등 적재. 반환 {"ok","counts","errors","warnings","error_class"}.
-    순서: manifest·무결성 → 런 → 레지스트리(insert-if-absent) → 정본(sha 게이트) → 인물 결합·중요도 →
+    순서: manifest·무결성 → 런 → 레지스트리(insert-if-absent) → 정책 시그널(검증·교체) → 정본(sha 게이트) → 인물 결합·중요도 →
     apply_scheduled(today) → 메타(last_sync_at·last_tree_sha·integrity_summary_json)."""
     root, db_path = Path(root), Path(db_path)
     counts: Counter = Counter()
@@ -873,6 +936,7 @@ def import_snapshot(root: str | Path, db_path: str | Path, *, today: date | None
               ("manifest", manifest),
               ("runs", lambda: _import_runs(root, db_path, counts, errors)),
               ("registry", lambda: _import_registry(root, db_path, counts, errors, warnings)),
+              ("signals", lambda: _import_signals(root, db_path, counts, errors, warnings)),
               ("canonical", lambda: _import_canonical(root, db_path, summary.get("_artifacts_manifest") or [],
                                                       counts, errors, warnings)),
               ("relink", lambda: _relink_and_importance(root, db_path, counts, warnings))]
@@ -921,8 +985,8 @@ def _fmt(res: dict, db_path: Path) -> list[str]:
     c = res.get("counts", {})
     keys = ("listed", "downloaded", "unchanged", "rejected", "deferred", "orphaned", "fetch_failed",
             "canonical_reparsed", "registry_new", "registry_existing", "registry_skipped", "role_pending_imported",
-            "sources_changed", "artifacts_changed", "runs_changed", "person_links", "importance_changed",
-            "scheduled_applied", "scheduled_failed", "changes")
+            "sources_changed", "artifacts_changed", "runs_changed", "signals_changed", "person_links",
+            "importance_changed", "scheduled_applied", "scheduled_failed", "changes")
     if res.get("dry_run"):
         keys = ("listed", "would_download", "rejected", "orphaned")
     lines = [f"stakeholder sync: ok={res.get('ok')} " + " ".join(f"{k}={c.get(k, 0)}" for k in keys)]
@@ -932,13 +996,20 @@ def _fmt(res: dict, db_path: Path) -> list[str]:
         integ = json.loads(store.get_meta("integrity_summary_json", db_path=db_path) or "{}")
         s, a = integ.get("sources", {}), integ.get("artifacts", {})
         lines.append("integrity: " + " ".join(f"{k}={s.get(k, 0)}" for k in ("verified", "mismatch", "missing",
-                                                                             "no_local", "unchecked"))
-                     + " | artifacts " + " ".join(f"{k}={a.get(k, 0)}" for k in ("verified", "mismatch", "missing")))
+                                                                             "no_local", "unchecked", "excluded"))
+                     + " | artifacts " + " ".join(f"{k}={a.get(k, 0)}" for k in ("verified", "mismatch", "missing",
+                                                                                   "excluded")))
         quotes = store.list_quotes(db_path=db_path)
         lm = Counter(q["locator_match"] for q in quotes)
         tc = store.counts(db_path=db_path)
         lines.append(f"canonical: events={tc['sv_event']} statements={tc['sv_statement']} quotes={tc['sv_quote']} "
                      + " ".join(f"{k}={lm.get(k, 0)}" for k in ("range", "file", "none", "unchecked")))
+        sig = store.list_policy_signals(db_path=db_path)
+        slm = Counter(e["locator_match"] for x in sig for e in x["evidence"])
+        st = json.loads(store.get_meta("policy_signals_status_json", db_path=db_path) or "{}")
+        lines.append(f"signals: state={st.get('state', '-')} signals={len(sig)} "
+                     f"evidence={sum(len(x['evidence']) for x in sig)} "
+                     + " ".join(f"{k}={slm.get(k, 0)}" for k in ("range", "file", "none", "unchecked")))
         lines.append("db: " + " ".join(f"{k}={v}" for k, v in tc.items()))
     except Exception as exc:  # noqa: BLE001
         lines.append(f"(요약 조회 실패: {exc})")

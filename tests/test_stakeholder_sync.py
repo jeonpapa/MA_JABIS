@@ -323,7 +323,10 @@ def test_importance_and_meta_imported(tmp_path):
     assert "저작권" in store.get_meta("copyright_notice", db_path=db)
     assert store.get_meta("last_sync_at", db_path=db)
     arts = {a["path"]: a["integrity_status"] for a in store.list_artifacts(db_path=db)}
-    assert set(arts.values()) == {"verified"}
+    # 허용목록 밖 manifest 산출물(서비스 코드·스케치)은 excluded — 나머지는 전부 verified
+    assert {p for p, st in arts.items() if st == "excluded"} == {
+        "stakeholder_service.py", "dashboard-sketches/001-leadership-timeline/index.html"}
+    assert {st for p, st in arts.items() if st != "excluded"} == {"verified"}
 
 
 def test_person_link_follows_later_registry_rows(tmp_path):

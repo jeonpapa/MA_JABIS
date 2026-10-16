@@ -743,18 +743,23 @@ def _json_or_none(text):
 
 
 def check_stakeholder_source_integrity(ctx: Ctx) -> Freshness:
-    """볼륨 원문·산출물의 SHA-256 판정(sync 가 매 실행 재계산) 중 mismatch·missing. no_local 은 소스 상태 — 실패 아님."""
+    """볼륨 원문·산출물의 SHA-256 판정(sync 가 매 실행 재계산) 중 mismatch·missing. no_local 은 소스 상태, excluded 는
+    manifest 가 등재했지만 sync 허용목록 밖(서비스 코드·대시보드 스케치 — 설계상 미러 안 함)이라 둘 다 실패가 아니다."""
     bad_src = [r[0] for r in _rows(ctx, "SELECT source_id FROM sv_source WHERE integrity_status IN ('mismatch','missing') "
                                         "ORDER BY 1")]
     by = {k: v for k, v in _rows(ctx, "SELECT integrity_status, COUNT(*) FROM sv_source GROUP BY 1")}
     try:
         bad_art = [r[0] for r in _rows(ctx, "SELECT path FROM sv_artifact WHERE integrity_status IN ('mismatch','missing') "
                                             "ORDER BY 1")]
+        excl_art = [r[0] for r in _rows(ctx, "SELECT path FROM sv_artifact WHERE integrity_status='excluded' ORDER BY 1")]
     except sqlite3.OperationalError:
-        bad_art = []
+        bad_art, excl_art = [], []
     bad = len(bad_src) + len(bad_art)
+    excluded = by.get("excluded", 0) + len(excl_art)
     evidence = (f"원문 무결성 {by}; 실패 출처 {len(bad_src)}건 {bad_src[:10]}, 실패 산출물 {len(bad_art)}건 {bad_art[:5]}. "
-                f"no_local {by.get('no_local', 0)}건은 원문 파일이 없는 소스(video-only 등) — 소스 상태이지 실패가 아니다"
+                f"no_local {by.get('no_local', 0)}건은 원문 파일이 없는 소스(video-only 등) — 소스 상태이지 실패가 아니다. "
+                f"excluded {excluded}건(출처 {by.get('excluded', 0)}, 산출물 {excl_art[:5]})은 sync 허용목록 밖 — 설계상 "
+                "미러하지 않으므로 실패가 아니다"
                 + (f". 조치: 런북 {STAKEHOLDER_SYNC_JOB} — 볼륨 손상·누락은 재sync 가 다시 받는다(받은 당시 sha256 대조 자가 치유). "
                    "재sync 뒤에도 남으면 소스 repo 의 source_manifest.json(sha256·bytes)과 파일이 어긋난 것 — "
                    "외부 에이전트(Key/Hermes)가 manifest 를 고쳐 커밋" if bad else ""))

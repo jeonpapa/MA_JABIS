@@ -1,0 +1,134 @@
+{
+  "schema_version": "1.0",
+  "updated_at": "2026-10-15T19:08:00+09:00",
+  "signals": [
+    {
+      "signal_id": "SIG-FAKE-OLDER-20261001",
+      "title": "가상 기관이 가상 계약 레이어를 검토할 가능성 (합성 · 이전 판)",
+      "institution": "가상 보험자",
+      "signal_type": "policy_direction_forecast",
+      "status": "analyst_hypothesis",
+      "as_of": "2026-10-01",
+      "direction_confidence": 0.5,
+      "implementation_model_confidence": 0.3,
+      "thesis": "합성 명제: 가상 보험자는 가상 계약 레이어를 천천히 검토할 수 있다.",
+      "confirmed_evidence": [
+        {
+          "date": "2026-06-19",
+          "person": "가상 보건부",
+          "role_at_event": "가상 RWE 심포지엄 주최",
+          "evidence_grade": "B-summary",
+          "claim": "합성 근거: 가상 보도자료가 요약만 제공했다.",
+          "source_id": "SRC-FAKE-20260619-RWE",
+          "locator": "sources/fake_20260619_rwe.txt:1",
+          "evidence_role": "adjacent_context"
+        }
+      ],
+      "analyst_inference": {
+        "likely_contract_architecture": "합성 구조 A",
+        "payer_benefits": [
+          {
+            "benefit": "합성 이점 1",
+            "modality": "가능성",
+            "rationale": "합성 근거 연결",
+            "basis_source_ids": ["SRC-FAKE-20260619-RWE"]
+          }
+        ],
+        "most_likely_first_use": "합성 첫 적용",
+        "selective_use": "합성 선택 적용",
+        "composite_scope": {"highest_likelihood": "합성 조합 1"}
+      },
+      "not_confirmed": "합성: 공식 선언은 확인되지 않았다.",
+      "watch_triggers": ["합성 트리거 1"],
+      "confidence_methodology": {
+        "scale": "0.0–1.0 analyst judgment; displayed as 0–10",
+        "method": "Synthetic fixture — not a calibrated probability.",
+        "direction_basis": "합성 방향 근거",
+        "implementation_basis": "합성 시행 근거",
+        "limitation": "합성 한계",
+        "reviewed_by": "Fixture",
+        "next_review_trigger": "합성 재평가 조건"
+      }
+    },
+    {
+      "signal_id": "SIG-FAKE-NEWER-20261015",
+      "title": "가상 기관이 가상 유연계약을 복합 계약에 확장할 가능성 (합성)",
+      "institution": "가상 보험자",
+      "signal_type": "policy_direction_forecast",
+      "status": "analyst_hypothesis",
+      "as_of": "2026-10-15",
+      "direction_confidence": 0.85,
+      "implementation_model_confidence": 0.65,
+      "thesis": "합성 명제: 가상 보험자는 가격요소를 별도 레이어로 분리하는 모듈형 구조를 선호할 가능성이 높다.",
+      "confirmed_evidence": [
+        {
+          "date": "2026-09-03",
+          "person": "홍길동",
+          "role_at_event": "가상 협회 과장",
+          "evidence_grade": "C-quote",
+          "claim": "합성 근거: 신약 보상과 재정이 상충하지 않는다는 취지로 발언했다.",
+          "source_id": "SRC-FAKE-20260903-HONG",
+          "locator": "sources/fake_20260903_hong.txt:3-4",
+          "scope_note": "합성 조사기간 안",
+          "evidence_role": "direct_support"
+        },
+        {
+          "date": "2026-06-19",
+          "person": "가상 보건부",
+          "role_at_event": "가상 RWE 심포지엄 주최",
+          "evidence_grade": "B-summary",
+          "claim": "합성 근거: 가상 추진방안을 발표했다. 최종 시행 여부는 별도 확인이 필요하다.",
+          "source_id": "SRC-FAKE-20260619-RWE",
+          "locator": "sources/fake_20260619_rwe.txt:5-9",
+          "evidence_role": "planned_policy",
+          "policy_status": "planned_policy_pending_final_rules"
+        },
+        {
+          "date": "2026-09-03",
+          "person": "홍길동",
+          "role_at_event": "가상 협회 과장",
+          "evidence_grade": "C-quote",
+          "claim": "합성 근거: locator 가 인용 출처가 아닌 다른 파일을 가리킨다(판정 none 픽스처).",
+          "source_id": "SRC-FAKE-20260903-HONG",
+          "locator": "sources/fake_20260619_rwe.txt:1",
+          "evidence_role": "adjacent_context"
+        }
+      ],
+      "analyst_inference": {
+        "likely_contract_architecture": "합성 구조 B: 별도 가격 + 총액 상한",
+        "payer_benefits": [
+          {
+            "benefit": "합성 이점 1",
+            "modality": "가능성",
+            "rationale": "합성 전제에서만 성립",
+            "basis_source_ids": ["SRC-FAKE-20260903-HONG"]
+          },
+          {
+            "benefit": "합성 이점 2",
+            "modality": "낮음~중간",
+            "rationale": "합성 절차 미공개",
+            "basis_source_ids": ["SRC-FAKE-20260619-RWE", "SRC-FAKE-20260903-HONG"]
+          }
+        ],
+        "most_likely_first_use": "합성 첫 적용",
+        "selective_use": "합성 선택 적용",
+        "composite_scope": {
+          "highest_likelihood": "합성 조합 1",
+          "selective_retention": "합성 조합 2",
+          "not_supported": "합성 일괄 전환은 지지되지 않음"
+        }
+      },
+      "not_confirmed": "합성: 가상 보험자가 확장을 직접 공식 선언한 원문은 확인되지 않았다.",
+      "watch_triggers": ["합성 트리거 1", "합성 트리거 2"],
+      "confidence_methodology": {
+        "scale": "0.0–1.0 analyst judgment; displayed as 0–10",
+        "method": "Synthetic fixture — evidence proximity judged separately; not a calibrated probability.",
+        "direction_basis": "합성 방향 근거",
+        "implementation_basis": "합성 시행 근거",
+        "limitation": "합성 한계",
+        "reviewed_by": "Fixture",
+        "next_review_trigger": "합성 재평가 조건"
+      }
+    }
+  ]
+}

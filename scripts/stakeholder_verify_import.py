@@ -27,6 +27,14 @@
      **바이트 그대로** 있다(`정본 인용 블록 미반영` / 정규화로만 같으면 `정본 인용 블록 원문 불일치`), 역으로 모든 sv_quote 가
      MD 의 블록과 바이트 그대로 같다(`DB 인용이 정본에 없음`). 주제 섹션 밖 블록은 편집 주석 — exclusions 로 열거.
      locator_match='none' 은 KNOWN_SOURCE_DISCREPANCIES 에 있으면 known_discrepancies(소스 측 결함), 아니면 실패.
+  ⑦ 정책 시그널 — data/policy_signals.json 이 소스 스키마(signals.PolicySignalStore, extra=forbid)를 통과하고(`정책 시그널
+     스키마 위반`), 모든 시그널이 sv_policy_signal 에 있고(`정책 시그널 미반영`) raw_json·승격 컬럼·파일 순서가 같으며
+     (`정책 시그널 필드 불일치`), 근거 행이 confirmed_evidence 와 수·원문·바이트 동일 claim 으로 같고(`정책 시그널 근거 …`),
+     locator_match 가 지금 다시 잰 판정과 같다(`정책 시그널 locator 판정 불일치` — 판정 로직은 이 스크립트에 독립 구현).
+     DB 에만 있는 시그널은 실패(읽기 전용 미러 — 교체 의미론). meta + 행으로 파일 전체를 재구성해 원문 JSON 과 같아야 한다.
+     근거 locator 가 range 가 아닌 것은 소스 측 상태 — notes 로 열거(실패 아님).
+  excluded — manifest 가 등재했지만 sync 허용목록 밖인 경로(stakeholder_service.py, dashboard-sketches/…)는 볼륨에 없는 게
+     설계다. 실패가 아니라 exclusions.excluded_artifacts / excluded_source_paths 로 열거하고 integrity 는 'excluded' 여야 한다.
 
 출력: 텍스트(기본) 또는 `--json`. 종료코드 0 = failures 없음, 1 = 있음.
 """
@@ -47,7 +55,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from agents.stakeholder import canonical_parse, paths, store  # noqa: E402
+from agents.stakeholder import canonical_parse, paths, signals, store  # noqa: E402
 from agents.stakeholder.sync import (  # noqa: E402
     CANONICAL_TIMELINE_ARTIFACT, CANONICAL_TIMELINE_GLOB, _MANIFEST_META_JSON, _MANIFEST_META_SCALARS, _SKIP_WALK_DIRS)
 
@@ -122,7 +130,8 @@ class Report:
     counts: dict[str, Any] = field(default_factory=dict)
     basis: dict[str, str] = field(default_factory=dict)          # 수치마다 무엇과 무엇을 대조했는가
     exclusions: dict[str, list] = field(default_factory=lambda: {
-        "rejected_paths": [], "excluded_blockquotes": [], "no_local_sources": [], "skipped_dirs": []})
+        "rejected_paths": [], "excluded_blockquotes": [], "no_local_sources": [], "skipped_dirs": [],
+        "excluded_artifacts": [], "excluded_source_paths": []})
     known_discrepancies: list[dict] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
@@ -211,6 +220,12 @@ def _check_repository(root: Path, rep: Report) -> dict | None:
     for src in manifest.get("sources", []) or []:
         sid = src.get("source_id") if isinstance(src, dict) else None
         pairs = [(k, h) for k, h in (("local_path", "sha256"), ("text_path", "text_sha256")) if src.get(k)]
+        had_pairs = bool(pairs)
+        for k, _ in pairs:
+            if not paths.is_sync_allowed(str(src[k])):
+                rep.exclusions["excluded_source_paths"].append(
+                    {"source_id": sid, "path": src[k], "reason": "sync 허용목록 밖 — 설계상 미러하지 않음(대조 대상 아님)"})
+        pairs = [(k, h) for k, h in pairs if paths.is_sync_allowed(str(src[k]))]
         missing = mismatch = False
         compared = 0
         for path_key, hash_key in pairs:
@@ -234,14 +249,19 @@ def _check_repository(root: Path, rep: Report) -> dict | None:
                     rep.failures.append(f"byte-size mismatch: {rel}: expected {src['bytes']}, got {size}")
                     mismatch = True
         if sid:
-            expected_sources[sid] = ("no_local" if not pairs else "missing" if missing else "mismatch" if mismatch
-                                     else "verified" if compared else "unchecked")
+            expected_sources[sid] = ("no_local" if not had_pairs else "excluded" if not pairs else "missing" if missing
+                                     else "mismatch" if mismatch else "verified" if compared else "unchecked")
 
     expected_artifacts: dict[str, str] = {}
     for art in manifest.get("artifacts", []) or []:
         rel = art.get("path") if isinstance(art, dict) else None
         if not rel:
             rep.failures.append("artifact entry missing path")
+            continue
+        if paths.is_safe_rel_path(rel) and not paths.is_sync_allowed(rel):
+            rep.exclusions["excluded_artifacts"].append(
+                {"path": rel, "reason": "manifest 등재 산출물이지만 sync 허용목록 밖(서비스 코드·스케치) — 설계상 미러하지 않음"})
+            expected_artifacts[rel] = "excluded"
             continue
         path = _under(root, rel)
         if path is None or not path.is_file():
@@ -378,7 +398,7 @@ def _check_manifest_db(manifest: dict, conn: sqlite3.Connection, rep: Report) ->
         rep.notes.append(f"manifest 에 없는 DB 행(이전 manifest 미러 — 삭제하지 않는 설계): sources {extra_s} "
                          f"artifacts {extra_a}")
 
-    keys = ("verified", "mismatch", "missing", "no_local", "unchecked")
+    keys = store.INTEGRITY_STATUSES
 
     def dist(rows, keys):
         c = Counter(r["integrity_status"] for r in rows)
@@ -761,6 +781,137 @@ def _check_canonical(root: Path, conn: sqlite3.Connection, manifest: dict | None
         locator_match="sv_quote.locator_match 분포 — none 은 KNOWN_SOURCE_DISCREPANCIES 에 있어야만 허용")
 
 
+# ── ⑦ 정책 시그널 ─────────────────────────────────────────────────────────────────
+
+_RE_SIG_LOC = re.compile(r"^([^:\s]+)(?::([\d,\s-]+))?$")
+
+
+def _measure_signal_locator(root: Path, src: sqlite3.Row | None, locator: Any) -> str:
+    """signals.locator_status 와 독립 구현 — 같은 정의(range|file|none|unchecked)를 다시 잰다."""
+    if src is None or not isinstance(locator, str):
+        return "none"
+    m = _RE_SIG_LOC.match(locator.strip())
+    if not m:
+        return "none"
+    rel, spec = m.group(1), m.group(2)
+    ranges = []
+    for part in (spec or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if not re.fullmatch(r"\d+(\s*-\s*\d+)?", part):
+            return "none"
+        a, _, b = part.partition("-")
+        ranges.append((int(a), int(b) if b.strip() else int(a)))
+    if not src["text_path"] or rel != src["text_path"] or not paths.is_safe_rel_path(rel):
+        return "none"
+    if not paths.is_sync_allowed(rel):
+        return "unchecked"
+    f = _under(root, rel)
+    if f is None or not f.is_file():
+        return "unchecked"
+    try:
+        lines = f.read_bytes().decode("utf-8-sig").splitlines()
+    except UnicodeDecodeError:
+        return "unchecked"
+    if not ranges:
+        return "file"
+    for a, b in ranges:
+        if a < 1 or b < a or b > len(lines) or not any(x.strip() for x in lines[a - 1:b]):
+            return "file"
+    return "range"
+
+
+_SIG_SCALARS = ("title", "institution", "signal_type", "status", "as_of", "direction_confidence",
+                "implementation_model_confidence", "thesis", "not_confirmed")
+_SIG_JSONS = ("analyst_inference", "confidence_methodology", "watch_triggers")
+_EV_TEXT = ("date", "person", "role_at_event", "evidence_grade", "evidence_role", "claim", "source_id", "locator",
+            "policy_status", "scope_note")
+
+
+def _check_signals(root: Path, conn: sqlite3.Connection, rep: Report) -> None:
+    f = root / signals.SIGNALS_REL
+    db_sig = {r["signal_id"]: r for r in conn.execute("SELECT * FROM sv_policy_signal")}
+    db_ev: dict[str, list] = {}
+    for r in conn.execute("SELECT * FROM sv_signal_evidence ORDER BY signal_id, idx"):
+        db_ev.setdefault(r["signal_id"], []).append(r)
+    meta = {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM sv_meta")}
+    if not f.is_file():
+        rep.counts.update(signals=None, signal_evidence=None)
+        rep.basis["signals"] = f"{signals.SIGNALS_REL} 없음 — 해당 없음(구 스냅샷)"
+        if db_sig:
+            rep.failures.append(f"정책 시그널 파일 없음인데 DB 행 {len(db_sig)}건")
+        return
+    raw = f.read_bytes()
+    try:
+        data = json.loads(raw.decode("utf-8"))
+        signals.validate_payload(data)
+    except (ValueError, signals.SignalSchemaError) as exc:
+        rep.failures.append(f"정책 시그널 스키마 위반: {signals.SIGNALS_REL}: {_short(str(exc), 200)} "
+                            f"(DB 는 이전 정상본 {len(db_sig)}건 유지 — sync 설계)")
+        rep.counts.update(signals=None, signal_evidence=None)
+        return
+    if meta.get("policy_signals_sha256") != _sha256_bytes(raw):
+        rep.failures.append("정책 시그널 미반영(sha 불일치): sv_meta.policy_signals_sha256 ≠ 볼륨 파일")
+    src_rows = {r["source_id"]: r for r in conn.execute("SELECT source_id, text_path FROM sv_source")}
+    n_ev = claims = 0
+    lm: Counter = Counter()
+    off: list[str] = []
+    for pos, obj in enumerate(data["signals"]):
+        sid = obj["signal_id"]
+        row = db_sig.get(sid)
+        if row is None:
+            rep.failures.append(f"정책 시그널 미반영: {sid}")
+            continue
+        if _jload(row["raw_json"]) != obj:
+            rep.failures.append(f"정책 시그널 필드 불일치: {sid} (raw_json ≠ 파일 객체)")
+        if row["position"] != pos:
+            rep.failures.append(f"정책 시그널 필드 불일치: {sid}.position DB={row['position']} 파일={pos}")
+        for k in _SIG_SCALARS:
+            if row[k] != obj[k] or (isinstance(obj[k], str) and row[k].encode("utf-8") != obj[k].encode("utf-8")):
+                rep.failures.append(f"정책 시그널 필드 불일치: {sid}.{k}: DB={_short(row[k])} 원본={_short(obj[k])}")
+        for k in _SIG_JSONS:
+            if _jload(row[f"{k}_json"]) != obj[k]:
+                rep.failures.append(f"정책 시그널 필드 불일치: {sid}.{k}")
+        evs = obj["confirmed_evidence"]
+        rows = db_ev.get(sid, [])
+        if len(rows) != len(evs):
+            rep.failures.append(f"정책 시그널 근거 수 불일치: {sid}: 파일 {len(evs)} ≠ DB {len(rows)}")
+        for i, (eo, er) in enumerate(zip(evs, rows)):
+            n_ev += 1
+            if er["idx"] != i or _jload(er["raw_json"]) != eo:
+                rep.failures.append(f"정책 시그널 근거 필드 불일치: {sid}[{i}] (raw_json ≠ 파일 객체)")
+            for k in _EV_TEXT:
+                want = eo.get(k)
+                if er[k] != want or (isinstance(want, str) and er[k].encode("utf-8") != want.encode("utf-8")):
+                    rep.failures.append(f"정책 시그널 근거 원문 불일치: {sid}[{i}].{k} — 바이트가 다르다")
+            claims += 1
+            again = _measure_signal_locator(root, src_rows.get(eo["source_id"]), eo["locator"])
+            lm[er["locator_match"]] += 1
+            if er["locator_match"] != again:
+                rep.failures.append(f"정책 시그널 locator 판정 불일치: {sid}[{i}] DB={er['locator_match']} 지금 측정={again}")
+            if again != "range":
+                off.append(f"{sid}[{i}] {eo['locator']} → {again}")
+    file_ids = [o["signal_id"] for o in data["signals"]]
+    for sid in sorted(set(db_sig) - set(file_ids)):
+        rep.failures.append(f"DB 정책 시그널이 파일에 없음: {sid} — 읽기 전용 미러는 파일과 같아야 한다")
+    rebuilt = {"schema_version": meta.get("policy_signals_schema_version"),
+               "updated_at": meta.get("policy_signals_updated_at"),
+               "signals": [_jload(r["raw_json"]) for r in sorted(db_sig.values(), key=lambda r: r["position"])]}
+    if rebuilt != data:
+        rep.failures.append("정책 시그널 파일 재구성 불일치: sv_meta(schema_version·updated_at) + sv_policy_signal.raw_json "
+                            "(position 순) ≠ 볼륨 파일")
+    if off:
+        rep.notes.append(f"정책 시그널 근거 locator 가 범위 일치(range)가 아님 {len(off)}건(소스 측 상태 — 손실 아님): "
+                         + "; ".join(off[:5]))
+    rep.counts.update(signals=len(file_ids), signal_evidence=n_ev, signal_claims_byte_exact=claims,
+                      signal_locator_match={k: lm.get(k, 0) for k in store.LOCATOR_MATCHES})
+    rep.basis["signals"] = (f"{signals.SIGNALS_REL} signals[] {len(file_ids)} ↔ sv_policy_signal {len(db_sig)}행: 스키마 "
+                            "검증·raw_json·승격 컬럼·position, 파일 전체 재구성 동일")
+    rep.basis["signal_evidence"] = (f"confirmed_evidence {n_ev}건 ↔ sv_signal_evidence: 원문 객체·텍스트 필드 바이트 동일·"
+                                    "locator 재측정(독립 구현)")
+
+
 # ── 진입점 ─────────────────────────────────────────────────────────────────────────
 
 def verify(root: str | Path, db_path: str | Path, source_dir: str | Path | None = None,
@@ -787,6 +938,7 @@ def verify(root: str | Path, db_path: str | Path, source_dir: str | Path | None 
         _check_registries(root, conn, rep)
         _check_runs(root, conn, rep)
         _check_canonical(root, conn, manifest, Path(canonical_md) if canonical_md else None, rep)
+        _check_signals(root, conn, rep)
     finally:
         conn.close()
     return rep
@@ -794,6 +946,7 @@ def verify(root: str | Path, db_path: str | Path, source_dir: str | Path | None 
 
 _TEXT_COUNT_KEYS = ("people", "source_domains", "proposals", "sources", "artifacts", "monitoring_runs", "audit_runs",
                     "events", "statements", "quote_blocks_md", "quote_blocks_excluded", "quotes_db",
+                    "signals", "signal_evidence",
                     "mirrored_files", "sync_index_files", "json_files", "manifest_hashes_matched",
                     "registry_fields_compared")
 
@@ -812,6 +965,9 @@ def format_text(rep: Report, *, root: Path, db_path: Path, source_dir: Path | No
     if c.get("locator_match"):
         out.append("  locator_match                 " + " ".join(f"{k}={v}" for k, v in c["locator_match"].items())
                    + f" (none: known={c.get('quotes_locator_none_known')} unknown={c.get('quotes_locator_none_unknown')})")
+    if c.get("signal_locator_match"):
+        out.append("  signal_locator_match          " + " ".join(f"{k}={v}" for k, v in c["signal_locator_match"].items())
+                   + f" (claims byte-exact={c.get('signal_claims_byte_exact')})")
     if c.get("mirrored_files") is not None:
         out.append(f"  mirror                        identical={c['mirror_identical']} mismatch={c['mirror_mismatch']} "
                    f"missing={c['mirror_missing']}")
