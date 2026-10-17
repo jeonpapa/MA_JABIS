@@ -50,6 +50,8 @@ export interface AgentTasksResponse {
   tasks: AgentTask[];
   policy: AgentPolicy;
   runbooks: string[];
+  /** 실제 처리 활동 — 마지막 선점 시각과 대기 과제 수 (스위치 상태와 별개) */
+  activity?: { last_claimed_at: string | null; waiting: number };
 }
 
 export interface AgentTaskDetailResponse {

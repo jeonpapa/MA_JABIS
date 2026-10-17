@@ -308,9 +308,16 @@ export default function PolicyIntelligencePage() {
           <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
             <span className="rounded-full bg-gray-100 px-3 py-1">주제 {overview.topic_count}</span>
             <span className="rounded-full bg-gray-100 px-3 py-1">누적 이벤트 {overview.event_count}</span>
-            <span className="rounded-full bg-gray-100 px-3 py-1">위원회 분리 {overview.committee_event_count ?? 0}</span>
-            <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700">큐레이션 {overview.curated_event_count ?? 0} / 미처리 {overview.pending_analysis_count ?? 0}</span>
+            <span className="rounded-full bg-gray-100 px-3 py-1">KRPIA 위원회 자료 {overview.committee_event_count ?? 0}건</span>
+            <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700">AI 분석 완료 {overview.curated_event_count ?? 0} · 분석 대기 {overview.pending_analysis_count ?? 0}</span>
             <span className="rounded-full bg-gray-100 px-3 py-1">최신 {formatDate(overview.latest_event_date)}</span>
+            {(() => {
+              const d = overview.latest_event_date ? new Date(overview.latest_event_date) : null;
+              const age = d && !Number.isNaN(d.getTime()) ? Math.floor((Date.now() - d.getTime()) / 86_400_000) : null;
+              return age != null && age > 30
+                ? <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-700" title="KRPIA 메일 수집이 오래 멈춰 있습니다. 이후 발표된 정책은 여기에 없을 수 있습니다.">갱신 지연 · {age}일째 새 자료 없음</span>
+                : null;
+            })()}
           </div>
         )}
 

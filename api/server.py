@@ -615,6 +615,70 @@ def _compute_weight_bsa_daily_cost(
     }
 
 
+# ── 고정용량 주기 요법 (2026-10-17 사용자 테스트) ───────────────────────────────────────────────
+# 키트루다 100mg 바이알이 drug_enrichment(doses_per_cycle=1) 로 '1바이알/21일'(₩100,026/일) 로 계산됐다.
+# 허가 용법은 200 mg Q3W = 100 mg 바이알 2개. 1회 용량(mg) ÷ 바이알 총량(mg) 을 올림해 바이알 수를 구한다.
+# 바이알 총량은 'N g|mg / V mL' (총량/부피) 표기에서만 읽는다 — '25mg/mL' 농도는 분모로 쓰지 않는다(CLAUDE.md 금지).
+_VIAL_TOTAL_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(mg|g|밀리그램|밀리그람)\s*/\s*\d+(?:\.\d+)?\s*m[lLℓ]", re.IGNORECASE)
+_FIXED_DOSE_CYCLE_RE = re.compile(r"(\d+(?:\.\d+)?)\s*mg\s*(?:을|를)?\s*매\s*(\d+)\s*주\s*마다")
+
+
+def _domestic_vial_total_mg(p: dict) -> float | None:
+    """주사제 바이알 1개 총량 mg — '키트루다주(...)_(0.1g/4mL)' → 100. 총량/부피 표기가 없으면 None."""
+    for text in (p.get("dosage_form"), p.get("product_name"), p.get("hira_ingredient")):
+        m = _VIAL_TOTAL_RE.search(text or "")
+        if m:
+            val = float(m.group(1))
+            return val * 1000.0 if m.group(2).lower() == "g" else val
+    return None
+
+
+def _fixed_dose_cycle_cost(p: dict, current_price: float, usage_text: str | None) -> dict | None:
+    """고정용량 주기 요법 일일비용 = 상한금액 × 바이알 수 ÷ 주기일.
+    용법 출처: ① foreign_drug_dosing(수동 관리 성분별 대표 용법, cycle_days ≥ 7) → ② 용법용량 원문의
+    첫 'N mg을 매 K주마다'. 바이알 총량을 모르면 None (추정 금지)."""
+    import math
+    if not current_price or current_price <= 0:
+        return None
+    vial_mg = _domestic_vial_total_mg(p)
+    if not vial_mg or vial_mg <= 0:
+        return None
+    dose_mg = cycle_days = None
+    source = ""
+    keys = _extract_generic_candidates(p.get("hira_ingredient"))
+    if keys:
+        try:
+            with db._connect() as conn:
+                for k in keys:
+                    r = conn.execute(
+                        "SELECT dose_per_cycle_mg, cycle_days FROM foreign_drug_dosing WHERE ingredient_key = ?",
+                        (k,),
+                    ).fetchone()
+                    if r and r[0] and r[1] and int(r[1]) >= 7:
+                        dose_mg, cycle_days, source = float(r[0]), int(r[1]), "foreign_drug_dosing"
+                        break
+        except Exception as ex:
+            logger.debug("foreign_drug_dosing 조회 실패: %s", ex)
+    if dose_mg is None and usage_text:
+        m = _FIXED_DOSE_CYCLE_RE.search(usage_text)
+        if m and int(m.group(2)) > 0:
+            dose_mg, cycle_days, source = float(m.group(1)), int(m.group(2)) * 7, "usage_text"
+    if not dose_mg or not cycle_days:
+        return None
+    vials = max(1, math.ceil(dose_mg / vial_mg - 1e-9))
+    fmt = lambda v: f"{v:g}"
+    sched = f"Q{cycle_days // 7}W" if cycle_days % 7 == 0 else f"{cycle_days}일마다"
+    return {
+        "daily_cost": int(round(current_price * vials / cycle_days)),
+        "assumption": f"{fmt(dose_mg)} mg {sched} = {fmt(vial_mg)} mg 바이알 {vials}개 / {cycle_days}일",
+        "vials_per_cycle": vials,
+        "cycle_days": cycle_days,
+        "dose_mg": dose_mg,
+        "vial_mg": vial_mg,
+        "source": source,
+    }
+
+
 def _enrich_products(products: list[dict]) -> None:
     """각 product 에 drug_enrichment + coverage_start 를 붙인다.
 
@@ -802,6 +866,19 @@ def _enrich_products(products: list[dict]) -> None:
                     daily_cost = bsa_calc["daily_cost"]
                     p["_bsa_calc"] = bsa_calc  # UI 투명화용
 
+        # ── 고정용량 주기 요법 (키트루다 200 mg Q3W = 100 mg 바이알 2개) — 큐레이션 용법은 체중/BSA 추정보다 우선,
+        #    원문 파싱은 체중/BSA 산출이 없을 때만. 가정은 dosing_assumption 으로 UI 에 그대로 표시한다.
+        fixed_calc = None
+        if current_price > 0:
+            fixed_calc = _fixed_dose_cycle_cost(p, current_price, usage_text if usage_is_dosing else None)
+            if fixed_calc and (fixed_calc["source"] == "foreign_drug_dosing" or not bsa_calc):
+                daily_cost = fixed_calc["daily_cost"]
+                bsa_calc = None
+                p.pop("_bsa_calc", None)
+            else:
+                fixed_calc = None
+        p["dosing_assumption"] = fixed_calc["assumption"] if fixed_calc else None
+
         # 전혀 매칭되지 않은 경우 — heuristic fallback. 단 usage_text 가 적응증 텍스트면
         # daily_cost 산출 자체가 신뢰 불가 → unit price 보존하되 `usage_unverified` 마킹.
         _heuristic_used = False
@@ -812,7 +889,7 @@ def _enrich_products(products: list[dict]) -> None:
             usage_text = "용법 미확정 · 1정/일 추정 — 정확한 용법은 조사 필요"
 
         # 용법 미확정 플래그 — usage_text 가 있는데 dosing 패턴 미포함 (= 적응증 가능성)
-        usage_unverified = bool(usage_text) and not usage_is_dosing and not bsa_calc
+        usage_unverified = bool(usage_text) and not usage_is_dosing and not bsa_calc and not fixed_calc
 
         monthly_cost = daily_cost * 30 if daily_cost is not None else None
         yearly_cost  = daily_cost * 365 if daily_cost is not None else None
@@ -1889,14 +1966,27 @@ def foreign_report_export():
     if fmt not in ("xlsx", "hwpx"):
         return jsonify({"error": "format 은 xlsx 또는 hwpx"}), 400
     body = request.get_json(silent=True) or {}
+    # 선택(제형 탭) — ?formulation=<formulation_key>&formulation_label=<표시명>. 있으면 그 제형 행만으로 리포트를 만들고
+    # 파일명에 제형을 넣는다 (IV 100mg 과 SC 395mg 가 한 리포트에 섞이지 않게).
+    form_key = (request.args.get("formulation", "") or "").strip()
+    form_label = (request.args.get("formulation_label", "") or "").strip()
     try:
         from agents import foreign_report
         cached = foreign_agent.get_cached_results(query)
+        if form_key:
+            # get_formulation_groups 와 같은 키 규칙 (formulation_key 미배정 행은 '강도|제형' 대체키)
+            def _fk(r: dict) -> str:
+                return r.get("formulation_key") or f"{(r.get('dosage_strength') or '기타')}|{r.get('form_type') or 'unknown'}"
+            cached = {c: [r for r in (rows or []) if _fk(r) == form_key] for c, rows in cached.items()}
         data, mime, fname = foreign_report.generate(
             query, fmt, cached,
             applied_display=body.get("applied_price_display"),
             applied_actual=body.get("applied_price_actual"),
         )
+        if form_key:
+            tag = re.sub(r"[^\w가-힣.\-]+", "", form_label or form_key)[:40]
+            if tag:
+                fname = fname.replace(f"{query}_A8", f"{query}_{tag}_A8", 1)
     except ValueError as e:
         return jsonify({"error": str(e)}), 404
     except Exception as e:
@@ -2797,6 +2887,19 @@ LINE_KR = {
 }
 
 
+# 홈 적응증 제목용 — 내부 코드(pdl1_1, her2_neg …)를 사람이 읽는 표기로
+_STAGE_KR = {
+    "locally advanced": "국소진행성", "locally_advanced": "국소진행성", "unresectable": "절제 불가",
+    "resectable": "절제 가능", "recurrent": "재발성", "adjuvant": "수술 후 보조", "neoadjuvant": "수술 전 선행",
+    "perioperative": "수술 전후", "unresectable_or_metastatic": "절제 불가·전이성",
+    "locally_advanced_or_metastatic": "국소진행성·전이성",
+}
+_BIOMARKER_KR = {
+    "pdl1_1": "PD-L1 ≥1", "pdl1_10": "PD-L1 ≥10", "pdl1_50": "PD-L1 ≥50%", "pdl1_pos": "PD-L1 양성",
+    "msi_h": "MSI-H/dMMR", "tmb_h": "TMB-H", "her2_neg": "HER2 음성", "her2_pos": "HER2 양성",
+}
+
+
 @app.get("/api/msd/summary")
 def msd_summary():
     """Home 카드용 — MSD 급여 품목 수 (최신 고시일 기준) + Keytruda 적응증 현황."""
@@ -2848,7 +2951,10 @@ def msd_summary():
         # r[7]=r.is_reimbursed 는 LEFT JOIN 이라 행이 없으면 NULL — NULL 과 0 을 구분한다.
         reimbursed_count = sum(1 for r in ind_rows if r[7])
         not_reimbursed_count = sum(1 for r in ind_rows if r[7] is not None and not r[7])
-        unverified_count = sum(1 for r in ind_rows if r[7] is None)
+        # 미확인 = 국내(MFDS) 허가는 있는데 급여 체크리스트 행이 없는 것 — 관리자 입력이 필요한 진짜 공백.
+        # 국내 미허가(외국 전용) 적응증은 급여 대상 자체가 아니므로 '미확인'에 섞지 않고 따로 센다(42 → 실제 공백 수).
+        unverified_count = sum(1 for r in ind_rows if r[7] is None and r[5])
+        not_mfds_count = sum(1 for r in ind_rows if r[7] is None and not r[5])
         items = []
         for r in ind_rows:
             disease = r[1] or ""
@@ -2861,9 +2967,9 @@ def msd_summary():
             if lot_kr:
                 parts.append(lot_kr)
             if stage and stage not in ("metastatic", "advanced"):
-                parts.append(stage)
+                parts.append(_STAGE_KR.get(stage, stage.replace("_", " ")))
             if bio and bio != "all_comers":
-                parts.append(bio.replace("_", " "))
+                parts.append(_BIOMARKER_KR.get(bio, bio.replace("_", " ")))
             title = " · ".join(parts)
             items.append({
                 "id": r[0],
@@ -2881,7 +2987,8 @@ def msd_summary():
                 # 3분할 상태 — 체크리스트 행 없음은 '미급여' 가 아니라 '미확인'
                 "reimbursement_checked": r[7] is not None,
                 "reimbursement_status": ("reimbursed" if r[7] else
-                                         "not_reimbursed" if r[7] is not None else "unverified"),
+                                         "not_reimbursed" if r[7] is not None else
+                                         "unverified" if r[5] else "not_mfds_approved"),
                 "reimbursement_effective_date": r[8],
                 "reimbursement_criteria": r[9],
                 "reimbursement_notice_date": r[10],
@@ -2897,7 +3004,8 @@ def msd_summary():
                 "pending_mfds": total - mfds_approved,
                 "reimbursed_indications": reimbursed_count,
                 "not_reimbursed_indications": not_reimbursed_count,   # 체크리스트가 미급여라고 확인한 것
-                "unverified_reimbursement": unverified_count,         # 체크리스트 행 없음 (미확인)
+                "unverified_reimbursement": unverified_count,         # 국내 허가 + 체크리스트 행 없음 (입력 필요)
+                "not_mfds_approved": not_mfds_count,                  # 국내 미허가(외국 전용) — 급여 판단 대상 아님
                 "checklist_covered": reimbursed_count + not_reimbursed_count,
                 "pending_reimbursement": total - reimbursed_count,    # 하위호환: 미급여 + 미확인
                 "items": items,
@@ -3148,16 +3256,43 @@ def _ms_all_quarters(conn) -> list[str]:
     return [r[0] for r in rows]
 
 
+def _ms_resolve_quarter(quarters: list[str], requested: str | None) -> str | None:
+    """요청 분기가 적재 분기 목록에 있으면 그대로, 아니면 최신 분기 (기준 분기 = 기본 최신)."""
+    q = (requested or "").strip()
+    if q and q in quarters:
+        return q
+    return quarters[-1] if quarters else None
+
+
+def _ms_data_meta(conn, quarters: list[str]) -> dict:
+    """데이터 출처·기준시점 메타 (공개 엔드포인트용 — 업로드 이력의 최근 1건 시각만 노출)."""
+    last_uploaded_at = None
+    try:
+        row = conn.execute(
+            "SELECT uploaded_at FROM market_share_upload_log ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        last_uploaded_at = row[0] if row else None
+    except Exception:  # 업로드 로그 테이블 부재 등 — 메타는 응답을 막지 않는다
+        last_uploaded_at = None
+    return {
+        "source": "IQVIA NSA-E",
+        "latest_quarter": quarters[-1] if quarters else None,
+        "last_uploaded_at": last_uploaded_at,
+    }
+
+
 @app.get("/api/market-share/search")
 def market_share_search():
     """제품명/성분명 검색 — brand 단위 (product_name+atc4_code) 그룹, 최신 분기 값 포함."""
     q = (request.args.get("q") or "").strip()
     limit = min(int(request.args.get("limit", 30)), 100)
+    quarter_arg = request.args.get("quarter")
     if not q:
         return jsonify({"quarter": None, "items": []})
     try:
         with db._connect() as conn:
-            latest = _ms_latest_quarter(conn)
+            latest = (_ms_resolve_quarter(_ms_all_quarters(conn), quarter_arg)
+                      if quarter_arg else _ms_latest_quarter(conn))
             like = f"%{q.lower()}%"
             sql = """
                 SELECT p.product_name, p.molecule_desc, p.mfr_name,
@@ -3204,8 +3339,8 @@ def market_share_atc4(atc4_code: str):
             quarters = _ms_all_quarters(conn)
             if not quarters:
                 return jsonify({"error": "no data"}), 404
-            if quarter not in quarters:
-                quarter = quarters[-1]
+            quarter = _ms_resolve_quarter(quarters, quarter)
+            data_meta = _ms_data_meta(conn, quarters)
 
             meta = conn.execute(
                 "SELECT atc4_desc FROM market_share_products WHERE atc4_code=? LIMIT 1",
@@ -3256,6 +3391,7 @@ def market_share_atc4(atc4_code: str):
             "quarters": quarters,
             "totals": {"values_lc": total_values, "dosage_units": total_units},
             "products": products,
+            "meta": data_meta,
         })
     except Exception as e:
         logger.error("market_share_atc4 실패: %s", e, exc_info=True)
@@ -3265,10 +3401,13 @@ def market_share_atc4(atc4_code: str):
 @app.get("/api/market-share/export")
 def market_share_export():
     """ATC4 시장 — Market Share / Unit Trend / Revenue Trend 3개 시트 xlsx.
-    GET /api/market-share/export?atc4=L01G5&quarter=2025Q1&top=8
+    GET /api/market-share/export?atc4=L01G5&quarter=2025Q1&from_quarter=2024Q2&to_quarter=2025Q1&top=8
+    quarter = 현황(점유율) 시트 기준 분기, from/to = 추이 시트 기간 (미지정 시 전체).
     """
     atc4_code = (request.args.get("atc4") or "").strip()
     quarter_arg = (request.args.get("quarter") or "").strip()
+    from_q = (request.args.get("from_quarter") or "").strip()
+    to_q = (request.args.get("to_quarter") or "").strip()
     top_n = min(int(request.args.get("top", 8)), 15)
     if not atc4_code:
         return jsonify({"error": "atc4 필수"}), 400
@@ -3284,7 +3423,12 @@ def market_share_export():
             quarters = _ms_all_quarters(conn)
             if not quarters:
                 return jsonify({"error": "no data"}), 404
-            quarter = quarter_arg if quarter_arg in quarters else quarters[-1]
+            quarter = _ms_resolve_quarter(quarters, quarter_arg)
+            trend_quarters = [
+                q for q in quarters
+                if (not from_q or q >= from_q) and (not to_q or q <= to_q)
+            ] or quarters
+            data_meta = _ms_data_meta(conn, quarters)
 
             meta = conn.execute(
                 "SELECT atc4_desc FROM market_share_products WHERE atc4_code=? LIMIT 1",
@@ -3387,8 +3531,8 @@ def market_share_export():
 
         # ── Sheet 2: Unit Trend (점유율 %)
         ws2 = wb.create_sheet("Unit Trend")
-        ws2.append(["Quarter", *top_brands])
-        for qtr in quarters:
+        ws2.append(["Quarter", *[f"{b} (Units Share %)" for b in top_brands]])
+        for qtr in trend_quarters:
             row = [qtr]
             for b in top_brands:
                 row.append(round(unit_share[b].get(qtr, 0.0), 2))
@@ -3398,7 +3542,7 @@ def market_share_export():
         # ── Sheet 3: Revenue Trend (M KRW)
         ws3 = wb.create_sheet("Revenue Trend")
         ws3.append(["Quarter", *[f"{b} (M KRW)" for b in top_brands]])
-        for qtr in quarters:
+        for qtr in trend_quarters:
             row = [qtr]
             for b in top_brands:
                 row.append(round(rev_series[b].get(qtr, 0.0), 2))
@@ -3412,6 +3556,25 @@ def market_share_export():
                 max_len = max([len(v or "") for v in values] + [10]) + 2
                 ws.column_dimensions[cell.column_letter].width = min(max_len, 30)
 
+        # ── Sheet 4: Info (내보낸 범위 명시)
+        ws4 = wb.create_sheet("Info")
+        ws4.append(["항목", "값"])
+        for k, v in (
+            ("데이터 출처", data_meta["source"]),
+            ("ATC4", f"{atc4_code} {atc4_desc}"),
+            ("현황(Market Share 시트) 기준 분기", quarter),
+            ("추이(Unit/Revenue Trend 시트) 기간", f"{trend_quarters[0]} ~ {trend_quarters[-1]}"),
+            ("추이 상위 브랜드 선정 기준", f"{quarter} 매출(Values LC) 상위 {top_n}"),
+            ("최신 적재 분기", data_meta["latest_quarter"] or ""),
+            ("최근 업로드", data_meta["last_uploaded_at"] or ""),
+            ("Units", "IQVIA 처방 단위(정·바이알 등)"),
+            ("Values LC", "IQVIA Values LC(원)"),
+        ):
+            ws4.append([k, v])
+        _style_header(ws4)
+        ws4.column_dimensions["A"].width = 34
+        ws4.column_dimensions["B"].width = 48
+
         import io
         from datetime import datetime
         from urllib.parse import quote
@@ -3420,7 +3583,8 @@ def market_share_export():
         wb.save(buf)
         buf.seek(0)
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        fname = f"MarketShare_{atc4_code}_{atc4_desc}_{quarter}_{stamp}.xlsx"
+        fname = (f"MarketShare_{atc4_code}_snap{quarter}_trend{trend_quarters[0]}-{trend_quarters[-1]}"
+                 f"_{stamp}.xlsx")
         safe = re.sub(r"[^\w\-.]", "_", fname)[:120]
         return Response(
             buf.read(),
@@ -3541,7 +3705,8 @@ def market_share_brand():
     try:
         with db._connect() as conn:
             quarters = _ms_all_quarters(conn)
-            latest = quarters[-1] if quarters else None
+            # 기준 분기 (기본 최신) — 순위/점유율/분기 매출은 이 분기 기준
+            latest = _ms_resolve_quarter(quarters, request.args.get("quarter"))
 
             pack_rows = conn.execute(
                 """
@@ -3588,6 +3753,7 @@ def market_share_brand():
             rank = next((i for i, r in enumerate(ranked) if r[0] == name), -1) + 1
             brand_v = next((float(r[1] or 0.0) for r in ranked if r[0] == name), 0.0)
             share_pct = (brand_v / total * 100.0) if total > 0 else 0.0
+            q_point = next((x for x in quarterly if x["quarter"] == latest), None)
 
             packs = [
                 {
@@ -3614,6 +3780,8 @@ def market_share_brand():
             "market_rank": rank if rank > 0 else None,
             "market_share_pct": share_pct,
             "market_total_values_lc": total,
+            "quarter_values_lc": q_point["values_lc"] if q_point else 0.0,
+            "quarter_dosage_units": q_point["dosage_units"] if q_point else 0.0,
             "packs": packs,
             "quarterly": quarterly,
         })
@@ -4756,53 +4924,124 @@ def _dose_info(dosing: dict | None, basis: str) -> dict | None:
     }
 
 
-def _onco_unit_price(inn: str, source: str, date: str, dot_date: str, ref: str = "") -> dict:
+def _wap_configured() -> bool:
+    """주성분 가중평균(WAP) 외부 API 키 설정 여부 (키 값·변수명은 응답에 노출하지 않음)."""
+    try:
+        from agents.scrapers import ingredient_wap
+        return bool(ingredient_wap._config()[1])
+    except Exception:
+        return False
+
+
+def _latest_row_by_code(code: str) -> dict:
+    try:
+        with db._connect() as conn:
+            r = conn.execute(
+                "SELECT insurance_code, product_name_kr, ingredient, dosage_strength FROM drug_latest "
+                "WHERE insurance_code=?", (code,),
+            ).fetchone()
+        return dict(r) if r else {}
+    except Exception:
+        return {}
+
+
+def _domestic_unit_price(inn: str, dot_date: str, ref: str = "", route: str | None = None) -> dict:
+    """국내 상한금액(drug_prices as-of) 단위가. ref(보험코드) 있으면 그 제품 고정, 없으면 INN 매칭.
+
+    INN 매칭: 정본 약제명 변형('Fluorouracil(bolus)'→'Fluorouracil', 'nab-Paclitaxel'→
+    'paclitaxel(albumin-bound)') → drug_latest 영문 ingredient 접두 후보 → 동일성분·단일제·경로 우선.
+    """
+    from agents.regimen_export import price_lookup_keys, rank_domestic_candidates
+    ref = (ref or "").strip()
+    if ref and re.fullmatch(r"\d{6,}", ref):
+        row = db.get_price_at_date(ref, dot_date)
+        if row and row.get("max_price"):
+            lt = _latest_row_by_code(ref)
+            content = _total_content_mg(lt.get("ingredient"), lt.get("dosage_strength"),
+                                        row.get("dosage_strength"), row.get("ingredient"))
+            if content:
+                price = row["max_price"]
+                return {"available": True, "source": "domestic", "label": row.get("product_name_kr"),
+                        "code": ref, "unit_price": price, "content_mg": content,
+                        "price_per_mg": price / content, "priceDate": row.get("apply_date")}
+    keys = []
+    if not re.search(r"[A-Za-z]", inn):
+        en = db.english_inn_from_kr(inn)
+        if en:
+            keys.append(en)
+    keys += [k for k in price_lookup_keys(inn) if re.search(r"[A-Za-z]", k)]
+    seen_any = False
+    for key in keys:
+        reps = rank_domestic_candidates(db.find_by_ingredient_strength(key, limit=40), key, route)
+        seen_any = seen_any or bool(reps)
+        for rep in reps:
+            row = db.get_price_at_date(rep.get("insurance_code") or "", dot_date)
+            if not row:
+                continue
+            price = row.get("max_price")
+            # 함량: drug_latest rep(영문 ingredient·함량) 우선, 이력행 보조 (이력행 ingredient/strength 는 종종 비거나 'mL')
+            content = _total_content_mg(rep.get("ingredient"), rep.get("dosage_strength"),
+                                        row.get("dosage_strength"), row.get("ingredient"))
+            if price and content:
+                return {"available": True, "source": "domestic", "label": row.get("product_name_kr"),
+                        "code": rep.get("insurance_code"), "unit_price": price, "content_mg": content,
+                        "price_per_mg": price / content, "priceDate": row.get("apply_date")}
+    return {"available": False, "source": "domestic",
+            "reason": "해당 기준일 국내 상한금액 없음" if seen_any else "국내 약가 매칭 없음"}
+
+
+def _onco_unit_price(inn: str, source: str, date: str, dot_date: str, ref: str = "",
+                     route: str | None = None) -> dict:
     """약제(영문 INN) → as-of 단위가 + 단위함량mg + mg당 단가. 규격 다수면 mg당 최저 선택.
 
     ref 주어지면 그 규격(WAP main_ingredient_code / 브랜드 insurance_code) 고정.
+    WAP 미연결·미제공 시 국내 상한금액으로 대체(fallback=True, note=사용자 문구).
     반환 {available, source, label, code, unit_price, content_mg, price_per_mg, period?, alternatives?}.
     """
+    from agents.regimen_export import WAP_NOT_CONNECTED_NOTE, WAP_NO_DATA_NOTE
     inn = (inn or "").strip()
     if not inn:
         return {"available": False, "reason": "약제명 없음"}
+    if source != "domestic":
+        if not _wap_configured():
+            dom = _domestic_unit_price(inn, dot_date, ref=ref, route=route)
+            return {**dom, "requested_source": "weighted_avg", "fallback": True, "note": WAP_NOT_CONNECTED_NOTE}
+        wap_pm = _onco_wap_unit_price(inn, date, ref)
+        if wap_pm.get("available"):
+            return wap_pm
+        dom = _domestic_unit_price(inn, dot_date, ref=ref, route=route)
+        return {**dom, "requested_source": "weighted_avg", "fallback": True, "note": WAP_NO_DATA_NOTE}
+    return _domestic_unit_price(inn, dot_date, ref=ref, route=route)
+
+
+def _onco_wap_unit_price(inn: str, date: str, ref: str = "") -> dict:
+    """WAP(주성분 가중평균) 단위가. 키 설정 전제. 실패 사유는 사용자 문구로 정제."""
+    from agents.regimen_export import friendly_price_reason
+    source = "weighted_avg"
     # 한글 제품명(영문자 없음)이면 영문 INN 으로 변환 — 저장 레지멘의 한글 약제 가격조회 복구
     if not re.search(r"[A-Za-z]", inn):
         en = db.english_inn_from_kr(inn)
         if en:
             inn = en
-    if source == "weighted_avg":
-        from agents.scrapers import ingredient_wap
-        wap = ingredient_wap.lookup(date, code=ref) if ref else ingredient_wap.lookup(date, q=inn)
-        if not wap.get("available") or not wap.get("results"):
-            return {"available": False, "reason": wap.get("reason") or "가중평균 없음"}
-        cand = []
-        for r in wap["results"]:
-            price = r.get("weighted_avg_price")
-            content = _total_content_mg(r.get("ingredient_name"))
-            if price and content:
-                cand.append({"code": r.get("main_ingredient_code"), "label": r.get("ingredient_name"),
-                             "unit_price": price, "content_mg": content, "price_per_mg": price / content})
-        if not cand:
-            return {"available": False, "reason": "규격 함량 해석 실패"}
-        cand.sort(key=lambda x: x["price_per_mg"])   # mg당 최저(대형 vial) 우선
-        best = cand[0]
-        return {"available": True, "source": source, "period": wap.get("period"),
-                "alternatives": cand[:8], **best}
-    # 브랜드 (국내약가)
-    reps = db.find_by_ingredient_strength(inn, limit=40)
-    for rep in reps:
-        row = db.get_price_at_date(rep.get("insurance_code") or "", dot_date)
-        if not row:
-            continue
-        price = row.get("max_price")
-        # 함량: drug_latest rep(영문 ingredient·함량) 우선, 이력행 보조 (이력행 ingredient/strength 는 종종 비거나 'mL')
-        content = _total_content_mg(rep.get("ingredient"), rep.get("dosage_strength"),
-                                    row.get("dosage_strength"), row.get("ingredient"))
+    if ref and re.fullmatch(r"\d{6,}", ref):
+        ref = ""                                    # 보험코드(브랜드) ref 는 WAP 코드가 아님
+    from agents.scrapers import ingredient_wap
+    wap = ingredient_wap.lookup(date, code=ref) if ref else ingredient_wap.lookup(date, q=inn)
+    if not wap.get("available") or not wap.get("results"):
+        return {"available": False, "reason": friendly_price_reason(wap.get("reason") or "가중평균 없음")}
+    cand = []
+    for r in wap["results"]:
+        price = r.get("weighted_avg_price")
+        content = _total_content_mg(r.get("ingredient_name"))
         if price and content:
-            return {"available": True, "source": source, "label": row.get("product_name_kr"),
-                    "code": rep.get("insurance_code"), "unit_price": price, "content_mg": content,
-                    "price_per_mg": price / content, "priceDate": row.get("apply_date")}
-    return {"available": False, "reason": "해당 시점 국내약가 없음"}
+            cand.append({"code": r.get("main_ingredient_code"), "label": r.get("ingredient_name"),
+                         "unit_price": price, "content_mg": content, "price_per_mg": price / content})
+    if not cand:
+        return {"available": False, "reason": "규격 함량 해석 실패"}
+    cand.sort(key=lambda x: x["price_per_mg"])   # mg당 최저(대형 vial) 우선
+    best = cand[0]
+    return {"available": True, "source": source, "period": wap.get("period"),
+            "alternatives": cand[:8], **best}
 
 
 _COUNT_UNITS = {"정", "tab", "tablet", "캡슐", "cap", "capsule", "포", "환", "매", "vial", "바이알", "unit", "단위"}
@@ -4965,38 +5204,28 @@ def onco_cost():
     if not date or not isinstance(drugs, list):
         return jsonify({"error": "date, drugs 필요", "code": "INVALID"}), 400
     dot_date = date.replace("-", ".")
+    from agents.regimen_export import WAP_NOT_CONNECTED_NOTE, compute_drug_cost, sum_regimen_totals
+    # 읽기 전용: 용량 계산 + as-of 약가 조회만 (save_user_dosing 등 DB 쓰기 없음)
     computed = compute_regimen_doses(drugs, patient)
     out_drugs = []
-    tot = {"cycle": 0.0, "course": 0.0, "monthly": 0.0, "yearly": 0.0, "daily": 0.0}
-    any_missing = False
+    costs = []
+    any_fallback = False
     for d, raw in zip(computed["drugs"], drugs):
         row_source = raw.get("price_source") or source
         inn_for_price = raw.get("price_inn") or d.get("ingredient")
-        pm = _onco_unit_price(inn_for_price, row_source, date, dot_date, ref=raw.get("price_ref") or "")
-        cyc_mg = d.get("cycle_total_mg")
-        cycle_days = d.get("cycle_days") or 1
-        total_cycles = d.get("total_cycles") or 1
-        unit = (d.get("unit") or "").strip().lower()
-        cost = {"cycle": None, "course": None, "monthly": None, "yearly": None, "daily": None}
-        cyc = None
-        if pm.get("available") and cyc_mg is not None:
-            cyc = cyc_mg * pm["price_per_mg"]                 # mg 기반
-        elif pm.get("available") and unit in _COUNT_UNITS and d.get("dose_value") is not None:
-            cyc = float(d["dose_value"]) * float(d.get("per_cycle") or 1) * pm["unit_price"]  # 정/바이알 count
-        if cyc is not None and cycle_days:
-            yearly = cyc * 365 / cycle_days
-            cost = {"cycle": round(cyc), "course": round(cyc * total_cycles),
-                    "monthly": round(cyc * 30 / cycle_days), "yearly": round(yearly),
-                    "daily": round(yearly / 365)}
-            for k in tot:
-                tot[k] += cost[k]
-        else:
-            any_missing = True
-        out_drugs.append({**d, "price": pm, "cost": cost})
-    totals = {k: round(v) for k, v in tot.items()}
-    totals["hasMissing"] = any_missing
+        pm = _onco_unit_price(inn_for_price, row_source, date, dot_date, ref=raw.get("price_ref") or "",
+                              route=raw.get("route"))
+        any_fallback = any_fallback or bool(pm.get("fallback"))
+        res = compute_drug_cost(d, pm)
+        costs.append(res["cost"])
+        out_drugs.append({**d, "price": pm, "cost": res["cost"],
+                          "missing_reason": res["missing_reason"], "course_reason": res["course_reason"]})
+    totals = sum_regimen_totals(costs)
+    wap_ok = _wap_configured()
     return jsonify({"metrics": computed["metrics"], "source": source, "asOfDate": date,
-                    "drugs": out_drugs, "totals": totals})
+                    "drugs": out_drugs, "totals": totals,
+                    "wapAvailable": wap_ok,
+                    "priceNote": WAP_NOT_CONNECTED_NOTE if (any_fallback and not wap_ok) else None})
 
 
 @app.post("/api/regimen/onco/export")
@@ -5020,7 +5249,7 @@ def onco_export():
         for d in (reg.get("drugs") or []):
             inn = d.get("price_inn") or d.get("ingredient")
             pm = _onco_unit_price(inn, d.get("price_source") or source, date, dot_date,
-                                  ref=d.get("price_ref") or "")
+                                  ref=d.get("price_ref") or "", route=d.get("route"))
             d["price"] = pm
     try:
         from agents.regimen_export import build_regimen_xlsx
@@ -5048,8 +5277,43 @@ def regimen_wap():
     code = (request.args.get("code") or "").strip() or None
     if not date or (not q and not code):
         return jsonify({"error": "date 와 q/code 중 하나 필요", "code": "INVALID"}), 400
+    if not _wap_configured():
+        from agents.regimen_export import WAP_NOT_CONNECTED_NOTE
+        return jsonify({"available": False, "not_connected": True, "reason": WAP_NOT_CONNECTED_NOTE})
+    from agents.regimen_export import friendly_price_reason
     from agents.scrapers import ingredient_wap
-    return jsonify(ingredient_wap.lookup(date, q=q, code=code))
+    res = ingredient_wap.lookup(date, q=q, code=code)
+    if not res.get("available"):
+        res = {**res, "reason": friendly_price_reason(res.get("reason"))}
+    return jsonify(res)
+
+
+@app.get("/api/regimen/price-sources")
+@require_auth()
+def regimen_price_sources():
+    """가격 소스 사용 가능 여부 — 프론트 기본 소스/안내 문구 결정용 (키·변수명 비노출)."""
+    from agents.regimen_export import WAP_NOT_CONNECTED_NOTE
+    ok = _wap_configured()
+    return jsonify({
+        "domestic": {"available": True},
+        "weighted_avg": {"available": ok, "note": None if ok else WAP_NOT_CONNECTED_NOTE},
+        "default": "weighted_avg" if ok else "domestic",
+    })
+
+
+@app.get("/api/regimen/drug-search")
+@require_auth()
+def regimen_drug_search():
+    """약제 추가용 국내 등재품 검색 — 한글 제품명(키트루다) · 영문 INN(pembrolizumab) 모두. 읽기 전용."""
+    q = (request.args.get("q") or "").strip()
+    if len(q) < 2:
+        return jsonify({"results": []})
+    try:
+        rows = db.search_regimen_drugs(q, limit=25)
+    except Exception as e:
+        logger.warning("[regimen] drug-search %s 실패: %s", q, e)
+        return jsonify({"error": "검색 실패", "code": "SEARCH_FAILED"}), 500
+    return jsonify({"results": rows})
 
 
 @app.post("/api/regimen/price-as-of")
@@ -5620,6 +5884,7 @@ def admin_agent_tasks():
                                              order="recent"),
             "policy": _agent_policy.get_policy(db_path=_AGENT_TASK_DB_PATH),
             "runbooks": _agent_runbooks.list_runbooks(),
+            "activity": _agent_store.dispatcher_activity(db_path=_AGENT_TASK_DB_PATH),
         })
     except Exception as e:
         logger.error("admin_agent_tasks 실패: %s", e, exc_info=True)

@@ -187,6 +187,17 @@ def list_tasks(*, db_path: str | Path = DEFAULT_DB_PATH, statuses: tuple[str, ..
         conn.close()
 
 
+def dispatcher_activity(*, db_path: str | Path = DEFAULT_DB_PATH) -> dict:
+    """정책 스위치(enabled)는 '선점 허용' 일 뿐 처리 주체가 돌고 있다는 뜻이 아니다.
+    실제로 과제를 가져간 마지막 시각(claimed 이벤트)을 함께 보여줘 '가동 중' 오해를 막는다."""
+    with connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT MAX(created_at) FROM agent_task_event WHERE event = 'claimed'").fetchone()
+        waiting = conn.execute(
+            "SELECT COUNT(*) FROM agent_task WHERE status IN ('new', 'triaged')").fetchone()[0]
+    return {"last_claimed_at": row[0] if row else None, "waiting": waiting}
+
+
 def list_events(task_id: int, *, db_path: str | Path = DEFAULT_DB_PATH) -> list[dict]:
     conn = connect(db_path)
     try:

@@ -43,13 +43,14 @@ interface RawMsdSummary {
     // 3분할 (급여 / 미급여 / 미확인) — HIRA 급여 체크리스트 행이 없는 적응증은 '미급여' 가 아니라 '미확인'
     not_reimbursed_indications?: number;
     unverified_reimbursement?: number;
+    not_mfds_approved?: number;   // 국내 미허가(외국 전용) — 급여 판단 대상 아님
     pending_reimbursement: number;
     items: RawKeytrudaIndication[];
   };
 }
 
 /** 급여 판정 3분할 — 체크리스트 행이 없는 적응증을 '비급여' 로 보이게 하지 않는다 */
-export type ReimbStatus = 'reimbursed' | 'not_reimbursed' | 'unverified';
+export type ReimbStatus = 'reimbursed' | 'not_reimbursed' | 'unverified' | 'not_mfds_approved';
 export type MsdIndicationType = '급여' | '비급여' | '미확인';
 
 const TYPE_ORDER: Record<MsdIndicationType, number> = { '급여': 0, '비급여': 1, '미확인': 2 };
@@ -66,7 +67,9 @@ export interface MsdSummaryView {
   keytruda: {
     reimbursed: number;      // 급여 (is_reimbursed=1)
     notReimbursed: number;   // 미급여 — 체크리스트가 0 이라고 확인한 것만
-    unverified: number;      // 미확인 — 체크리스트 행 없음
+    unverified: number;      // 입력 필요 — 국내 허가됐지만 급여 체크리스트 행 없음
+    notMfdsApproved: number; // 국내 미허가(외국 전용)
+    mfdsApproved: number;
     indications: MsdIndicationView[];
   };
 }
@@ -95,6 +98,8 @@ export async function fetchMsdSummary(): Promise<MsdSummaryView> {
       reimbursed: raw.keytruda?.reimbursed_indications ?? 0,
       notReimbursed: raw.keytruda?.not_reimbursed_indications ?? 0,
       unverified: raw.keytruda?.unverified_reimbursement ?? 0,
+      notMfdsApproved: raw.keytruda?.not_mfds_approved ?? 0,
+      mfdsApproved: raw.keytruda?.mfds_approved ?? 0,
       indications,
     },
   };

@@ -59,3 +59,18 @@ def test_items_carry_tristate_and_keep_is_reimbursed_boolean(api_db):
     assert by["keytruda_b"]["reimbursement_status"] == "not_reimbursed" and by["keytruda_b"]["is_reimbursed"] is False
     assert by["keytruda_c"]["reimbursement_status"] == "unverified" and by["keytruda_c"]["is_reimbursed"] is False
     assert by["keytruda_c"]["reimbursement_checked"] is False and by["keytruda_b"]["reimbursement_checked"] is True
+
+
+def test_foreign_only_indication_is_not_counted_as_unverified(api_db):
+    """국내 미허가(MFDS 행 없음) 적응증은 '미확인'(입력 필요)이 아니라 '국내 미허가'로 따로 센다."""
+    with api_db._connect() as conn:
+        conn.execute("INSERT INTO indications_master (indication_id, product, disease, line_of_therapy, "
+                     "created_at, updated_at) VALUES (?,?,?,?,?,?)", ("keytruda_x", "keytruda", "TNBC", "1L", NOW, NOW))
+        conn.commit()
+    k = s.app.test_client().get("/api/msd/summary").get_json()["keytruda"]
+    assert k["total_indications"] == 5
+    assert k["unverified_reimbursement"] == 2
+    assert k["not_mfds_approved"] == 1
+    assert k["reimbursed_indications"] + k["not_reimbursed_indications"] + k["unverified_reimbursement"] + k["not_mfds_approved"] == 5
+    by = {i["id"]: i for i in s.app.test_client().get("/api/msd/summary").get_json()["keytruda"]["items"]}
+    assert by["keytruda_x"]["reimbursement_status"] == "not_mfds_approved"

@@ -131,7 +131,7 @@ class CaOntarioScraper(BaseScraper):
                 din, trade, strength, dform, price_raw = cells[:5]
                 if not din or not trade:
                     continue
-                price = self._parse_price(price_raw)
+                price, price_note = self._price_per_listed_unit(price_raw, strength)
                 key = din.strip()
                 # 신선도: 최신 연도가 기존을 덮어씀
                 existing = rows_by_din.get(key)
@@ -143,9 +143,32 @@ class CaOntarioScraper(BaseScraper):
                     "strength":      strength.strip(),
                     "dosage_form":   dform.strip(),
                     "price":         price,
+                    "price_note":    price_note,
                     "year":          current_year,
                 }
         return list(rows_by_din.values())
+
+    _PER_MG = re.compile(r"\$?\s*([\d,]+(?:\.\d+)?)\s*/\s*mg\b", re.I)
+    _STRENGTH_MG = re.compile(r"^\s*([\d.]+)\s*mg\b", re.I)
+
+    def _price_per_listed_unit(self, raw: str, strength: str) -> tuple[Optional[float], Optional[str]]:
+        """EAP 가격 → CA 표준(최소단위당) 가격.
+
+        대부분 '$238.7160' 처럼 단위(정·바이알)당 가격이다. 일부 신약은 '$193.7145/mg' 처럼 **mg 당** 가격으로
+        공시된다(Winrevair, Amvuttra). 이전에는 float 변환 실패로 None(가격 미공개 처리)이 됐다.
+        mg 당 가격은 같은 행의 함량(예: '45 mg /Vial', '25mg/0.5mL')이 단위당 mg 를 명시할 때만 단위가로 환산하고,
+        함량이 mg 로 명시되지 않으면 추정하지 않고 None + 사유를 돌려준다.
+        """
+        text = (raw or "").replace("\xa0", " ")
+        m = self._PER_MG.search(text)
+        if not m:
+            return self._parse_price(raw), None
+        per_mg = float(m.group(1).replace(",", ""))
+        sm = self._STRENGTH_MG.match(strength or "")
+        if not sm:
+            return None, f"EAP mg당 가격 ${per_mg}/mg — 단위당 mg 불명확('{strength}'), 환산 보류"
+        mg = float(sm.group(1))
+        return round(per_mg * mg, 4), f"EAP mg당 가격 ${per_mg}/mg × {mg:g} mg/단위 = 단위당 가격"
 
     def _parse_price(self, raw: str) -> Optional[float]:
         """'$238.7160' / '$1,234.56' / '—' → float or None."""
@@ -198,6 +221,7 @@ class CaOntarioScraper(BaseScraper):
                     "din":      r["din"],
                     "year":     r["year"],
                     "price_kind": "DBP (Drug Benefit Price)",
+                    **({"price_derivation": r["price_note"]} if r.get("price_note") else {}),
                     "source_type": None,
                 },
             })

@@ -125,8 +125,9 @@ def _msd_summary_tristate(status: int, body) -> str | None:
     if missing:
         return f"급여 3분할 키 없음 {missing}"
     total, a, b, c, covered = (int(k[x] or 0) for x in TRISTATE_KEYS)
-    if a + b + c != total:
-        return f"급여{a}+미급여{b}+미확인{c}={a + b + c} ≠ 전체 {total}"
+    d = int(k.get("not_mfds_approved") or 0)   # 국내 미허가(외국 전용)는 미확인과 분리 집계
+    if a + b + c + d != total:
+        return f"급여{a}+미급여{b}+미확인{c}+국내미허가{d}={a + b + c + d} ≠ 전체 {total}"
     if covered != a + b:
         return f"checklist_covered {covered} ≠ 급여{a}+미급여{b}"
     return None
@@ -290,7 +291,10 @@ SCREENS: tuple[Screen, ...] = (
 
 
 def _get(base: str, path: str, token: str | None, opener, timeout: float) -> tuple[int, object]:
-    req = urllib.request.Request(f"{base}{path}")
+    # 한글 질의(?q=키트루다)를 그대로 넣으면 urllib 이 ASCII 인코딩에서 UnicodeEncodeError 를 낸다 — 그 예외가
+    # 'API 실패'로 집계돼 platform_smoke 가 거짓 실패하던 결함. 이미 인코딩된 %XX·예약 문자는 그대로 둔다.
+    safe_path = urllib.parse.quote(path, safe="/?&=%:+,;@!$'()*~#[]")
+    req = urllib.request.Request(f"{base}{safe_path}")
     req.add_header(SMOKE_HEADER, "1")
     if token:
         req.add_header("Authorization", f"Bearer {token}")

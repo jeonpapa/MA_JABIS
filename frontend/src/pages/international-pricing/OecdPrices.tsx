@@ -44,8 +44,8 @@ export default function OecdPrices({ query = '', revision = 0, isDark = false }:
     finally { downloadingRef.current = false; setDownloadBusy(false); }
   };
   const shell = isDark ? 'bg-[#161B27] border-[#1E2530] text-gray-100' : 'bg-white border-gray-200 text-gray-900';
-  return <section className={'rounded-2xl border p-5 space-y-4 ' + shell} aria-label="OECD·공단 추가국가 가격">
-    <div><h2 className="font-bold">OECD·공단 추가국가 공개 가격</h2>
+  return <section className={'rounded-2xl border p-5 space-y-4 ' + shell} aria-label="공단 추가국가 (A8 외 29개국) 가격">
+    <div><h2 className="font-bold">공단 추가국가 (A8 외 29개국) 공개 가격</h2>
       <p className="text-xs opacity-70 mt-1">공단 A8 외 29개국 기준이며 대만·싱가포르 등 OECD 비회원국을 포함합니다. 원문 가격단계·VAT·포장을 보존합니다. A8 조정가나 임의 환율 환산은 적용하지 않습니다.</p></div>
     <form onSubmit={e => { e.preventDefault(); setSearch(draft.trim()); setRetry(v => v + 1); }} className="flex gap-2">
       <input aria-label="추가국가 캐시 검색어" value={draft} onChange={e => setDraft(e.target.value)} placeholder="제품명 또는 성분명으로 저장된 가격 조회" className="flex-1 min-w-0 rounded-lg border px-3 py-2 text-sm bg-transparent" />

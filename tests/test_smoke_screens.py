@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -44,7 +45,7 @@ def _response(status: int, raw: bytes, url: str):
 def _fake_opener(routes: dict):
     """path → (status, body). 등록 안 된 경로는 404."""
     def opener(req, timeout=10):
-        path = req.full_url.split("http://test", 1)[1]
+        path = urllib.parse.unquote(req.full_url.split("http://test", 1)[1])  # 실서버처럼 %XX 디코딩
         status, body = routes.get(path, (404, {"error": "nf"}))
         return _response(status, json.dumps(body).encode(), req.full_url)
     return opener
@@ -120,7 +121,7 @@ def _gated_opener(routes: dict, *, anon_gate: bool = True, admin_gate: bool = Tr
     """실서버의 권한 게이트를 흉내내는 가짜 서버: 토큰 없이 보호 라우트 → 401, user 토큰으로 /api/admin/*·/api/agent/* → 403.
     게이트를 끄면(anon_gate/admin_gate=False) '인증이 뚫린 서버' 가 된다 — 스모크가 그것을 잡는지 본다."""
     def opener(req, timeout=10):
-        path = req.full_url.split("http://test", 1)[1]
+        path = urllib.parse.unquote(req.full_url.split("http://test", 1)[1])  # 실서버처럼 %XX 디코딩
         auth = req.get_header("Authorization") or ""
         if anon_gate and not auth and path.startswith(_GATED_ANON):
             raise urllib.error.HTTPError(req.full_url, 401, "unauthorized", {}, io.BytesIO(b'{"error":"missing token"}'))
@@ -216,7 +217,7 @@ def _flask_opener(app):
     client = app.test_client()
 
     def opener(req, timeout=10):
-        path = req.full_url.split("http://test", 1)[1]
+        path = urllib.parse.unquote(req.full_url.split("http://test", 1)[1])  # 실서버처럼 %XX 디코딩
         resp = client.open(path, method=req.get_method(), headers=dict(req.header_items()))
         return _response(resp.status_code, resp.get_data(), req.full_url)
     return opener
@@ -320,7 +321,13 @@ def test_msd_summary_tristate_must_exist_and_sum_to_total():
     bad = copy.deepcopy(MSD_SUMMARY_OK)
     bad["keytruda"]["unverified_reimbursement"] = 0                      # 10+5+0 ≠ 66 — '미확인' 을 다시 삼킨 회귀
     broken["/api/msd/summary"] = (200, bad)
-    assert _only_error(broken) == ["home /api/msd/summary → 급여10+미급여5+미확인0=15 ≠ 전체 66"]
+    assert _only_error(broken) == ["home /api/msd/summary → 급여10+미급여5+미확인0+국내미허가0=15 ≠ 전체 66"]
+    # 국내 미허가(외국 전용)를 미확인에서 분리해도 합은 전체와 같아야 한다
+    split = copy.deepcopy(MSD_SUMMARY_OK)
+    split["keytruda"]["not_mfds_approved"] = 40
+    split["keytruda"]["unverified_reimbursement"] -= 40
+    broken["/api/msd/summary"] = (200, split)
+    assert _only_error(broken) == []
     bad2 = copy.deepcopy(MSD_SUMMARY_OK)
     del bad2["keytruda"]["unverified_reimbursement"]
     del bad2["keytruda"]["checklist_covered"]

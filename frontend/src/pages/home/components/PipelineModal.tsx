@@ -152,7 +152,7 @@ export default function PipelineModal({ isDark, pipelines, onClose, onAdd }: Pro
             </span>
             <div>
               <h3 className={`font-bold text-base ${textMain}`}>
-                {view === 'list' ? 'Pipeline 전체 명단' : 'New Pipeline 등록'}
+                {view === 'list' ? '파이프라인 전체 명단' : '신규 파이프라인 등록'}
               </h3>
               <p className={`${textMuted} text-xs`}>
                 {view === 'list' ? `총 ${pipelines.length}개 파이프라인` : '신규 파이프라인 정보를 입력해주세요'}

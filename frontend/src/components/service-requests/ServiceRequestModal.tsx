@@ -105,7 +105,7 @@ export default function ServiceRequestModal({
         ) : (
           <div className="px-6 py-5 space-y-4 text-sm">
             <p className="text-[#8B9BB4] leading-relaxed">
-              대쉬보드에서 발견한 <span className="font-medium text-white">버그·개선점·신규 기능·데이터 요청</span>을
+              대시보드에서 발견한 <span className="font-medium text-white">버그·개선점·신규 기능·데이터 요청</span>을
               남겨주세요. 관리자가 검토 후 개선 작업으로 연결합니다.
             </p>
 

@@ -67,6 +67,12 @@ export interface DomesticProduct {
   monthlyCost: number | null;
   yearlyCost: number | null;
   enrichmentConfidence: string | null;
+  /** 투약비 산출 용법 가정 한 줄 — 예: '200 mg Q3W = 100 mg 바이알 2개 / 21일' (서버 고정용량 주기 요법) */
+  dosingAssumption: string | null;
+  /** 체중/BSA 표준환자 산출 근거 (있을 때만) */
+  costRationale: string | null;
+  /** 용법 미확정 — 1단위/일 추정(default_heuristic) 등 */
+  costHeuristic: boolean;
 
   // 백엔드 소스 없음 — UI 는 '정보 없음' 고정 (날조 금지)
   evalCommitteeDoc: null;
@@ -108,6 +114,9 @@ interface RawProduct {
   monthly_cost?: number | null;
   yearly_cost?: number | null;
   enrichment_confidence?: string | null;
+  dosing_assumption?: string | null;
+  enrichment_source?: string | null;
+  bsa_calc?: { rationale?: string | null } | null;
   is_rsa?: 0 | 1 | null;
   rsa_type?: string | null;
   rsa_note?: string | null;
@@ -239,6 +248,9 @@ function mapProduct(raw: RawProduct, allRaw: RawProduct[]): DomesticProduct {
     monthlyCost: raw.monthly_cost ?? null,
     yearlyCost: raw.yearly_cost ?? null,
     enrichmentConfidence: raw.enrichment_confidence ?? null,
+    dosingAssumption: raw.dosing_assumption ?? null,
+    costRationale: raw.bsa_calc?.rationale ?? null,
+    costHeuristic: raw.enrichment_source === 'default_heuristic',
 
     evalCommitteeDoc: null,
   };

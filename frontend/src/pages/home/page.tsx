@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import KeywordCloud from './components/KeywordCloud';
 import MsdSummaryCards from './components/MsdSummaryCards';
+import TodaySummary from './components/TodaySummary';
 import { fetchTopPriceChanges, applyDateToYmLabel } from '@/api/home';
 import { useApi } from '@/hooks/useApi';
 
@@ -37,12 +38,12 @@ export default function HomePage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className={`text-2xl font-bold ${textMain}`}>대시보드</h1>
-            <p className={`${textSub} text-sm mt-1`}>{ymLabel ? `${ymLabel} 기준 · ` : ''}Market Access Intelligence Hub</p>
+            <p className={`${textSub} text-sm mt-1`}>{ymLabel ? `약가 ${ymLabel} 고시 기준 · ` : ''}한국MSD Market Access</p>
           </div>
           <div className="flex items-center gap-3">
             <div className={`flex items-center gap-2 ${btnBg} rounded-lg px-3 py-2`}>
               <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse flex-shrink-0"></span>
-              <span className={`${textSub} text-xs whitespace-nowrap`}>실시간 업데이트</span>
+              <span className={`${textSub} text-xs whitespace-nowrap`} title="데이터별 기준일은 '오늘의 요약 > 데이터 기준일'에서 확인하세요">매일 자동 수집</span>
             </div>
             {/* Theme Toggle */}
             <button
@@ -62,7 +63,10 @@ export default function HomePage() {
 
       <div className="px-8 py-6 space-y-6">
 
-        {/* Section 1: 한국MSD 요약 카드 3종 — 최상단 */}
+        {/* Section 0: 오늘의 요약 — 다음 심의·경쟁사·정책 시그널·데이터 기준일 */}
+        <TodaySummary />
+
+        {/* Section 1: 한국MSD 요약 카드 3종 */}
         <MsdSummaryCards isDark={isDark} />
 
         {/* Section 2: 미디어 키워드 클라우드 */}

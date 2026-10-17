@@ -5,10 +5,15 @@ import { getToken } from './client';
 export async function downloadForeignReport(
   query: string, format: 'xlsx' | 'hwpx',
   appliedDisplay?: number | null, appliedActual?: number | null,
+  /** 선택 제형 — 있으면 그 제형 행만 리포트하고 파일명에 제형 라벨을 넣는다 */
+  formulation?: { key: string; label: string } | null,
 ): Promise<void> {
   const token = getToken();
+  const formParams = formulation
+    ? `&formulation=${encodeURIComponent(formulation.key)}&formulation_label=${encodeURIComponent(formulation.label)}`
+    : '';
   const res = await fetch(
-    `/api/foreign/report/export?query=${encodeURIComponent(query)}&format=${format}`,
+    `/api/foreign/report/export?query=${encodeURIComponent(query)}&format=${format}${formParams}`,
     {
       method: 'POST',
       headers: {
@@ -26,7 +31,10 @@ export async function downloadForeignReport(
   const blob = await res.blob();
   const cd = res.headers.get('Content-Disposition') || '';
   const m = cd.match(/filename\*?=(?:UTF-8'')?([^;]+)/i);
-  const filename = m ? decodeURIComponent(m[1].replace(/^"|"$/g, '')) : `${query}_A8.${format}`;
+  const formTag = formulation ? `_${formulation.label.replace(/[^\w가-힣.-]+/g, '')}` : '';
+  let filename = m ? decodeURIComponent(m[1].replace(/^"|"$/g, '')) : `${query}${formTag}_A8.${format}`;
+  // 구버전 서버(제형 파라미터 미지원)는 파일명에 제형을 넣지 않는다 — 화면에서 보던 제형을 파일명에 남긴다
+  if (formTag && !filename.includes(formTag)) filename = filename.replace(/(\.[a-z]+)$/i, `${formTag}$1`);
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = filename;
@@ -49,7 +57,7 @@ export async function downloadForeignReport(
 //   - 가격/일자/급여상태 절대 임의 생성 금지. 없으면 '정보 없음'.
 //   - 급여 배지는 (a) raw_data.sl_status 명시 신호 또는 (b) country-overview 의
 //     positive reimbursement (recommend/restrict/optimised) 에서만 도출.
-//     그 외에는 reimbursedKnown=false → '급여정보 없음' 렌더.
+//     그 외에는 reimbursedKnown=false → '급여 정보 미수집' 렌더.
 //   - US 가격은 백엔드가 WAC 기준으로 저장 (AWP 금지) — 표시만 한다.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -110,7 +118,7 @@ export interface A8Pricing {
   currency: string;
   /** 급여 신호가 명시적으로 확인된 경우에만 true */
   reimbursed: boolean;
-  /** 급여 여부를 판단할 근거 데이터가 있었는지. false → '급여정보 없음' */
+  /** 급여 여부를 판단할 근거 데이터가 있었는지. false → '급여 정보 미수집' */
   reimbursedKnown: boolean;
   /** country-overview HTA/급여 결정일 (등재일 아님 — 라벨에 명시) */
   reimbursedDate: string;
@@ -174,6 +182,9 @@ export interface CoverageNote {
   policy: string;
   sourceHint?: string;
   requiresAuth?: boolean;
+  /** 공개 DB 가격 제공 여부 (true | false | 'partial') — false/구조적 부재면 '접근 불가' 로 구분 */
+  publicDbHasPrice?: boolean | string;
+  structuralAbsence?: boolean;
 }
 
 /** 제형(강도×투여경로) 탭 — 탭 내에서 국가별 a8Pricing/summary 비교 */
@@ -325,6 +336,7 @@ interface RawCoverageNote {
   public_db_has_price?: boolean | string;
   source_hint?: string;
   requires_auth?: boolean;
+  structural_absence?: boolean;
 }
 
 interface RawCachedResponse {
@@ -505,7 +517,8 @@ function mapPricingEntry(raw: RawPricingEntry, variantCount: number): A8Pricing 
     formType,
     productName: raw.product_name,
     dosageStrength: raw.dosage_strength || undefined,
-    sourceLabel: raw.source_label,
+    // JP 구 수집행 오타 보정 (서버 display_source_label 과 동일 — 구버전 응답 대비)
+    sourceLabel: raw.source_label?.replace('後生労働省', '厚生労働省'),
     sourceUrl: raw.source_url,
     adjustedPriceKrw: raw.adjusted_price_krw ?? undefined,
     adjustedPriceKrwNormalized: raw.adjusted_price_krw_normalized ?? undefined,
@@ -710,7 +723,10 @@ export async function fetchPricingTab(query: string): Promise<PricingTabData> {
   for (const [uiKey, code] of Object.entries(PRICING_COUNTRY_CODE)) codeToUi[code] = uiKey;
   for (const [code, n] of Object.entries(cached.coverage_notes || {})) {
     const uiKey = codeToUi[code];
-    if (uiKey) coverageNotes[uiKey] = { policy: n.policy, sourceHint: n.source_hint, requiresAuth: n.requires_auth };
+    if (uiKey) coverageNotes[uiKey] = {
+      policy: n.policy, sourceHint: n.source_hint, requiresAuth: n.requires_auth,
+      publicDbHasPrice: n.public_db_has_price, structuralAbsence: n.structural_absence,
+    };
   }
 
   return { productName: productName || query, ingredient, lastSearchedAt, a8Pricing, coverageNotes, hasAnyPrice, summary, formulations };

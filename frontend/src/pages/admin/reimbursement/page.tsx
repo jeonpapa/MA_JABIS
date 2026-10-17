@@ -17,6 +17,29 @@ const DISEASE_KR: Record<string, string> = {
   cSCC: '피부편평세포암', OC: '난소암', SOLID: '고형암(MSI-H/TMB-H)',
 };
 
+// 내부 코드 → 읽을 수 있는 한글 (화면 표시용; 저장 값은 그대로)
+const LINE_KR: Record<string, string> = {
+  '1L': '1차', '2L': '2차', '2L+': '2차 이상', '3L': '3차', '3L+': '3차 이상',
+  adjuvant: '수술 후 보조', neoadjuvant: '수술 전 선행', perioperative: '수술 전후',
+};
+const STAGE_KR: Record<string, string> = {
+  metastatic: '전이성', advanced: '진행성', 'locally advanced': '국소진행성', locally_advanced: '국소진행성',
+  unresectable: '절제 불가', resectable: '절제 가능', recurrent: '재발성',
+  unresectable_or_metastatic: '절제 불가·전이성', locally_advanced_or_metastatic: '국소진행성·전이성',
+};
+const BIOMARKER_KR: Record<string, string> = {
+  all_comers: '바이오마커 무관', pdl1_1: 'PD-L1 ≥1', pdl1_10: 'PD-L1 ≥10', pdl1_50: 'PD-L1 ≥50%',
+  pdl1_pos: 'PD-L1 양성', msi_h: 'MSI-H/dMMR', tmb_h: 'TMB-H', her2_neg: 'HER2 음성', her2_pos: 'HER2 양성',
+};
+const krOf = (map: Record<string, string>, v: string | null) => (v ? map[v] ?? map[v.toLowerCase()] ?? v.replace(/_/g, ' ') : '');
+
+type RowState = 'reimbursed' | 'not_reimbursed' | 'missing';
+type ViewFilter = 'all' | 'missing' | 'no_evidence';
+/** 체크리스트 행이 없으면(updated_at 없음) '미입력' — 토글 기본값(비급여)과 구분 */
+const rowState = (it: ReimbursementItem, draftReimbursed?: boolean): RowState =>
+  !it.updated_at ? 'missing' : (draftReimbursed ?? it.is_reimbursed) ? 'reimbursed' : 'not_reimbursed';
+const lacksEvidence = (it: ReimbursementItem) => !!it.updated_at && it.is_reimbursed && (!it.effective_date || !it.notice_url);
+
 export default function AdminReimbursementPage() {
   const navigate = useNavigate();
   const [authChecked, setAuthChecked] = useState(false);
@@ -29,6 +52,7 @@ export default function AdminReimbursementPage() {
   const [bulkSaving, setBulkSaving] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [mfdsOnly, setMfdsOnly] = useState(true);  // 국내 MFDS 허가 적응증만 (기본 on)
+  const [view, setView] = useState<ViewFilter>('all');
 
   useEffect(() => {
     (async () => {
@@ -75,22 +99,28 @@ export default function AdminReimbursementPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authChecked, product, mfdsOnly]);
 
+  const visibleItems = useMemo(() => items.filter(it =>
+    view === 'all' || (view === 'missing' ? !it.updated_at : lacksEvidence(it))), [items, view]);
+
   const grouped = useMemo(() => {
     const map = new Map<string, ReimbursementItem[]>();
-    for (const it of items) {
+    for (const it of visibleItems) {
       const key = it.disease || '기타';
       const arr = map.get(key) ?? [];
       arr.push(it);
       map.set(key, arr);
     }
     return Array.from(map.entries()).sort((a, b) => b[1].length - a[1].length);
-  }, [items]);
+  }, [visibleItems]);
 
   const totals = useMemo(() => {
     const total = items.length;
     const reimbursed = items.filter(it => drafts[it.indication_id]?.is_reimbursed).length;
     const dirty = items.filter(it => drafts[it.indication_id]?.dirty).length;
-    return { total, reimbursed, dirty };
+    const missing = items.filter(it => !it.updated_at).length;
+    const noEvidence = items.filter(lacksEvidence).length;
+    const notReimbursed = items.filter(it => it.updated_at && !drafts[it.indication_id]?.is_reimbursed).length;
+    return { total, reimbursed, dirty, missing, noEvidence, notReimbursed };
   }, [items, drafts]);
 
   const products = useMemo(() => {
@@ -108,6 +138,8 @@ export default function AdminReimbursementPage() {
 
   const bulkToggleDisease = (disease: string, value: boolean) => {
     const ids = items.filter(it => (it.disease || '기타') === disease).map(it => it.indication_id);
+    const label = DISEASE_KR[disease] ?? disease;
+    if (!window.confirm(`${label} 적응증 ${ids.length}건을 모두 '${value ? '급여' : '비급여'}'로 바꿉니다.\n저장 버튼을 누르기 전까지는 반영되지 않습니다. 계속할까요?`)) return;
     setDrafts(prev => {
       const next = { ...prev };
       for (const id of ids) {
@@ -201,7 +233,7 @@ export default function AdminReimbursementPage() {
           <h1 className="text-2xl font-bold text-white">적응증 급여 체크리스트 — 관리</h1>
         </div>
         <p className="text-[#8B9BB4] text-sm">
-          HIRA 항암화학요법 공고 기반 수동 편집. 적응증별 급여 여부 / 조건 / 공고 링크 를 저장하면 Home 카드에 자동 반영됩니다.
+          HIRA 「암환자에게 사용되는 약제 및 요법」 공고 기준으로 적응증별 급여 여부·개시일·조건·근거 공고를 관리합니다. 저장하면 대시보드 카드에 바로 반영됩니다.
         </p>
       </div>
 
@@ -228,12 +260,19 @@ export default function AdminReimbursementPage() {
             <span className="text-[#8B9BB4] text-xs">국내 허가만 보기 (MFDS)</span>
           </label>
           <div className="text-[#8B9BB4] text-sm">
-            총 <span className="text-white font-semibold">{totals.total}</span> 적응증 /
-            급여 <span className="text-[#00E5CC] font-semibold ml-1">{totals.reimbursed}</span> /
-            비급여 <span className="text-[#FF6B6B] font-semibold ml-1">{totals.total - totals.reimbursed}</span>
+            총 <span className="text-white font-semibold">{totals.total}</span> 적응증 ·
+            급여 <span className="text-[#00E5CC] font-semibold ml-1">{totals.reimbursed}</span> ·
+            비급여 <span className="text-[#FF6B6B] font-semibold ml-1">{totals.notReimbursed}</span> ·
+            미입력 <span className="text-[#F59E0B] font-semibold ml-1">{totals.missing}</span>
             {totals.dirty > 0 && (
-              <span className="ml-3 text-[#FFA500]">변경 {totals.dirty}건 대기</span>
+              <span className="ml-3 text-[#FFA500]">저장 안 된 변경 {totals.dirty}건</span>
             )}
+          </div>
+          <div className="flex items-center gap-1 rounded-lg p-1 bg-[#1E2530]" role="group" aria-label="보기 필터">
+            {([['all', `전체 ${totals.total}`], ['missing', `미입력 ${totals.missing}`], ['no_evidence', `근거 누락 ${totals.noEvidence}`]] as [ViewFilter, string][]).map(([k, label]) => (
+              <button key={k} onClick={() => setView(k)} aria-pressed={view === k}
+                className={`text-xs px-3 py-1.5 rounded-md cursor-pointer ${view === k ? 'bg-[#161B27] text-white font-semibold shadow' : 'text-[#8B9BB4]'}`}>{label}</button>
+            ))}
           </div>
           <div className="ml-auto flex items-center gap-3">
             <button
@@ -256,7 +295,10 @@ export default function AdminReimbursementPage() {
         {loading && <p className="text-[#8B9BB4] text-sm">로드 중…</p>}
         {error && <p className="text-red-400 text-sm">{error}</p>}
         {!loading && items.length === 0 && (
-          <p className="text-[#4A5568] text-sm">해당 product 의 indications_master 가 비어있습니다.</p>
+          <p className="text-[#4A5568] text-sm">이 제품의 적응증 목록이 비어 있습니다.</p>
+        )}
+        {!loading && items.length > 0 && visibleItems.length === 0 && (
+          <p className="text-[#4A5568] text-sm">{view === 'missing' ? '미입력 적응증이 없습니다.' : '급여인데 개시일·근거 링크가 빠진 적응증이 없습니다.'}</p>
         )}
 
         {/* 질환별 그룹 */}
@@ -284,11 +326,11 @@ export default function AdminReimbursementPage() {
                   <button
                     onClick={() => bulkToggleDisease(disease, true)}
                     className="text-[10px] px-2 py-1 rounded bg-[#00E5CC]/10 text-[#00E5CC] hover:bg-[#00E5CC]/20 cursor-pointer"
-                  >모두 급여</button>
+                   title="이 암종 전체를 급여로 표시 (저장 전까지 미반영)">이 암종 전체 급여</button>
                   <button
                     onClick={() => bulkToggleDisease(disease, false)}
                     className="text-[10px] px-2 py-1 rounded bg-[#FF6B6B]/10 text-[#FF6B6B] hover:bg-[#FF6B6B]/20 cursor-pointer"
-                  >모두 비급여</button>
+                   title="이 암종 전체를 비급여로 표시 (저장 전까지 미반영)">이 암종 전체 비급여</button>
                 </div>
               </div>
 
@@ -303,7 +345,7 @@ export default function AdminReimbursementPage() {
                         <th className="text-left py-2 pr-3">조건 / 제한</th>
                         <th className="text-left py-2 pr-3 w-[110px]">공고일</th>
                         <th className="text-left py-2 pr-3 w-[180px]">공고 링크</th>
-                        <th className="text-right py-2 pr-5 w-[70px]">저장</th>
+                        <th className="text-right py-2 pr-5 w-[80px]">행 저장</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -317,15 +359,21 @@ export default function AdminReimbursementPage() {
                               <div className="text-white text-sm font-medium leading-tight">
                                 {it.title ?? it.indication_id}
                               </div>
-                              <div className="text-[#4A5568] text-[11px] mt-0.5">
-                                {[it.line_of_therapy, it.stage, it.biomarker_class]
+                              <div className="text-[#8B9BB4] text-[11px] mt-0.5">
+                                {[krOf(LINE_KR, it.line_of_therapy), krOf(STAGE_KR, it.stage), krOf(BIOMARKER_KR, it.biomarker_class)]
                                   .filter(Boolean).join(' · ')}
                               </div>
-                              {it.mfds_date && (
-                                <div className="text-[#00E5CC]/70 text-[11px] mt-0.5">
-                                  MFDS 허가 {it.mfds_date}
-                                </div>
-                              )}
+                              <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                {(() => {
+                                  const st = rowState(it, d.dirty ? d.is_reimbursed : undefined);
+                                  const cls = st === 'missing' ? 'bg-[#F59E0B]/10 text-[#F59E0B]' : st === 'reimbursed' ? 'bg-[#00E5CC]/10 text-[#00E5CC]' : 'bg-[#1E2530] text-[#8B9BB4]';
+                                  return <span className={`text-[10px] px-1.5 py-0.5 rounded ${cls}`}>{st === 'missing' ? '미입력' : st === 'reimbursed' ? '급여' : '비급여'}</span>;
+                                })()}
+                                {lacksEvidence(it) && <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#F59E0B]/10 text-[#F59E0B]">근거 누락</span>}
+                                {it.mfds_date && <span className="text-[#4A5568] text-[11px]">식약처 허가일 {it.mfds_date}</span>}
+                              </div>
+                              <div className="text-[#4A5568] text-[10px] mt-0.5 font-mono break-all" title="적응증 ID">{it.indication_id}</div>
+                              {it.updated_at && <div className="text-[#4A5568] text-[10px] mt-0.5">최종 수정 {it.updated_at.slice(0, 10)}{it.updated_by ? ` · ${it.updated_by}` : ''}</div>}
                             </td>
                             <td className="py-3 pr-3 text-center">
                               <button
@@ -333,7 +381,8 @@ export default function AdminReimbursementPage() {
                                 className={`inline-flex items-center justify-center w-10 h-6 rounded-full transition-colors cursor-pointer ${
                                   d.is_reimbursed ? 'bg-[#00E5CC]' : 'bg-[#1E2530]'
                                 }`}
-                                aria-label="급여 여부 토글"
+                                aria-label={`급여 여부: ${d.is_reimbursed ? '급여' : '비급여'} (눌러서 변경)`}
+                                aria-pressed={d.is_reimbursed}
                               >
                                 <span
                                   className={`block w-4 h-4 rounded-full bg-white transform transition-transform ${
@@ -341,6 +390,8 @@ export default function AdminReimbursementPage() {
                                   }`}
                                 />
                               </button>
+                              <div className={`text-[10px] mt-1 ${d.is_reimbursed ? 'text-[#00E5CC]' : 'text-[#8B9BB4]'}`}>{d.is_reimbursed ? '급여' : '비급여'}</div>
+                              {d.is_reimbursed && !d.effective_date && <div className="text-[10px] mt-0.5 text-[#F59E0B]">개시일 필요</div>}
                             </td>
                             <td className="py-3 pr-3">
                               <input
@@ -354,7 +405,7 @@ export default function AdminReimbursementPage() {
                               <textarea
                                 value={d.criteria_text ?? ''}
                                 onChange={e => updateDraft(it.indication_id, { criteria_text: e.target.value })}
-                                placeholder="예: 본인부담 30%, MSI-H 확인 필요"
+                                placeholder="예: PD-L1 TPS≥50%, 1차 단독요법, 급여인정기관 요건"
                                 rows={2}
                                 className="w-full bg-[#0D1117] border border-[#1E2530] rounded px-2 py-1 text-white text-xs placeholder-[#4A5568] focus:outline-none focus:border-[#00E5CC]/50 resize-y"
                               />
@@ -386,7 +437,7 @@ export default function AdminReimbursementPage() {
                                     : 'bg-[#1E2530] text-[#4A5568] cursor-not-allowed'
                                 }`}
                               >
-                                {busy ? '저장 중' : d.dirty ? '저장' : '완료'}
+                                {busy ? '저장 중' : d.dirty ? '저장' : '저장됨'}
                               </button>
                             </td>
                           </tr>

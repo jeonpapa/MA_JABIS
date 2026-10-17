@@ -33,7 +33,7 @@ export default function ServiceRequestButton() {
       <button
         onClick={openModal}
         title="서비스 보완/개선 요청"
-        className="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-[#00E5CC] text-[#0A0E1A] text-sm font-bold px-4 py-3 rounded-full shadow-lg shadow-[#00E5CC]/25 hover:bg-[#00C9B1] transition-colors cursor-pointer whitespace-nowrap"
+        className="fixed bottom-5 right-5 z-50 flex items-center gap-1.5 bg-[#00E5CC] text-[#0A0E1A] text-[13px] font-semibold px-3.5 py-2.5 rounded-full shadow-lg hover:bg-[#00C9B1] transition-colors cursor-pointer whitespace-nowrap"
       >
         <i className="ri-customer-service-2-line text-base"></i>
         개선 요청

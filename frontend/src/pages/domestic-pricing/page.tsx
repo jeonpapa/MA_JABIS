@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import {
   searchDomesticPriceChanges,
   fetchAnaloguesByIngredient,
@@ -309,7 +310,10 @@ export default function DomesticPricingPage() {
             {/* Product List */}
             <div className={`rounded-2xl border overflow-hidden ${cardBg} ${cardBorder}`}>
               <div className={`px-5 py-3 border-b ${tableBorder} flex items-center justify-between`}>
-                <p className={`text-xs ${textSub}`}>총 <span className={`font-semibold ${textMain}`}>{products.length}</span>개 품목</p>
+                {/* 로딩 중에는 '총 0개' 대신 검색 중 — 결과가 없다는 오해 방지 */}
+                <p className={`text-xs ${textSub}`} aria-live="polite">
+                  {loading ? '검색 중…' : <>총 <span className={`font-semibold ${textMain}`}>{products.length}</span>개 품목</>}
+                </p>
                 <p className={`text-xs ${textMuted}`}>클릭하여 상세 정보 확인</p>
               </div>
               {loading && products.length === 0 ? (
@@ -356,10 +360,21 @@ export default function DomesticPricingPage() {
                       ))}
                     </tbody>
                   </table>
-                  {!loading && products.length === 0 && (
-                    <div className={`text-center py-12 ${textMuted}`}>
+                  {!loading && !error && products.length === 0 && (
+                    <div className={`text-center py-10 px-6 ${textMuted}`}>
                       <span className="w-8 h-8 flex items-center justify-center mx-auto mb-2"><i className="ri-search-line text-2xl"></i></span>
-                      <p className="text-sm">검색 결과가 없습니다</p>
+                      <p className={`text-sm font-semibold ${textSub}`}>'{search.trim()}' 검색 결과가 없습니다</p>
+                      <div role="note" className="ui-notice ui-notice-info mt-3 mx-auto max-w-xl text-left">
+                        <i aria-hidden="true" className="ri-information-line"></i>
+                        <span>
+                          국내 급여 목록(상한금액표)에 없는 약제일 수 있습니다 — 미등재·비급여 약제는 검색되지 않습니다.{' '}
+                          <Link className="font-semibold underline underline-offset-2"
+                            to={/^[\x20-\x7e]+$/.test(search.trim()) ? `/international-pricing?q=${encodeURIComponent(search.trim().toLowerCase())}` : '/international-pricing'}>
+                            해외 약가에서 확인하세요
+                          </Link>
+                          <span className="block mt-1 opacity-80">제품명·성분명 철자와 보험코드도 한 번 확인해 주세요.</span>
+                        </span>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -450,6 +465,19 @@ export default function DomesticPricingPage() {
                           </div>
                         ))}
                       </div>
+                      {/* 투약비 용법 가정 — 숫자만 보면 바이알 수·주기를 알 수 없다 */}
+                      {detailDaily != null && (
+                        <p className={`text-xs mt-2 leading-relaxed ${textMuted}`}>
+                          {selectedDrug.dosingAssumption
+                            ? <>용법 가정: <span className={`font-semibold ${textSub}`}>{selectedDrug.dosingAssumption}</span></>
+                            : selectedDrug.costRationale
+                              ? <>용법 가정: {selectedDrug.costRationale}</>
+                              : selectedDrug.costHeuristic
+                                ? <>용법 미확정 — 1단위/일로 추정한 값입니다 (참고용)</>
+                                : <>용법 가정: 용법용량 기반 추정 (바이알·정 수 가정 미제공)</>}
+                          {' '}· 월 = 일 × 30, 연 = 일 × 365 · 상한금액(표시가) 기준
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>

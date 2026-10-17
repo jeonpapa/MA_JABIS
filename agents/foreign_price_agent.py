@@ -42,6 +42,24 @@ PER_UNIT_COUNTRIES = {"JP", "CA"}
 # Daily cost sanity cap (Welireg UK ₩46M/day 회귀 방지)
 DAILY_COST_SANITY_CAP_KRW = 10_000_000
 
+# ── 제형별 용법 오버라이드 (2026-10-17 사용자 테스트) ─────────────────────────────
+# foreign_drug_dosing 은 성분당 1행(대표 용법)이라 Keytruda SC 395mg/790mg 바이알에도 IV '200mg Q3W' 라벨·분모가
+# 붙었다 (UK #1301/#1302 daily = 200/21 × adj/395 — SC 실제 용법 대비 ~2× 과소). 같은 성분이라도 제형(투여경로×
+# 바이알 강도)마다 허가 용법이 다르면 여기서 그 제형의 용법으로 바꾼다. 매칭은 **form-aware per-unit mg**
+# (`_extract_per_unit_mg`) 가 표의 강도와 같을 때만 — 농도(per-mL)나 텍스트 추정으로 매칭하지 않는다.
+# 키: foreign_drug_dosing.ingredient_key (성분/브랜드 alias 둘 다). 출처: KEYTRUDA SC 허가 용법
+# (EU SmPC / US Keytruda Qlex) — 395 mg 3주 간격 또는 790 mg 6주 간격 피하주사, 바이알 1개 = 1회 투여량.
+_PEMBRO_SC = (
+    {"route": "sc", "unit_mg": 395.0, "dose_per_cycle_mg": 395.0, "cycle_days": 21,
+     "schedule_label": "395 mg Q3W SC"},
+    {"route": "sc", "unit_mg": 790.0, "dose_per_cycle_mg": 790.0, "cycle_days": 42,
+     "schedule_label": "790 mg Q6W SC"},
+)
+FORMULATION_DOSING_OVERRIDES: dict[str, tuple] = {
+    "pembrolizumab": _PEMBRO_SC,
+    "keytruda": _PEMBRO_SC,
+}
+
 # ── 라이브 검색 국가별 실패 분류 (P1.6 관측) ───────────────────────────────────
 # search_all 이 국가별 예외를 삼키면 "로그인이 깨진 것" 이 화면에서 "제도상 비공개" 처럼 보이고 원장에 아무것도 남지 않는다.
 # 분류는 원장 키(foreign_search:{국가}:{분류})와 화면 라벨 양쪽이 쓴다 — 라벨은 여기 한 곳(서버가 error_label 로 내려준다).
@@ -171,6 +189,9 @@ def display_source_label(row: dict) -> Optional[str]:
     """읽기 시점 자료원 라벨 — IT CSV 행은 raw_data.aifa_class 가 진실(과거 수집은 Class A 도 "Classe H" 로 저장됐다).
     저장 행은 고치지 않고 화면/리포트에만 바로잡는다."""
     label = row.get("source_label")
+    if label and "後生労働省" in label:
+        # 2026-10 이전 JP 수집행은 오타 '後生労働省' 로 저장됐다 — 저장 행은 두고 표시만 厚生労働省 로
+        label = label.replace("後生労働省", "厚生労働省")
     if row.get("country") == "IT":
         cls = _item_extra(row).get("aifa_class")
         if cls in _IT_CSV_LABEL_BY_CLASS:
@@ -559,6 +580,9 @@ class ForeignPriceAgent:
             product_name=item.get("product_name", "") or "",
             dosage_form=item.get("dosage_form", "") or "",
         )
+        # 제형별 용법 — SC 395/790mg 바이알에 IV 200mg Q3W 를 쓰지 않는다. 라벨도 분모와 같은 용법에서 나온다.
+        dosing = self._formulation_dosing(dosing, item, form_type, unit_mg)
+        item["dosing_schedule_label"] = (dosing or {}).get("schedule_label") or None
         pack_count = item.get("pack_count") or 1
         # total_pkg_mg (참고용): oral 은 per-tab × pack, injection 은 per-vial × vial_count
         total_mg = (unit_mg * pack_count) if (unit_mg and pack_count) else None
@@ -1091,6 +1115,31 @@ class ForeignPriceAgent:
                                         product_name=product_name, dosage_form=dosage_form) or 1
         return per_unit_mg * count
 
+    @staticmethod
+    def _formulation_dosing(dosing: Optional[dict], item: dict, form_type: str,
+                            unit_mg: Optional[float]) -> Optional[dict]:
+        """성분 대표 dosing → 이 행의 제형 용법. FORMULATION_DOSING_OVERRIDES 에 같은 성분 키가 있고
+        injection 행의 per-unit mg 가 표의 강도와 일치하면 그 용법(용량·주기·라벨)으로 교체한 사본을 돌려준다.
+        일치하지 않으면 원본 그대로 (IV 100mg 바이알은 200mg Q3W 유지). 원본 dict 는 변경하지 않는다."""
+        if not dosing or form_type != "injection" or not unit_mg:
+            return dosing
+        key = str(dosing.get("ingredient_key") or "").strip().lower()
+        rules = FORMULATION_DOSING_OVERRIDES.get(key)
+        if not rules:
+            return dosing
+        for rule in rules:
+            if abs(float(unit_mg) - rule["unit_mg"]) <= 0.5:
+                out = dict(dosing)
+                out.update({
+                    "dose_per_cycle_mg": rule["dose_per_cycle_mg"],
+                    "cycle_days": rule["cycle_days"],
+                    "schedule_label": rule["schedule_label"],
+                    "route": rule["route"],
+                    "formulation_override": True,
+                })
+                return out
+        return dosing
+
     def _match_dosing(self, query: str, ingredient: str, dosing_map: dict) -> dict:
         """query + ingredient 에서 dosing 정보를 찾아 반환. 없으면 None."""
         # 1) 쿼리 자체
@@ -1179,7 +1228,9 @@ class ForeignPriceAgent:
                 self._populate_daily_cost(row, dosing)
 
             row["dosage_strength_mg"] = self._extract_mg(row.get("dosage_strength", ""))
-            row["dosing_schedule_label"] = dosing["schedule_label"] if dosing else None
+            # _populate_daily_cost 가 제형별 용법(SC 395/790mg 등)으로 라벨을 이미 채웠다 — 성분 대표 라벨로 덮지 않는다
+            if "dosing_schedule_label" not in row:
+                row["dosing_schedule_label"] = dosing["schedule_label"] if dosing else None
             # A8 집계 안전망 — 팩가가 per-unit 으로 저장된 미확인 행(pack_count_source=default) 은 평균에서 뺀다
             row["a8_aggregate_eligible"], row["a8_exclude_reason"] = a8_aggregate_eligibility(country, row)
 

@@ -154,7 +154,7 @@ const PriceRequestPanel = forwardRef<PriceRequestPanelHandle, Props>(function Pr
   const labels = new Map((catalog?.[scope] ?? []).map(c => [c.code, c.label]));
   return (
     <section ref={panelRef} className={'p-6 space-y-4 ' + shell} aria-label="해외약가 조사 요청">
-      <div className="space-y-3"><div><p className="ui-eyebrow">조사 요청</p><h2 className="text-[19px] font-semibold tracking-tight mt-0.5">{scope === 'a8' ? 'A8 8개국' : 'OECD·공단 추가국가'} 약가 조사</h2></div>
+      <div className="space-y-3"><div><p className="ui-eyebrow">조사 요청</p><h2 className="text-[19px] font-semibold tracking-tight mt-0.5">{scope === 'a8' ? 'A8 8개국' : '공단 추가국가 (A8 외 29개국)'} 약가 조사</h2></div>
         <WorkerNotice worker={worker} error={workerError} />
         <p className="text-xs" style={{ color: 'var(--label-2)' }}>조사 후 대시보드 검증을 거쳐 이메일로 알립니다. 상태는 30초마다 갱신됩니다. 가격 미확정·수집 실패는 미허가를 뜻하지 않으며, 0은 유효한 가격으로 표시하지 않습니다.</p>
         {scope === 'oecd' && <p className="text-xs opacity-70 mt-1">{catalog?.note || '공단 기준 A8 외 29개국으로 대만·싱가포르 등 OECD 비회원국도 포함합니다.'}</p>}

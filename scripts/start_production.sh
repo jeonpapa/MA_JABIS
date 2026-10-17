@@ -19,8 +19,9 @@ mkdir -p logs data/db data/cache data/dashboard data/raw data/reimb \
 
 # Policy Intelligence report/template seed — blank templates are bundled in git;
 # private ingested mail/document artifacts remain only on the mounted volume.
-if [ -d data/policy_intelligence_seed ]; then
-    cp -nR data/policy_intelligence_seed/. data/policy_intelligence/ 2>/dev/null || true
+# 시드는 이미지에 포함되는 seed/ 아래에 둔다 (/app/data 는 볼륨이 덮고 .dockerignore 도 data/ 를 제외).
+if [ -d seed/policy_intelligence ]; then
+    cp -nR seed/policy_intelligence/. data/policy_intelligence/ 2>/dev/null || true
 fi
 
 # 항암 레지멘 정본(onco_regimen/onco_regimen_drug) 시드 — 원본 xlsx 는 data/ 라 이미지에 없음.

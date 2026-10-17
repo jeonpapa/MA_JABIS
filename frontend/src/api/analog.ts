@@ -163,10 +163,22 @@ export const FACET_LABELS: Record<string, string> = {
   committee: '위원회',
   review_result: '심의결과',
   reimbursement_track_ko: '등재트랙',
-  coverage_gap_type: '허가↔급여 갭',
+  coverage_gap_type: '허가 대비 급여 범위',
   medical_necessity: '의료적필요성',
   approval_driver: '등재동인',
 };
+
+/** 등재동인(approval_driver) 영문 코드 → 한글 */
+export const APPROVAL_DRIVER_KO: Record<string, string> = {
+  COST_EFFECTIVE: '비용효과 입증',
+  REJECTED_COST: '비용효과 미입증(불인정)',
+  RSA: '위험분담제',
+  PE_WAIVER: '경제성평가 생략',
+  POLICY_PRIORITY: '정책적 우선순위',
+};
+
+/** 화면 표시용 값 라벨 — 심의결과·등재동인 코드를 한글로 */
+export const analogValueLabel = (v: string) => REVIEW_RESULT_KO[v] ?? APPROVAL_DRIVER_KO[v] ?? v;
 
 export const REVIEW_RESULT_KO: Record<string, string> = {
   APPROVED: '급여 적정',

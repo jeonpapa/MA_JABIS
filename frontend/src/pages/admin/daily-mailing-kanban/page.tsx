@@ -306,7 +306,7 @@ function QualityReportPanel({ run }: { run: KanbanRun }) {
           <span className={`text-[10px] px-2 py-0.5 rounded ${badgeTone(qr.status)}`}>{qr.status}</span>
         )}
         {boolBadge('sendable', qr.sendable)}
-        {boolBadge('live_send_allowed', qr.live_send_allowed)}
+        {boolBadge('이 회차 발송 가능', qr.live_send_allowed)}
       </div>
       <div className="flex flex-wrap gap-4 mb-3">
         {countCells.map(([label, value]) => (
@@ -773,7 +773,7 @@ export default function AdminDailyMailingKanbanPage() {
                 </div>
               </div>
               <div className="ml-auto flex flex-wrap items-center gap-2">
-                {data.operating_policy?.live_send_allowed != null && boolBadge('라이브 발송', data.operating_policy.live_send_allowed)}
+                {data.operating_policy?.live_send_allowed != null && boolBadge('전역 라이브 발송 정책', data.operating_policy.live_send_allowed)}
                 <span className="text-[10px] px-3 py-1.5 rounded-full bg-[#1E2530] text-[#8B9BB4] whitespace-nowrap">
                   <i className="ri-information-line mr-1"></i>
                   {data.article_approval_required ? '기사별 승인 필요' : '기사별 승인 없음 — 운영 보드'}

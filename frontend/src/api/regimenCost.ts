@@ -75,8 +75,13 @@ export interface OncoDrug {
   one_dose_mg?: number | null;
   cycle_total_mg?: number | null;
   dose_basis?: string;
+  price_refs?: Partial<Record<PriceSource, string>>;  // 소스 전환 시 소스별 ref 보존
   price?: { available: boolean; reason?: string; label?: string; unit_price?: number;
-            content_mg?: number; price_per_mg?: number; period?: string; source?: string };
+            content_mg?: number; price_per_mg?: number; period?: string; source?: string;
+            code?: string; priceDate?: string;
+            fallback?: boolean; requested_source?: PriceSource; note?: string };  // WAP 미연결 → 국내가 대체
+  missing_reason?: string | null;   // 비용 미산출 사유 (약가 매칭 없음 / 용량 정보 없음 …)
+  course_reason?: string | null;    // 전체코스 미산출 사유 (총사이클 미입력)
   cost?: { cycle: number | null; course: number | null; monthly: number | null;
            yearly: number | null; daily: number | null };
 }
@@ -89,8 +94,8 @@ export interface Regimen {
   oncoDrugs?: OncoDrug[];       // onco 약제 테이블
   patient?: Patient;            // onco 환자 파라미터
   metrics?: { bsa: number; gfr: number; crcl: number };  // 산출 스냅샷
-  oncoTotals?: { cycle: number; course: number; monthly: number; yearly: number;
-                 daily: number; hasMissing: boolean };
+  oncoTotals?: OncoTotals;      // null 항목 = 미산출 (구 저장본은 0 일 수 있음 → 재계산)
+  priceNote?: string | null;    // (transient) 국내가 대체 안내
   saved?: boolean;              // (transient UI) 라이브러리 저장됨 — 편집 시 해제
 }
 
@@ -113,7 +118,15 @@ export interface OncoCostResponse {
   metrics: { bsa: number; gfr: number; crcl: number; weight: number };
   source: PriceSource; asOfDate: string;
   drugs: OncoDrug[];
-  totals: { cycle: number; course: number; monthly: number; yearly: number; daily: number; hasMissing: boolean };
+  totals: OncoTotals;
+  wapAvailable?: boolean;
+  priceNote?: string | null;      // WAP 미연결 시 국내 상한금액 대체 안내
+}
+/** 레지멘 합계. null = 미산출(₩0 아님). partial = 일부 약제 제외된 부분합. */
+export interface OncoTotals {
+  cycle: number | null; course: number | null; monthly: number | null; yearly: number | null; daily: number | null;
+  hasMissing: boolean; missingCount?: number; computedCount?: number;
+  partial?: Partial<Record<'cycle' | 'course' | 'monthly' | 'yearly' | 'daily', boolean>>;
 }
 
 export async function oncoSearch(q: string): Promise<OncoRegimenHit[]> {
@@ -194,7 +207,28 @@ export interface WapResponse {
   reason?: string;
   period?: string;
   fallback_previous?: boolean;
+  not_connected?: boolean;   // WAP 데이터 연결 전
   results?: WapResult[];
+}
+
+export interface PriceSourcesInfo {
+  domestic: { available: boolean };
+  weighted_avg: { available: boolean; note?: string | null };
+  default: PriceSource;
+}
+/** 가격 소스 사용 가능 여부 (WAP 연결 전이면 국내 상한금액 기본). */
+export async function priceSources(): Promise<PriceSourcesInfo> {
+  return api.get<PriceSourcesInfo>('/api/regimen/price-sources');
+}
+
+/** 약제 추가 검색 — 한글 제품명·영문 INN(pembrolizumab) 모두 지원. 국내 등재품(상한금액). */
+export interface RegimenDrugHit {
+  insurance_code: string; product_name_kr: string; company?: string; ingredient?: string;
+  dosage_strength?: string; max_price: number | null; apply_date?: string; inn: string;
+}
+export async function regimenDrugSearch(q: string): Promise<RegimenDrugHit[]> {
+  const res = await api.get<{ results: RegimenDrugHit[] }>(`/api/regimen/drug-search?q=${encodeURIComponent(q)}`);
+  return res.results || [];
 }
 
 export async function wapSearch(q: string, date: string): Promise<WapResponse> {

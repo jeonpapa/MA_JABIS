@@ -14,6 +14,191 @@ import re
 CALC = "계산기"
 
 
+# ── 공용 비용 로직 (POST /api/regimen/onco/cost · export 공유, 순수 함수 — DB/flask 비의존) ──
+
+WAP_NOT_CONNECTED_NOTE = "주성분 가중평균 데이터 연결 전 — 국내 상한금액 기준으로 계산합니다"
+WAP_NO_DATA_NOTE = "주성분 가중평균 없음 — 국내 상한금액 기준으로 계산합니다"
+
+COUNT_UNITS = {"정", "tab", "tablet", "캡슐", "cap", "capsule", "포", "환", "매",
+               "vial", "바이알", "unit", "단위"}
+
+# 레지멘 정본 약제명 → drug_latest 영문 ingredient 접두 (제형 구분이 필요한 것만)
+_PRICE_KEY_ALIASES = {
+    "nab-paclitaxel": "paclitaxel(albumin-bound)",
+    "liposomal doxorubicin": "liposomal doxorubicin",
+}
+_SALT_WORDS = {"hydrochloride", "hcl", "acetate", "sodium", "mesylate", "mesilate", "maleate",
+               "sulfate", "tosylate", "citrate", "phosphate", "dihydrochloride", "besylate",
+               "malate", "fumarate", "tartrate", "bromide", "calcium", "potassium", "hydrate",
+               "monohydrate", "anhydrous", "disodium", "dimaleate", "succinate"}
+_INJECTION_ROUTES = {"iv", "sc", "im", "it", "ivp", "civ", "주사"}
+_ORAL_ROUTES = {"po", "경구"}
+
+
+def friendly_price_reason(reason: str | None) -> str:
+    """내부 사유(환경변수명·HTTP 코드 등)를 사용자 문구로. 환경변수명은 절대 노출 금지."""
+    r = (reason or "").strip()
+    if not r:
+        return "국내 약가 매칭 없음"
+    if re.search(r"[A-Z][A-Z0-9]*_[A-Z0-9_]+", r) or "미설정" in r or "비활성" in r:
+        return "주성분 가중평균 데이터 연결 전"
+    if "HTTP" in r or "timeout" in r.lower() or "timed out" in r.lower() or "URLError" in r:
+        return "주성분 가중평균 조회 실패 (일시 오류)"
+    return r
+
+
+def price_lookup_keys(ingredient: str | None) -> list[str]:
+    """정본 약제명 → 가격조회용 INN 후보(우선순위). 'Fluorouracil(bolus)'→'Fluorouracil' 등."""
+    s = re.sub(r"\s+", " ", (ingredient or "").strip())
+    if not s:
+        return []
+    out: list[str] = []
+    alias = _PRICE_KEY_ALIASES.get(s.lower())
+    if alias:
+        out.append(alias)
+    out.append(s)
+    stripped = re.sub(r"\([^)]*\)", "", s).strip()                 # (bolus)/(CI)/(HD)/(ATRA)
+    stripped = re.sub(r"\s+(LAR|SR|XR|ER)$", "", stripped, flags=re.I).strip()
+    if stripped and stripped not in out:
+        out.append(stripped)
+    if "/" in stripped:                                            # 복합제 첫 성분
+        first = stripped.split("/")[0].strip()
+        if first and first not in out:
+            out.append(first)
+    return out
+
+
+def ingredient_name_part(text: str | None) -> str:
+    """drug_latest 영문 ingredient → 성분명 부분(첫 숫자/괄호 전, 소문자). 'pembrolizumab   0.1g(…)'→'pembrolizumab'."""
+    s = (text or "").strip().lower()
+    m = re.match(r"[^0-9]*", s)
+    name = (m.group(0) if m else s)
+    # 'paclitaxel(albumin-bound)' 같은 제형 괄호는 보존, 이후 공백 정리
+    return re.sub(r"\s+", " ", name).strip(" ,(")
+
+
+def inn_from_ingredient_text(text: str | None) -> str:
+    """drug_latest ingredient → dosing 조회용 INN(염 단어 제거). 'doxorubicin hydrochloride 10mg'→'doxorubicin'."""
+    name = ingredient_name_part(text)
+    name = re.sub(r"\(.*$", "", name).strip()
+    words = [w for w in name.split() if w not in _SALT_WORDS]
+    return " ".join(words) or name
+
+
+def _product_form(product_name_kr: str | None) -> str:
+    """제품명 → 'injection' | 'oral' | 'topical' | ''. (drug_latest.dosage_form 은 대부분 비어 있음)"""
+    n = product_name_kr or ""
+    core = re.split(r"[(_]", n, maxsplit=1)[0]
+    if re.search(r"점안|점이|연고|크림|겔|패취|패치|외용|흡입|좌제|스프레이", n):
+        return "topical"
+    if core.endswith("주") or "주사" in core or re.search(r"주\d|주$", core) or "프리필드" in n:
+        return "injection"
+    if re.search(r"정|캡슐|시럽|현탁|산$|과립|액$", core):
+        return "oral"
+    return ""
+
+
+def rank_domestic_candidates(cands: list[dict], inn: str, route: str | None = None) -> list[dict]:
+    """find_by_ingredient_strength 후보 → 동일 성분·단일제·투여경로 일치 우선 정렬(원 순서 보존).
+
+    접두 LIKE 는 'paclitaxel%' 에 아브락산(paclitaxel(albumin-bound)), 'prednisolone%' 에
+    점안액까지 섞는다. 성분명 부분이 INN 과 같거나(INN+염) 일치하는 단일제를 앞으로.
+    """
+    key = (inn or "").strip().lower()
+    r = (route or "").strip().lower()
+    want = "injection" if r in _INJECTION_ROUTES else "oral" if r in _ORAL_ROUTES else ""
+
+    def score(c: dict) -> tuple:
+        ing = (c.get("ingredient") or "").lower()
+        name = ingredient_name_part(ing)
+        exact = name == key or (name.startswith(key + " ") and all(
+            w in _SALT_WORDS for w in name[len(key):].split()))
+        single = "," not in ing
+        form = _product_form(c.get("product_name_kr"))
+        form_ok = (not want) or form == want or (form == "" and want == "injection")
+        # 경구는 정·캡슐 우선 (시럽은 상한금액이 mL 단위라 병 함량과 어긋남)
+        solid = bool(re.search(r"정|캡슐", re.split(r"[(_]", c.get("product_name_kr") or "", maxsplit=1)[0]))
+        liquid_penalty = 1 if (want == "oral" and not solid) else 0
+        return (0 if exact else 1, 0 if single else 1, 0 if form_ok else 1,
+                1 if form == "topical" else 0, liquid_penalty)
+
+    pool = list(cands or [])
+    if want:   # 전신 투여 레지멘에 점안액·연고 등 국소제는 가격 후보에서 제외
+        pool = [c for c in pool if _product_form(c.get("product_name_kr")) != "topical"]
+    indexed = list(enumerate(pool))
+    indexed.sort(key=lambda t: (score(t[1]), t[0]))
+    return [c for _, c in indexed]
+
+
+def compute_drug_cost(d: dict, pm: dict) -> dict:
+    """compute_drug_dose 결과 행 + 단가 → {cost, missing_reason, course_reason}. 산출 불가 항목은 None(₩0 금지)."""
+    cost = {"cycle": None, "course": None, "monthly": None, "yearly": None, "daily": None}
+    unit = (d.get("unit") or "").strip().lower()
+    cyc_mg = d.get("cycle_total_mg")
+    reason = None
+    cyc = None
+    if d.get("dose_value") in (None, ""):
+        reason = "용량 정보 없음"
+    elif not pm.get("available"):
+        reason = friendly_price_reason(pm.get("reason"))
+    elif cyc_mg is not None and pm.get("price_per_mg"):
+        cyc = cyc_mg * pm["price_per_mg"]
+    elif unit in COUNT_UNITS and pm.get("unit_price"):
+        try:
+            cyc = float(d["dose_value"]) * float(d.get("per_cycle") or 1) * pm["unit_price"]
+        except (TypeError, ValueError):
+            reason = "용량 정보 없음"
+    else:
+        reason = f"용량 단위 계산 불가 ({d.get('unit') or '단위 없음'})"
+    try:
+        cycle_days = float(d.get("cycle_days") or 0)
+    except (TypeError, ValueError):
+        cycle_days = 0
+    if cyc is not None and cycle_days <= 0:
+        cyc, reason = None, "주기(일) 미입력"
+    course_reason = None
+    if cyc is not None:
+        yearly = cyc * 365 / cycle_days
+        cost.update(cycle=round(cyc), monthly=round(cyc * 30 / cycle_days),
+                    yearly=round(yearly), daily=round(yearly / 365))
+        tc = d.get("total_cycles")
+        try:
+            tc = float(tc) if tc not in (None, "") else None
+        except (TypeError, ValueError):
+            tc = None
+        if tc and tc > 0:
+            cost["course"] = round(cyc * tc)
+        else:
+            course_reason = "총사이클 미입력"
+    return {"cost": cost, "missing_reason": reason, "course_reason": course_reason}
+
+
+def sum_regimen_totals(costs: list[dict]) -> dict:
+    """약제별 cost → 레지멘 합계. 산출 약제가 없으면 None(미산출), 일부 누락이면 partial 표시.
+
+    전체코스는 하나라도 총사이클 미입력이면 None (부분합은 오해 소지).
+    """
+    keys = ("cycle", "course", "monthly", "yearly", "daily")
+    out: dict = {}
+    partial: dict = {}
+    for k in keys:
+        vals = [c.get(k) for c in costs]
+        got = [v for v in vals if v is not None]
+        if k == "course":
+            ok = bool(costs) and len(got) == len(vals)
+            out[k] = round(sum(got)) if ok else None
+            partial[k] = False
+        else:
+            out[k] = round(sum(got)) if got else None
+            partial[k] = bool(got) and len(got) < len(vals)
+    missing = sum(1 for c in costs if c.get("cycle") is None)
+    out["hasMissing"] = missing > 0
+    out["missingCount"] = missing
+    out["computedCount"] = len(costs) - missing
+    out["partial"] = partial
+    return out
+
+
 def _safe_sheet(name: str, used: set, idx: int) -> str:
     s = re.sub(r"[\[\]:*?/\\]", " ", name or f"레지멘{idx}").strip()[:26] or f"레지멘{idx}"
     base = f"{idx}.{s}"[:31]
@@ -85,9 +270,12 @@ def _regimen_sheet(ws, reg: dict):
         ws.cell(r, 14, f'=IF(OR($M{r}="",N($G{r})=0),"",$M{r}*$G{r})')   # 코스
         ws.cell(r, 15, f'=IF(OR($M{r}="",N($F{r})=0),"",$M{r}*30/$F{r})')   # 월
         ws.cell(r, 16, f'=IF(OR($M{r}="",N($F{r})=0),"",$M{r}*365/$F{r})')  # 연
-        ws.cell(r, 17, (("가중평균" if (d.get("price_source") or "") != "domestic" else "브랜드")
+        eff_src = price.get("source") or d.get("price_source") or ""
+        ws.cell(r, 17, (("가중평균" if eff_src == "weighted_avg" else "국내 상한금액")
                         + (f" · {price.get('label')}" if price.get("label") else "")
-                        + ("" if price.get("available", True) else " · 가격없음")))
+                        + (" · 가중평균 연결 전(국내가 대체)" if price.get("fallback") else "")
+                        + ("" if price.get("available", True)
+                           else f" · 미산출: {friendly_price_reason(price.get('reason'))}")))
     last = r0 + len(drugs) - 1 if drugs else r0
     tot = last + 1
     ws.cell(tot, 1, "합계")
@@ -119,7 +307,7 @@ def build_regimen_xlsx(date: str, source: str, patient: dict, regimens: list[dic
         sheet_refs.append((reg.get("name") or sn, sn, tot, has_cycle))
 
     # 비교 시트
-    cmp_ws["A1"] = f"레지멘별 비용 비교  (기준일 {date} · 소스 {'주성분 가중평균' if source != 'domestic' else '국내약가'})"
+    cmp_ws["A1"] = f"레지멘별 비용 비교  (기준일 {date} · 소스 {'주성분 가중평균' if source == 'weighted_avg' else '국내 상한금액'})"
     hdr = ["레지멘", "1사이클", "전체코스", "일", "월", "연"]
     for c, h in enumerate(hdr, start=1):
         cell = cmp_ws.cell(3, c, h)

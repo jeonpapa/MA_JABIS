@@ -67,7 +67,7 @@ JP_1497 = {
     "product_name": "キイトルーダ点滴静注１００ｍｇ", "ingredient": "ペムブロリズマブ（遺伝子組換え）",
     "dosage_strength": "１００ｍｇ４ｍＬ１瓶", "dosage_form": "注射薬", "package_unit": "",
     "local_price": 199462.0, "currency": "JPY", "exchange_rate": 923.21,
-    "form_type": "injection", "source_label": "後生労働省 薬価基準収載品目リスト",
+    "form_type": "injection", "source_label": "厚生労働省 薬価基準収載品目リスト",
     "pack_count": 1,
 }
 IT_1495 = {

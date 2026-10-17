@@ -184,6 +184,20 @@ class UkMimsScraper(BaseScraper):
         return text
 
     @classmethod
+    def _continue_pack_line(cls, dosage_raw: str, prev_dosage: str) -> str:
+        """MIMS 는 같은 함량의 여러 포장을 한 줄에 이어 쓴다:
+        '45mg powder and solvent for soln for inj: 1-vial kit=£5422.50; 2-vial kit=£10845.00'
+        '=£' 로 자르면 두 번째 조각은 '; 2-vial kit' 만 남아 함량이 사라지고(빈 제형 탭), 포장 수량도 1로 오인됐다.
+        ';' 로 시작하는 조각은 직전 조각의 함량·제형 부분(마지막 ':' 앞)을 물려받는다.
+        """
+        d = (dosage_raw or "").strip()
+        if not d.startswith(";") or not prev_dosage:
+            return d
+        tail = d.lstrip("; ").strip()
+        head = prev_dosage.rsplit(":", 1)[0].strip() if ":" in prev_dosage else prev_dosage.strip()
+        return f"{head}: {tail}" if tail else head
+
+    @classmethod
     def _parse_price_page(cls, html: str, url: str) -> list[dict]:
         text = cls._html_to_text(html)
 
@@ -218,11 +232,14 @@ class UkMimsScraper(BaseScraper):
                 price_lines = [("", simple[0])]
 
         rows = []
+        prev_dosage = ""
         for dosage_raw, price_raw in price_lines:
             try:
                 price = float(price_raw.rstrip(".").replace(",", ""))
             except ValueError:
                 continue
+            dosage_raw = cls._continue_pack_line(dosage_raw, prev_dosage)
+            prev_dosage = dosage_raw
             rows.append({
                 "product_name":    product_name,
                 "ingredient":      ingredient,

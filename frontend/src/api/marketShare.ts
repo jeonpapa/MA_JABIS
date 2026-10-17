@@ -38,6 +38,14 @@ export interface MsAtc4Response {
   quarters: string[];
   totals: { values_lc: number; dosage_units: number };
   products: MsAtc4Product[];
+  /** 데이터 출처·기준시점 (구버전 서버는 미포함) */
+  meta?: MsDataMeta;
+}
+
+export interface MsDataMeta {
+  source: string;                  // 'IQVIA NSA-E'
+  latest_quarter: string | null;   // 적재된 최신 분기
+  last_uploaded_at: string | null; // 최근 업로드 시각 (market_share_upload_log)
 }
 
 export interface MsTrendResponse {
@@ -81,6 +89,9 @@ export interface MsBrandResponse {
   market_rank: number | null;
   market_share_pct: number;
   market_total_values_lc: number;
+  /** 기준 분기(quarter) 의 브랜드 매출·물량 (구버전 서버는 미포함) */
+  quarter_values_lc?: number;
+  quarter_dosage_units?: number;
   packs: MsBrandPack[];
   quarterly: MsBrandQuarterly[];
 }
@@ -108,14 +119,22 @@ export function fetchAtc4Trend(
   return api.get<MsTrendResponse>(`/api/market-share/atc4/${encodeURIComponent(code)}/trend?${p.toString()}`);
 }
 
-export function fetchBrand(name: string, atc4: string): Promise<MsBrandResponse> {
+export function fetchBrand(name: string, atc4: string, quarter?: string): Promise<MsBrandResponse> {
   const params = new URLSearchParams({ name, atc4 });
+  if (quarter) params.set('quarter', quarter);
   return api.get<MsBrandResponse>(`/api/market-share/brand?${params.toString()}`);
 }
 
-/** 백엔드 xlsx export — Market Share + Unit Trend + Revenue Trend 3개 시트. */
-export async function downloadMarketShareXlsx(atc4: string, quarter: string, top = 8): Promise<void> {
+/**
+ * 백엔드 xlsx export — Market Share(기준 분기 현황) + Unit/Revenue Trend(from~to 기간) + Info 시트.
+ * 파일명: MarketShare_<ATC4>_snap<기준분기>_trend<from>-<to>_<stamp>.xlsx
+ */
+export async function downloadMarketShareXlsx(
+  atc4: string, quarter: string, top = 8, fromQuarter?: string, toQuarter?: string,
+): Promise<void> {
   const params = new URLSearchParams({ atc4, quarter, top: String(top) });
+  if (fromQuarter) params.set('from_quarter', fromQuarter);
+  if (toQuarter) params.set('to_quarter', toQuarter);
   const token = getToken();
   const res = await fetch(`/api/market-share/export?${params.toString()}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -124,7 +143,10 @@ export async function downloadMarketShareXlsx(atc4: string, quarter: string, top
   const blob = await res.blob();
   const cd = res.headers.get('Content-Disposition') || '';
   const m = cd.match(/filename\*?=(?:UTF-8'')?([^;]+)/i);
-  const filename = m ? decodeURIComponent(m[1].replace(/^"|"$/g, '')) : `MarketShare_${atc4}_${quarter}.xlsx`;
+  const range = fromQuarter && toQuarter ? `_trend${fromQuarter}-${toQuarter}` : '';
+  const filename = m
+    ? decodeURIComponent(m[1].replace(/^"|"$/g, ''))
+    : `MarketShare_${atc4}_snap${quarter}${range}.xlsx`;
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -264,10 +286,27 @@ export const PIE_COLORS = ['#0071E3', '#AF52DE', '#FF9F0A', '#FF375F', '#34C759'
 export const OTHERS_COLOR = '#8E8E93';
 /** readdy 트렌드 라인 팔레트 (page CHART_COLORS). */
 export const LINE_COLORS = ['#0071E3', '#AF52DE', '#FF9F0A', '#FF375F', '#34C759'];
+/** 상위 5 외 브랜드(트렌드 top-N 이 스냅샷 top-5 와 다를 때) — Apple teal, indigo, brown, yellow, cyan */
+export const EXTRA_COLORS = ['#30B0C7', '#5856D6', '#A2845E', '#FFCC00', '#32ADE6'];
+
+/**
+ * 브랜드 → 색상 단일 매핑 (카드·도넛·트렌드·상세 공통).
+ * 스냅샷(기준 분기) 상위 순서로 PIE_COLORS 를 먼저 배정하고, 나머지 트렌드 브랜드는 EXTRA_COLORS.
+ */
+export function buildBrandColorMap(pie: PieSlice[], extraBrands: string[] = []): Record<string, string> {
+  const map: Record<string, string> = {};
+  pie.forEach(s => { if (!s.isOthers) map[s.name] = s.color; });
+  let k = 0;
+  extraBrands.forEach(b => {
+    if (!map[b]) { map[b] = EXTRA_COLORS[k % EXTRA_COLORS.length]; k += 1; }
+  });
+  return map;
+}
 
 export interface PieSlice {
   name: string;
   value: number;   // values_share_pct (%) — 매출(Values LC) 기준 점유율
+  valuesLc: number; // values_lc (원)
   units: number;   // dosage_units
   /** 물량 점유율 (%) = dosage_units / 시장 전체 dosage_units. 매출 점유율과 다르므로 별도 표기 */
   unitShare: number | null;
@@ -290,6 +329,7 @@ export function buildPieData(market: MsAtc4Response, topN = 5): PieSlice[] {
   const items: PieSlice[] = top.map((p, i) => ({
     name: p.product_name,
     value: Number(p.values_share_pct.toFixed(1)),
+    valuesLc: p.values_lc,
     units: Math.round(p.dosage_units),
     unitShare: unitShare(p.dosage_units),
     color: PIE_COLORS[i % PIE_COLORS.length],
@@ -298,9 +338,11 @@ export function buildPieData(market: MsAtc4Response, topN = 5): PieSlice[] {
   if (rest.length > 0) {
     const pct = rest.reduce((a, p) => a + p.values_share_pct, 0);
     const units = rest.reduce((a, p) => a + p.dosage_units, 0);
+    const vlc = rest.reduce((a, p) => a + p.values_lc, 0);
     items.push({
-      name: `기타 (${rest.length})`,
+      name: `기타 ${rest.length}개 품목`,
       value: Number(pct.toFixed(1)),
+      valuesLc: vlc,
       units: Math.round(units),
       unitShare: unitShare(units),
       color: OTHERS_COLOR,

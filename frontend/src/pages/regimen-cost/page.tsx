@@ -2,11 +2,11 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   Bar, BarChart, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
-import { searchDomesticPriceChanges, DomesticProduct } from '@/api/domestic';
 import {
   listRegimens, createRegimen, updateRegimen, deleteRegimen,
   wapSearch, oncoSearch, oncoGet, customRegimenGet, saveCustomRegimen, oncoCost, drugDosing, saveDrugDosing, exportRegimenXlsx,
-  WapResult, OncoDrug, OncoRegimenHit, Patient, PATIENT_DEFAULT,
+  priceSources, regimenDrugSearch,
+  WapResult, OncoDrug, OncoRegimenHit, Patient, PATIENT_DEFAULT, RegimenDrugHit, OncoTotals,
   Regimen, RegimenComparison, RegimenPayload, PriceSource,
 } from '@/api/regimenCost';
 
@@ -21,6 +21,44 @@ type Metric = 'daily' | 'monthly' | 'yearly';
 const METRIC_LABEL: Record<Metric, string> = { daily: '일', monthly: '월', yearly: '연' };
 
 const fmt = (n: number | null | undefined) => n == null ? '—' : '₩' + Math.round(n).toLocaleString();
+// 비용 셀: 산출 불가는 ₩0 이 아니라 '미산출'
+const fmtCost = (n: number | null | undefined) => n == null ? '미산출' : '₩' + Math.round(n).toLocaleString();
+const WAP_NOTE = '주성분 가중평균 데이터 연결 전 — 국내 상한금액 기준으로 계산합니다';
+// 용어 툴팁 (비전문가용 쉬운 설명)
+const TIPS = {
+  regimen: '레지멘: 한 번의 치료에 함께 쓰는 약제 조합과 투여 일정(용량·간격·횟수)입니다. 예) 펨브롤리주맙 200mg을 3주마다 1회.',
+  bsa: 'BSA(체표면적): 키와 체중으로 계산한 몸의 겉넓이(m²)입니다. 많은 항암제는 mg/m² 단위라 BSA 를 곱해 1회 용량을 구합니다 (Mosteller 공식).',
+  gfr: 'GFR(사구체 여과율): 콩팥이 혈액을 거르는 능력입니다. 나이·체중·성별·혈청 크레아티닌(SCr)으로 추정(Cockcroft-Gault, 최대 125)하며, 카보플라틴(AUC) 용량 계산에 씁니다.',
+  wap: 'WAP(주성분 가중평균가): 같은 성분·규격 제품들의 가격을 사용량으로 가중평균한 단가입니다. 특정 브랜드 대신 시장 평균 가격으로 비교할 때 씁니다.',
+  domestic: '국내 상한금액: 건강보험 약제급여목록의 보험 상한금액(표시가)입니다. 실거래가·RSA 환급 후 실제 가격은 반영되지 않습니다.',
+} as const;
+function Tip({ text }: { text: string }) {
+  return <i className="ri-question-line text-[12px] align-middle cursor-help" style={{ color: 'var(--label-3)' }} title={text} aria-label={text} role="img"></i>;
+}
+const unitPerLabel = (u?: string | null) => u === 'mg/m2' || u === 'mg/m2/day' ? 'BSA' : u === 'mg/kg' || u === 'mg/kg/day' ? '체중' : u === 'AUC' ? 'GFR' : '';
+const shortProduct = (s: string) => (s || '').split('_')[0];
+
+/** 약제별 미산출 사유 요약 (툴팁용). */
+function missingSummary(r: Regimen): string {
+  const lines = (r.oncoDrugs || [])
+    .filter(d => d.cost && d.cost.cycle == null)
+    .map(d => `${d.ingredient}: ${d.missing_reason || '산출 불가'}`);
+  return lines.length ? `미산출 약제 (합계에서 제외)\n${lines.join('\n')}` : '';
+}
+
+/** 레지멘 합계 셀 — null 은 '미산출' + 사유, 부분합은 * 표시. */
+function TotalCell({ t, k, r }: { t?: OncoTotals; k: 'cycle' | 'course' | 'daily' | 'monthly' | 'yearly'; r: Regimen }) {
+  if (!t) return <span style={{ color: 'var(--label-3)' }}>—</span>;
+  const v = t[k];
+  if (v == null) {
+    const why = k === 'course' && t.computedCount
+      ? ((r.oncoDrugs || []).find(d => d.course_reason)?.course_reason || '총사이클 미입력')
+      : missingSummary(r) || '가격·용량 정보 부족';
+    return <span className="text-xs font-normal" style={{ color: 'var(--label-3)' }} title={why}>미산출{k === 'course' && t.computedCount ? ` · ${why}` : ''}</span>;
+  }
+  const partial = t.partial?.[k];
+  return <span title={partial ? missingSummary(r) : undefined}>{fmtCost(v)}{partial && <sup className="text-amber-500">*</sup>}</span>;
+}
 // 기준일은 한국 날짜 (toISOString 은 UTC 라 KST 오전 9시 전에는 전날이 된다)
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
 const emptyRegimen = (name: string): Regimen => ({ name, kind: 'onco', drugs: [], oncoDrugs: [] });
@@ -38,7 +76,11 @@ export default function RegimenCostPage() {
   const [regimens, setRegimens] = useState<Regimen[]>([emptyRegimen('기준 레지멘'), emptyRegimen('비교 레지멘 1')]);
   const [metric, setMetric] = useState<Metric>('monthly');
   const [asOfDate, setAsOfDate] = useState(today());
-  const [source, setSource] = useState<PriceSource>('weighted_avg');
+  // WAP 연결 여부 확인 전에는 국내 상한금액이 안전한 기본값
+  const [source, setSource] = useState<PriceSource>('domestic');
+  const [wapAvailable, setWapAvailable] = useState<boolean | null>(null);
+  // 이미 약제가 있는 카드에 레지멘을 고른 경우 — 교체/새 비교 카드 선택 대기
+  const [pendingPick, setPendingPick] = useState<{ hit: OncoRegimenHit; ri: number } | null>(null);
   const [patient, setPatient] = useState<Patient>(PATIENT_DEFAULT);
   const [patientOpen, setPatientOpen] = useState(false);
 
@@ -46,7 +88,7 @@ export default function RegimenCostPage() {
   const [addMode, setAddMode] = useState<'onco' | 'drug'>('onco');
   const [query, setQuery] = useState('');
   const [oncoHits, setOncoHits] = useState<OncoRegimenHit[]>([]);
-  const [results, setResults] = useState<DomesticProduct[]>([]);
+  const [results, setResults] = useState<RegimenDrugHit[]>([]);
   const [wapResults, setWapResults] = useState<WapResult[]>([]);
   const [searching, setSearching] = useState(false);
   // 마지막으로 끝난 검색어/오류 — '검색 중'·'결과 없음'·'오류'를 구분해 보여준다
@@ -65,24 +107,38 @@ export default function RegimenCostPage() {
   const uidRef = useRef(1);
 
   useEffect(() => { listRegimens().then(setSaved).catch(() => {}); }, []);
+  useEffect(() => {
+    priceSources().then(ps => {
+      setWapAvailable(ps.weighted_avg.available);
+      // WAP 연결됨 + 아직 아무것도 추가 전이면 서버 기본 소스 사용
+      if (ps.default === 'weighted_avg' && !ref.current.regimens.some(r => (r.oncoDrugs || []).length)) setSource('weighted_avg');
+    }).catch(() => setWapAvailable(false));
+  }, []);
 
   // 검색
+  const useWapSearch = source === 'weighted_avg' && wapAvailable === true;
   useEffect(() => {
     if (addTarget == null || !query.trim()) { setOncoHits([]); setResults([]); setWapResults([]); return; }
     const t = setTimeout(async () => {
       setSearching(true); setSearchError('');
+      setOncoHits([]); setResults([]); setWapResults([]);
       try {
         if (addMode === 'onco') setOncoHits(await oncoSearch(query.trim()));
-        else if (source === 'weighted_avg') {
-          const r = await wapSearch(query.trim(), asOfDate);
-          setWapResults(r.available ? (r.results || []).slice(0, 25) : []);
-          if (!r.available) setMsg(r.reason || '가중평균 조회 불가');
-        } else setResults((await searchDomesticPriceChanges(query)).slice(0, 12));
+        else {
+          let wapHits: WapResult[] = [];
+          if (useWapSearch) {
+            const r = await wapSearch(query.trim(), asOfDate);
+            wapHits = r.available ? (r.results || []).slice(0, 25) : [];
+            setWapResults(wapHits);
+          }
+          // 국내 등재품 검색(한글 제품명·영문 INN) — WAP 미연결이거나 WAP 결과가 없을 때
+          if (!wapHits.length) setResults(await regimenDrugSearch(query.trim()));
+        }
       } catch (e) { setOncoHits([]); setResults([]); setWapResults([]); setSearchError(e instanceof Error ? e.message : '검색 실패'); }
       finally { setSearching(false); setSearchedFor(query.trim()); }
     }, 350);
     return () => clearTimeout(t);
-  }, [query, addTarget, addMode, source, asOfDate]);
+  }, [query, addTarget, addMode, useWapSearch, asOfDate]);
 
   // 레지멘 1건 재계산 (행별 price_source/ref/inn 그대로 전달)
   const recompute = useCallback(async (ri: number, rows?: OncoDrug[]) => {
@@ -96,7 +152,9 @@ export default function RegimenCostPage() {
       const res = await oncoCost(cur.asOfDate, cur.source, cur.patient, list);
       setRegimens(p => p.map((r, i) => i !== ri ? r : {
         ...r, oncoDrugs: res.drugs.map((d, j) => ({ ...list[j], ...d })), metrics: res.metrics, oncoTotals: res.totals,
+        priceNote: res.priceNote ?? null,
       }));
+      if (res.wapAvailable != null) setWapAvailable(res.wapAvailable);
     } catch { setMsg('치료비 계산 실패 — 다시 시도해 주세요'); }
   }, []);
 
@@ -122,24 +180,58 @@ export default function RegimenCostPage() {
     return withUid;
   };
 
-  // 레지멘 로드 = 행 추가(대체 아님). 커스텀/정본 모두 지원
+  // 레지멘 선택: 빈 카드면 바로 채우고, 이미 약제가 있으면 교체/새 비교 카드 중 선택을 물어본다
+  // (예전에는 조용히 약제를 합쳐 서로 다른 레지멘이 한 카드에 섞였음)
+  const loadRegimenRows = async (hit: OncoRegimenHit): Promise<OncoDrug[]> => {
+    const isCustom = hit.source_kind === 'custom';
+    const full = isCustom ? await customRegimenGet(hit.ref) : await oncoGet(hit.ref);
+    const src = ref.current.source;
+    return full.drugs.map(d => ({
+      ...d,
+      uid: uidRef.current++,
+      dose_source: isCustom ? (d.dose_source || 'saved') : 'onco_db',
+      // 커스텀은 저장된 가격조회 정보 보존(한글 브랜드 등), 정본은 현재 가격 소스 + INN=성분
+      price_source: isCustom && d.price_source && (d.price_source !== 'weighted_avg' || wapAvailable) ? d.price_source : src,
+      price_ref: d.price_ref || '',
+      price_inn: d.price_inn || d.ingredient,
+    }));
+  };
+  const closeSearch = () => { setAddTarget(null); setQuery(''); setOncoHits([]); setResults([]); setWapResults([]); };
   const addRegimen = async (hit: OncoRegimenHit, ri: number) => {
+    if ((ref.current.regimens[ri]?.oncoDrugs || []).length) { setPendingPick({ hit, ri }); closeSearch(); return; }
+    await applyRegimen(hit, ri, 'replace');
+  };
+  const applyRegimen = async (hit: OncoRegimenHit, ri: number, mode: 'replace' | 'new') => {
+    setPendingPick(null);
     setBusyCalc(true);
     try {
-      const isCustom = hit.source_kind === 'custom';
-      const full = isCustom ? await customRegimenGet(hit.ref) : await oncoGet(hit.ref);
-      const rows: OncoDrug[] = full.drugs.map(d => ({
-        ...d,
-        dose_source: isCustom ? (d.dose_source || 'saved') : 'onco_db',
-        // 커스텀은 저장된 가격조회 정보 보존(한글 브랜드 등), 정본은 INN=성분 기본
-        price_source: d.price_source || ref.current.source,
-        price_ref: d.price_ref || '',
-        price_inn: d.price_inn || d.ingredient,
-      }));
-      const empty = !(ref.current.regimens[ri]?.oncoDrugs?.length);
-      if (empty) setRegimens(p => p.map((r, i) => i === ri ? { ...r, name: hit.regimen_name } : r));
-      appendRows(ri, rows);
-    } finally { setBusyCalc(false); }
+      const rows = await loadRegimenRows(hit);
+      if (mode === 'new' && ref.current.regimens.length < MAX_REGIMENS) {
+        const idx = ref.current.regimens.length;
+        setRegimens(p => [...p, { ...emptyRegimen(hit.regimen_name), oncoDrugs: rows }]);
+        closeSearch();
+        setTimeout(() => recompute(idx, rows), 0);
+        setMsg(`'${hit.regimen_name}'을(를) 새 비교 카드로 추가했습니다`);
+      } else {
+        setRegimens(p => p.map((r, i) => i === ri ? { ...r, name: hit.regimen_name, oncoDrugs: rows, oncoTotals: undefined, saved: false } : r));
+        closeSearch();
+        setTimeout(() => recompute(ri, rows), 0);
+      }
+    } catch { setMsg('레지멘을 불러오지 못했습니다 — 다시 시도해 주세요'); }
+    finally { setBusyCalc(false); }
+  };
+
+  // 가격 소스 전환 = 모든 행에 적용 (예전에는 행별 price_source 가 추가 시점 값으로 고정돼 전환이 무시됨)
+  const changeSource = (s: PriceSource) => {
+    setSource(s);
+    setRegimens(p => p.map(r => ({
+      ...r,
+      oncoDrugs: (r.oncoDrugs || []).map(d => {
+        const prev = d.price_source || 'domestic';
+        const refs = { ...(d.price_refs || {}), ...(d.price_ref ? { [prev]: d.price_ref } : {}) };
+        return { ...d, price_source: s, price_ref: refs[s] || '', price_refs: refs };
+      }),
+    })));
   };
 
   // 단일 약제 추가 (WAP/브랜드) — 행 즉시 표시(낙관적) 후 용법 비동기 채움(실패해도 행 유지)
@@ -199,7 +291,7 @@ export default function RegimenCostPage() {
   const removeRegimen = (ri: number) => ri > 0 && setRegimens(p => p.filter((_, i) => i !== ri));
 
   const chartData = useMemo(() => regimens.map((r, i) => ({
-    name: r.name || `레지멘 ${i + 1}`, value: r.oncoTotals?.[metric] ?? 0, idx: i,
+    name: r.name || `레지멘 ${i + 1}`, value: r.oncoTotals?.[metric] ?? null, idx: i,
   })), [regimens, metric]);
 
   const stripSaved = ({ saved, ...r }: Regimen): Regimen => r;
@@ -214,11 +306,18 @@ export default function RegimenCostPage() {
   };
   const onLoad = (c: RegimenComparison) => {
     setCurrentId(c.id); setCompareName(c.name);
-    setRegimens([c.payload.base, ...(c.payload.comparators || [])].filter(Boolean).map(r => ({ ...r, oncoDrugs: r.oncoDrugs || [] })));
+    // WAP 연결 전이면 저장본의 가중평균 행도 국내 상한금액으로 계산
+    const loadedSrc: PriceSource = c.payload.source === 'weighted_avg' && wapAvailable === false ? 'domestic' : (c.payload.source || source);
+    setRegimens([c.payload.base, ...(c.payload.comparators || [])].filter(Boolean).map(r => ({
+      ...r,
+      oncoDrugs: (r.oncoDrugs || []).map(d => d.price_source === 'weighted_avg' && loadedSrc === 'domestic'
+        ? { ...d, price_source: 'domestic' as PriceSource, price_ref: '' } : d),
+    })));
     setAsOfDate(c.payload.asOfDate || c.payload.snapshotDate || today());
-    if (c.payload.source) setSource(c.payload.source);
+    setSource(loadedSrc);
     if (c.payload.patient) setPatient(c.payload.patient);
     setMsg(`'${c.name}' 불러옴`);
+    setTimeout(() => recomputeAll(), 50);   // 저장 스냅샷(구 ₩0 합계 등) 대신 현재 기준으로 재계산
   };
   const onDelete = async (id: number) => { await deleteRegimen(id); setSaved(await listRegimens()); if (currentId === id) { setCurrentId(null); setMsg('삭제됨'); } };
   const onNew = () => { setCurrentId(null); setCompareName('새 비교'); setRegimens([emptyRegimen('기준 레지멘'), emptyRegimen('비교 레지멘 1')]); };
@@ -237,7 +336,7 @@ export default function RegimenCostPage() {
         <div className="flex items-center justify-between mb-1">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">요법 비용 비교</h1>
-            <p className="text-sm text-gray-500 mt-1">레지멘(정본 DB)으로 기본 구성 후 자유 편집 · 환자 파라미터 기반 용량 + 기준일 약가로 치료비 비교.</p>
+            <p className="text-sm text-gray-500 mt-1">레지멘 <Tip text={TIPS.regimen} />(정본 DB)으로 기본 구성 후 자유 편집 · 환자 파라미터 기반 용량 + 기준일 약가로 치료비 비교.</p>
           </div>
           <div className="flex items-center gap-2">
             <input value={compareName} onChange={e => setCompareName(e.target.value)} className="border rounded-lg px-3 py-1.5 text-sm w-40" placeholder="비교 이름" />
@@ -283,7 +382,7 @@ export default function RegimenCostPage() {
               <Tooltip formatter={(v: number) => fmt(v)} />
               <Bar dataKey="value" radius={[8, 8, 0, 0]} maxBarSize={70}>
                 {chartData.map(d => <Cell key={d.idx} fill={COLORS[d.idx % COLORS.length]} />)}
-                <LabelList dataKey="value" position="top" formatter={(v: number) => fmt(v)} style={{ fontSize: 11, fontWeight: 700 }} />
+                <LabelList dataKey="value" position="top" formatter={(v: number | null) => fmtCost(v)} style={{ fontSize: 11, fontWeight: 700 }} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -313,20 +412,24 @@ export default function RegimenCostPage() {
                         <span className="inline-block w-2.5 h-2.5 rounded-full mr-2 align-middle" style={{ background: COLORS[i % COLORS.length] }}></span>
                         {r.name || `레지멘 ${i + 1}`}
                         {i === 0 && <span className="ml-1.5 text-[10px] px-1 py-0.5 rounded bg-teal-100 text-teal-700">기준</span>}
-                        {t?.hasMissing && <span className="ml-1 text-amber-500" title="일부 약가/용량 미상 (합산 제외)">⚠</span>}
+                        {t?.hasMissing && <span className="ml-1 text-amber-500" title={missingSummary(r)}>⚠</span>}
+                        {t?.hasMissing && <span className="ml-1 text-[11px]" style={{ color: 'var(--label-3)' }}>
+                          {t.computedCount ? `약제 ${t.missingCount}개 제외된 부분합` : '미산출'}</span>}
                       </td>
-                      <td className="text-right px-3 whitespace-nowrap">{hasCycle ? fmt(t?.cycle) : '—'}</td>
-                      <td className="text-right px-3 whitespace-nowrap font-bold text-teal-700">{hasCycle ? fmt(t?.course) : '—'}</td>
-                      <td className="text-right px-3 whitespace-nowrap">{fmt(t?.daily)}</td>
-                      <td className="text-right px-3 whitespace-nowrap font-semibold">{fmt(t?.monthly)}</td>
-                      <td className="text-right px-3 whitespace-nowrap font-semibold">{fmt(t?.yearly)}</td>
+                      {!(r.oncoDrugs || []).length ? <td colSpan={5} className="text-right px-3 text-xs" style={{ color: 'var(--label-3)' }}>약제 없음</td> : <>
+                      <td className="text-right px-3 whitespace-nowrap">{hasCycle ? <TotalCell t={t} k="cycle" r={r} /> : '—'}</td>
+                      <td className="text-right px-3 whitespace-nowrap font-bold text-teal-700">{hasCycle ? <TotalCell t={t} k="course" r={r} /> : '—'}</td>
+                      <td className="text-right px-3 whitespace-nowrap"><TotalCell t={t} k="daily" r={r} /></td>
+                      <td className="text-right px-3 whitespace-nowrap font-semibold"><TotalCell t={t} k="monthly" r={r} /></td>
+                      <td className="text-right px-3 whitespace-nowrap font-semibold"><TotalCell t={t} k="yearly" r={r} /></td>
+                      </>}
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
-          <p className="text-[11px] text-gray-400 mt-2">1사이클·전체코스는 항암 레지멘(주기 투여)에만 표시 · 일반약제는 일/월/연만</p>
+          <p className="text-[11px] text-gray-400 mt-2">1사이클·전체코스는 항암 레지멘(주기 투여)에만 표시 · 일반약제는 일/월/연만 · 전체코스는 총사이클을 입력해야 계산 · ‘0’ 대신 ‘미산출’은 가격·용량이 부족한 경우입니다 (⚠ 에 마우스를 올리면 사유)</p>
         </div>
 
         {/* 컨트롤 (테이블 인접) */}
@@ -336,14 +439,22 @@ export default function RegimenCostPage() {
           </label>
           <div className="flex items-center gap-2 text-sm"><span className="text-gray-600">가격 소스</span>
             <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-              {([['weighted_avg', '주성분 가중평균'], ['domestic', '국내약가(브랜드)']] as [PriceSource, string][]).map(([s, lbl]) => (
-                <button key={s} onClick={() => setSource(s)} className={`text-xs px-3 py-1 rounded-md ${source === s ? 'bg-white shadow font-semibold text-teal-700' : 'text-gray-500'}`}>{lbl}</button>
-              ))}
+              {([['domestic', '국내 상한금액', TIPS.domestic], ['weighted_avg', '주성분 가중평균(WAP)', TIPS.wap]] as [PriceSource, string, string][]).map(([s, lbl, tip]) => {
+                const off = s === 'weighted_avg' && wapAvailable === false;
+                return (
+                  <button key={s} onClick={() => !off && changeSource(s)} disabled={off} aria-disabled={off}
+                    title={off ? `${WAP_NOTE}\n\n${tip}` : tip}
+                    className={`text-xs px-3 py-1 rounded-md ${source === s ? 'bg-white shadow font-semibold text-teal-700' : 'text-gray-500'} ${off ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                    {lbl}{off && <span className="ml-1 text-[10px]">· 연결 전</span>}</button>
+                );
+              })}
             </div>
+            <Tip text={`${TIPS.domestic}\n\n${TIPS.wap}`} />
           </div>
           <button onClick={() => setPatientOpen(o => !o)} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-teal-700">
-            <i className="ri-user-heart-line text-teal-600"></i>환자값 <span className="text-xs text-gray-400">BSA {pm.bsa} · GFR {pm.gfr}</span><i className={`ri-arrow-${patientOpen ? 'up' : 'down'}-s-line`}></i>
+            <i className="ri-user-heart-line text-teal-600"></i>환자값 <span className="text-xs text-gray-400">키 {patient.height}cm · {patient.weight}kg · BSA {pm.bsa} m² · GFR {pm.gfr}</span><i className={`ri-arrow-${patientOpen ? 'up' : 'down'}-s-line`}></i>
           </button>
+          <span className="inline-flex gap-1.5"><Tip text={TIPS.bsa} /><Tip text={TIPS.gfr} /></span>
           {busyCalc && <span className="text-xs text-gray-400">계산 중…</span>}
           <span className="text-[11px] text-gray-400 ml-auto">표시가 기준 (실거래·RSA net 비공개)</span>
           {patientOpen && (
@@ -354,11 +465,18 @@ export default function RegimenCostPage() {
               ))}
               <label className="flex flex-col gap-1"><span className="text-gray-500">성별</span>
                 <select value={patient.sex} onChange={e => setP('sex', e.target.value)} className="border rounded-md px-2 py-1 w-24"><option>M</option><option>F</option></select></label>
-              <div className="text-gray-500 pb-1">→ BSA <b className="text-gray-700">{pm.bsa}</b> m² · CrCl {pm.crcl} · GFR(cap125) <b className="text-gray-700">{pm.gfr}</b></div>
+              <div className="text-gray-500 pb-1">→ BSA <Tip text={TIPS.bsa} /> <b className="text-gray-700">{pm.bsa}</b> m² · CrCl {pm.crcl} · GFR(cap125) <Tip text={TIPS.gfr} /> <b className="text-gray-700">{pm.gfr}</b></div>
               <button onClick={() => setPatient(PATIENT_DEFAULT)} className="text-gray-400 hover:text-gray-600 pb-1">기본값</button>
             </div>
           )}
         </div>
+
+        {(wapAvailable === false || regimens.some(r => r.priceNote)) && (
+          <div className="ui-notice ui-notice-info mb-3" role="status">
+            <i className="ri-information-line"></i>
+            <span>{WAP_NOTE}. 가중평균이 연결되면 ‘주성분 가중평균(WAP)’을 선택할 수 있습니다.</span>
+          </div>
+        )}
 
         {/* 레지멘 목록 */}
         <div className="space-y-3">
@@ -391,7 +509,10 @@ export default function RegimenCostPage() {
                             <td className="px-1.5 py-1 font-medium whitespace-nowrap max-w-[180px] truncate" title={`${d.ingredient}${d.price?.label ? ` · ${d.price.label}` : ''}`}>
                               {d.ingredient}
                               {d.verify === '검증필요' && <span title="검증필요" className="ml-1 text-amber-500">⚠</span>}
-                              {d.price && !d.price.available && <span title={d.price.reason} className="ml-1 text-red-400">●</span>}
+                              {d.cost && d.cost.cycle == null && (
+                                <span className="block text-[10px] font-normal text-amber-600 whitespace-normal" title={d.missing_reason || ''}>
+                                  미산출 · {d.missing_reason || '산출 불가'}</span>
+                              )}
                             </td>
                             <td className="px-1"><input value={d.dose_value ?? ''} onChange={e => editRow(ri, di, { dose_value: num(e.target.value) })} onBlur={() => commitRow(ri, di)} className="w-14 border rounded px-1 py-0.5 text-right" /></td>
                             <td className="px-1"><select value={d.unit ?? ''} onChange={e => { editRow(ri, di, { unit: e.target.value }); setTimeout(() => commitRow(ri, di), 0); }} className="border rounded px-1 py-0.5">{UNITS.map(u => <option key={u}>{u}</option>)}{d.unit && !UNITS.includes(d.unit) && <option>{d.unit}</option>}</select></td>
@@ -399,20 +520,61 @@ export default function RegimenCostPage() {
                             <td className="px-1"><input value={d.per_cycle ?? ''} onChange={e => editRow(ri, di, { per_cycle: num(e.target.value) })} onBlur={() => commitRow(ri, di)} className="w-12 border rounded px-1 py-0.5 text-right" /></td>
                             <td className="px-1"><input value={d.cycle_days ?? ''} onChange={e => editRow(ri, di, { cycle_days: num(e.target.value) })} onBlur={() => commitRow(ri, di)} className="w-12 border rounded px-1 py-0.5 text-right" /></td>
                             <td className="px-1"><input value={d.total_cycles ?? ''} onChange={e => editRow(ri, di, { total_cycles: num(e.target.value) })} onBlur={() => commitRow(ri, di)} className="w-12 border rounded px-1 py-0.5 text-right" /></td>
-                            <td className="px-1.5 text-right bg-teal-50/60 font-medium">{d.one_dose_mg ?? '—'}</td>
+                            <td className="px-1.5 text-right bg-teal-50/60 font-medium" title={d.dose_basis || ''}>{d.one_dose_mg ?? '—'}</td>
                             <td className="px-1.5 text-right bg-teal-50/60 font-medium">{d.cycle_total_mg ?? '—'}</td>
-                            <td className="px-1.5 text-right whitespace-nowrap" title={d.price?.label ? `${d.price.label} · ${fmt(d.price.unit_price)}/단위` : d.price?.reason || ''}>{fmt(d.cost?.cycle)}</td>
-                            <td className="px-1.5 text-right whitespace-nowrap text-gray-500">{fmt(d.cost?.course)}</td>
-                            <td className="px-1.5 text-right whitespace-nowrap text-gray-500">{fmt(d.cost?.monthly)}</td>
+                            <td className="px-1.5 text-right whitespace-nowrap" title={d.price?.available ? `${d.price.label || ''} · ${fmt(d.price.unit_price)}/단위(${d.price.content_mg ?? '?'}mg)${d.price.priceDate ? ` · ${d.price.priceDate} 적용` : ''}` : d.missing_reason || ''}>
+                              {d.cost ? <span className={d.cost.cycle == null ? 'text-[11px] text-amber-600' : ''}>{fmtCost(d.cost.cycle)}</span> : '—'}</td>
+                            <td className="px-1.5 text-right whitespace-nowrap text-gray-500" title={d.course_reason || ''}>
+                              {d.cost ? (d.cost.course == null ? <span className="text-[11px]" style={{ color: 'var(--label-3)' }}>{d.cost.cycle == null ? '미산출' : (d.course_reason || '미산출')}</span> : fmtCost(d.cost.course)) : '—'}</td>
+                            <td className="px-1.5 text-right whitespace-nowrap text-gray-500">{d.cost ? fmtCost(d.cost.monthly) : '—'}</td>
                             <td className="px-1.5 whitespace-nowrap">
                               <span className={`text-[10px] px-1 py-0.5 rounded ${d.dose_source === 'saved' ? 'bg-teal-500/15 text-teal-600' : d.dose_source === 'onco_db' ? 'bg-indigo-500/15 text-indigo-600' : d.dose_source === 'mfds_label' ? 'bg-blue-500/15 text-blue-600' : d.dose_source === 'manual' ? 'bg-amber-500/15 text-amber-600' : 'bg-gray-200 text-gray-400'}`}>{DOSE_SRC_LABEL[d.dose_source || 'none']}</span>
-                              <span className="ml-1 text-[10px] text-gray-400">{d.price_source === 'domestic' ? '브랜드' : 'WAP'}</span>
+                              <span className="ml-1 text-[10px] text-gray-400" title={d.price?.fallback ? (d.price.note || WAP_NOTE) : d.price?.label || ''}>
+                                {(d.price?.source || d.price_source) === 'weighted_avg' ? 'WAP' : d.price?.fallback ? '국내가(대체)' : '국내가'}</span>
                             </td>
                             <td className="px-1"><button onClick={() => removeRow(ri, di)} className="text-gray-300 hover:text-red-500"><i className="ri-close-line"></i></button></td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                )}
+
+                {rows.length > 0 && (
+                  <div className="mt-2 text-[11px] leading-relaxed" style={{ color: 'var(--label-2)' }}>
+                    <span className="font-semibold">계산 가정</span>
+                    <span className="ml-1.5">환자 {patient.height}cm·{patient.weight}kg·{patient.age}세·{patient.sex === 'F' ? '여' : '남'}·SCr {patient.scr}</span>
+                    <span className="ml-1.5">→ BSA <Tip text={TIPS.bsa} /> {r.metrics?.bsa ?? pm.bsa} m² · GFR <Tip text={TIPS.gfr} /> {r.metrics?.gfr ?? pm.gfr} mL/min</span>
+                    <span className="ml-1.5">· 기준일 {asOfDate} · {source === 'weighted_avg' && wapAvailable ? '주성분 가중평균' : '국내 상한금액'} 기준</span>
+                    <ul className="mt-0.5 space-y-0.5">
+                      {rows.map((d, di) => {
+                        const per = unitPerLabel(d.unit);
+                        return (
+                          <li key={d.uid ?? di}>
+                            <b className="font-medium" style={{ color: 'var(--label)' }}>{d.ingredient}</b>{' '}
+                            {d.dose_value ?? '?'}{d.unit || ''}{per ? ` × ${per}` : ''}{d.one_dose_mg != null ? ` = ${d.one_dose_mg}mg/회` : ''}
+                            {' · '}{d.per_cycle ?? 1}회/{d.cycle_days ?? '?'}일{d.cycle_label ? ` (${d.cycle_label})` : ''}
+                            {' · '}{d.total_cycles ? `총 ${d.total_cycles}사이클` : '총사이클 미입력'}
+                            {d.price?.available && d.price.unit_price != null && <> · 단가 {fmt(d.price.unit_price)}/{d.price.content_mg}mg ({shortProduct(d.price.label || '')})</>}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
+
+                {pendingPick?.ri === ri && (
+                  <div className="ui-notice ui-notice-warn mt-2 flex-wrap items-center" role="alertdialog" aria-label="레지멘 추가 방식 선택">
+                    <span className="flex-1 min-w-[16rem]">
+                      이 카드에는 이미 ‘{r.name}’ 약제가 있습니다. ‘{pendingPick.hit.regimen_name}’을(를) 어떻게 추가할까요?
+                      <span className="block text-[11px] opacity-80">레지멘끼리 약제를 섞지 않도록, 보통은 새 비교 카드로 추가하는 것을 권장합니다. 약제 하나만 더하려면 ‘약제’ 탭을 쓰세요.</span>
+                    </span>
+                    <button className="ui-button" style={{ height: 30, fontSize: 13 }} autoFocus disabled={regimens.length >= MAX_REGIMENS}
+                      title={regimens.length >= MAX_REGIMENS ? `비교 카드는 최대 ${MAX_REGIMENS}개입니다` : ''}
+                      onClick={() => applyRegimen(pendingPick.hit, ri, 'new')}>새 비교 카드로 추가</button>
+                    <button className="ui-button-secondary" style={{ height: 30, fontSize: 13 }}
+                      onClick={() => applyRegimen(pendingPick.hit, ri, 'replace')}>이 카드 교체</button>
+                    <button className="text-xs underline" onClick={() => setPendingPick(null)}>취소</button>
                   </div>
                 )}
 
@@ -425,33 +587,43 @@ export default function RegimenCostPage() {
                           <button onClick={() => setAddMode('drug')} className={`px-2 py-1 rounded ${addMode === 'drug' ? 'bg-white shadow font-semibold text-teal-700' : 'text-gray-500'}`}>약제</button>
                         </div>
                         <input autoFocus value={query} onChange={e => setQuery(e.target.value)}
-                          placeholder={addMode === 'onco' ? '암종·레지멘·약제 (예: 소세포, EP)' : source === 'weighted_avg' ? '영문 성분명' : '제품·성분'}
+                          placeholder={addMode === 'onco' ? '암종·레지멘·약제 (예: 비소세포폐암, pembrolizumab)' : useWapSearch ? '영문 성분명 (예: pembrolizumab)' : '제품명 또는 영문 성분명 (예: 키트루다, pembrolizumab)'}
                           className="text-xs border rounded-lg px-2 py-1.5 w-72 outline-none focus:border-teal-400" />
-                        <button onClick={() => { setAddTarget(null); setQuery(''); }} className="text-xs text-gray-400 pt-1.5">닫기</button>
+                        <button onClick={closeSearch} className="text-xs text-gray-400 pt-1.5">닫기</button>
                         {query.trim() && !searching && searchedFor === query.trim() && oncoHits.length === 0 && results.length === 0 && wapResults.length === 0 && (
                           <div className="absolute z-10 top-9 left-0 w-[28rem] bg-white border rounded-lg shadow-lg px-3 py-3 text-xs" role="status">
                             {searchError
                               ? <p className="text-red-500">검색 실패: {searchError}</p>
-                              : <p className="text-gray-500">'{query.trim()}'에 맞는 {addMode === 'onco' ? '레지멘' : '약제'}이 없습니다.{addMode === 'onco' ? ' 암종(예: 비소세포폐암)이나 영문 성분명(예: pembrolizumab)으로 검색해 보세요.' : ''}</p>}
+                              : <p className="text-gray-500">‘{query.trim()}’ 검색 결과가 없습니다. {addMode === 'onco'
+                                  ? '암종(예: 비소세포폐암)이나 영문 성분명(예: pembrolizumab), 제품명(예: 키트루다)으로 검색해 보세요.'
+                                  : '제품명(예: 키트루다)이나 영문 성분명(예: pembrolizumab)으로 검색해 보세요. 국내 급여 등재품만 검색됩니다.'}</p>}
                           </div>
                         )}
                         {query.trim() && (searching || oncoHits.length > 0 || results.length > 0 || wapResults.length > 0) && (
                           <div className="absolute z-10 top-9 left-0 w-[28rem] bg-white border rounded-lg shadow-lg max-h-72 overflow-auto">
                             {searching && <p className="text-xs text-gray-400 px-3 py-2">검색 중…</p>}
+                            {addMode === 'onco' && !searching && oncoHits.length > 0 && rows.length > 0 && (
+                              <p className="text-[11px] px-3 py-1.5 border-b" style={{ color: 'var(--label-2)' }}>
+                                이 카드에 이미 약제가 있어요. 레지멘을 고르면 ‘새 비교 카드로 추가’할지 ‘이 카드 교체’할지 물어봅니다.</p>
+                            )}
                             {addMode === 'onco' && oncoHits.map(h => (
                               <button key={h.ref} onClick={() => addRegimen(h, ri)} className="block w-full text-left text-xs px-3 py-1.5 hover:bg-teal-50">
                                 <span className="font-medium">{h.regimen_name}</span><span className="text-gray-400"> · {h.cancer}{h.line ? ` · ${h.line}` : ''}</span>
                                 <span className="block text-gray-400 truncate">{h.drug_names.join(' + ')}</span>
                               </button>
                             ))}
-                            {addMode === 'drug' && source === 'weighted_avg' && wapResults.map(w => (
+                            {addMode === 'drug' && wapResults.map(w => (
                               <button key={w.main_ingredient_code} onClick={() => addDrug(ri, { inn: extractInn(w.ingredient_name), display: extractInn(w.ingredient_name), price_source: 'weighted_avg', price_ref: w.main_ingredient_code })} className="block w-full text-left text-xs px-3 py-1.5 hover:bg-indigo-50">
                                 <span className="font-medium">{fmt(w.weighted_avg_price)}</span><span className="text-gray-400"> · {w.main_ingredient_code}</span><span className="block text-gray-400 truncate">{w.ingredient_name}</span>
                               </button>
                             ))}
-                            {addMode === 'drug' && source === 'domestic' && results.map(p => (
-                              <button key={p.insuranceCode} onClick={() => addDrug(ri, { inn: p.hiraIngredient || p.ingredient, display: p.productName, price_source: 'domestic', price_ref: p.insuranceCode })} className="block w-full text-left text-xs px-3 py-1.5 hover:bg-teal-50">
-                                <span className="font-medium">{p.productName}</span><span className="text-gray-400"> · {fmt(p.currentPrice)}</span><span className="block text-gray-400 truncate">{p.ingredient}</span>
+                            {addMode === 'drug' && !wapResults.length && results.length > 0 && useWapSearch && (
+                              <p className="text-[11px] px-3 py-1.5 border-b" style={{ color: 'var(--label-2)' }}>가중평균 결과가 없어 국내 등재품(상한금액)을 보여드립니다.</p>
+                            )}
+                            {addMode === 'drug' && results.map(p => (
+                              <button key={p.insurance_code} onClick={() => addDrug(ri, { inn: p.inn || extractInn(p.ingredient || ''), display: shortProduct(p.product_name_kr), price_source: 'domestic', price_ref: p.insurance_code })} className="block w-full text-left text-xs px-3 py-1.5 hover:bg-teal-50">
+                                <span className="font-medium">{shortProduct(p.product_name_kr)}</span><span className="text-gray-400"> · {p.max_price != null ? fmt(p.max_price) : '상한금액 없음'}</span>
+                                <span className="block text-gray-400 truncate">{p.ingredient}{p.company ? ` · ${p.company}` : ''}</span>
                               </button>
                             ))}
                           </div>

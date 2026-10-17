@@ -127,6 +127,37 @@ class _OncoMixin:
         m = _re.match(r"[A-Za-z][A-Za-z-]+", row[0].strip())
         return m.group(0) if m else None
 
+    def search_regimen_drugs(self, q: str, limit: int = 25) -> list[dict]:
+        """약제 추가 검색(읽기 전용) — drug_latest 한글 제품명 또는 영문 INN(ingredient 접두/단어).
+
+        'pembrolizumab' → ingredient 'pembrolizumab 0.1g(25mg/mL)' 인 키트루다주. '키트루다' → 제품명 부분일치.
+        한글 성분명(펨브롤리주맙)은 제품명 괄호 안 성분으로 매칭된다. 가격 보유 우선.
+        반환 [{insurance_code, product_name_kr, company, ingredient, dosage_strength, max_price,
+               apply_date, inn}] — inn 은 용법(dosing) 조회용 영문 성분명(염 제거).
+        """
+        import re as _re
+        from agents.regimen_export import inn_from_ingredient_text
+        q = (q or "").strip()
+        if not q:
+            return []
+        cols = ("insurance_code, product_name_kr, company, ingredient, dosage_strength, "
+                "max_price, apply_date")
+        if _re.search(r"[A-Za-z]", q) and not _re.search(r"[가-힣]", q):
+            kw = q.lower()
+            sql = (f"SELECT {cols} FROM drug_latest WHERE (LOWER(ingredient) LIKE ? OR LOWER(ingredient) LIKE ? "
+                   f"OR LOWER(IFNULL(product_name_en,'')) LIKE ?) "
+                   f"ORDER BY (max_price IS NULL), (LOWER(ingredient) NOT LIKE ?), max_price DESC LIMIT ?")
+            params = (kw + "%", "% " + kw + "%", "%" + kw + "%", kw + "%", limit)
+        else:
+            sql = (f"SELECT {cols} FROM drug_latest WHERE product_name_kr LIKE ? "
+                   f"ORDER BY (max_price IS NULL), max_price DESC LIMIT ?")
+            params = (f"%{q}%", limit)
+        with self._connect() as conn:
+            rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+        for r in rows:
+            r["inn"] = inn_from_ingredient_text(r.get("ingredient")) if r.get("ingredient") else ""
+        return rows
+
     def save_custom_regimen(self, name: str, rows: list[dict], owner_email: str = "",
                             cancer: str = "") -> int:
         """커스텀 레지멘 저장. (name, owner) 동일 시 갱신, 아니면 신규. ref 반환."""

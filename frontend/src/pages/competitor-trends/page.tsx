@@ -187,20 +187,26 @@ export default function CompetitorTrendsPage() {
     [brands, selBrand],
   );
 
-  // 경쟁사(회사) 목록 — 실데이터에서 distinct company 추출 + 카드 수 집계 (하드코딩 금지)
+  // 같은 회사가 'MSD'/'MSD Korea' 처럼 나뉘어 보이던 문제 — 표시·필터는 '… Korea/코리아' 접미어를 뗀 이름으로 묶는다
+  const canonCompany = (c: string) => (c || '').replace(/\s*(Korea|코리아|한국)$/i, '').trim() || c;
+  // 경쟁사(회사) 목록 — 실데이터 distinct company. 칩 숫자는 현재 유형·검색 조건을 반영한다
   const companyList = useMemo(() => {
     const map = new Map<string, number>();
+    const q = search.toLowerCase();
     for (const i of items) {
-      map.set(i.company, (map.get(i.company) ?? 0) + 1);
+      if (filter !== '전체' && i.badge !== filter) continue;
+      if (q && !i.company.toLowerCase().includes(q) && !i.headline.toLowerCase().includes(q)) continue;
+      const c = canonCompany(i.company);
+      map.set(c, (map.get(c) ?? 0) + 1);
     }
     return Array.from(map.entries())
       .map(([company, count]) => ({ company, count }))
       .sort((a, b) => a.company.localeCompare(b.company, 'ko'));
-  }, [items]);
+  }, [items, filter, search]);
 
   const filtered = items.filter(d => {
     const matchBadge = filter === '전체' || d.badge === filter;
-    const matchCompany = companyFilter === '전체' || d.company === companyFilter;
+    const matchCompany = companyFilter === '전체' || canonCompany(d.company) === companyFilter;
     const matchSearch = !search || d.company.toLowerCase().includes(search.toLowerCase()) || d.headline.toLowerCase().includes(search.toLowerCase());
     return matchBadge && matchCompany && matchSearch;
   });
@@ -209,7 +215,7 @@ export default function CompetitorTrendsPage() {
   const stats = useMemo(() => {
     const thisMonth = new Date().toISOString().slice(0, 7);
     return {
-      companies: new Set(items.map(i => i.company)).size,
+      companies: new Set(items.map(i => canonCompany(i.company))).size,
       monthly: items.filter(i => (i.date || '').startsWith(thisMonth)).length,
       launch: items.filter(i => i.badge === '신규 출시').length,
       price: items.filter(i => i.badge === '가격 변동').length,
@@ -437,7 +443,7 @@ export default function CompetitorTrendsPage() {
                         {item.source_tier != null && item.source_tier <= 2 && (
                           <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0 ${
                             item.source_tier === 1 ? 'bg-[#00857C]/20 text-[#00E5CC]' : 'bg-blue-500/15 text-blue-400'
-                          }`}>
+                          }`} title={`출처 신뢰 등급 T${item.source_tier} (T1이 가장 높음 — 공식 발표·주요 전문지)`}>
                             T{item.source_tier}
                           </span>
                         )}

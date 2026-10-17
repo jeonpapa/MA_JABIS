@@ -112,7 +112,7 @@ COL_CANDIDATES = {
 class JpMhlwScraper(BaseScraper):
     COUNTRY      = "JP"
     CURRENCY     = "JPY"
-    SOURCE_LABEL = "後生労働省 薬価基準収載品目リスト"
+    SOURCE_LABEL = "厚生労働省 薬価基準収載品目リスト"
     REQUIRES_LOGIN = False
     PROXY_ENV_KEYS = ("JP_MHLW_PROXY", "FOREIGN_PROXY")   # fly 데이터센터 IP 간헐 차단 — residential proxy(설정 프로브가 확인)
     # 캐시 xlsx 유효기간(일). 薬価基準 은 4월 전면개정 + 분기 신약 수재(2·5·8·11월) — 90일이면 한 수재 주기 이상 뒤처지지

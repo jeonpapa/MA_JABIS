@@ -1,7 +1,8 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import MiniMarkdown from '@/components/ui/MiniMarkdown';
 import {
   fetchAnalogFacets, searchAnalog, fetchAnalogDetail, generateAnalogBrief, submitSearchFeedback,
-  FACET_LABELS, REVIEW_RESULT_KO,
+  FACET_LABELS, REVIEW_RESULT_KO, analogValueLabel,
   type AnalogFacets, type AnalogReport, type AnalogSearchResult, type AnalogBrief, type EfficacyEndpoint,
 } from '@/api/analog';
 
@@ -331,7 +332,7 @@ function DetailModal({ r, onClose }: { r: AnalogReport; onClose: () => void }) {
                   )}
                   {r.approval_driver && (
                     <span className="inline-block px-2 py-0.5 rounded bg-teal-100 text-teal-800 text-[11px] font-bold">
-                      {r.approval_driver}
+                      {analogValueLabel(r.approval_driver)}
                     </span>
                   )}
                   {policyTags.length > 0 && (
@@ -589,6 +590,14 @@ export default function AnalogSearchPage() {
   };
 
   useEffect(() => { runSearch(); /* eslint-disable-next-line */ }, []);
+  // 필터를 고르면 바로 적용 — 이전에는 '검색'을 눌러야만 결과가 바뀌어 필터가 안 먹는 것처럼 보였다
+  const firstFilterRun = useRef(true);
+  useEffect(() => {
+    if (firstFilterRun.current) { firstFilterRun.current = false; return; }
+    const t = window.setTimeout(() => { runSearch(); }, 250);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters]);
 
   // 캐스케이드: 한 단계를 바꾸면 그 뒤(하위) 단계 선택은 모두 해제 — 무효 조합 방지
   const setFacet = (k: string, v: string) =>
@@ -656,7 +665,7 @@ export default function AnalogSearchPage() {
                   <option value="">전체</option>
                   {(facetData?.[k] ?? []).map(o => (
                     <option key={o.value} value={o.value}>
-                      {REVIEW_RESULT_KO[o.value] ?? o.value} ({o.count})
+                      {analogValueLabel(o.value)} ({o.count})
                     </option>
                   ))}
                 </select>
@@ -728,6 +737,7 @@ export default function AnalogSearchPage() {
         <div className="flex items-center justify-between">
           <p className="text-sm text-gray-500">
             {loading ? '검색 중…' : `${results.length}건`}
+            {!loading && results.length >= 60 && <span className="ml-2 text-xs text-gray-400">· 관련도 상위 60건만 표시 — 조건을 좁히면 더 정확해집니다</span>}
             {data?.mode === 'search' && <span className="ml-2 text-teal-600 text-xs">관련도 정렬 (약제명·성분 우선)</span>}
           </p>
           <div className="flex items-center gap-2">
@@ -743,7 +753,7 @@ export default function AnalogSearchPage() {
               <button onClick={makeBrief} disabled={briefLoading}
                 className="flex items-center gap-1.5 bg-white border border-teal-300 text-teal-700 text-xs font-bold px-4 py-2 rounded-lg hover:bg-teal-50 transition-colors disabled:opacity-60">
                 <i className={briefLoading ? 'ri-loader-4-line animate-spin' : 'ri-lightbulb-flash-line'}></i>
-                {briefLoading ? '브리프 생성 중…' : '전략 브리프 (상위 10건)'}
+                {briefLoading ? '브리프 생성 중… (약 30초)' : '전략 브리프 (상위 10건)'}
               </button>
             )}
           </div>
@@ -759,9 +769,9 @@ export default function AnalogSearchPage() {
                 <div className="flex items-center gap-2 mb-2">
                   <i className="ri-lightbulb-flash-line text-teal-600"></i>
                   <h3 className="font-bold text-sm text-teal-700">아날로그 전략 브리프</h3>
-                  {brief.cached && <span className="text-[10px] text-gray-400">캐시</span>}
+                  {brief.cached && <span className="text-[10px] text-gray-400" title="같은 사례 조합으로 이전에 생성한 브리프를 다시 보여줍니다">이전 생성본</span>}
                 </div>
-                <div className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{brief.brief}</div>
+                <MiniMarkdown text={brief.brief} className="text-sm text-gray-700" />
                 <p className="text-[10px] text-gray-400 mt-2">근거 사례 {brief.cited_ids.length}건</p>
               </>
             )}

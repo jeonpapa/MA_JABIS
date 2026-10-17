@@ -15,11 +15,14 @@ import {
 import PriceRequestPanel from './PriceRequestPanel';
 import type { PriceRequestPanelHandle } from './PriceRequestPanel';
 import OecdPrices from './OecdPrices';
+import Term from '@/components/ui/Term';
 import { downloadPriceHistory } from '@/api/priceRequests';
 import type { PriceScope } from '@/api/priceRequests';
 import type {
   A8Pricing,
   Candidate,
+  CoverageNote,
+  FormulationGroup,
   ForeignDrugListItem,
   PricingTabData,
 } from '@/api/foreign';
@@ -50,6 +53,64 @@ const formatKrw = (v?: number | null) => (v == null ? null : `₩${Math.round(v)
 const fxMonth = (s: string) => (s && s.length >= 6 ? `${s.slice(0, 4)}.${s.slice(4, 6)}` : s);
 
 const displayName = (q: string) => (q ? q.charAt(0).toUpperCase() + q.slice(1) : q);
+
+/** 전각 숫자·영문·기호 → 반각 (JP MHLW '１００ｍｇ４ｍＬ１瓶') */
+const toHalfWidth = (s: string) => s.replace(/[\uFF01-\uFF5E]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+const numText = (s: string) => String(Number(s.replace(',', '.')));
+
+/**
+ * 원문 포장 표기 → '단위 × 수량' 한 줄 (원문은 title 툴팁).
+ * UK '100mg/4ml conc ... in vial, 2' → '100 mg/4 mL 바이알 × 2', '40mg tablets, 90' → '40 mg 정 × 90'.
+ * 농도(25 mg/mL)는 바이알 함량으로 쓰지 않는다 — 서버 per-unit mg 가 있으면 그것, 없으면 농도 그대로 표기.
+ */
+function packLine(cell: A8Pricing): string {
+  const raw = toHalfWidth(cell.dosageStrength || '');
+  const name = toHalfWidth(cell.productName || '');
+  const unitWord = cell.formType === 'injection' ? '바이알' : cell.formType === 'oral' ? '정' : '단위';
+  const perUnit = cell.unitStrengthMg != null && cell.unitStrengthMg > 0 ? `${cell.unitStrengthMg} mg` : '';
+  const CONC = /(\d+(?:[.,]\d+)?)\s*mg\s*\/\s*(?:1\s*)?ml\b/i;
+  let strength = '';
+  const total = raw.match(/(\d+(?:[.,]\d+)?)\s*mg\s*\/\s*(\d+(?:[.,]\d+)?)\s*ml/i);
+  const conc = raw.match(CONC);
+  const plain = raw.match(/(\d+(?:[.,]\d+)?)\s*mg/i);
+  if (total && Number(total[2].replace(',', '.')) !== 1) strength = `${numText(total[1])} mg/${numText(total[2])} mL`;
+  else if (conc) strength = perUnit || `${numText(conc[1])} mg/mL`;
+  else if (plain) {
+    // FR Vidal '25 mg' + 제품명 '25 mg/ml' → 그 숫자는 농도
+    const nameConc = cell.formType === 'injection' ? name.match(CONC) : null;
+    strength = nameConc && numText(nameConc[1]) === numText(plain[1]) ? (perUnit || `${numText(plain[1])} mg/mL`) : `${numText(plain[1])} mg`;
+  } else strength = perUnit;
+  return `${strength ? strength + ' ' : ''}${unitWord} × ${cell.packCount && cell.packCount > 0 ? cell.packCount : 1}`;
+}
+
+/** 평균에서 빠진 국가의 사유 코드 (없으면 null). 요약 없이도 카드 단위로 판정 — 서버 a8_aggregate_eligible 기준. */
+function avgExcludeReason(cell: A8Pricing | undefined): string | null {
+  if (!cell) return null;
+  const adj = cell.adjustedPriceKrwNormalized ?? cell.adjustedPriceKrw;
+  if (adj != null && adj > 0) return cell.a8AggregateEligible === false ? (cell.a8ExcludeReason || 'pack_count_unverified') : null;
+  // 조정가 없음 — 서버가 구체 사유(예: injection_unit_ambiguous)를 줬으면 그것, 가격만 있으면 조정가 미산출.
+  // 가격 자체가 없는 행은 '가격 미공개' 로 이미 다르게 보이므로 배지를 더하지 않는다.
+  if (cell.a8ExcludeReason && cell.a8ExcludeReason !== 'no_adjusted_price') return cell.a8ExcludeReason;
+  return cell.price != null && cell.price > 0 ? 'no_adjusted_price' : null;
+}
+
+/**
+ * 캐시 행이 없는 국가 — '미수집' / '미등재' / '접근 불가' 를 데이터가 허락하는 만큼 구분.
+ *  - 같은 국가의 다른 제형 행이 있음 → 수집은 됐고 이 제형만 없음 = 미등재(이 제형)
+ *  - 공개 DB 가격 없음/구조적 부재(coverage_notes) → 접근 불가
+ *  - 그 외 → 미수집 (조사 요청 전)
+ */
+function missingStatus(
+  key: string, cov: CoverageNote | undefined, formulations: FormulationGroup[], activeFormKey: string | null,
+): { label: string; detail: string } {
+  if (formulations.some(f => f.key !== activeFormKey && f.a8Pricing[key])) {
+    return { label: '미등재 (이 제형)', detail: '같은 국가의 다른 제형은 수집됐지만 이 제형은 자료원에서 확인되지 않았습니다' };
+  }
+  if (cov && (cov.publicDbHasPrice === false || cov.structuralAbsence)) {
+    return { label: '접근 불가 (공개 DB 제한)', detail: cov.policy };
+  }
+  return { label: '미수집', detail: '아직 수집된 가격이 없습니다 — 카드의 새로고침 버튼으로 조사 요청' };
+}
 
 interface Selection {
   query: string;       // 백엔드 query_name / product slug (keytruda, welireg …)
@@ -255,13 +316,17 @@ export default function InternationalPricingPage() {
     activeGroup?.a8Pricing ?? pricing.data?.a8Pricing ?? {};
   const summary = activeGroup?.summary ?? pricing.data?.summary;
 
-  // 그래프 데이터 — 조정가 보유 국가만, 조정가 오름차순
+  // 그래프 데이터 — 조정가 보유 국가, 조정가 오름차순. 평균 포함 여부는 요약(summary.includedKeys)과 동일 집합 —
+  // 제외국은 회색 막대 + '(제외)' 로 표시해 점선 평균의 국가 수가 요약 카드와 같다.
+  const includedSet = useMemo(() => new Set(summary?.includedKeys ?? []), [summary]);
   const chartData = useMemo(() => {
     return A8_COUNTRIES
-      .map(c => { const cell = activeA8[c.key]; return { key: c.key, name: c.label, flag: c.flag, adj: (cell?.adjustedPriceKrwNormalized ?? cell?.adjustedPriceKrw) ?? null }; })
-      .filter((d): d is { key: string; name: string; flag: string; adj: number } => d.adj != null && d.adj > 0)
+      .map(c => { const cell = activeA8[c.key]; return { key: c.key, name: c.label, flag: c.flag, adj: (cell?.adjustedPriceKrwNormalized ?? cell?.adjustedPriceKrw) ?? null, included: includedSet.has(c.key) }; })
+      .filter((d): d is { key: string; name: string; flag: string; adj: number; included: boolean } => d.adj != null && d.adj > 0)
       .sort((a, b) => a.adj - b.adj);
-  }, [activeA8]);
+  }, [activeA8, includedSet]);
+  const includedCount = summary?.includedKeys.length ?? 0;
+  const chartExcluded = '#C7C7CC';
 
   // 산출 로직 테이블 행 — calc breakdown 보유 국가만
   const calcRows = useMemo(() => {
@@ -283,7 +348,7 @@ export default function InternationalPricingPage() {
               <span className={`w-5 h-5 flex items-center justify-center ${accentColor}`}><i className="ri-global-line"></i></span>
               <h1 className={`text-2xl font-bold ${textMain}`}>해외 약가</h1>
             </div>
-            <p className={`${textSub} text-sm`}>A8 조정가 비교 / OECD·공단 추가국가 공개 가격 및 조사 요청</p>
+            <p className={`${textSub} text-sm`}><Term k="A8" /> <Term k="adjusted" /> 비교 / 공단 추가국가(A8 외 29개국) 공개 가격 및 조사 요청</p>
           </div>
           <div className="flex items-center gap-3">
             <button onClick={() => { if (selected) { setReportErr(''); setShowReport(true); } }}
@@ -303,8 +368,8 @@ export default function InternationalPricingPage() {
       <div className="px-8 py-6 space-y-5">
         <div role="tablist" aria-label="해외약가 국가 범위" className="flex gap-2">
           {(['a8', 'oecd'] as const).map(value => <button key={value} role="tab" aria-selected={scope === value}
-            onClick={() => setScope(value)} className={"rounded-lg px-4 py-2 text-sm font-semibold " + (scope === value ? 'bg-teal-600 text-white' : pillBg + ' ' + pillText)}>
-            {value === 'a8' ? 'A8' : 'OECD·공단 추가국가'}
+            onClick={() => { setScope(value); setShowReport(false); }} className={"rounded-lg px-4 py-2 text-sm font-semibold " + (scope === value ? 'bg-teal-600 text-white' : pillBg + ' ' + pillText)}>
+            {value === 'a8' ? 'A8' : '공단 추가국가 (A8 외 29개국)'}
           </button>)}
         </div>
         <PriceRequestPanel ref={requestPanelRef} targetRequestId={deepLink.requestId} scope={scope} query={selected?.query ?? ''} identity={selected?.identity} isDark={isDark}
@@ -335,24 +400,32 @@ export default function InternationalPricingPage() {
           ) : (
             <div className="grid grid-cols-4 gap-3">
               {historyItems.map(drug => (
-                <div key={drug.id} onClick={() => handleSelectHistory(drug)} role="button" tabIndex={0}
-                  onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); handleSelectHistory(drug); } }}
-                  className={`relative text-left p-4 rounded-2xl border transition-all cursor-pointer group ${selected?.query === drug.queryName ? accentBg + ' ' + accentBorder : historyCard + ' ' + historyCardHover}`}>
-                  <button onClick={e => handleDeleteHistory(e, drug)} disabled={deleting === drug.queryName}
-                    title="검색 이력 삭제 (가격·HTA·허가 캐시 전부)"
-                    className={`absolute top-2.5 right-2.5 w-6 h-6 flex items-center justify-center rounded-lg transition-all cursor-pointer opacity-0 group-hover:opacity-100 focus:opacity-100 ${isDark ? 'text-[#4A5568] hover:text-red-400 hover:bg-red-400/10' : 'text-gray-300 hover:text-red-500 hover:bg-red-50'}`}>
-                    <i className={`text-sm ${deleting === drug.queryName ? 'ri-loader-4-line animate-spin' : 'ri-delete-bin-line'}`}></i>
-                  </button>
+                // 카드 자체는 비대화형 컨테이너 — '열기' 버튼·Excel·삭제는 서로 중첩되지 않는 형제 버튼 (a11y 이름 혼선·오클릭 방지)
+                <div key={drug.id}
+                  className={`relative text-left p-4 rounded-2xl border transition-all group ${selected?.query === drug.queryName ? accentBg + ' ' + accentBorder : historyCard + ' ' + historyCardHover}`}>
+                  <button type="button" onClick={() => handleSelectHistory(drug)}
+                    aria-label={`${displayName(drug.queryName)} 해외약가 열기`}
+                    aria-current={selected?.query === drug.queryName ? 'true' : undefined}
+                    className="block w-full text-left cursor-pointer rounded-xl pr-7 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]">
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex-1 min-w-0">
-                      <p className={`text-sm font-bold truncate ${selected?.query === drug.queryName ? accentColor : textMain} group-hover:${accentColor} transition-colors`}>{displayName(drug.queryName)}</p>
+                      <p className={`text-sm font-bold truncate ${selected?.query === drug.queryName ? accentColor : textMain} transition-colors`}>{displayName(drug.queryName)}</p>
                       <p className={`${textSub} text-xs mt-0.5 truncate`}>{drug.canonical}</p>
                     </div>
-                    {selected?.query === drug.queryName && <span className={`w-5 h-5 flex items-center justify-center flex-shrink-0 ml-2 mr-6 ${accentColor}`}><i className="ri-checkbox-circle-fill text-sm"></i></span>}
+                    {selected?.query === drug.queryName && <span aria-hidden="true" className={`w-5 h-5 flex items-center justify-center flex-shrink-0 ml-2 ${accentColor}`}><i className="ri-checkbox-circle-fill text-sm"></i></span>}
                   </div>
                   <div className="space-y-1.5">
-                    <div className="flex items-center gap-1.5"><span className={`w-3.5 h-3.5 flex items-center justify-center ${textMuted}`}><i className="ri-calendar-line text-xs"></i></span><span className={`text-xs ${textMuted}`}>{drug.lastSearchedAt}</span></div>
-                    <div className="flex items-center gap-1.5"><span className={`w-3.5 h-3.5 flex items-center justify-center ${textMuted}`}><i className="ri-global-line text-xs"></i></span><span className={`text-xs truncate ${textMuted}`}>{drug.countryCount}개국 가격 캐시</span></div>
+                    <div className="flex items-center gap-1.5"><span aria-hidden="true" className={`w-3.5 h-3.5 flex items-center justify-center ${textMuted}`}><i className="ri-calendar-line text-xs"></i></span><span className={`text-xs ${textMuted}`}>{drug.lastSearchedAt}</span></div>
+                    <div className="flex items-center gap-1.5"><span aria-hidden="true" className={`w-3.5 h-3.5 flex items-center justify-center ${textMuted}`}><i className="ri-global-line text-xs"></i></span><span className={`text-xs truncate ${textMuted}`}>{drug.countryCount}개국 가격 캐시</span></div>
+                  </div>
+                  </button>
+                  <button type="button" onClick={e => handleDeleteHistory(e, drug)} disabled={deleting === drug.queryName}
+                    aria-label={`${displayName(drug.queryName)} 검색 이력 삭제 (가격·HTA·허가 캐시 전부, 확인 후 삭제)`}
+                    title="검색 이력 삭제 (가격·HTA·허가 캐시 전부)"
+                    className={`absolute top-2.5 right-2.5 w-7 h-7 flex items-center justify-center rounded-lg transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400 ${isDark ? 'text-[#8B9BB4] hover:text-red-400 hover:bg-red-400/10' : 'text-gray-400 hover:text-red-500 hover:bg-red-50'}`}>
+                    <i aria-hidden="true" className={`text-sm ${deleting === drug.queryName ? 'ri-loader-4-line animate-spin' : 'ri-delete-bin-line'}`}></i>
+                  </button>
+                  <div className="space-y-1.5 mt-1.5">
                     <button type="button" disabled={historyDownloadBusy[drug.queryName]} aria-busy={!!historyDownloadBusy[drug.queryName]}
                       aria-label={displayName(drug.queryName) + ' 현재 저장 캐시 Excel 다운로드'}
                       onClick={e => { e.stopPropagation(); void handleDownloadHistory(drug.queryName); }}
@@ -486,7 +559,7 @@ export default function InternationalPricingPage() {
                           <div className={`rounded-2xl border p-5 ${cardBg} ${cardBorder}`}>
                             <div className="flex items-center gap-2 mb-2">
                               <span className="w-5 h-5 flex items-center justify-center text-emerald-500"><i className="ri-arrow-down-circle-line"></i></span>
-                              <p className={`text-xs font-semibold uppercase tracking-wider ${textSub}`}>A8 조정 최저가</p>
+                              <p className={`text-xs font-semibold uppercase tracking-wider ${textSub}`}><Term k="A8" /> 조정 최저가</p>
                             </div>
                             <p className="text-2xl font-black text-emerald-500 tabular-nums">{formatKrw(summary.minKrw)}</p>
                             <p className={`text-xs mt-1.5 ${textSub}`}>{countryFlag(summary.minCountryKey)} {countryLabel(summary.minCountryKey)} · 최소단위(정/바이알)당</p>
@@ -494,10 +567,10 @@ export default function InternationalPricingPage() {
                           <div className={`rounded-2xl border p-5 ${cardBg} ${cardBorder}`}>
                             <div className="flex items-center gap-2 mb-2">
                               <span className={`w-5 h-5 flex items-center justify-center ${accentColor}`}><i className="ri-equalizer-2-line"></i></span>
-                              <p className={`text-xs font-semibold uppercase tracking-wider ${textSub}`}>A8 조정 평균가</p>
+                              <p className={`text-xs font-semibold uppercase tracking-wider ${textSub}`}><Term k="A8" /> <Term k="adjusted">조정</Term> 평균가</p>
                             </div>
                             <p className={`text-2xl font-black tabular-nums ${accentColor}`}>{formatKrw(summary.avgKrw)}</p>
-                            <p className={`text-xs mt-1.5 ${textSub}`}>{summary.includedKeys.length}개국 단순평균 · 최소단위당</p>
+                            <p className={`text-xs mt-1.5 ${textSub}`}>{includedCount}개국 단순평균 · 최소단위당</p>
                           </div>
                           <div className={`rounded-2xl border p-5 ${cardBg} ${cardBorder}`}>
                             <div className="flex items-center gap-2 mb-2">
@@ -508,19 +581,25 @@ export default function InternationalPricingPage() {
                             <p className={`text-xs mt-1.5 ${textSub}`}>{countryFlag(summary.maxCountryKey)} {countryLabel(summary.maxCountryKey)} · 최소단위당</p>
                           </div>
                         </div>
+                        {includedCount < 3 && (
+                          <div role="note" className="ui-notice ui-notice-warn mt-2">
+                            <i aria-hidden="true" className="ri-alert-line"></i>
+                            <span><b>n&lt;3, 참고용</b> — 평균에 들어간 국가가 {includedCount}개국뿐이라 최저·평균·최고가 A8 전체를 대표하지 않습니다.</span>
+                          </div>
+                        )}
                         {(summary.excludedKeys.length > 0 || summary.unverifiedKeys.length > 0) && (
                           <p className={`text-xs mt-2 px-1 ${textMuted}`}>
                             <i className="ri-information-line mr-1"></i>
                             평균 산출 제외국:
-                            {summary.excludedKeys.length > 0 && (
-                              <> {summary.excludedKeys.map(k => `${countryFlag(k)} ${countryLabel(k)}`).join(' · ')} — 조정가 미산출 (가격 미공개/미등재/환율 미적용)</>
+                            {summary.unverifiedKeys.length > 0 && (
+                              // 조정가는 있지만 서버가 집계 제외로 판정한 행 — 숫자는 카드에 참고로 남기되 평균/최소/최고에서 뺀다 (국가별 사유)
+                              <> {summary.unverifiedKeys.map(k => `${countryFlag(k)} ${countryLabel(k)}(${a8ExcludeReasonLabel(summary.excludedReasons[k])})`).join(' · ')}</>
                             )}
                             {summary.excludedKeys.length > 0 && summary.unverifiedKeys.length > 0 && <> ·</>}
-                            {summary.unverifiedKeys.length > 0 && (
-                              // 조정가는 있지만 팩 가격이 단위가로 저장된 미확인 행 — 숫자는 카드에 남기되 평균/최소/최고에서 뺀다
-                              <> {summary.unverifiedKeys.map(k => `${countryFlag(k)} ${countryLabel(k)}`).join(' · ')} — {a8ExcludeReasonLabel(summary.excludedReasons[summary.unverifiedKeys[0]])} (팩 가격이 단위가로 저장)</>
+                            {summary.excludedKeys.length > 0 && (
+                              <> {summary.excludedKeys.map(k => `${countryFlag(k)} ${countryLabel(k)}`).join(' · ')} — 조정가 없음 (미수집·미등재·가격 미공개·환율 미적용)</>
                             )}
-                            . 아래 '조정가 산출 로직'에서 사유 확인.
+                            . 아래 '조정가 산출 근거'에서 사유 확인.
                           </p>
                         )}
                       </div>
@@ -531,10 +610,11 @@ export default function InternationalPricingPage() {
                       <div className={`rounded-2xl border overflow-hidden ${cardBg} ${cardBorder}`}>
                         <div className={`px-5 py-4 border-b ${divider} flex items-center justify-between`}>
                           <div>
-                            <h3 className={`font-bold text-sm ${textMain}`}>국가별 조정가 비교</h3>
-                            <p className={`text-xs mt-0.5 ${textMuted}`}>최소단위(정/바이알)당 국내 조정가 KRW — 낮은 순 정렬, 점선 = {chartData.length}개국 평균</p>
+                            <h3 className={`font-bold text-sm ${textMain}`}>국가별 <Term k="adjusted" /> 비교</h3>
+                            <p className={`text-xs mt-0.5 ${textMuted}`}>최소단위(정/바이알)당 국내 조정가 KRW — 낮은 순 정렬, 점선 = {includedCount}개국 평균{chartData.length > includedCount ? ` (회색 ${chartData.length - includedCount}개국은 평균 제외 · 참고 표시)` : ''}{includedCount < 3 ? ' · n<3, 참고용' : ''}</p>
                           </div>
                           <div className="flex items-center gap-3">
+                            {chartData.length > includedCount && <span className="flex items-center gap-1 text-xs"><span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: chartExcluded }}></span><span className={textMuted}>평균 제외</span></span>}
                             <span className="flex items-center gap-1 text-xs"><span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: chartMin }}></span><span className={textMuted}>최저</span></span>
                             <span className="flex items-center gap-1 text-xs"><span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: chartMax }}></span><span className={textMuted}>최고</span></span>
                           </div>
@@ -543,19 +623,20 @@ export default function InternationalPricingPage() {
                           <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={chartData} margin={{ top: 24, right: 24, left: 8, bottom: 0 }}>
                               <XAxis dataKey="name" tick={{ fill: chartAxis, fontSize: 12 }} axisLine={{ stroke: chartGrid }} tickLine={false}
-                                tickFormatter={(name: string) => { const d = chartData.find(x => x.name === name); return d ? `${d.flag} ${name}` : name; }} />
+                                tickFormatter={(name: string) => { const d = chartData.find(x => x.name === name); return d ? `${d.flag} ${name}${d.included ? '' : ' (제외)'}` : name; }} />
                               <YAxis tick={{ fill: chartAxis, fontSize: 11 }} axisLine={false} tickLine={false}
                                 tickFormatter={(v: number) => `${Math.round(v / 10000).toLocaleString()}만`} width={56} />
                               <Tooltip cursor={{ fill: isDark ? '#1E253060' : '#F3F4F6' }}
                                 contentStyle={{ backgroundColor: isDark ? '#161B27' : '#FFFFFF', border: `1px solid ${chartGrid}`, borderRadius: 12, fontSize: 12 }}
                                 labelStyle={{ color: isDark ? '#FFFFFF' : '#111827', fontWeight: 700 }}
-                                formatter={(value) => [formatKrw(Number(value)) ?? '-', '조정가 (최소단위당)']} />
+                                formatter={(value, _n, item) => [formatKrw(Number(value)) ?? '-', (item?.payload as { included?: boolean } | undefined)?.included === false ? '조정가 (평균 제외 · 참고)' : '조정가 (최소단위당)']} />
                               {summary && <ReferenceLine y={summary.avgKrw} stroke={chartAvgLine} strokeDasharray="6 4"
-                                label={{ value: `평균 ${formatKrw(summary.avgKrw)}`, position: 'insideTopRight', fill: chartAvgLine, fontSize: 11, fontWeight: 700 }} />}
+                                label={{ value: `${includedCount}개국 평균 ${formatKrw(summary.avgKrw)}`, position: 'insideTopLeft', fill: chartAvgLine, fontSize: 11, fontWeight: 700 }} />}
                               <Bar dataKey="adj" radius={[8, 8, 0, 0]} maxBarSize={56}>
                                 {chartData.map(d => (
                                   <Cell key={d.key}
-                                    fill={summary && d.key === summary.minCountryKey ? chartMin
+                                    fill={!d.included ? chartExcluded
+                                      : summary && d.key === summary.minCountryKey ? chartMin
                                       : summary && d.key === summary.maxCountryKey ? chartMax : chartBar} />
                                 ))}
                                 <LabelList dataKey="adj" position="top"
@@ -572,12 +653,14 @@ export default function InternationalPricingPage() {
                     <div className={`rounded-2xl border overflow-hidden ${cardBg} ${cardBorder}`}>
                       <div className={`px-5 py-4 border-b ${divider}`}>
                         <h3 className={`font-bold text-sm ${textMain}`}>A8 국가 급여 약가</h3>
-                        <p className={`text-xs mt-0.5 ${textMuted}`}>미국 · 영국 · 독일 · 프랑스 · 캐나다 · 일본 · 이탈리아 · 스위스 — 급여 배지는 공개 DB에서 확인된 경우에만 표시</p>
+                        <p className={`text-xs mt-0.5 ${textMuted}`}>미국 · 영국 · 독일 · 프랑스 · 캐나다 · 일본 · 이탈리아 · 스위스 — 표시가는 국가별 <Term k="priceTier" /> 그대로, 급여 배지는 공개 DB에서 확인된 경우에만 표시</p>
                       </div>
                       <div className="grid grid-cols-4 gap-0">
                         {A8_COUNTRIES.map((country, idx) => {
                           const cell = activeA8[country.key];
                           const cov = pricing.data?.coverageNotes[country.key];
+                          const exclReason = avgExcludeReason(cell);
+                          const missing = cell ? null : missingStatus(country.key, cov, formulations, activeFormKey);
                           return (
                             <div key={country.key} className={`relative p-5 ${idx % 4 !== 3 ? 'border-r' : ''} ${idx >= 4 ? 'border-t' : ''} ${divider}`}>
                               <div className="flex items-center gap-2 mb-3"><span className="text-xl">{country.flag}</span><div className="flex-1 min-w-0"><p className={`text-xs font-semibold ${textMain}`}>{country.label}</p><p className={`text-xs ${textMuted}`}>{country.currency}</p></div>
@@ -589,32 +672,47 @@ export default function InternationalPricingPage() {
                                   <i className="text-sm ri-refresh-line"></i>
                                 </button>
                               </div>
+                              {exclReason && (
+                                // 평균에서 빠진 국가 — 일반 포함국처럼 보이지 않게 배지 + 조정가 흐림 처리
+                                <p className="mb-2">
+                                  <span className="ui-pill" style={{ background: 'var(--orange-tint)', color: 'var(--orange)', height: 'auto', minHeight: 22, whiteSpace: 'normal', lineHeight: 1.35, padding: '2px 8px' }}
+                                    title="A8 최저·평균·최고 산출에서 제외된 국가입니다">
+                                    평균 제외 · {a8ExcludeReasonLabel(exclReason)}
+                                  </span>
+                                </p>
+                              )}
                               {cell ? (
                                 <>
                                   {cell.price != null && cell.price > 0 ? (
-                                    <p className={`text-lg font-bold mb-1 ${accentColor}`} title={cell.productName}>{getCurrencySymbol(cell.currency)}{cell.price.toLocaleString()}</p>
+                                    <p className={`text-lg font-bold mb-1 ${exclReason ? textSub : accentColor}`} title={cell.productName}>{getCurrencySymbol(cell.currency)}{cell.price.toLocaleString()}</p>
                                   ) : (
                                     <p className={`text-sm font-semibold mb-1 ${textSub}`}>가격 미공개</p>
                                   )}
-                                  {cell.dosageStrength && <p className={`text-xs truncate ${textSub}`} title={cell.dosageStrength}>{cell.dosageStrength}{cell.packCount && cell.packCount > 1 ? ` × ${cell.packCount}` : ''}</p>}
+                                  {(cell.dosageStrength || cell.packCount) && <p className={`text-xs truncate ${textSub}`} title={cell.dosageStrength ? `원문: ${cell.dosageStrength}` : undefined}>{packLine(cell)}</p>}
                                   {cell.doseNormFactor != null && cell.doseNormFactor !== 1 && cell.adjustedPriceKrwNormalized != null ? (
                                     <>
-                                      <p className={`text-xs mt-1 font-semibold ${textSub}`}>조정가{cell.referenceStrengthMg ? ` (${cell.referenceStrengthMg}mg 기준)` : ''} {formatKrw(cell.adjustedPriceKrwNormalized)}</p>
+                                      <p className={`text-xs mt-1 font-semibold ${exclReason ? textMuted : textSub}`}><Term k="adjusted" />{cell.referenceStrengthMg ? ` (${cell.referenceStrengthMg}mg 기준)` : ''} {formatKrw(cell.adjustedPriceKrwNormalized)}{exclReason ? ' · 평균 미반영' : ''}</p>
                                       <p className={`text-xs ${textMuted}`} title={cell.doseNormNote || ''}>↳ 용량보정 {cell.doseNormNote || `×${cell.doseNormFactor}`} · 원본 {cell.adjustedPriceKrw != null ? formatKrw(cell.adjustedPriceKrw) : '-'}</p>
                                     </>
                                   ) : (
-                                    cell.adjustedPriceKrw != null && <p className={`text-xs mt-1 ${textSub}`}>조정가 {formatKrw(cell.adjustedPriceKrw)}</p>
+                                    cell.adjustedPriceKrw != null && <p className={`text-xs mt-1 ${exclReason ? textMuted : textSub}`}><Term k="adjusted" /> {formatKrw(cell.adjustedPriceKrw)}{exclReason ? ' · 평균 미반영' : ''}</p>
                                   )}
-                                  {cell.dailyCostKrw != null && <p className={`text-xs ${textSub}`}>일일 {formatKrw(cell.dailyCostKrw)}{cell.dosingScheduleLabel ? ` (${cell.dosingScheduleLabel})` : ''}</p>}
+                                  {cell.dailyCostKrw != null && (
+                                    <p className={`text-xs ${textSub}`}>
+                                      <Term k="dailyCost">일일</Term> {formatKrw(cell.dailyCostKrw)}
+                                      <span className={textMuted}>{cell.dosingScheduleLabel ? ` · 용법 가정 ${cell.dosingScheduleLabel}` : ' · 용법 가정 미상'}</span>
+                                    </p>
+                                  )}
                                   {cell.reimbursed && cell.reimbursedDate && <p className={`text-xs mt-1 ${textMuted}`}>급여 결정: {cell.reimbursedDate}</p>}
-                                  {!cell.reimbursedKnown && <p className={`text-xs mt-1 ${textMuted}`}>급여정보 없음</p>}
+                                  {!cell.reimbursedKnown && <p className={`text-xs mt-1 ${textMuted}`}>급여 정보 미수집</p>}
                                   {(cell.price == null || cell.price <= 0) && (cov?.policy || cell.note) && <p className={`text-xs mt-1 leading-relaxed ${textMuted}`}>{cov?.policy || cell.note}</p>}
                                   {cell.sourceLabel && <p className={`text-xs mt-1 truncate ${textMuted}`} title={cell.sourceLabel}>{cell.sourceLabel}{cell.variantCount > 1 ? ` · 외 ${cell.variantCount - 1}건` : ''}</p>}
                                 </>
                               ) : (
                                 <>
-                                  <p className={`text-sm ${textMuted}`}>정보 없음</p>
-                                  {cov?.policy && <p className={`text-xs mt-1 leading-relaxed ${textMuted}`}>{cov.policy}</p>}
+                                  <p className={`text-sm font-semibold ${textSub}`} title={missing?.detail}>{missing?.label ?? '미수집'}</p>
+                                  {missing?.detail && <p className={`text-xs mt-1 leading-relaxed ${textMuted}`}>{missing.detail}</p>}
+                                  {cov?.policy && cov.policy !== missing?.detail && <p className={`text-xs mt-1 leading-relaxed ${textMuted}`}>{cov.policy}</p>}
                                 </>
                               )}
 
@@ -624,13 +722,13 @@ export default function InternationalPricingPage() {
                       </div>
                     </div>
 
-                    {/* ── 조정가 산출 로직 (사후관리) ── */}
+                    {/* ── 조정가 산출 근거 (환율·공장도율·VAT) ── */}
                     <div className={`rounded-2xl border overflow-hidden ${cardBg} ${cardBorder}`}>
-                      <button onClick={() => setShowCalcLogic(!showCalcLogic)}
+                      <button onClick={() => setShowCalcLogic(!showCalcLogic)} aria-expanded={showCalcLogic}
                         className={`w-full flex items-center gap-3 px-5 py-4 text-left cursor-pointer transition-colors ${isDark ? 'hover:bg-[#1E2530]/50' : 'hover:bg-gray-50'}`}>
                         <span className={`w-5 h-5 flex items-center justify-center ${accentColor}`}><i className="ri-function-line"></i></span>
                         <div className="flex-1 min-w-0">
-                          <h3 className={`font-bold text-sm ${textMain}`}>조정가 산출 로직 <span className={`font-medium ${textMuted}`}>(사후관리)</span></h3>
+                          <h3 className={`font-bold text-sm ${textMain}`}>조정가 산출 근거 <span className={`font-medium ${textMuted}`}>(환율·공장도율·VAT)</span></h3>
                           <p className={`text-xs mt-0.5 ${textMuted}`}>국가별 환율·공장도율·가산 단계 상세 — 재정영향분석 표준 공식 검증용</p>
                         </div>
                         {fxWindow && <span className={`text-xs px-2 py-1 rounded-full whitespace-nowrap ${pillBg} ${pillText}`}>환율 기간 {fxWindow}</span>}
@@ -642,8 +740,9 @@ export default function InternationalPricingPage() {
                           <div className={`px-5 py-4 ${tableHeadBg}`}>
                             <p className={`text-xs font-semibold mb-1.5 ${textMain}`}>표준 공식 (재정영향분석 기준, 최소단위당)</p>
                             <p className={`text-xs font-mono leading-relaxed ${textSub}`}>
-                              조정가 = 표시가 ÷ 포장수량 × 환율(KEB 36개월 평균) × 공장도율(국가별) × 1.10<span className={textMuted}>(KR VAT)</span> × 1.0869<span className={textMuted}>(KR 유통거래폭)</span>
+                              <Term k="adjusted" /> = 표시가(<Term k="priceTier" />) ÷ 포장수량 × 환율(<Term k="fxPeriod">하나은행 36개월 평균</Term>) × <Term k="factoryRatio" />(국가별) × 1.10<span className={textMuted}>(KR VAT)</span> × 1.0869<span className={textMuted}>(KR 유통거래폭)</span>
                             </p>
+                            {fxWindow && <p className={`text-xs mt-1 ${textMuted}`}><Term k="fxPeriod" />: {fxWindow} (하나은행 매매기준율 최종 회차 평균)</p>}
                             <p className={`text-xs mt-1.5 leading-relaxed ${textMuted}`}>
                               VAT 10%·유통거래폭 8.69%는 해외 공장도가를 <b>한국 약가 등가</b>로 환산하기 위한 한국 기준 상수 (국가별 VAT 아님).
                               공장도율은 해당국 소매가→출하가 환산 비율이며 자료원에 따라 오버라이드됩니다 (IT Class H=1.0 등).
@@ -657,12 +756,12 @@ export default function InternationalPricingPage() {
                                 <thead>
                                   <tr className={`${tableHeadBg} border-b ${divider}`}>
                                     <th className={`text-left px-4 py-2.5 font-semibold whitespace-nowrap ${textSub}`}>국가</th>
-                                    <th className={`text-right px-3 py-2.5 font-semibold whitespace-nowrap ${textSub}`}>표시가 (현지)</th>
+                                    <th className={`text-right px-3 py-2.5 font-semibold whitespace-nowrap ${textSub}`}>표시가 (현지 <Term k="priceTier" />)</th>
                                     <th className={`text-right px-3 py-2.5 font-semibold whitespace-nowrap ${textSub}`}>포장</th>
                                     <th className={`text-right px-3 py-2.5 font-semibold whitespace-nowrap ${textSub}`}>단위가 (현지)</th>
-                                    <th className={`text-right px-3 py-2.5 font-semibold whitespace-nowrap ${textSub}`}>환율</th>
+                                    <th className={`text-right px-3 py-2.5 font-semibold whitespace-nowrap ${textSub}`}><Term k="fxPeriod">환율</Term></th>
                                     <th className={`text-right px-3 py-2.5 font-semibold whitespace-nowrap ${textSub}`}>KRW 환산</th>
-                                    <th className={`text-right px-3 py-2.5 font-semibold whitespace-nowrap ${textSub}`}>공장도율</th>
+                                    <th className={`text-right px-3 py-2.5 font-semibold whitespace-nowrap ${textSub}`}><Term k="factoryRatio" /></th>
                                     <th className={`text-right px-3 py-2.5 font-semibold whitespace-nowrap ${textSub}`}>공장도가</th>
                                     <th className={`text-right px-3 py-2.5 font-semibold whitespace-nowrap ${textSub}`}>+VAT 10%</th>
                                     <th className={`text-right px-4 py-2.5 font-semibold whitespace-nowrap ${textSub}`}>조정가 (+유통 8.69%)</th>
@@ -677,7 +776,7 @@ export default function InternationalPricingPage() {
                                         <td className={`px-3 py-2.5 text-right tabular-nums whitespace-nowrap ${textSub}`}>{getCurrencySymbol(cell.currency)}{c.listedPrice.toLocaleString()}</td>
                                         <td className={`px-3 py-2.5 text-right tabular-nums ${textSub}`}>{c.packCount > 1 ? `${c.packCount}개입` : '단위'}</td>
                                         <td className={`px-3 py-2.5 text-right tabular-nums whitespace-nowrap ${textSub}`}>{getCurrencySymbol(cell.currency)}{Number(c.perUnitLocal.toFixed(2)).toLocaleString()}</td>
-                                        <td className={`px-3 py-2.5 text-right tabular-nums whitespace-nowrap ${textSub}`} title={`KEB 36개월 평균 ${fxMonth(c.fxFrom)}~${fxMonth(c.fxTo)}`}>{c.exchangeRate.toLocaleString()}</td>
+                                        <td className={`px-3 py-2.5 text-right tabular-nums whitespace-nowrap ${textSub}`} title={`하나은행 36개월 평균 매매기준율 ${fxMonth(c.fxFrom)}~${fxMonth(c.fxTo)}`}>{c.exchangeRate.toLocaleString()}</td>
                                         <td className={`px-3 py-2.5 text-right tabular-nums whitespace-nowrap ${textSub}`}>{formatKrw(c.krwConverted)}</td>
                                         <td className={`px-3 py-2.5 text-right tabular-nums ${textSub}`} title={c.factoryRatioLabel || ''}>{c.factoryRatio != null ? `× ${c.factoryRatio}` : '-'}</td>
                                         <td className={`px-3 py-2.5 text-right tabular-nums whitespace-nowrap ${textSub}`}>{formatKrw(c.factoryPriceKrw)}</td>
@@ -697,13 +796,13 @@ export default function InternationalPricingPage() {
                               <div className="space-y-1">
                                 {summary.unverifiedKeys.map(k => (
                                   <p key={`unv-${k}`} className={`text-xs leading-relaxed ${textMuted}`}>
-                                    {countryFlag(k)} <span className="font-semibold">{countryLabel(k)}</span> — {a8ExcludeReasonLabel(summary.excludedReasons[k])} (팩 가격이 단위가로 저장돼 평균 산출 제외 — 조정가는 카드에 표시)
+                                    {countryFlag(k)} <span className="font-semibold">{countryLabel(k)}</span> — {a8ExcludeReasonLabel(summary.excludedReasons[k])} (평균 산출 제외 — 조정가는 카드에 참고 표시)
                                   </p>
                                 ))}
                                 {summary.excludedKeys.map(k => {
                                   const cov = pricing.data?.coverageNotes[k];
                                   const cell = activeA8[k];
-                                  const reason = cell == null ? '캐시 데이터 없음 (미수집 또는 미등재)'
+                                  const reason = cell == null ? (() => { const ms = missingStatus(k, cov, formulations, activeFormKey); return `${ms.label} — ${ms.detail}`; })()
                                     : cell.price == null ? (cov?.policy || '가격 미공개')
                                       : '환율/조정가 미산출';
                                   return (
@@ -732,11 +831,12 @@ export default function InternationalPricingPage() {
       </div>
 
       {/* 리포트 다운로드 모달 — 형식 선택 + 국내 신청가 입력 */}
-      {showReport && selected && (
+      {/* A8 탭에서만 유효 — 탭을 바꾸면 닫힌다(탭 onClick) + 혹시 열려 있어도 scope 가 a8 일 때만 렌더 */}
+      {showReport && selected && scope === 'a8' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowReport(false)}>
-          <div className={`w-[420px] rounded-2xl border p-6 ${cardBg} ${cardBorder}`} onClick={e => e.stopPropagation()}>
-            <h3 className={`text-lg font-bold mb-1 ${textMain}`}>리포트 다운로드</h3>
-            <p className={`text-xs mb-4 ${textSub}`}>{headerName} · A8 약가 비교표</p>
+          <div role="dialog" aria-modal="true" aria-labelledby="report-modal-title" className={`w-[420px] rounded-2xl border p-6 ${cardBg} ${cardBorder}`} onClick={e => e.stopPropagation()}>
+            <h3 id="report-modal-title" className={`text-lg font-bold mb-1 ${textMain}`}>리포트 다운로드</h3>
+            <p className={`text-xs mb-4 ${textSub}`}>{headerName} · A8 약가 비교표{activeGroup ? ` · 제형 ${activeGroup.label}` : ''}</p>
 
             <label className={`text-xs font-semibold ${textSub}`}>파일 형식</label>
             <div className="flex gap-2 mt-1 mb-4">
@@ -765,7 +865,8 @@ export default function InternationalPricingPage() {
                   try {
                     await downloadForeignReport(selected.query, reportFmt,
                       appliedDisplay ? Number(appliedDisplay) : null,
-                      appliedActual ? Number(appliedActual) : null);
+                      appliedActual ? Number(appliedActual) : null,
+                      activeGroup ? { key: activeGroup.key, label: activeGroup.label } : null);
                     setShowReport(false);
                   } catch (e) { setReportErr(e instanceof Error ? e.message : '다운로드 실패'); }
                   finally { setReportBusy(false); }

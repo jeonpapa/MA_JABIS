@@ -4,12 +4,14 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip,
   LineChart, Line,
 } from 'recharts';
+import type { ReactElement } from 'react';
 import {
   searchMarketShare, fetchAtc4, fetchAtc4Trend, fetchBrand,
   downloadMarketShareXlsx, resolveDefaultAtc4,
-  buildPieData, buildTrendRows, quarterLabel, formatLcKrw,
-  LINE_COLORS,
+  buildPieData, buildTrendRows, buildBrandColorMap, quarterLabel, formatLcKrw,
+  OTHERS_COLOR,
   type MsSearchHit, type MsAtc4Response, type MsTrendResponse, type MsBrandResponse,
+  type PieSlice, type TrendRow,
 } from '@/api/marketShare';
 import { useApi } from '@/hooks/useApi';
 
@@ -67,6 +69,38 @@ const ShareTrendTooltip = ({ active, payload, label, isDark }: any) => {
   return null;
 };
 
+const METRIC_HELP = 'Units = IQVIA 처방 단위(정·바이알 등)\n매출 = IQVIA Values LC(원)';
+
+/** 작은 정보 툴팁 (hover / focus) */
+const InfoTip = ({ text }: { text: string }) => (
+  <span className="relative inline-flex items-center group align-middle" tabIndex={0} aria-label={text}>
+    <i className="ri-information-line text-xs cursor-help" style={{ color: 'var(--label-3)' }}></i>
+    <span role="tooltip"
+      className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-1 z-50 hidden group-hover:block group-focus:block w-max max-w-[260px] whitespace-pre-line rounded-lg px-2.5 py-1.5 text-[11px] font-normal leading-snug shadow-lg"
+      style={{ background: 'rgba(29,29,31,0.92)', color: '#fff' }}>{text}</span>
+  </span>
+);
+
+/** 라인의 마지막 유효 포인트 인덱스 — 직접 라벨 위치 */
+function lastPointIndex(rows: TrendRow[], brand: string): number {
+  for (let i = rows.length - 1; i >= 0; i--) if (rows[i][brand] != null) return i;
+  return -1;
+}
+
+/** 라인 끝 직접 라벨 (recharts Line label renderer) */
+function endLabel(brand: string, rows: TrendRow[], color: string) {
+  const last = lastPointIndex(rows, brand);
+  const Label = (props: { index?: number; x?: number | string; y?: number | string }): ReactElement => {
+    if (props.index !== last || props.x == null || props.y == null) return <g />;
+    return (
+      <text x={Number(props.x) + 8} y={Number(props.y)} dy={4} fill={color} fontSize={11} fontWeight={600}>
+        {brand.length > 14 ? `${brand.slice(0, 13)}…` : brand}
+      </text>
+    );
+  };
+  return Label;
+}
+
 export default function KoreanMarketPage() {
   const [isDark, setIsDark] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -82,43 +116,71 @@ export default function KoreanMarketPage() {
 
   // 현재 시장 / 선택 브랜드
   const [atc4Code, setAtc4Code] = useState<string | null>(null);
-  const [selectedBrand, setSelectedBrand] = useState<MsBrandResponse | null>(null);
+  const [defaultAtc4, setDefaultAtc4] = useState<string | null>(null);
+  const [selectedKey, setSelectedKey] = useState<{ name: string; atc4: string } | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
   // 기본 시장: 키트루다의 ATC4 (PD-1/PD-L1) 를 검색으로 해석
   useEffect(() => {
     let on = true;
-    resolveDefaultAtc4().then(code => { if (on) setAtc4Code(code); });
+    resolveDefaultAtc4().then(code => {
+      if (!on) return;
+      setDefaultAtc4(code);
+      setAtc4Code(c => c ?? code);
+    });
     return () => { on = false; };
   }, []);
 
-  const market = useApi<MsAtc4Response | null>(
-    () => (atc4Code ? fetchAtc4(atc4Code) : Promise.resolve(null)),
-    [atc4Code],
-  );
-  // 그래프 적용 기간 (시작/끝 분기). 빈 값이면 서버가 전체 반환.
+  // 기간 (시작/끝 분기) — 추이 그래프 범위. 현황(카드·도넛·상세)의 '기준 분기' = 기간 종료 분기(toQ).
+  // 분기 목록은 전체 시장 공통(_ms_all_quarters) 이므로 ATC4 가 바뀌어도 기간은 유지된다.
   const [fromQ, setFromQ] = useState<string>('');
   const [toQ, setToQ] = useState<string>('');
+  const [latestQ, setLatestQ] = useState<string>('');
+  // 최신 분기면 파라미터 생략 (초기 로드 후 중복 요청 방지)
+  const snapParam = toQ && latestQ && toQ !== latestQ ? toQ : undefined;
+
+  const market = useApi<MsAtc4Response | null>(
+    () => (atc4Code ? fetchAtc4(atc4Code, snapParam) : Promise.resolve(null)),
+    [atc4Code, snapParam],
+  );
   const trend = useApi<MsTrendResponse | null>(
-    () => (atc4Code ? fetchAtc4Trend(atc4Code, 5, fromQ || undefined, toQ || undefined) : Promise.resolve(null)),
+    () => (atc4Code && toQ ? fetchAtc4Trend(atc4Code, 5, fromQ || undefined, toQ || undefined) : Promise.resolve(null)),
     [atc4Code, fromQ, toQ],
   );
+  const brandApi = useApi<MsBrandResponse | null>(
+    () => (selectedKey
+      ? fetchBrand(selectedKey.name, selectedKey.atc4, snapParam).catch(() => null)
+      : Promise.resolve(null)),
+    [selectedKey?.name, selectedKey?.atc4, snapParam],
+  );
+  const selectedBrand = selectedKey && brandApi.data && brandApi.data.product_name === selectedKey.name
+    && brandApi.data.atc4_code === selectedKey.atc4 ? brandApi.data : null;
 
-  useEffect(() => { setActiveIndex(0); }, [atc4Code]);
+  useEffect(() => { setActiveIndex(0); }, [atc4Code, snapParam]);
 
-  // ATC4 변경 시 기본 기간 = 사용 가능한 마지막 6개 분기로 초기화
+  // 첫 로드 시 기본 기간 = 사용 가능한 마지막 6개 분기, 기준 분기 = 최신
   const availableQuarters = market.data?.quarters ?? trend.data?.available_quarters ?? [];
   useEffect(() => {
-    const qs = market.data?.quarters ?? [];
-    if (qs.length) {
-      setToQ(qs[qs.length - 1]);
-      setFromQ(qs[Math.max(0, qs.length - 6)]);
-    }
-  }, [atc4Code, market.data]);
+    const d = market.data;
+    if (!d || latestQ) return;
+    const qs = d.quarters ?? [];
+    if (!qs.length) return;
+    const latest = d.meta?.latest_quarter ?? qs[qs.length - 1];
+    setLatestQ(latest);
+    setToQ(latest);
+    setFromQ(qs[Math.max(0, qs.length - 6)]);
+  }, [market.data, latestQ]);
+  const snapshotQ = market.data?.quarter ?? (toQ || latestQ);
 
   // ── 어댑터: 실데이터 → readdy 차트 형태 ──────────────────────────────────
   const pieData = useMemo(() => (market.data ? buildPieData(market.data, 5) : []), [market.data]);
+  // 브랜드 색상 단일 매핑 — 카드·도넛·추이·상세 공통
+  const colorMap = useMemo(
+    () => buildBrandColorMap(pieData, trend.data?.top_brands ?? []),
+    [pieData, trend.data],
+  );
+  const colorOf = (brand: string) => colorMap[brand] ?? OTHERS_COLOR;
   const shareTrendRows = useMemo(() => (trend.data ? buildTrendRows(trend.data, 'share') : []), [trend.data]);
   const unitTrendRows = useMemo(() => (trend.data ? buildTrendRows(trend.data, 'units') : []), [trend.data]);
   const revenueTrendRows = useMemo(() => (trend.data ? buildTrendRows(trend.data, 'revenue') : []), [trend.data]);
@@ -128,7 +190,9 @@ export default function KoreanMarketPage() {
   const totalValuesM = market.data ? formatLcKrw(market.data.totals.values_lc) : '';
   const unitLine = (item: { units: number; unitShare: number | null }) =>
     `물량 ${item.unitShare != null ? item.unitShare + '% · ' : ''}${item.units.toLocaleString()} Units`;
-  const isLoading = !atc4Code || market.loading || trend.loading;
+  // 데이터가 이미 있으면 재요청 중에도 화면 유지 (상단 '갱신 중' 표시)
+  const isLoading = !atc4Code || (market.loading && !market.data) || (trend.loading && !trend.data && !!toQ);
+  const refreshing = !isLoading && (market.loading || trend.loading || brandApi.loading);
   const errorMsg = market.error || trend.error || actionError;
   const isEmpty = !isLoading && !market.error && market.data != null && pieData.length === 0;
 
@@ -170,31 +234,36 @@ export default function KoreanMarketPage() {
     }, 250);
   };
 
-  const handleSelect = async (hit: MsSearchHit) => {
+  const handleSelect = (hit: MsSearchHit) => {
     setSearchQuery(hit.product_name);
     setShowDropdown(false);
     if (hit.atc4_code !== atc4Code) setAtc4Code(hit.atc4_code);
-    try {
-      const b = await fetchBrand(hit.product_name, hit.atc4_code);
-      setSelectedBrand(b);
-    } catch {
-      setSelectedBrand(null);
-    }
+    setSelectedKey({ name: hit.product_name, atc4: hit.atc4_code });
   };
 
   const handleClear = () => {
     setSearchQuery('');
     setSearchResults([]);
     setShowDropdown(false);
-    setSelectedBrand(null);
+    setSelectedKey(null);
   };
+
+  const handleResetMarket = () => {
+    handleClear();
+    if (defaultAtc4) setAtc4Code(defaultAtc4);
+  };
+
+  const exportRange = fromQ && toQ ? `${quarterLabel(fromQ)}~${quarterLabel(toQ)}` : '';
+  const exportTitle = market.data
+    ? `엑셀 내보내기 — 현황(점유율 시트): ${quarterLabel(market.data.quarter)} 기준 · 추이(Unit/Revenue Trend 시트): ${exportRange || '전체 분기'}`
+    : '엑셀 다운로드';
 
   const handleDownload = async () => {
     if (!market.data) return;
     setDownloading(true);
     setActionError(null);
     try {
-      await downloadMarketShareXlsx(market.data.atc4_code, market.data.quarter, 8);
+      await downloadMarketShareXlsx(market.data.atc4_code, market.data.quarter, 8, fromQ || undefined, toQ || undefined);
     } catch (e) {
       setActionError(e instanceof Error ? e.message : '엑셀 다운로드 실패');
     } finally {
@@ -234,54 +303,135 @@ export default function KoreanMarketPage() {
   const trendRangeLabel = (rows: { quarter: string }[]) =>
     rows.length > 0 ? `${rows[0].quarter} ~ ${rows[rows.length - 1].quarter}` : '';
 
-  const selectedColor = selectedBrand
-    ? (pieData.find(d => d.name === selectedBrand.product_name)?.color ?? (isDark ? '#00E5CC' : '#0D9488'))
-    : undefined;
+  const selectedColor = selectedBrand ? colorOf(selectedBrand.product_name) : undefined;
+
+  const metaInfo = market.data?.meta;
+  const sourceLine = [
+    metaInfo?.source ?? 'IQVIA NSA-E',
+    (metaInfo?.latest_quarter || latestQ) ? `최신 ${quarterLabel(metaInfo?.latest_quarter || latestQ)}` : '',
+    metaInfo?.last_uploaded_at ? `업로드 ${metaInfo.last_uploaded_at.slice(0, 10)}` : '',
+  ].filter(Boolean).join(' · ');
+
+  /** 탭별 카드 지표 — 점유율 탭: 매출 점유율 / 물량 탭: 물량 점유율 / 매출 탭: 매출액 */
+  const cardMetric = (item: PieSlice) => {
+    if (view === 'unit') {
+      return {
+        label: '물량 점유율',
+        main: item.unitShare != null ? `${item.unitShare}%` : '정보 없음',
+        sub: `${item.units.toLocaleString()} Units · 매출 점유율 ${item.value}%`,
+      };
+    }
+    if (view === 'revenue') {
+      return { label: '분기 매출', main: `₩${formatLcKrw(item.valuesLc)}M`, sub: `매출 점유율 ${item.value}%` };
+    }
+    return { label: '매출 점유율', main: `${item.value}%`, sub: unitLine(item) };
+  };
+
+  const trendLegend = (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mb-3">
+      {trendBrands.map(b => (
+        <span key={b} className={`inline-flex items-center gap-1.5 text-xs ${textSub}`}>
+          <span className="w-3 h-[3px] rounded-full" style={{ backgroundColor: colorOf(b) }}></span>{b}
+        </span>
+      ))}
+    </div>
+  );
+
+  const renderTrendChart = (
+    rows: TrendRow[], height: number, yFormat: (v: number) => string,
+    tooltip: ReactElement, yDomain?: [number, 'auto'],
+  ) => (
+    <>
+      {trendLegend}
+      <ResponsiveContainer width="100%" height={height}>
+        <LineChart data={rows} margin={{ top: 10, right: 110, left: 0, bottom: 5 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
+          <XAxis dataKey="quarter" tick={{ fill: tickFill, fontSize: 11 }} axisLine={false} tickLine={false} />
+          <YAxis tick={{ fill: tickFill, fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={yFormat} domain={yDomain} />
+          <Tooltip content={tooltip} />
+          {trendBrands.map(brand => {
+            const c = colorOf(brand);
+            return (
+              <Line key={brand} type="monotone" dataKey={brand} name={brand} stroke={c} strokeWidth={2}
+                dot={{ fill: c, r: 4, strokeWidth: 0 }} activeDot={{ r: 6, strokeWidth: 0 }}
+                isAnimationActive={false} label={endLabel(brand, rows, c)} />
+            );
+          })}
+        </LineChart>
+      </ResponsiveContainer>
+    </>
+  );
 
   return (
     <div className={`min-h-screen ${pageBg} ${isDark ? 'text-white' : 'text-gray-900'}`}>
       <div className={`px-8 pt-8 pb-6 border-b ${headerBorder}`}>
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+          <div className="min-w-0 flex-1 basis-[320px]">
             <div className="flex items-center gap-2 mb-1">
               <span className={`w-5 h-5 flex items-center justify-center ${accentColor}`}><i className="ri-pie-chart-2-line"></i></span>
               <h1 className={`text-2xl font-bold ${textMain}`}>시장점유율</h1>
             </div>
-            <p className={`${textSub} text-sm`}>
-              국내 시장 점유율 현황 및 매출 추이 분석
-              {market.data && <span className={textMuted}> · {market.data.atc4_desc} (ATC4 {market.data.atc4_code})</span>}
+            <p className={`${textSub} text-sm`}>국내 시장 점유율 현황 및 매출 추이 분석</p>
+            {market.data && (
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1">
+                <span className={`text-sm break-words ${textMain}`}>{market.data.atc4_desc}</span>
+                <span className="ui-pill">ATC4 {market.data.atc4_code}</span>
+                {defaultAtc4 && market.data.atc4_code !== defaultAtc4 && (
+                  <button onClick={handleResetMarket}
+                    className="inline-flex items-center gap-1 text-xs font-medium cursor-pointer hover:underline"
+                    style={{ color: 'var(--accent)' }} title={`기본 시장(ATC4 ${defaultAtc4}, 키트루다 시장)으로 돌아가기`}>
+                    <i className="ri-arrow-go-back-line text-xs"></i>기본 시장으로
+                  </button>
+                )}
+              </div>
+            )}
+            <p className={`text-xs mt-1 flex flex-wrap items-center gap-1.5 ${textMuted}`}>
+              <span>데이터: {sourceLine}</span>
+              <InfoTip text={METRIC_HELP} />
+              {refreshing && <span className="animate-pulse">· 갱신 중…</span>}
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <button onClick={handleDownload} disabled={downloading || !market.data}
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <button onClick={handleDownload} disabled={downloading || !market.data} title={exportTitle}
               className={`flex items-center gap-2 border text-sm font-medium px-4 py-2 rounded-lg cursor-pointer whitespace-nowrap transition-all disabled:opacity-50 disabled:cursor-not-allowed ${isDark ? 'bg-[#161B27] border-[#1E2530] text-[#8B9BB4] hover:text-white hover:border-[#2A3545]' : 'bg-white border-gray-200 text-gray-500 hover:text-gray-900 hover:border-gray-300'}`}>
               <span className="w-4 h-4 flex items-center justify-center">
                 <i className={downloading ? 'ri-loader-4-line text-sm animate-spin' : 'ri-file-excel-2-line text-sm'}></i>
-              </span>{downloading ? '다운로드 중…' : '엑셀 다운로드'}
+              </span>
+              <span className="flex flex-col items-start leading-tight">
+                <span>{downloading ? '다운로드 중…' : '엑셀 다운로드'}</span>
+                {market.data && (
+                  <span className={`text-[10px] font-normal ${textMuted}`}>
+                    현황 {quarterLabel(market.data.quarter)} · 추이 {exportRange || '전체'}
+                  </span>
+                )}
+              </span>
             </button>
             {availableQuarters.length > 0 && (
-              <div className={`flex items-center gap-1.5 rounded-lg px-2 py-1 ${tabBg}`} title="그래프 적용 기간">
+              <div className={`flex items-center gap-1.5 rounded-lg px-2 py-1 ${tabBg}`}
+                title="기간: 추이 그래프 범위 · 현황(카드·도넛·상세)은 종료 분기 기준">
                 <i className={`ri-calendar-line text-xs ${textSub}`}></i>
-                <select value={fromQ} onChange={e => setFromQ(e.target.value)}
+                <span className={`text-[11px] ${textSub}`}>기간</span>
+                <select value={fromQ} onChange={e => setFromQ(e.target.value)} aria-label="기간 시작 분기"
                   className={`bg-transparent text-xs font-medium outline-none cursor-pointer ${textMain}`}>
                   {availableQuarters.filter(q => !toQ || q <= toQ).map(q => (
                     <option key={q} value={q} className={isDark ? 'bg-[#1E2530]' : 'bg-white'}>{quarterLabel(q)}</option>
                   ))}
                 </select>
                 <span className={`text-xs ${textSub}`}>~</span>
-                <select value={toQ} onChange={e => setToQ(e.target.value)}
+                <select value={toQ} onChange={e => setToQ(e.target.value)} aria-label="기간 종료 분기 (현황 기준 분기)"
                   className={`bg-transparent text-xs font-medium outline-none cursor-pointer ${textMain}`}>
                   {availableQuarters.filter(q => !fromQ || q >= fromQ).map(q => (
                     <option key={q} value={q} className={isDark ? 'bg-[#1E2530]' : 'bg-white'}>{quarterLabel(q)}</option>
                   ))}
                 </select>
+                <span className={`text-[10px] whitespace-nowrap ${textMuted}`}>· 현황 기준 {toQ ? quarterLabel(toQ) : ''}</span>
               </div>
             )}
             <div className={`flex items-center gap-1 rounded-lg p-1 ${tabBg}`}>
               {[
-                { key: 'donut', label: 'Market Share', icon: 'ri-pie-chart-2-line' },
-                { key: 'unit', label: 'Unit Trend', icon: 'ri-bar-chart-grouped-line' },
-                { key: 'revenue', label: 'Revenue Trend', icon: 'ri-line-chart-line' },
+                { key: 'donut', label: '점유율', icon: 'ri-pie-chart-2-line' },
+                { key: 'unit', label: '물량 추이', icon: 'ri-bar-chart-grouped-line' },
+                { key: 'revenue', label: '매출 추이', icon: 'ri-line-chart-line' },
               ].map(tab => (
                 <button key={tab.key} onClick={() => setView(tab.key as ViewKey)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium cursor-pointer whitespace-nowrap transition-all ${view === tab.key ? tabActive : tabInactive}`}>
@@ -351,41 +501,63 @@ export default function KoreanMarketPage() {
 
         {selectedBrand && (
           <div className={`rounded-2xl border p-5 ${detailBg}`}>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <span className="w-3 h-3 rounded-full" style={{ backgroundColor: selectedColor }}></span>
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
+                <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: selectedColor }}></span>
                 <h3 className={`font-bold text-lg ${textMain}`}>{selectedBrand.product_name}</h3>
                 <span className={`text-sm ${textSub}`}>({selectedBrand.molecule_desc})</span>
-                <span className={`text-xs px-2 py-0.5 rounded-full ${isDark ? 'bg-[#00E5CC]/10 text-[#00E5CC]' : 'bg-teal-100 text-teal-700'}`}>{selectedBrand.atc4_desc}</span>
+                <span className="ui-pill">{selectedBrand.atc4_desc}</span>
+                <span className={`text-xs ${textMuted}`}>{quarterLabel(selectedBrand.quarter)} 기준</span>
               </div>
-              <button onClick={handleClear} className={`cursor-pointer transition-colors ${textMuted} hover:${textMain}`}><i className="ri-close-line text-lg"></i></button>
+              <button onClick={handleClear} className={`cursor-pointer transition-colors flex-shrink-0 ${textMuted} hover:${textMain}`} aria-label="상세 닫기"><i className="ri-close-line text-lg"></i></button>
             </div>
-            <div className="grid grid-cols-4 gap-4">
-              {[
+            {(() => {
+              const qPoint = selectedBrand.quarterly.find(x => x.quarter === selectedBrand.quarter);
+              const qValues = selectedBrand.quarter_values_lc ?? qPoint?.values_lc ?? 0;
+              const qUnits = selectedBrand.quarter_dosage_units ?? qPoint?.dosage_units ?? 0;
+              const q = quarterLabel(selectedBrand.quarter);
+              const stats: { label: string; value: string; icon: string; highlight?: boolean }[] = [
                 { label: '제조사', value: selectedBrand.mfr_name || '정보 없음', icon: 'ri-building-2-line' },
-                { label: `매출 점유율 (${quarterLabel(selectedBrand.quarter)})`, value: `${selectedBrand.market_share_pct.toFixed(1)}%`, icon: 'ri-pie-chart-2-line', highlight: true },
-                { label: `분기 매출 (${quarterLabel(selectedBrand.quarter)})`, value: `₩${formatLcKrw(selectedBrand.quarterly.length > 0 ? selectedBrand.quarterly[selectedBrand.quarterly.length - 1].values_lc : 0)}M`, icon: 'ri-line-chart-line' },
-                { label: 'ATC4 시장 순위', value: selectedBrand.market_rank ? `#${selectedBrand.market_rank}` : '정보 없음', icon: 'ri-trophy-line' },
-              ].map(item => (
-                <div key={item.label} className={`rounded-xl p-4 border ${statBg}`}>
-                  <div className="flex items-center gap-2 mb-2"><span className={`w-4 h-4 flex items-center justify-center ${textSub}`}><i className={`${item.icon} text-sm`}></i></span><span className={`text-xs ${textSub}`}>{item.label}</span></div>
-                  <p className={`text-base font-bold ${item.highlight ? accentColor : textMain}`}>{item.value}</p>
+                { label: `매출 점유율 (${q})`, value: `${selectedBrand.market_share_pct.toFixed(1)}%`, icon: 'ri-pie-chart-2-line', highlight: true },
+                { label: `분기 매출 (${q})`, value: `₩${formatLcKrw(qValues)}M`, icon: 'ri-line-chart-line' },
+                { label: `분기 물량 (${q})`, value: `${Math.round(qUnits).toLocaleString()} Units`, icon: 'ri-bar-chart-grouped-line' },
+                { label: `ATC4 시장 순위 (${q}, 매출)`, value: selectedBrand.market_rank ? `#${selectedBrand.market_rank}` : '정보 없음', icon: 'ri-trophy-line' },
+              ];
+              return (
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                  {stats.map(item => (
+                    <div key={item.label} className={`rounded-xl p-4 border ${statBg}`}>
+                      <div className="flex items-center gap-2 mb-2"><span className={`w-4 h-4 flex items-center justify-center ${textSub}`}><i className={`${item.icon} text-sm`}></i></span><span className={`text-xs ${textSub}`}>{item.label}</span></div>
+                      <p className={`text-base font-bold ${item.highlight ? '' : textMain}`}
+                        style={item.highlight ? { color: selectedColor } : undefined}>{item.value}</p>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              );
+            })()}
           </div>
         )}
 
         {!isLoading && pieData.length > 0 && (
-          <div className="grid grid-cols-6 gap-3">
-            {pieData.map(item => (
-              <div key={item.name} className={`rounded-xl p-4 border ${sumBg}`}>
-                <div className="flex items-center gap-2 mb-2"><span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }}></span><span className={`text-xs truncate ${textSub}`}>{item.name}</span></div>
-                <p className={`text-[11px] ${textMuted}`}>매출 점유율</p>
-                <p className="text-xl font-bold" style={{ color: item.color }}>{item.value}%</p>
-                <p className={`text-xs mt-1 ${textMuted}`}>{unitLine(item)}</p>
-              </div>
-            ))}
+          <div>
+            <p className={`text-xs mb-2 flex items-center gap-1.5 ${textSub}`}>
+              <span className={`font-semibold ${textMain}`}>현황</span>
+              <span>· {quarterLabel(snapshotQ)} 기준 · {view === 'unit' ? '물량(Units) 점유율' : view === 'revenue' ? '매출(Values LC)' : '매출(Values LC) 점유율'}</span>
+              <InfoTip text={METRIC_HELP} />
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+              {pieData.map(item => {
+                const m = cardMetric(item);
+                return (
+                  <div key={item.name} className={`rounded-xl p-4 border ${sumBg}`}>
+                    <div className="flex items-center gap-2 mb-2"><span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }}></span><span className={`text-xs truncate ${textSub}`} title={item.name}>{item.name}</span></div>
+                    <p className={`text-[11px] ${textMuted}`}>{m.label}</p>
+                    <p className="text-xl font-bold" style={{ color: item.color }}>{m.main}</p>
+                    <p className={`text-xs mt-1 ${textMuted}`}>{m.sub}</p>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -393,21 +565,21 @@ export default function KoreanMarketPage() {
           <div className={`rounded-2xl p-6 border ${chartBg}`}>
             {view === 'donut' && (
               <div>
-                <div className="flex items-center justify-between mb-4">
-                  <div>
+                <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+                  <div className="min-w-0">
                     <h3 className={`font-bold text-base mb-1 ${textMain}`}>
-                      {shareSubView === 'snapshot' ? 'Market Share Distribution' : 'Market Share Trend'}
+                      {shareSubView === 'snapshot' ? '점유율 분포' : '점유율 추이'}
                     </h3>
                     <p className={`text-xs ${textSub}`}>
                       {shareSubView === 'snapshot'
                         ? `${market.data ? quarterLabel(market.data.quarter) : ''} · 매출(Values LC) 기준 점유율 · 시장 전체 매출 ₩${totalValuesM}M · 물량 ${totalUnits.toLocaleString()} Units`
-                        : `분기별 시장 점유율 변화 추이 · ${trendRangeLabel(shareTrendRows)}`}
+                        : `분기별 매출(Values LC) 점유율 추이 · ${trendRangeLabel(shareTrendRows)} · 상위 ${trendBrands.length}개 (${quarterLabel(toQ || snapshotQ)} 매출 기준)`}
                     </p>
                   </div>
                   <div className={`flex items-center gap-1 rounded-lg p-1 ${subtabBg}`}>
                     {[
-                      { key: 'snapshot', label: 'Snapshot', icon: 'ri-pie-chart-2-line' },
-                      { key: 'trend', label: 'Trend', icon: 'ri-line-chart-line' },
+                      { key: 'snapshot', label: '현황', icon: 'ri-pie-chart-2-line' },
+                      { key: 'trend', label: '추이', icon: 'ri-line-chart-line' },
                     ].map(stab => (
                       <button key={stab.key} onClick={() => { setShareSubView(stab.key as ShareSubView); setActiveIndex(0); }}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium cursor-pointer whitespace-nowrap transition-all ${shareSubView === stab.key ? subtabActive : subtabInactive}`}>
@@ -452,7 +624,7 @@ export default function KoreanMarketPage() {
                         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                           <div className="text-center max-w-[150px]">
                             <p className={`text-[13px] font-bold truncate ${textMain}`}>{activeSlice.name}</p>
-                            <p className={`text-xl font-bold ${accentColor}`}>{activeSlice.value}%</p>
+                            <p className="text-xl font-bold" style={{ color: activeSlice.color }}>{activeSlice.value}%</p>
                             <p className={`text-[11px] ${textSub}`}>매출 점유율</p>
                             <p className={`text-[11px] ${textSub}`}>{unitLine(activeSlice)}</p>
                           </div>
@@ -478,18 +650,8 @@ export default function KoreanMarketPage() {
                   </div>
                 )}
 
-                {shareSubView === 'trend' && (
-                  <ResponsiveContainer width="100%" height={360}>
-                    <LineChart data={shareTrendRows} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
-                      <XAxis dataKey="quarter" tick={{ fill: tickFill, fontSize: 11 }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fill: tickFill, fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} domain={[0, 'auto']} />
-                      <Tooltip content={<ShareTrendTooltip isDark={isDark} />} />
-                      {trendBrands.map((brand, idx) => (
-                        <Line key={brand} type="monotone" dataKey={brand} stroke={LINE_COLORS[idx % LINE_COLORS.length]} strokeWidth={2} dot={{ fill: LINE_COLORS[idx % LINE_COLORS.length], r: 4, strokeWidth: 0 }} activeDot={{ r: 6, strokeWidth: 0 }} />
-                      ))}
-                    </LineChart>
-                  </ResponsiveContainer>
+                {shareSubView === 'trend' && renderTrendChart(
+                  shareTrendRows, 360, v => `${v}%`, <ShareTrendTooltip isDark={isDark} />, [0, 'auto'],
                 )}
               </div>
             )}
@@ -497,38 +659,24 @@ export default function KoreanMarketPage() {
             {view === 'unit' && (
               <div>
                 <div className="flex items-center justify-between mb-4">
-                  <div><h3 className={`font-bold text-base mb-1 ${textMain}`}>Unit Trend — Prescription Volume (Units)</h3><p className={`text-xs ${textSub}`}>분기별 실제 처방 유닛 수량 추이 · {trendRangeLabel(unitTrendRows)}</p></div>
+                  <div>
+                    <h3 className={`font-bold text-base mb-1 flex items-center gap-1.5 ${textMain}`}>물량 추이 — 처방 단위(Units) <InfoTip text={METRIC_HELP} /></h3>
+                    <p className={`text-xs ${textSub}`}>분기별 IQVIA 처방 단위 수량 추이 · {trendRangeLabel(unitTrendRows)} · 상위 {trendBrands.length}개 ({quarterLabel(toQ || snapshotQ)} 매출 기준)</p>
+                  </div>
                 </div>
-                <ResponsiveContainer width="100%" height={320}>
-                  <LineChart data={unitTrendRows} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
-                    <XAxis dataKey="quarter" tick={{ fill: tickFill, fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: tickFill, fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `${(v / 1000).toFixed(1)}k`} domain={[0, 'auto']} />
-                    <Tooltip content={<UnitTooltip isDark={isDark} />} />
-                    {trendBrands.map((brand, idx) => (
-                      <Line key={brand} type="monotone" dataKey={brand} stroke={LINE_COLORS[idx % LINE_COLORS.length]} strokeWidth={2} dot={{ fill: LINE_COLORS[idx % LINE_COLORS.length], r: 4, strokeWidth: 0 }} activeDot={{ r: 6, strokeWidth: 0 }} />
-                    ))}
-                  </LineChart>
-                </ResponsiveContainer>
+                {renderTrendChart(unitTrendRows, 320, v => `${(v / 1000).toFixed(1)}k`, <UnitTooltip isDark={isDark} />, [0, 'auto'])}
               </div>
             )}
 
             {view === 'revenue' && (
               <div>
                 <div className="flex items-center justify-between mb-4">
-                  <div><h3 className={`font-bold text-base mb-1 ${textMain}`}>Revenue Trend — Sales (M KRW)</h3><p className={`text-xs ${textSub}`}>분기별 매출액 추이 (Values LC, 단위: 백만원) · {trendRangeLabel(revenueTrendRows)}</p></div>
+                  <div>
+                    <h3 className={`font-bold text-base mb-1 flex items-center gap-1.5 ${textMain}`}>매출 추이 — 매출액(백만원) <InfoTip text={METRIC_HELP} /></h3>
+                    <p className={`text-xs ${textSub}`}>분기별 매출액 추이 (IQVIA Values LC, 단위: 백만원) · {trendRangeLabel(revenueTrendRows)} · 상위 {trendBrands.length}개 ({quarterLabel(toQ || snapshotQ)} 매출 기준)</p>
+                  </div>
                 </div>
-                <ResponsiveContainer width="100%" height={320}>
-                  <LineChart data={revenueTrendRows} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
-                    <XAxis dataKey="quarter" tick={{ fill: tickFill, fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: tickFill, fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `${v.toLocaleString()}`} />
-                    <Tooltip content={<RevenueTooltip isDark={isDark} />} />
-                    {trendBrands.map((brand, idx) => (
-                      <Line key={brand} type="monotone" dataKey={brand} stroke={LINE_COLORS[idx % LINE_COLORS.length]} strokeWidth={2} dot={{ fill: LINE_COLORS[idx % LINE_COLORS.length], r: 4, strokeWidth: 0 }} activeDot={{ r: 6, strokeWidth: 0 }} />
-                    ))}
-                  </LineChart>
-                </ResponsiveContainer>
+                {renderTrendChart(revenueTrendRows, 320, v => v.toLocaleString(), <RevenueTooltip isDark={isDark} />)}
               </div>
             )}
           </div>

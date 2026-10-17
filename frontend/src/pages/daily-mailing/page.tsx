@@ -173,10 +173,14 @@ export default function DailyMailingPage() {
   const sourceDomain = (url: string) => {
     try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; }
   };
+  const [emailError, setEmailError] = useState('');
   const addEmail = () => {
     const trimmed = emailInput.trim();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (trimmed && emailRegex.test(trimmed) && !emailList.includes(trimmed)) { setEmailList(prev => [...prev, trimmed]); setEmailInput(''); }
+    if (!trimmed) { setEmailError('이메일 주소를 입력하세요.'); return; }
+    if (!emailRegex.test(trimmed)) { setEmailError('이메일 형식이 아닙니다. 예: name@msd.com'); return; }
+    if (emailList.includes(trimmed)) { setEmailError('이미 추가된 주소입니다.'); return; }
+    setEmailList(prev => [...prev, trimmed]); setEmailInput(''); setEmailError('');
   };
   const removeEmail = (email: string) => { setEmailList(prev => prev.filter(e => e !== email)); };
 
@@ -250,11 +254,11 @@ export default function DailyMailingPage() {
       } else if (r.ok && r.mode === 'none') {
         alert(r.message ?? '아직 생성된 브리핑이 없습니다.');
       } else {
-        alert(`최근 발송 브리프 로드 실패: ${r.message ?? ''}`);
+        alert(`최신 브리핑 미리보기 실패: ${r.message ?? ''}`);
       }
       await reload();
     } catch (e) {
-      alert(e instanceof Error ? e.message : '최근 발송 브리프 로드 실패');
+      alert(e instanceof Error ? e.message : '최신 브리핑 미리보기 실패');
     } finally {
       setTestingId(null);
     }
@@ -305,8 +309,8 @@ export default function DailyMailingPage() {
       const warningText = saved.warnings.length > 0 ? ` ⚠️ ${saved.warnings.join(' / ')}` : '';
       setSubmitStatus('success');
       setSubmitMessage((isEdit
-        ? '설정이 수정되었습니다. 다음 발송부터 수정된 스콥이 적용됩니다.'
-        : '모니터링 스콥이 저장되었습니다. 발송 시각이 되면 서버가 이 스콥으로 브리핑을 생성합니다.') + warningText);
+        ? '설정이 수정되었습니다. 다음 발송부터 수정된 모니터링 범위이 적용됩니다.'
+        : '모니터링 범위이 저장되었습니다. 발송 시각이 되면 서버가 이 범위로 브리핑을 생성합니다.') + warningText);
       setEditingId(null);
       resetForm();
       await reload();
@@ -437,7 +441,7 @@ export default function DailyMailingPage() {
         {submitStatus === 'success' && (
           <div className="mb-5 flex items-center gap-3 bg-teal-50 border border-teal-200 rounded-xl px-5 py-3">
             <span className="w-5 h-5 flex items-center justify-center text-teal-600"><i className="ri-checkbox-circle-line text-lg"></i></span>
-            <p className="text-teal-700 text-sm font-medium">{submitMessage ?? '모니터링 스콥이 저장되었습니다. 발송 시각이 되면 서버가 이 스콥으로 브리핑을 생성합니다.'}</p>
+            <p className="text-teal-700 text-sm font-medium">{submitMessage ?? '모니터링 범위이 저장되었습니다. 발송 시각이 되면 서버가 이 범위로 브리핑을 생성합니다.'}</p>
           </div>
         )}
         {submitStatus === 'error' && (
@@ -471,12 +475,12 @@ export default function DailyMailingPage() {
                 className={`w-full rounded-xl px-4 py-3 text-sm focus:outline-none transition-colors ${inputBg} ${inputFocus} ${inputText}`} />
             </div>
 
-            {/* 모니터링 스콥 — 무엇을 찾을지 (5개 그룹 통합 섹션) */}
+            {/* 모니터링 범위 — 무엇을 찾을지 (5개 그룹 통합 섹션) */}
             <div className="space-y-3">
               <div className={`rounded-2xl border p-5 ${accentBg} ${accentBorder}`}>
                 <h2 className={`font-bold text-base flex items-center gap-2 ${textMain}`}>
                   <span className={`w-5 h-5 flex items-center justify-center ${accentColor}`}><i className="ri-crosshair-2-line"></i></span>
-                  모니터링 스콥 — 무엇을 찾을지
+                  모니터링 범위 — 무엇을 찾을지
                 </h2>
                 <p className={`${textSub} text-xs mt-1.5 leading-relaxed`}>
                   서버가 검색·검토할 대상입니다. 브랜드 / 회사 / 정책·제도 / 질환 영역 / 자유 키워드 중 <span className={`font-semibold ${accentColor}`}>한 그룹 이상</span>에 항목이 있으면 저장할 수 있습니다.
@@ -647,7 +651,7 @@ export default function DailyMailingPage() {
                 </div>
               )}
               <div className="flex gap-2">
-                <input type="email" name="email" placeholder="이메일 주소 입력..." value={emailInput} onChange={e => setEmailInput(e.target.value)}
+                <input type="email" name="email" placeholder="이메일 주소 입력..." value={emailInput} onChange={e => { setEmailInput(e.target.value); setEmailError(''); }} aria-invalid={!!emailError} aria-describedby="mail-email-error"
                   onKeyDown={onEnterCommit(addEmail)}
                   className={`flex-1 rounded-xl px-4 py-2.5 text-sm focus:outline-none transition-colors ${inputBg} ${inputFocus} ${inputText}`} />
                 <button type="button" onClick={addEmail}
@@ -655,12 +659,13 @@ export default function DailyMailingPage() {
                   <span className="w-4 h-4 flex items-center justify-center"><i className="ri-add-line text-sm"></i></span>추가
                 </button>
               </div>
+              {emailError && <p id="mail-email-error" role="alert" className="text-xs text-red-500 mt-1.5">{emailError}</p>}
             </div>
 
             {/* Submit */}
             <div className={`flex items-center justify-between rounded-2xl border p-5 ${sumBg}`}>
               <div className={`flex items-center gap-4 text-xs ${textSub}`}>
-                <span className="flex items-center gap-1.5"><span className={`w-3.5 h-3.5 flex items-center justify-center ${accentColor}`}><i className="ri-crosshair-2-line text-xs"></i></span>스콥 용어 {scopeTermCount}개</span>
+                <span className="flex items-center gap-1.5"><span className={`w-3.5 h-3.5 flex items-center justify-center ${accentColor}`}><i className="ri-crosshair-2-line text-xs"></i></span>모니터링 용어 {scopeTermCount}개</span>
                 <span className="flex items-center gap-1.5"><span className={`w-3.5 h-3.5 flex items-center justify-center ${accentColor}`}><i className="ri-mail-line text-xs"></i></span>수신자 {emailList.length}명</span>
                 <span className="flex items-center gap-1.5"><span className={`w-3.5 h-3.5 flex items-center justify-center ${accentColor}`}><i className="ri-time-line text-xs"></i></span>{schedule} {scheduleTime}</span>
               </div>
@@ -728,7 +733,7 @@ export default function DailyMailingPage() {
                     </button>
                     <button onClick={() => handleTestSend(setting.id, setting.name)} disabled={testingId === setting.id}
                       className={`text-xs px-3 py-1 rounded-full cursor-pointer whitespace-nowrap transition-all border disabled:opacity-50 ${isDark ? 'border-[#00E5CC]/30 text-[#00E5CC] hover:bg-[#00E5CC]/10' : 'border-teal-300 text-teal-600 hover:bg-teal-50'}`}>
-                      {testingId === setting.id ? '불러오는 중…' : '최근 발송 보기'}
+                      {testingId === setting.id ? '불러오는 중…' : '최신 브리핑 미리보기'}
                     </button>
                     <button onClick={() => handleRequestTestMail(setting.id)} disabled={testRequestId === setting.id}
                       className={`flex items-center gap-1 text-xs px-3 py-1 rounded-full cursor-pointer whitespace-nowrap transition-all border disabled:opacity-50 ${isDark ? 'border-[#F59E0B]/30 text-[#F59E0B] hover:bg-[#F59E0B]/10' : 'border-amber-300 text-amber-600 hover:bg-amber-50'}`}>
@@ -825,10 +830,10 @@ export default function DailyMailingPage() {
             <div className="p-6">
               <div className="flex items-center gap-2 mb-1">
                 <span className={`w-5 h-5 flex items-center justify-center ${accentColor}`}><i className="ri-mail-open-line text-sm"></i></span>
-                <h3 className={`font-bold text-sm ${textMain}`}>최근 발송 브리프 — {previewModal.subscriptionName}</h3>
+                <h3 className={`font-bold text-sm ${textMain}`}>최신 생성 브리핑 미리보기 — {previewModal.subscriptionName}</h3>
               </div>
               <p className={`${textSub} text-xs mb-4`}>
-                아래는 이 구독으로 서버가 생성한 최신 브리핑입니다.
+                아래는 이 구독으로 서버가 생성한 최신 브리핑입니다. 실제 메일 발송(전달) 여부와는 별개입니다.
               </p>
               <div className={`rounded-xl border px-4 py-3 mb-4 ${previewBg}`}>
                 <p className={`${textMuted} text-[10px] mb-1`}>제목</p>

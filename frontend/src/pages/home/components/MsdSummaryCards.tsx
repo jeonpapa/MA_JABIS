@@ -61,8 +61,8 @@ export default function MsdSummaryCards({ isDark }: Props) {
 
   const yearGroups = [
     { year: CURRENT_YEAR, label: `${CURRENT_YEAR}년`, sublabel: '올해', items: year0, color: '#0D9488' },
-    { year: CURRENT_YEAR + 1, label: `${CURRENT_YEAR + 1}년`, sublabel: '+1년', items: year1, color: '#D97706' },
-    { year: CURRENT_YEAR + 2, label: `${CURRENT_YEAR + 2}년`, sublabel: '+2년', items: year2, color: '#7C3AED' },
+    { year: CURRENT_YEAR + 1, label: `${CURRENT_YEAR + 1}년`, sublabel: '내년', items: year1, color: '#D97706' },
+    { year: CURRENT_YEAR + 2, label: `${CURRENT_YEAR + 2}년`, sublabel: '후년', items: year2, color: '#7C3AED' },
   ];
 
   const selectedYearGroup = yearGroups.find(g => g.year === pipelineYear);
@@ -174,7 +174,7 @@ export default function MsdSummaryCards({ isDark }: Props) {
           <span className={`w-8 h-8 rounded-lg flex items-center justify-center ${accentAmberBg}`}>
             <i className={`ri-capsule-line ${accentAmber} text-base`}></i>
           </span>
-          <p className={`${textSub} text-xs`}>Keytruda 적응증 현황</p>
+          <p className={`${textSub} text-xs`}>키트루다 적응증 급여 현황</p>
         </div>
         {summaryLoading ? (
           <div className="flex items-center gap-4 mb-3">
@@ -196,11 +196,14 @@ export default function MsdSummaryCards({ isDark }: Props) {
                 <p className={`${textSub} text-xs mt-0.5`}>미급여</p>
               </div>
               <div className={`w-px h-10 ${divider}`}></div>
-              <div title="HIRA 급여 체크리스트에 아직 등록되지 않은 적응증 — 급여 여부 미확인">
+              <div title="국내 허가는 있지만 급여 체크리스트(관리 > 급여 관리)에 아직 입력되지 않은 적응증">
                 <p className={`text-3xl font-bold ${textMuted}`}>{summary?.keytruda.unverified ?? 0}</p>
-                <p className={`${textSub} text-xs mt-0.5`}>미확인</p>
+                <p className={`${textSub} text-xs mt-0.5`}>급여 확인 필요</p>
               </div>
             </div>
+            <p className={`${textSub} text-[11px] mb-2`}>
+              국내 허가 {summary?.keytruda.mfdsApproved ?? 0}개 기준 · 해외에서만 허가된 적응증 {summary?.keytruda.notMfdsApproved ?? 0}개는 제외
+            </p>
             <button
               onClick={() => setShowKeytrudaDetail(!showKeytrudaDetail)}
               className={`${accentTeal} text-xs flex items-center gap-1 cursor-pointer hover:opacity-80 transition-colors whitespace-nowrap`}
@@ -252,7 +255,7 @@ export default function MsdSummaryCards({ isDark }: Props) {
           <span className={`w-8 h-8 rounded-lg flex items-center justify-center ${accentPurpleBg}`}>
             <i className={`ri-flask-line ${accentPurple} text-base`}></i>
           </span>
-          <p className={`${textSub} text-xs`}>New Pipeline 현황</p>
+          <p className={`${textSub} text-xs`}>MSD 신규 파이프라인 (국내 허가·출시 예상)</p>
           {customCount > 0 && (
             <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${isDark ? 'bg-[#7C3AED]/20 text-[#7C3AED]' : 'bg-purple-100 text-purple-600'}`}>
               +{customCount}

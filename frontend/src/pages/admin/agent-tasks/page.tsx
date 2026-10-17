@@ -110,13 +110,18 @@ function StatusBadge({ status }: { status: string | null | undefined }) {
 
 // ─── 정책 카드 (정지 스위치 + 일일 상한) ────────────────────────────────────────────
 
-function PolicyCard({ policy, runbooks, busy, onToggle }: {
+function PolicyCard({ policy, runbooks, busy, onToggle, activity }: {
   policy: AgentPolicy | null | undefined;
   runbooks: string[];
   busy: boolean;
   onToggle: () => void;
+  activity?: { last_claimed_at: string | null; waiting: number };
 }) {
   const enabled = policy?.enabled === true;
+  // 스위치 '허용' ≠ 실제 처리. 24시간 넘게 선점이 없고 대기 과제가 있으면 처리 주체(디스패처)가 멈춘 것으로 표시한다.
+  const lastClaim = activity?.last_claimed_at ? new Date(activity.last_claimed_at) : null;
+  const idle = !lastClaim || (Date.now() - lastClaim.getTime()) > 24 * 3600 * 1000;
+  const stalled = enabled && idle && (activity?.waiting ?? 0) > 0;
   const frame = policy
     ? (enabled ? 'border-[#1E2530]' : 'border-red-500/40 bg-red-500/5')
     : 'border-[#1E2530]';
@@ -139,6 +144,10 @@ function PolicyCard({ policy, runbooks, busy, onToggle }: {
             <p className="text-[#4A5568] text-[10px]">정지 스위치</p>
             {!policy ? (
               <p className="text-[#8B9BB4] text-sm">정책 정보 없음</p>
+            ) : enabled && stalled ? (
+              <p className="text-sm font-semibold text-[#F59E0B]" title="정책상 선점은 허용돼 있지만 최근 24시간 동안 과제를 가져간 처리 주체가 없습니다">
+                <i className="ri-pause-circle-line mr-1"></i>선점 허용 · 처리 멈춤
+              </p>
             ) : enabled ? (
               <p className="text-sm font-semibold text-[#00E5CC]"><i className="ri-play-circle-line mr-1"></i>에이전트 팀 가동 중</p>
             ) : (
@@ -147,6 +156,13 @@ function PolicyCard({ policy, runbooks, busy, onToggle }: {
           </div>
         </div>
 
+        <div className="flex items-center gap-2">
+          <span className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#F59E0B]/10 text-[#F59E0B]"><i className="ri-time-line"></i></span>
+          <div>
+            <p className="text-[#4A5568] text-[10px]">마지막 과제 선점</p>
+            <p className="text-white text-sm font-semibold">{lastClaim ? lastClaim.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '기록 없음'}{activity ? ` · 대기 ${activity.waiting}건` : ''}</p>
+          </div>
+        </div>
         <div className="flex items-center gap-2">
           <span className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#3B82F6]/10 text-[#60A5FA]"><i className="ri-task-line"></i></span>
           <div>
@@ -508,7 +524,7 @@ export default function AdminAgentTasksPage() {
 
         {!loading && !error && data && (
           <>
-            <PolicyCard policy={policy} runbooks={runbooks} busy={policyBusy} onToggle={togglePolicy} />
+            <PolicyCard policy={policy} runbooks={runbooks} busy={policyBusy} onToggle={togglePolicy} activity={data?.activity} />
 
             {/* Summary */}
             <div className="bg-[#161B27] rounded-2xl border border-[#1E2530] p-5 flex flex-wrap items-center gap-4">
