@@ -122,6 +122,10 @@ Aside 와 Hermes 가 같은 과제를 집지 않는다.
 
 ## 5. Aside 체크리스트
 
+> **2026-10-17 사용자 결정 — 해외약가는 요청 기반 수집만 한다.** 실제 조사 요청이 들어온 제품·국가만 조사해 DB 에 누적한다.
+> 자동 백필 없음, 미요청 제품의 미수집·오래된 가격·국가 공백은 결함이 아니다(`foreign_price_age`·`foreign_country_coverage` 는 관측만, 과제 없음).
+> JP·CH 는 서버 프록시 대신 Aside 요청 큐 전담 — `config_probe.REQUEST_ONLY_PROXY_COUNTRIES` 로 프록시 경고 제외.
+
 1. `docs/price_request_worker.md` + 계정 스킬 `nhis-foreign-drug-price` 읽기. 워커 루틴은 **배포 + Keytruda IT 1국가 실계정 e2e 검증 전까지 활성화하지 않는다**.
    - **2026-10-17 e2e 완료**: 요청 `d28a997a…`(KEYTRUDA·IT) claim → AIFA DET 1185/2026 4행 업로드 → readback → 화면 확인 → verify → Gmail 발송(영수증 실제 message id) → `completed`. 10분 루틴(요청 1건 → 없으면 aside 원장 1건) 활성화.
 2. 자격증명은 `config/.env` 의 `PRICE_API_BASE_URL`·`PRICE_AGENT_EMAIL`·`PRICE_AGENT_PASSWORD` 만 사용(`role=price_agent`). `agent`·admin 자격증명을 노트북 루틴에 쓰지 않는다. 채팅에 노출된 사이트 자격증명(MIMS·Micromedex·Rote Liste·Vidal)은 교체 대상.
