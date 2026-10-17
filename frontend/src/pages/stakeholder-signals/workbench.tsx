@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   fetchOverview,
+  fetchSignals,
   fetchStatements,
   gradeClassOf,
+  gradeLabel,
   headlineQuoteOf,
   ORG_FILTERS,
   safeHttpUrl,
@@ -12,13 +14,15 @@ import {
   TOPIC_ORDER,
   type SVGradeClass,
   type SVOverview,
+  type SVPolicySignal,
   type SVStatementDetail,
   type SVStatementRow,
 } from '@/api/stakeholder';
 import { getCurrentUser, isAdmin } from '@/utils/authUsers';
 import PersonAvatar from './components/PersonAvatar';
 import { LocatorMatchBadge } from './components/GradeBadge';
-import { integrityText, isMismatch, provenanceFor } from './components/evidence';
+import { gradeTitle, integrityText, integrityTitle, isMismatch, provenanceFor } from './components/evidence';
+import { matchesVariants, searchVariants, signalLinkedStatementIds } from './components/search';
 import { ExcerptToggle, MismatchWarning, QuoteMarks } from './components/statementDetail';
 import { useStatementDetail } from './components/useStatementDetail';
 import RelationshipMapModal from './components/RelationshipMapModal';
@@ -41,6 +45,26 @@ const GRADE_OPTIONS: { key: SVGradeClass; label: string; defaultOn: boolean }[] 
   { key: 'c', label: '언론 인용 C', defaultOn: true },
   { key: 'role', label: '후보만 확인', defaultOn: false },
 ];
+type PeriodKey = '3m' | '6m' | '1y' | 'all';
+const PERIOD_OPTIONS: { key: PeriodKey; label: string; months: number | null }[] = [
+  { key: '3m', label: '최근 3개월', months: 3 },
+  { key: '6m', label: '최근 6개월', months: 6 },
+  { key: '1y', label: '최근 1년', months: 12 },
+  { key: 'all', label: '전체', months: null },
+];
+
+/** 오늘(KST) YYYY-MM-DD */
+function todayKst(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+
+/** end(YYYY-MM-DD) 에서 n개월 전 + 1일 */
+function monthsBefore(end: string, n: number): string {
+  const [y, m, d] = end.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1 - n, d + 1));
+  return dt.toISOString().slice(0, 10);
+}
+
 const DEFAULT_COPYRIGHT = '원문 저작권은 각 발행기관·언론사에 있습니다. 내부 검증과 출처(provenance) 보존 목적으로만 발췌를 제공합니다.';
 
 function firstSentence(s?: string | null): string {
@@ -93,7 +117,7 @@ function DetailBody({ detail, copyrightNotice }: { detail: SVStatementDetail; co
     <>
       <div className="detail-top">
         <span>발언 상세</span>
-        <span>{detail.evidence_grade || '—'}</span>
+        <span title={gradeTitle(detail.evidence_grade)}>{detail.evidence_grade ? gradeLabel(detail.evidence_grade) : '—'}</span>
       </div>
       <h2>{detail.event?.title ?? detail.event_title ?? '—'}</h2>
       <div className="person-card">
@@ -182,7 +206,9 @@ function DetailBody({ detail, copyrightNotice }: { detail: SVStatementDetail; co
         </div>
         <div className="e-row">
           <span>무결성</span>
-          <b>{first ? integrityText(first.integrity_status) : '—'}</b>
+          <b title={first ? integrityTitle(first.integrity_status, first.text_sha256 || first.sha256) : undefined}>
+            {first ? integrityText(first.integrity_status) : '—'}
+          </b>
         </div>
         <div className="e-row">
           <span>출처</span>
@@ -238,6 +264,9 @@ export default function StakeholderWorkbenchPage() {
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const [query, setQuery] = useState('');
+  const [period, setPeriod] = useState<PeriodKey>('all');
+  const [signals, setSignals] = useState<SVPolicySignal[]>([]);
+  const [serverHits, setServerHits] = useState<{ q: string; ids: Set<string> } | null>(null);
   const [orgs, setOrgs] = useState<Set<string>>(() => new Set([...ORG_FILTERS.map(o => o.key), OTHER_ORG]));
   const [topics, setTopics] = useState<Set<string>>(() => new Set(TOPIC_ORDER));
   const [grades, setGrades] = useState<Set<string>>(() => new Set(GRADE_OPTIONS.filter(g => g.defaultOn).map(g => g.key)));
@@ -252,6 +281,9 @@ export default function StakeholderWorkbenchPage() {
     fetchOverview()
       .then(o => !cancelled && setOverview(o))
       .catch(() => {/* 기간·검증 큐 수만 비운다 */});
+    fetchSignals()
+      .then(d => !cancelled && setSignals(d.signals))
+      .catch(() => {/* 시그널 연결 검색만 빠진다 */});
     setError(null);
     loadWorkbench()
       .then(d => !cancelled && setData(d))
@@ -272,19 +304,69 @@ export default function StakeholderWorkbenchPage() {
     [orgCounts],
   );
 
+  // 기간: 종료일 = 오늘(KST, 고정 scope.end 아님). 프리셋 최근 3/6개월·1년·전체(기본 — 수집 범위 시작일부터).
+  const periodRange = useMemo(() => {
+    const end = todayKst();
+    const months = PERIOD_OPTIONS.find(p => p.key === period)?.months ?? null;
+    return { start: months == null ? null : monthsBefore(end, months), end };
+  }, [period]);
+
+  // 검색: 서버(q — 인용문 전체·해석·한계까지, 공백 무시·복합어 변형) 결과와 화면 데이터 매칭을 합친다.
+  const variants = useMemo(() => searchVariants(query), [query]);
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) {
+      setServerHits(null);
+      return;
+    }
+    let cancelled = false;
+    const t = window.setTimeout(() => {
+      fetchStatements({ q })
+        .then(items => !cancelled && setServerHits({ q, ids: new Set(items.map(r => r.statement_id)) }))
+        .catch(() => {/* 서버 검색 실패 시 화면 매칭만 */});
+    }, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [query]);
+  const topicTitles = useMemo(() => {
+    const m: Record<string, string> = {};
+    (overview?.topics ?? []).forEach(t => {
+      if (t?.slug) m[t.slug] = t.title ?? '';
+    });
+    return m;
+  }, [overview]);
+  const signalLink = useMemo(() => signalLinkedStatementIds(signals, rows, variants), [signals, rows, variants]);
+
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const serverIds = serverHits && serverHits.q === query.trim() ? serverHits.ids : null;
     return rows.filter(r => {
       if (!(data?.orgsById[r.statement_id] ?? [OTHER_ORG]).some(o => orgs.has(o))) return false;
       if (r.topic && !topics.has(r.topic)) return false;
       if (!grades.has(gradeClassOf(r.evidence_grade, r.grade_class))) return false;
-      if (!q) return true;
-      const hay = [r.speaker_name, r.speaker_role_at_event, r.event?.title, headlineQuoteOf(r)?.quote_text, r.summary_text, TOPIC_LABELS[r.topic ?? '']]
-        .join(' ')
-        .toLowerCase();
-      return hay.includes(q);
+      const d = (r.event?.event_date || '').slice(0, 10);
+      if (periodRange.start && d && d < periodRange.start) return false;
+      if (d && d > periodRange.end) return false;
+      if (!variants.length) return true;
+      if (serverIds?.has(r.statement_id) || signalLink.ids.has(r.statement_id)) return true;
+      const t = r.topic ?? '';
+      const hay = [
+        r.speaker_name,
+        r.person?.name,
+        r.speaker_role_at_event,
+        r.event?.title,
+        headlineQuoteOf(r)?.quote_text,
+        r.summary_text,
+        r.source?.publisher_title,
+        TOPIC_LABELS[t],
+        TOPIC_FILTER_LABELS[t],
+        topicTitles[t],
+      ].join(' ');
+      return matchesVariants(hay, variants);
     });
-  }, [rows, data, orgs, topics, grades, query]);
+  }, [rows, data, orgs, topics, grades, query, variants, serverHits, signalLink, topicTitles, periodRange]);
+  const linkedShown = useMemo(() => filtered.filter(r => signalLink.ids.has(r.statement_id)).length, [filtered, signalLink]);
 
   const lanes = useMemo(
     () =>
@@ -335,7 +417,12 @@ export default function StakeholderWorkbenchPage() {
           placeholder="⌕ 인물, 행사, 발언, 주제 검색"
           aria-label="인물, 행사, 발언, 주제 검색"
         />
-        <button aria-disabled="true" title={PREPARING} onClick={e => e.preventDefault()}>
+        <button
+          className="svx-tip"
+          aria-disabled="true"
+          data-tip={`${PREPARING} — 직책 미확인(후보) 인물 검증 목록은 관리자 > 모니터링 인물 관리에서 확인합니다.`}
+          onClick={e => e.preventDefault()}
+        >
           검증 큐 {typeof queue === 'number' ? queue : ''}
         </button>
       </header>
@@ -371,7 +458,16 @@ export default function StakeholderWorkbenchPage() {
           </div>
           <div className="group">
             <h3>기간</h3>
-            <div className="check">{scope?.start || scope?.end ? `${fmtDot(scope?.start)} — ${fmtDot(scope?.end)}` : '—'}</div>
+            <div className="svx-period" role="group" aria-label="기간 프리셋">
+              {PERIOD_OPTIONS.map(p => (
+                <button key={p.key} type="button" aria-pressed={period === p.key} onClick={() => setPeriod(p.key)}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <div className="check" title={scope?.start ? `수집 범위: ${fmtDot(scope?.start)} — ${fmtDot(scope?.end)}` : undefined}>
+              {periodRange.start ? fmtDot(periodRange.start) : scope?.start ? fmtDot(scope.start) : '처음'} — {fmtDot(periodRange.end)}
+            </div>
           </div>
         </aside>
 
@@ -404,7 +500,25 @@ export default function StakeholderWorkbenchPage() {
             </div>
           )}
           {data && rows.length === 0 && <div className="lane-msg">아직 동기화된 발언이 없습니다.</div>}
-          {data && rows.length > 0 && filtered.length === 0 && <div className="lane-msg">필터 조건에 맞는 발언이 없습니다.</div>}
+          {data && variants.length > 0 && signalLink.signalTitles.length > 0 && (
+            <p className="svx-search-note">
+              정책 시그널 「{signalLink.signalTitles[0]}」{signalLink.signalTitles.length > 1 ? ` 외 ${signalLink.signalTitles.length - 1}건` : ''}의 근거와
+              연결된 발언 {linkedShown}건을 함께 표시합니다.
+            </p>
+          )}
+          {data && rows.length > 0 && filtered.length === 0 && (
+            <div className="lane-msg">
+              필터 조건에 맞는 발언이 없습니다.
+              {period !== 'all' && (
+                <>
+                  {' '}
+                  <button type="button" className="svx-linkbtn" onClick={() => setPeriod('all')}>
+                    기간을 전체로 넓히기
+                  </button>
+                </>
+              )}
+            </div>
+          )}
 
           {lanes
             .filter(l => l.items.length > 0)
@@ -462,7 +576,9 @@ export default function StakeholderWorkbenchPage() {
                           </span>
                         )}
                       </div>
-                      <div className={`pill${cls === 'a' ? '' : ` ${cls}`}`}>{r.evidence_grade || '—'}</div>
+                      <div className={`pill${cls === 'a' ? '' : ` ${cls}`}`} title={gradeTitle(r.evidence_grade)}>
+                        {r.evidence_grade ? gradeLabel(r.evidence_grade) : '—'}
+                      </div>
                     </article>
                   );
                 })}

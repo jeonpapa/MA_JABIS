@@ -102,7 +102,10 @@ function ReportCard({ report, isDark }: { report: IntelligenceReport; isDark: bo
           <span className="w-4 h-4 flex items-center justify-center">
             <i className="ri-calendar-line text-sm"></i>
           </span>
-          {report.date}
+          {/* 보고서 작성일(파일명 날짜) — 회의일과 다를 수 있음 (사전 검토 D-1·D-2, 결과 리뷰 D+1) */}
+          <span title={report.registeredDate ? `시스템 등록일 ${report.registeredDate}` : undefined}>
+            보고서 작성일 {report.reportDate ?? report.registeredDate ?? '—'}
+          </span>
         </div>
         <div className="flex items-center gap-1.5 text-[11px]">
           <span className="w-4 h-4 flex items-center justify-center">
@@ -113,7 +116,12 @@ function ReportCard({ report, isDark }: { report: IntelligenceReport; isDark: bo
       </div>
 
       <div className={`rounded-lg px-3 py-2.5 mb-3.5 border ${accentBg}`}>
-        <p className={`text-xs font-semibold ${mutedText}`}>{report.cycle}</p>
+        <p className={`text-xs font-semibold ${mutedText}`}>
+          {report.cycle}
+          {report.meetingDate
+            ? <> · 회의일 {report.meetingDate}{report.offsetLabel && report.offsetLabel !== '당일' ? ` (작성 ${report.offsetLabel})` : ''}</>
+            : <span className={metaText}> · 회의일 미확인</span>}
+        </p>
       </div>
 
       <div className="space-y-2 mb-4">

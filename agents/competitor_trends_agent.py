@@ -51,15 +51,14 @@ from agents.editable_factors import (  # noqa: E402
 
 DB_PATH = BASE_DIR / "data" / "db" / "drug_prices.db"
 
-ALLOWED_BADGES = ["신규 출시", "가격 변동", "임상 진행", "급여 등재", "파이프라인", "전략 변화"]
-BADGE_COLOR = {
-    "신규 출시":   "bg-emerald-500/20 text-emerald-400",
-    "가격 변동":   "bg-amber-500/20 text-amber-400",
-    "임상 진행":   "bg-violet-500/20 text-violet-400",
-    "급여 등재":   "bg-emerald-500/20 text-emerald-400",
-    "파이프라인": "bg-blue-500/20 text-blue-400",
-    "전략 변화":   "bg-rose-500/20 text-rose-400",
-}
+# badge 정의·색상은 결정론 품질 가드(agents/competitor_trend_quality.py)와 단일 소스 공유.
+# 2026-10: '해외 승인'(FDA/EMA/NICE 등 — 국내 출시 아님) · '급여 추진'(신청/심의/협상 중 — 미확정) 추가.
+from agents.competitor_trend_quality import (  # noqa: E402
+    ALLOWED_BADGES,
+    BADGE_COLOR,
+    build_brand_map,
+    guard_card,
+)
 
 DEFAULT_MODEL = "gpt-4o-mini"
 
@@ -76,8 +75,11 @@ SYSTEM_PROMPT = """당신은 한국 Market Access 담당자를 위한 경쟁사 
   moderate = 국내 마케팅 제휴 · 파이프라인 신규 단계 진입 · 가이드라인 반영
   low      = 일반 매출, 주가, 마케팅 행사, 단순 홍보 — 결과에서 제외
 
-badge 값은 아래 6개 중 하나만 사용. 해당 없으면 해당 item 은 drop.
-  "신규 출시" | "가격 변동" | "임상 진행" | "급여 등재" | "파이프라인" | "전략 변화"
+badge 값은 아래 8개 중 하나만 사용. 해당 없으면 해당 item 은 drop.
+  "신규 출시" | "가격 변동" | "임상 진행" | "급여 등재" | "파이프라인" | "전략 변화" | "해외 승인" | "급여 추진"
+  - "신규 출시" = **국내** 허가·출시만. FDA/EMA/CHMP/NICE 등 해외 승인·적응증 확대는 "해외 승인".
+  - "급여 등재" = 국내 급여 등재/확대가 **확정·시행**된 경우만. 신청·추진·심의·협상 중·가능성은 "급여 추진".
+  - "가격 변동" = 약가 인하/인상, 약가(협상) 타결, 상한금액 변경.
 
 **클러스터링 규칙 (같은 이벤트 = 하나의 item)**:
   - **같은 이벤트**(동일 승인·급여 결정·임상 결과 발표 등)를 다룬 기사들은 반드시
@@ -261,6 +263,34 @@ def _lookup_news_ids(db: DrugPriceDB, urls: list[str]) -> list[int]:
 # DB UPSERT (url UNIQUE 기반)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _apply_quality_guard(row: dict[str, Any], brand_map: dict | None = None) -> dict[str, Any]:
+    """LLM 결과 row → 결정론 가드(badge 교정 · 브랜드→회사 교정). 실패 시 row 그대로.
+    badge: 해외 승인/급여 추진/가격 변동 규칙. company: 주어 브랜드가 추적/MSD 브랜드인데
+    다른 회사로 귀속된 경우만 교정 (요약 내용은 고치지 않음 — 로그 플래그만)."""
+    try:
+        bm = brand_map if brand_map is not None else build_brand_map(get_competitor_brands())
+        g = guard_card({**row, "source_type": "auto_naver"}, bm)
+        if g["badge"] != row.get("badge"):
+            logger.info("[CompetitorTrends] badge guard %s → %s (%s) | %s",
+                        row.get("badge"), g["badge"], g["badge_reason"], row.get("headline"))
+            row["badge"] = g["badge"]
+            row["badge_color"] = BADGE_COLOR.get(g["badge"], "")
+        if g["company"] and g["company"] != row.get("company"):
+            logger.info("[CompetitorTrends] company guard %s → %s (%s) | %s",
+                        row.get("company"), g["company"], g["company_reason"], row.get("headline"))
+            row["company"] = g["company"]
+            meta = g.get("meta") or {}
+            if meta.get("logo"):
+                row["logo"] = meta["logo"]
+            if meta.get("color"):
+                row["color"] = meta["color"]
+        if g["flags"]:
+            logger.warning("[CompetitorTrends] low-confidence %s | %s", g["flags"], row.get("headline"))
+    except Exception as e:  # 가드 실패가 수집을 막지 않도록
+        logger.warning("[CompetitorTrends] quality guard 실패: %s", e)
+    return row
+
+
 def _upsert_trend(db: DrugPriceDB, row: dict[str, Any],
                   source_type: str = "auto_naver",
                   member_news_ids: list[int] | None = None) -> bool:
@@ -420,6 +450,8 @@ def promote_from_archive(days: int = 1, dry_run: bool = False,
                     "url": rep["url"], "importance": importance,
                     "source_tier": min((m.get("tier") or 3) for m in members),
                 }
+                row = _apply_quality_guard(row)
+                badge = row["badge"]
                 member_ids = [m["news_id"] for m in members if m.get("news_id")]
                 accepted += 1
                 if dry_run:
@@ -549,6 +581,8 @@ def run(days: int = 7, dry_run: bool = False, model: str = DEFAULT_MODEL) -> dic
                     "importance": importance,
                     "source_tier": min((m.get("tier") or 3) for m in members),
                 }
+                row = _apply_quality_guard(row)
+                badge = row["badge"]
                 # 아카이브(competitor_news)에 이미 수집된 기사면 trend_id 역링크
                 member_ids = _lookup_news_ids(db, [m["url"] for m in members])
                 accepted += 1

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { fetchRelationshipMapObjectUrl } from '@/api/stakeholder';
 
 // 관계도 모달(워크벤치 보기 탭 "관계도") — 인증 라우트의 SVG 를 fetch → blob → objectURL 로 <img> 에 표시.
@@ -27,20 +27,34 @@ export default function RelationshipMapModal({ onClose }: { onClose: () => void 
     };
   }, []);
 
+  const titleId = useId();
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  // Esc 닫기(캡처 단계 — 다른 Esc 핸들러보다 먼저) + 열릴 때 닫기 버튼 포커스 · 닫힐 때 이전 포커스 복원
   useEffect(() => {
+    const prev = document.activeElement as HTMLElement | null;
+    closeRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onCloseRef.current();
+      }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      prev?.focus?.();
+    };
+  }, []);
 
   return (
-    <div className="sxm-wrap" onClick={onClose} role="dialog" aria-modal="true" aria-label="기관·인물 관계도">
-      <div className="sxm wide" onClick={e => e.stopPropagation()}>
+    <div className="sxm-wrap" onClick={onClose}>
+      <div className="sxm wide" role="dialog" aria-modal="true" aria-labelledby={titleId} onClick={e => e.stopPropagation()}>
         <div className="sxm-head">
-          <h2>기관·인물 관계도</h2>
-          <button onClick={onClose} aria-label="닫기">
+          <h2 id={titleId}>기관·인물 관계도</h2>
+          <button ref={closeRef} type="button" onClick={onClose} aria-label="관계도 닫기 (Esc)" title="닫기 (Esc)">
             ×
           </button>
         </div>

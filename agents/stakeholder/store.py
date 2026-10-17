@@ -1345,6 +1345,30 @@ def get_event(event_id: str, *, db_path: str | Path = DEFAULT_DB_PATH,
     return _event_row_to_dict(r) if r else None
 
 
+_SEARCH_PREFIXES = ("약가",)
+_SEARCH_SUFFIXES = ("제도", "제", "안")
+
+
+def search_variants(q: str | None) -> list[str]:
+    """검색어 → 공백 제거 + 한국어 복합어 변형. '약가유연계약제' → ['약가유연계약제','유연계약제','약가유연계약','유연계약'].
+    2자 미만 변형은 버린다(과매칭 방지)."""
+    base = re.sub(r"\s+", "", q or "")
+    if not base:
+        return []
+    out = [base]
+    stems = [base]
+    for p in _SEARCH_PREFIXES:
+        if base.startswith(p) and len(base) - len(p) >= 2:
+            stems.append(base[len(p):])
+    for st in list(stems):
+        out.append(st)
+        for suf in _SEARCH_SUFFIXES:
+            if st.endswith(suf) and len(st) - len(suf) >= 2:
+                out.append(st[: -len(suf)])
+    seen: set[str] = set()
+    return [v for v in out if not (v in seen or seen.add(v))]
+
+
 def list_statements(*, topic: str | None = None, event_id: str | None = None, person_id: str | None = None,
                     grade: str | None = None, q: str | None = None, date_from: str | None = None,
                     date_to: str | None = None, limit: int | None = None, db_path: str | Path = DEFAULT_DB_PATH,
@@ -1362,11 +1386,19 @@ def list_statements(*, topic: str | None = None, event_id: str | None = None, pe
     if grade:
         sql += " AND s.evidence_grade LIKE ?"
         args.append(f"%{grade}%")
-    if q and q.strip():
-        like = f"%{q.strip()}%"
-        sql += (" AND (s.speaker_name LIKE ? OR s.speaker_role_at_event LIKE ? OR s.summary_text LIKE ? "
-                "OR s.analysis_text LIKE ? OR s.limitation_text LIKE ? OR e.title LIKE ?)")
-        args += [like] * 6
+    variants = search_variants(q)
+    if variants:
+        # 공백 무시 부분일치(‘유연 계약’ = ‘유연계약’) + 인용문(sv_quote.quote_text) 포함 + 한국어 복합어 변형(약가유연계약제 ⊃ 유연계약)
+        cols = ("s.speaker_name", "s.speaker_role_at_event", "s.summary_text", "s.analysis_text",
+                "s.limitation_text", "s.policy_status", "e.title")
+        ors: list[str] = []
+        for v in variants:
+            like = f"%{v}%"
+            ors += [f"REPLACE(IFNULL({col},''),' ','') LIKE ?" for col in cols]
+            ors.append("EXISTS (SELECT 1 FROM sv_quote q2, json_each(q2.statement_ids_json) j "
+                       "WHERE j.value = s.statement_id AND REPLACE(q2.quote_text,' ','') LIKE ?)")
+            args += [like] * (len(cols) + 1)
+        sql += " AND (" + " OR ".join(ors) + ")"
     if date_from:
         sql += " AND e.event_date>=?"
         args.append(date_from)

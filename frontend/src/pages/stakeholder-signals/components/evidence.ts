@@ -18,8 +18,8 @@ export const EVIDENCE_LOCATOR_META: Record<string, { label: string; tone: string
 };
 
 export const INTEGRITY_META: Record<string, { label: string; tone: string; title: string }> = {
-  verified: { label: 'SHA-256 일치', tone: 'ok', title: 'sync 가 원문 파일 SHA-256 을 재계산해 manifest 와 일치함을 확인' },
-  mismatch: { label: 'SHA-256 불일치', tone: 'bad', title: '원문 파일 SHA-256 이 manifest 와 다름 — 변조·손상 가능성' },
+  verified: { label: '원문 대조 완료', tone: 'ok', title: 'SHA-256 일치 — sync 가 원문 파일 SHA-256 을 재계산해 manifest 와 일치함을 확인' },
+  mismatch: { label: '원문 대조 불일치', tone: 'bad', title: 'SHA-256 불일치 — 원문 파일 SHA-256 이 manifest 와 다름(변조·손상 가능성)' },
   missing: { label: '원문 파일 없음', tone: 'bad', title: 'manifest 에 경로가 있으나 파일이 없음' },
   excluded: { label: '의도적 제외', tone: 'neutral', title: 'manifest 에 있으나 sync 허용목록 밖이라 의도적으로 받지 않은 출처 — 실패가 아님' },
   no_local: { label: '로컬 원문 없음', tone: 'neutral', title: '로컬 사본이 없는 출처(예: 영상) — URL 로만 확인' },
@@ -28,8 +28,18 @@ export const INTEGRITY_META: Record<string, { label: string; tone: string; title
 
 export function integrityText(status?: string | null): string {
   const s = (status || 'unchecked').toLowerCase();
-  if (s === 'verified') return '로컬 원문 SHA-256 일치';
   return (INTEGRITY_META[s] ?? INTEGRITY_META.unchecked).label;
+}
+
+/** 무결성 툴팁 — 사용자 라벨은 '원문 대조 완료', 해시·기술 설명은 title 로만. */
+export function integrityTitle(status?: string | null, hash?: string | null): string {
+  const m = INTEGRITY_META[(status || 'unchecked').toLowerCase()] ?? INTEGRITY_META.unchecked;
+  return hash ? `${m.title}\nSHA-256: ${hash}` : m.title;
+}
+
+/** 증거등급 사용자 라벨 — 'C-quote/C-summary' → '언론 직접인용 / 언론 요약'. 코드는 툴팁으로. */
+export function gradeTitle(grade?: string | null): string {
+  return grade ? `증거등급 코드: ${grade}` : '증거등급 미표기';
 }
 
 export function isMismatch(match?: string | null): boolean {

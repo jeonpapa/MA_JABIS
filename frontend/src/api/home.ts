@@ -513,10 +513,21 @@ export interface GovAgencyCloudsView {
   error?: string;
 }
 
+// 서버(agents/keyword_cloud_filter.py)가 1차 필터. 구 캐시 응답 방어용 최소 노이즈 목록 (비의료 기관·불용어·복합어 조각)
+const GOV_KEYWORD_NOISE = new Set([
+  '국가철도공단', '철도공단', '한국도로공사', '도로공사', '산림청', '국토부', '국토교통부', '철도', '도로',
+  '피해목', '위험목', '공동방제사업', '방제', '재선충', '생활권', '민가', '주변', '등을', '방안', '기반', '중심',
+  '에페', '것으', '개로', '위험', '분담',
+]);
+
+export function isGovKeywordNoise(text: string): boolean {
+  return GOV_KEYWORD_NOISE.has((text || '').trim());
+}
+
 export async function fetchGovAgencyClouds(): Promise<GovAgencyCloudsView> {
   const raw = await api.get<RawGovAgencyClouds>('/api/home/gov-agency-clouds');
   const agencies: GovAgencyCloudView[] = (raw.agencies ?? []).map(a => {
-    const kws = a.keywords ?? [];
+    const kws = (a.keywords ?? []).filter(k => !isGovKeywordNoise(k.text));
     const maxCount = kws.length ? Math.max(...kws.map(k => k.count)) : 1;
     const newsByKeyword: Record<string, GovNewsView[]> = {};
     for (const k of kws) {

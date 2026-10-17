@@ -431,7 +431,7 @@ def test_public_functions_all_take_db_path():
             missing.append(name)
     # 순수 유틸(시간·행 변환)만 예외
     assert set(missing) <= {"now_kst", "today_kst", "tomorrow_kst", "person_row_to_dict", "proposal_row_to_dict",
-                            "norm_quote", "validate_person_input"}, missing
+                            "norm_quote", "validate_person_input", "search_variants"}, missing
 
 
 def test_concurrent_open_dedupe_admits_exactly_one(tmp_path):

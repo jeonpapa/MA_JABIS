@@ -14,7 +14,16 @@ MSD 외 경쟁 브랜드의 한국 뉴스를 주 1회 자동 수집 → LLM 중�
    - critical = 허가 · 급여 · 가격 · 적응증 확대 · 주요 임상 결과
    - moderate = 국내 제휴 · 파이프라인 신규 단계 · 가이드라인 반영
    - low = 일반 매출/주가/마케팅 → drop
-3. **badge**: `신규 출시 | 가격 변동 | 임상 진행 | 급여 등재 | 파이프라인 | 전략 변화` 중 하나. 해당 없음 → drop
+3. **badge**: `신규 출시 | 가격 변동 | 임상 진행 | 급여 등재 | 파이프라인 | 전략 변화 | 해외 승인 | 급여 추진` 중 하나. 해당 없음 → drop
+   - `신규 출시` = 국내 허가·출시만 / `해외 승인` = FDA·EMA·CHMP·NICE 등 해외 허가·급여 결정
+   - `급여 등재` = 국내 등재·확대 확정/시행만 / `급여 추진` = 신청·심의·협상 중·가능성
+   - `가격 변동` = 약가 인하/인상 · 약가(협상) 타결 · 상한금액 변경
+3-1. **결정론 가드 (post-LLM, `agents/competitor_trend_quality.py`)**: LLM badge 를 규칙으로 교정
+   (가격 > 해외 승인 > 급여 추진 > 국내 허가 > 임상), 주어 브랜드→회사 맵으로 회사 교정
+   (추적 브랜드·MSD 자사 브랜드만; 그 외 불일치·요약 내 타사 브랜드 주어 등장은 low-confidence 플래그만).
+   - 저장분 일괄 교정: `PYTHONPATH=. python3 scripts/reclassify_competitor_trends.py` (dry-run 기본, `--apply`). manual 제외.
+   - `GET /api/competitor-trends` 는 읽기 시점에 가드 + 같은 사건 묶음(`group_id`/`group_size`/`related`) 적용
+     (같은 브랜드 + 같은 badge + 연속 간격 ≤10일·span ≤21일 + 임상/전략류는 헤드라인 유사도). 행 삭제 없음. `?raw=1` 원본.
 4. **UPSERT**: `competitor_trend` 테이블, `source_type='auto_naver'`, url 기반 dedup
    - `source_type='manual'` 이 있는 url 은 절대 덮어쓰지 않음 (admin 편집 보존)
 

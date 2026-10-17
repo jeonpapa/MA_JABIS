@@ -103,9 +103,87 @@ def list_meetings() -> list[dict]:
     return [_meeting_dict(r) for r in rows]
 
 
+STALE_DAYS = 60  # 카드 '최근 갱신' 이 이보다 오래되면 경고 (공단 자료로 최근 확인된 건 제외)
+
+_DECISIVE_STATES = ("APPROVED", "REJECTED_REQUEUE", "WITHDRAWN", "QUEUE_PROCESSED")
+
+
+def _event_date(q) -> str:
+    """큐 이벤트의 '사건일' — 연결 차수 회의일 → 큐 등재일 → 관측일(observed_at). 없으면 ''."""
+    return (_row_get(q, "session_date") or _row_get(q, "queue_entry_date")
+            or (_row_get(q, "observed_at") or "")[:10] or "")
+
+
+def _latest_event_key(q) -> tuple:
+    """'최근 상태' 정렬 키 — 사건일이 가장 늦은 이벤트가 최신.
+
+    tie-break (같은 사건일): ① 늦게 관측(observed_at)된 기록 ② 결과(통과/재심의/철회/심의완료) > 대기 ③ id.
+    이전엔 observed_at(수집 시각)만으로 골라, 나중에 백필된 과거 차수(웰리렉 2025-12-10 재심의, 2026-06-12 수집)가
+    더 최근 사건(2026-03-20 암질심 대기, 2026-05-28 수집)을 덮었다.
+    """
+    return (_event_date(q), _row_get(q, "observed_at") or "",
+            1 if _row_get(q, "queue_state") in _DECISIVE_STATES else 0, _row_get(q, "id") or 0)
+
+
+def latest_queue_row(queue_rows: list, committee: Optional[str] = None):
+    """(위원회별) 가장 최근 큐 이벤트. 없으면 None."""
+    rows = [q for q in queue_rows if committee is None or q["committee_type"] == committee]
+    return max(rows, key=_latest_event_key) if rows else None
+
+
+_BRD_RE = re.compile(r"\s*(?:HIRA\s*)?(?:5034계열\s*)?brdBltNo\s*=\s*\d+", re.I)
+_CYCLE_DATE_RE = re.compile(r"(?<!년 )(?<![년\d])(\d{1,2})차\s*(암질심|약평위)\s*\((\d{4})-")
+_UNSET_RE = re.compile(r"(?<!급여기준 )(?<!급여기준)미설정")
+
+
+def humanize_issue(text: Optional[str]) -> Optional[str]:
+    """쟁점/근거 문구의 내부 키를 읽을 수 있는 문장으로.
+
+    - 'brdBltNo=11684' (심평원 게시판 내부 번호) 제거
+    - '9차 암질심(2025-12-10' → '2025년 9차 암질심(2025-12-10' (연도 없는 차수는 해마다 반복되어 모호)
+    - '미설정' → '급여기준 미설정' (무엇이 미설정인지 명시 — 암질심이 급여기준을 설정하지 않음 = 불인정)
+    """
+    if not text:
+        return text
+    s = _BRD_RE.sub("", str(text))
+    s = re.sub(r"\(\s*\)", "", s)
+    s = re.sub(r"\(\s+", "(", s)
+    s = re.sub(r"\s+\)", ")", s)
+    s = _CYCLE_DATE_RE.sub(lambda m: f"{m.group(3)}년 {m.group(1)}차 {m.group(2)}({m.group(3)}-", s)
+    s = _UNSET_RE.sub("급여기준 미설정", s)
+    s = re.sub(r"\s{2,}", " ", s).strip()
+    s = re.sub(r"^[—\-·\s]+", "", s)
+    return s or None
+
+
+def _evidence_fields(raw: Optional[str]) -> tuple[Optional[str], Optional[str]]:
+    """evidence_url 컬럼 → (링크 URL | None, 사람이 읽는 근거 문구 | None). http(s) 가 아니면 링크로 쓰지 않는다."""
+    if not raw:
+        return None, None
+    s = str(raw).strip()
+    if re.match(r"^https?://", s, re.I):
+        return s, None
+    m = re.search(r"brdBltNo\s*=\s*(\d+)", s, re.I)
+    text = humanize_issue(s)
+    if m:
+        text = f"심평원 공개 결과 #{m.group(1)}" + (f" — {text}" if text and text.upper() != "HIRA" else "")
+    return None, text
+
+
+def _days_between(a: Optional[str], b: str) -> Optional[int]:
+    try:
+        return (date.fromisoformat(b[:10]) - date.fromisoformat(str(a)[:10])).days if a else None
+    except ValueError:
+        return None
+
+
 def _drug_stage(drug: sqlite3.Row, queue_rows: list[sqlite3.Row]) -> str:
-    """파이프라인 단계: nhis > evaluation > cancer (실데이터 기반)."""
-    if drug["yakpyungwi_pass_date"]:
+    """파이프라인 단계: nhis > evaluation > cancer (실데이터 기반).
+
+    협상 타결(AGREED)은 약평위를 거친 뒤에만 가능하므로 약평위 통과일이 비어 있어도 nhis(→ status completed).
+    (자카비: 암질심 통과 + AGREED 인데 약평위 통과일 미확인 → '약평위' 단계로 보이던 문제)
+    """
+    if drug["yakpyungwi_pass_date"] or drug["negotiation_status"] == "AGREED":
         return "nhis"
     has_yakpyungwi_queue = any(q["committee_type"] == "YAKPYUNGWI" for q in queue_rows)
     if drug["amjilsim_pass_date"] or has_yakpyungwi_queue:
@@ -147,9 +225,8 @@ def _drug_status(stage: str, drug: sqlite3.Row, queue_rows: list[sqlite3.Row],
     if expected is not None and expected == next_session_ids.get(committee):
         return "scheduled"
 
-    in_committee = [q for q in queue_rows if q["committee_type"] == committee]
-    if in_committee:
-        latest = max(in_committee, key=lambda q: ((q["observed_at"] or ""), q["id"]))
+    latest = latest_queue_row(queue_rows, committee)
+    if latest is not None:
         if (latest["queue_state"] != "APPROVED" and latest["session_date"]
                 and latest["session_date"] > today):
             return "scheduled"
@@ -169,17 +246,27 @@ def _history(queue_rows: list[sqlite3.Row], drug: Optional[sqlite3.Row] = None) 
         d = q["queue_entry_date"] or q["session_date"] or observed_date
         if q["queue_state"] == "APPROVED" and q["session_date"]:
             covered.add((q["committee_type"], q["session_date"]))
+        cycle = _session_cycle(q) if q["session_date"] else None
+        year = _row_get(q, "session_year") if q["session_date"] else None
+        evidence_url, evidence_text = _evidence_fields(q["evidence_url"])
         items.append({
             "id": q["id"],
             "date": d,
             "committee": COMMITTEE_KR.get(q["committee_type"], q["committee_type"]),
+            "committeeType": q["committee_type"],
             "state": q["queue_state"],
             "stateLabel": STATE_LABEL_KR.get(q["queue_state"], q["queue_state"]),
             "sessionId": q["session_id"],
             "sessionDate": q["session_date"],
-            "cycle": _session_cycle(q) if q["session_date"] else None,
+            "cycle": cycle,
+            "year": year,
+            # 연도 포함 차수 라벨 — '9차' 는 해마다 반복되어 모호 ('2025년 9차')
+            "cycleLabel": (f"{year}년 {cycle}차" if year and cycle is not None
+                           else f"{cycle}차" if cycle is not None else None),
             "attempt": q["n_th_attempt"],
-            "evidenceUrl": q["evidence_url"],
+            "evidenceUrl": evidence_url,     # http(s) 링크일 때만
+            "evidenceText": evidence_text,   # 링크가 아닌 근거 메모(내부 키 제거)
+            "observedAt": q["observed_at"],
         })
     if drug is not None:
         for committee_type, pass_col in (("AMJILSIM", "amjilsim_pass_date"),
@@ -195,12 +282,78 @@ def _history(queue_rows: list[sqlite3.Row], drug: Optional[sqlite3.Row] = None) 
                     "sessionId": None,
                     "sessionDate": d,
                     "cycle": None,
+                    "year": None,
+                    "cycleLabel": None,
                     "attempt": None,
                     "evidenceUrl": None,
+                    "evidenceText": None,
                     "synthetic": True,  # 통과일 컬럼 기반 (큐 이벤트 미수집 차수)
                 })
     items.sort(key=lambda x: (x["date"] or "9999-99-99"))
     return items
+
+
+def _ym_to_date(ym: Optional[str]) -> Optional[str]:
+    return f"{ym[:7]}-01" if ym and re.match(r"^\d{4}-\d{2}", ym) else None
+
+
+def last_result(drug, queue_rows: list) -> Optional[dict]:
+    """'마지막 결과' — 위원회 이벤트(큐·통과일 합성)와 공단 협상 결과 중 사건일이 가장 늦은 것.
+
+    '다음 단계'(stage)와 다른 축이다: 자카비처럼 단계=약평위인데 마지막 결과=암질심 통과는 모순이 아니라
+    '암질심을 통과했고 다음은 약평위' 라는 뜻이다.
+    """
+    cands: list[dict] = []
+    q = latest_queue_row(queue_rows)
+    if q is not None:
+        cycle = _session_cycle(q) if q["session_date"] else None
+        year = _row_get(q, "session_year") if q["session_date"] else None
+        cands.append({
+            "kind": "committee", "committee": COMMITTEE_DB_TO_API.get(q["committee_type"]),
+            "committeeLabel": COMMITTEE_KR.get(q["committee_type"], q["committee_type"]),
+            "state": q["queue_state"], "label": STATE_LABEL_KR.get(q["queue_state"], q["queue_state"]),
+            "date": _event_date(q) or None, "sessionLinked": q["session_id"] is not None,
+            "cycleLabel": (f"{year}년 {cycle}차" if year and cycle is not None else None),
+            "source": "queue", "_key": (_event_date(q), 1)})
+    for committee_type, col in (("AMJILSIM", "amjilsim_pass_date"), ("YAKPYUNGWI", "yakpyungwi_pass_date")):
+        d = _row_get(drug, col)
+        if d:
+            cands.append({
+                "kind": "committee", "committee": COMMITTEE_DB_TO_API[committee_type],
+                "committeeLabel": COMMITTEE_KR[committee_type], "state": "APPROVED", "label": "통과",
+                "date": d, "sessionLinked": False, "cycleLabel": None, "source": "pass_date",
+                "_key": (d, 0)})  # 같은 날이면 큐 이벤트(차수 연결 정보 보유)가 우선
+    neg = _row_get(drug, "negotiation_status")
+    if neg in ("AGREED", "REJECTED", "IN_PROGRESS", "STALLED"):
+        ym = _row_get(drug, "negotiation_complete_date") if neg in ("AGREED", "REJECTED") else None
+        ym = ym or _row_get(drug, "nhis_registered_ym")
+        d = _ym_to_date(ym)
+        label = {"AGREED": "협상 타결", "REJECTED": "협상 결렬",
+                 "IN_PROGRESS": "협상 진행 중", "STALLED": "협상 교착"}[neg]
+        if d or neg in ("AGREED", "REJECTED"):
+            cands.append({
+                "kind": "negotiation", "committee": None, "committeeLabel": "건보공단",
+                "state": neg, "label": label, "date": d, "month": ym[:7] if ym else None,
+                "sessionLinked": False, "cycleLabel": None,
+                "source": _row_get(drug, "negotiation_date_source") or "manual",
+                # 결과 확정(타결/결렬)은 같은 달 위원회 이벤트보다 뒤 — 협상은 약평위 이후 단계
+                "_key": ((d or "")[:7] + "-99" if neg in ("AGREED", "REJECTED") else (d or ""), 2)})
+    if not cands:
+        return None
+    best = max(cands, key=lambda c: c["_key"])
+    best.pop("_key", None)
+    return best
+
+
+def next_step_label(stage: str, status: str) -> str:
+    """'다음 단계' — 약제가 지금 기다리는 절차 (마지막 결과와 구분)."""
+    if status == "completed":
+        return "협상 완료"
+    if stage == "nhis":
+        return "건보공단 협상"
+    if stage == "evaluation":
+        return "약평위 심의" + (" (상정예정)" if status == "scheduled" else "")
+    return "암질심 심의" + (" (상정예정)" if status == "scheduled" else "")
 
 
 def _negotiation_phase_status(negotiation_status: Optional[str]) -> str:
@@ -337,7 +490,7 @@ def _timeline(drug: sqlite3.Row, conn: Optional[sqlite3.Connection] = None,
 
 
 _QUEUE_JOIN_SQL = """
-    SELECT q.*, s.session_date, s.ordinal_official, s.ordinal_assumed
+    SELECT q.*, s.session_date, s.ordinal_official, s.ordinal_assumed, s.year AS session_year
     FROM amjilsim_drug_queue_status q
     LEFT JOIN amjilsim_sessions s ON s.session_id = q.session_id
     WHERE q.drug_id = ?
@@ -366,14 +519,41 @@ def _row_get(row: sqlite3.Row, key: str):
 
 def _nhis_list_type_for_drug(conn: sqlite3.Connection, drug_id: int) -> Optional[str]:
     """매칭된 NHIS 공개자료의 신규/확대 구분. 보드 카드는 진행 중이므로
-    in_progress(완료연월 빈값) 행을 우선, 없으면 최신 등록 행 기준."""
+    in_progress(완료연월 빈값) 행을 우선, 없으면 최신 등록 행 기준. 완료 행으로 대체된(superseded) 진행중 행은 제외."""
     if not _nhis_table_exists(conn):
         return None
-    row = conn.execute(
-        "SELECT list_type FROM nhis_negotiations WHERE drug_id = ? "
+    superseded = superseded_nhis_ids(conn)
+    rows = conn.execute(
+        "SELECT id, list_type FROM nhis_negotiations WHERE drug_id = ? "
         "ORDER BY (completed_ym IS NULL OR completed_ym='') DESC, "
-        "registered_ym DESC LIMIT 1", (drug_id,)).fetchone()
-    return row["list_type"] if row else None
+        "registered_ym DESC", (drug_id,)).fetchall()
+    for r in rows:
+        if r["id"] not in superseded:
+            return r["list_type"]
+    return None
+
+
+def _nhis_drug_dates(conn: sqlite3.Connection, drug_id: int) -> tuple[Optional[str], Optional[str]]:
+    """(공단 자료로 상태가 바뀐 최근 시각 = max first_seen_at, 공단 목록에서 최근 확인 = max fetched_at)."""
+    if not _nhis_table_exists(conn):
+        return None, None
+    row = conn.execute(
+        "SELECT MAX(first_seen_at) AS fs, MAX(fetched_at) AS fa FROM nhis_negotiations WHERE drug_id = ?",
+        (drug_id,)).fetchone()
+    return (row["fs"], row["fa"]) if row else (None, None)
+
+
+def _freshness(drug_id: int, queue_rows: list, conn: sqlite3.Connection, today: str) -> dict:
+    """카드 날짜 라벨 — '최근 갱신'(상태 기록이 마지막으로 바뀐 날)과 '공단 자료 확인'(NHIS 목록 재확인)을 분리."""
+    observed = [q["observed_at"] for q in queue_rows if q["observed_at"]]
+    nhis_seen, nhis_checked = _nhis_drug_dates(conn, drug_id)
+    updated = max([x for x in observed + [nhis_seen] if x], default=None)
+    stale_days = _days_between(updated, today)
+    checked_days = _days_between(nhis_checked, today)
+    is_stale = bool(stale_days is not None and stale_days > STALE_DAYS
+                    and not (checked_days is not None and checked_days <= STALE_DAYS))
+    return {"updatedDate": updated, "nhisCheckedAt": nhis_checked,
+            "staleDays": stale_days, "isStale": is_stale}
 
 
 def _pipeline_drug_dict(drug: sqlite3.Row, queue_rows: list[sqlite3.Row],
@@ -396,6 +576,8 @@ def _pipeline_drug_dict(drug: sqlite3.Row, queue_rows: list[sqlite3.Row],
     # 카드 수준 예상 상태: 타임라인의 미도래 위원회 단계 중 예상일이 있는 것의 성격 ('overdue' 가 하나라도 있으면 overdue)
     exp_statuses = [t.get("expectedStatus") for t in timeline if t.get("expectedStatus")]
     expected_status = ("overdue" if "overdue" in exp_statuses else exp_statuses[0] if exp_statuses else None)
+    fresh = _freshness(drug["drug_id"], queue_rows, conn, today)
+    raw_issues = _key_issues(drug)
     item = {
         "id": drug["drug_id"],
         "name": drug["brand_kr"],
@@ -424,8 +606,16 @@ def _pipeline_drug_dict(drug: sqlite3.Row, queue_rows: list[sqlite3.Row],
         # 신규/확대 구분 (매칭된 NHIS 공개자료 기준 — 보드 필터칩용)
         "listType": _nhis_list_type_for_drug(conn, drug["drug_id"]),
         "notes": drug["notes"],
-        "keyIssues": _key_issues(drug),
-        "updatedDate": max(observed) if observed else None,
+        # 핵심 쟁점 — 내부 키(brdBltNo)·연도 없는 차수를 사람이 읽는 문장으로 (원문은 keyIssuesRaw)
+        "keyIssues": [x for x in (humanize_issue(i) for i in raw_issues) if x],
+        "keyIssuesRaw": raw_issues,
+        # 최근 갱신 = 이 약제 상태 기록(큐 관측·공단 자료 변화)이 마지막으로 바뀐 날. 60일 초과 시 isStale.
+        "updatedDate": fresh["updatedDate"],
+        "nhisCheckedAt": fresh["nhisCheckedAt"],
+        "staleDays": fresh["staleDays"],
+        "isStale": fresh["isStale"] and status != "completed",  # 협상 완료 건은 갱신 대상 아님
+        "nextStep": next_step_label(stage, status),
+        "lastResult": last_result(drug, queue_rows),
         "history": _history(queue_rows, drug),
         "timeline": timeline,
     }
@@ -477,6 +667,9 @@ def _nhis_row_dict(r: sqlite3.Row) -> dict:
         "drugId": r["drug_id"],
         "sourceUrl": r["source_url"],
         "fetchedAt": r["fetched_at"],
+        # 매칭된 추적 약제 (병용 등재 등 제품명만으로 알 수 없는 적응증 맥락)
+        "drugName": _row_get(r, "drug_name"),
+        "drugIndication": _row_get(r, "drug_indication"),
     }
 
 
@@ -484,6 +677,55 @@ def _nhis_table_exists(conn: sqlite3.Connection) -> bool:
     return conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='nhis_negotiations'"
     ).fetchone() is not None
+
+
+def _nhis_product_key(name: Optional[str]) -> str:
+    """제품명 표기 변형 흡수 키 — '파드셉주 20밀리그램,30밀리그램_(엔포투맙베도틴)' == '...밀리그램(엔포투맙베도틴)'."""
+    s = (name or "").split("(")[0].split("_")[0]
+    return re.sub(r"[\s,·/]", "", s).lower()
+
+
+def superseded_nhis_ids(conn: sqlite3.Connection) -> set[int]:
+    """공단 목록에서 완료 행으로 대체된 '협상 중' 아카이브 행 id.
+
+    nhis_negotiations 는 content_hash(결과·완료연월 포함) 멱등 INSERT + 삭제 금지 아카이브라, 협상이 끝나면
+    '완료' 행이 새로 들어오고 예전 '협상 중' 행(completed_ym NULL)이 그대로 남는다. 그래서 in_progress 조회가
+    이미 끝난 협상까지 세었다 (2026-10-17 프로덕션: in_progress 56건 중 41건 — 키트루다 확대 2026-05, 파드셉 신규
+    2026-05 포함). 판정(삭제 없이 조회 시점에만):
+      - 협상 중 행이고
+      - 같은 목록(list_type)·같은 등록연월에 같은 약제(drug_id) 또는 같은 제품 키의 완료 행이 있고
+      - 그 협상 중 행이 해당 목록의 최신 수집에서 더 이상 확인되지 않음 (fetched_at 이 목록 최신 수집일보다 1일 넘게 과거)
+        — 공단 목록에 아직 '협상 중' 으로 떠 있는 행은 절대 숨기지 않는다.
+    """
+    if not _nhis_table_exists(conn):
+        return set()
+    rows = conn.execute(
+        "SELECT id, list_type, product_name, registered_ym, completed_ym, drug_id, source_url, fetched_at "
+        "FROM nhis_negotiations").fetchall()
+    latest_fetch: dict[str, str] = {}
+    for r in rows:
+        f = (r["fetched_at"] or "")[:10]
+        if f > latest_fetch.get(r["source_url"], ""):
+            latest_fetch[r["source_url"]] = f
+    done_by_drug: set[tuple] = set()
+    done_by_key: set[tuple] = set()
+    for r in rows:
+        if r["completed_ym"]:
+            if r["drug_id"] is not None:
+                done_by_drug.add((r["list_type"], r["registered_ym"], r["drug_id"]))
+            done_by_key.add((r["list_type"], r["registered_ym"], _nhis_product_key(r["product_name"])))
+    out: set[int] = set()
+    for r in rows:
+        if r["completed_ym"]:
+            continue
+        last = latest_fetch.get(r["source_url"])
+        gap = _days_between(r["fetched_at"], last) if last and r["fetched_at"] else None
+        if gap is None or gap <= 1:
+            continue  # 최신 수집에서도 협상 중으로 확인된 행 (또는 판단 불가) — 유지
+        if ((r["drug_id"] is not None and (r["list_type"], r["registered_ym"], r["drug_id"]) in done_by_drug)
+                or (r["list_type"], r["registered_ym"], _nhis_product_key(r["product_name"])) in done_by_key):
+            out.add(r["id"])
+    return out
 
 
 def list_nhis_negotiations(status: str = "completed",
@@ -504,35 +746,40 @@ def list_nhis_negotiations(status: str = "completed",
 
     where, params = [], []
     if status == "completed":
-        where.append("completed_ym IS NOT NULL AND completed_ym != ''")
+        where.append("n.completed_ym IS NOT NULL AND n.completed_ym != ''")
     elif status == "in_progress":
-        where.append("(completed_ym IS NULL OR completed_ym = '')")
+        where.append("(n.completed_ym IS NULL OR n.completed_ym = '')")
     if list_type:
-        where.append("list_type = ?")
+        where.append("n.list_type = ?")
         params.append(list_type)
     if q:
+        # 제품·제약사 + 매칭된 추적 약제의 적응증·메모 — 병용 등재('파드셉+키트루다')는 공단 제품명에
+        # 병용 약제가 없어 '키트루다' 로 찾으면 파드셉 행이 안 나왔다 (메모: '펨브로(키트루다) 병용').
         needle = f"%{q.strip()}%"
-        where.append("(product_name LIKE ? OR manufacturer LIKE ?)")
-        params.extend([needle, needle])
+        where.append("(n.product_name LIKE ? OR n.manufacturer LIKE ? OR d.indication LIKE ? OR d.notes LIKE ?)")
+        params.extend([needle, needle, needle, needle])
     clause = (" WHERE " + " AND ".join(where)) if where else ""
 
     with _connect() as conn:
         if not _nhis_table_exists(conn):
-            return {"items": [], "counts": {"completed": 0, "in_progress": 0, "total": 0}}
+            return {"items": [], "counts": {"completed": 0, "in_progress": 0, "total": 0, "superseded": 0}}
+        superseded = superseded_nhis_ids(conn)
         rows = conn.execute(
-            f"SELECT * FROM nhis_negotiations{clause} "
-            f"ORDER BY (completed_ym IS NULL OR completed_ym='') ASC, "
-            f"completed_ym DESC, registered_ym DESC, product_name ASC LIMIT ?",
-            params + [limit]).fetchall()
-        counts = {
-            "completed": conn.execute(
-                "SELECT COUNT(*) FROM nhis_negotiations "
-                "WHERE completed_ym IS NOT NULL AND completed_ym != ''").fetchone()[0],
-            "in_progress": conn.execute(
-                "SELECT COUNT(*) FROM nhis_negotiations "
-                "WHERE completed_ym IS NULL OR completed_ym = ''").fetchone()[0],
-        }
-        counts["total"] = counts["completed"] + counts["in_progress"]
+            f"SELECT n.*, d.brand_kr AS drug_name, d.indication AS drug_indication "
+            f"FROM nhis_negotiations n LEFT JOIN amjilsim_drugs d ON d.drug_id = n.drug_id{clause} "
+            f"ORDER BY (n.completed_ym IS NULL OR n.completed_ym='') ASC, "
+            f"n.completed_ym DESC, n.registered_ym DESC, n.product_name ASC",
+            params).fetchall()
+        # 완료 행으로 대체된 협상 중 아카이브 행은 목록·카운트에서 제외 (삭제는 하지 않음)
+        rows = [r for r in rows if r["id"] not in superseded][:limit]
+        n_completed = conn.execute(
+            "SELECT COUNT(*) FROM nhis_negotiations "
+            "WHERE completed_ym IS NOT NULL AND completed_ym != ''").fetchone()[0]
+        n_in_progress = conn.execute(
+            "SELECT COUNT(*) FROM nhis_negotiations "
+            "WHERE completed_ym IS NULL OR completed_ym = ''").fetchone()[0] - len(superseded)
+        counts = {"completed": n_completed, "in_progress": n_in_progress,
+                  "total": n_completed + n_in_progress, "superseded": len(superseded)}
     return {"items": [_nhis_row_dict(r) for r in rows], "counts": counts}
 
 
@@ -541,10 +788,12 @@ def list_nhis_unmatched(limit: int = 1000) -> dict:
     with _connect() as conn:
         if not _nhis_table_exists(conn):
             return {"items": [], "count": 0}
+        superseded = superseded_nhis_ids(conn)
         rows = conn.execute(
             "SELECT * FROM nhis_negotiations WHERE drug_id IS NULL "
             "ORDER BY (completed_ym IS NULL OR completed_ym='') ASC, "
-            "completed_ym DESC, product_name ASC LIMIT ?", (limit,)).fetchall()
+            "completed_ym DESC, product_name ASC").fetchall()
+        rows = [r for r in rows if r["id"] not in superseded][:limit]
     return {"items": [_nhis_row_dict(r) for r in rows], "count": len(rows)}
 
 
@@ -699,10 +948,18 @@ def list_drugs_admin() -> list[dict]:
             queue_rows = conn.execute(_QUEUE_JOIN_SQL, (drug["drug_id"],)).fetchall()
             d = dict(drug)
             d["msd_flag"] = bool(d["msd_flag"])
-            stage, _ = _pipeline_drug_dict(drug, queue_rows, today, conn, next_ids)
+            stage, item = _pipeline_drug_dict(drug, queue_rows, today, conn, next_ids)
             d["stage"] = stage
-            latest = (max(queue_rows, key=lambda q: ((q["observed_at"] or ""), q["id"]))
-                      if queue_rows else None)
+            d["status"] = item["status"]
+            d["next_step"] = item["nextStep"]
+            d["last_result"] = item["lastResult"]
+            d["updated_date"] = item["updatedDate"]
+            d["stale_days"] = item["staleDays"]
+            d["is_stale"] = item["isStale"]
+            d["key_issues_display"] = item["keyIssues"]
+            d["unlinked_events"] = sum(1 for q in queue_rows if q["session_id"] is None)
+            # 최근 상태 = 사건일(회의일→큐 등재일→관측일)이 가장 늦은 이벤트 (수집 시각 아님)
+            latest = latest_queue_row(queue_rows)
             d["latest_queue"] = (
                 {"id": latest["id"],
                  "committee": COMMITTEE_DB_TO_API.get(latest["committee_type"]),
@@ -712,7 +969,8 @@ def list_drugs_admin() -> list[dict]:
                  "queue_entry_date": latest["queue_entry_date"],
                  "attempt": latest["n_th_attempt"],
                  "evidence_url": latest["evidence_url"],
-                 "observed_at": latest["observed_at"]}
+                 "observed_at": latest["observed_at"],
+                 "event_date": _event_date(latest) or None}
                 if latest else None
             )
             d["events"] = _history(queue_rows)

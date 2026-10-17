@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import PolicyEventModal from '@/components/policy/EventModal';
+import PolicyEventModal from './PolicyEventModal';
 import CommitteeWorkspacePanel from '@/components/policy/CommitteeWorkspace';
 import {
   downloadPolicyReportArtifact,

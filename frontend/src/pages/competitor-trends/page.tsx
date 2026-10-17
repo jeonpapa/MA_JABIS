@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { listCompetitorTrends, COMPETITOR_BADGES, type CompetitorTrend } from '@/api/competitorTrends';
+import {
+  listCompetitorTrends,
+  primaryTrends,
+  COMPETITOR_BADGES,
+  COMPETITOR_BADGE_HELP,
+  type CompetitorTrend,
+} from '@/api/competitorTrends';
 import {
   fetchCompetitorNews,
   fetchNewsBrands,
@@ -115,6 +121,7 @@ export default function CompetitorTrendsPage() {
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<number | null>(null);
   const [sourcesOpen, setSourcesOpen] = useState<number | null>(null); // B1: N개 매체 목록 펼침
+  const [relatedOpen, setRelatedOpen] = useState<number | null>(null); // 같은 사건 묶음(관련 기사 N건) 펼침
   const [items, setItems] = useState<CompetitorTrend[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -187,27 +194,34 @@ export default function CompetitorTrendsPage() {
     [brands, selBrand],
   );
 
+  // 같은 사건 중복 카드(빌로이 급여 등재 ×N 등)는 API 가 group_id 로 묶어준다 — 대표 카드만 노출, 나머지는 '관련 기사 N건'
+  const cards = useMemo(() => primaryTrends(items), [items]);
+  const matchesSearch = (d: CompetitorTrend, q: string) =>
+    d.company.toLowerCase().includes(q)
+    || d.headline.toLowerCase().includes(q)
+    || (d.related ?? []).some(r => (r.headline || '').toLowerCase().includes(q));
+
   // 같은 회사가 'MSD'/'MSD Korea' 처럼 나뉘어 보이던 문제 — 표시·필터는 '… Korea/코리아' 접미어를 뗀 이름으로 묶는다
   const canonCompany = (c: string) => (c || '').replace(/\s*(Korea|코리아|한국)$/i, '').trim() || c;
   // 경쟁사(회사) 목록 — 실데이터 distinct company. 칩 숫자는 현재 유형·검색 조건을 반영한다
   const companyList = useMemo(() => {
     const map = new Map<string, number>();
     const q = search.toLowerCase();
-    for (const i of items) {
+    for (const i of cards) {
       if (filter !== '전체' && i.badge !== filter) continue;
-      if (q && !i.company.toLowerCase().includes(q) && !i.headline.toLowerCase().includes(q)) continue;
+      if (q && !matchesSearch(i, q)) continue;
       const c = canonCompany(i.company);
       map.set(c, (map.get(c) ?? 0) + 1);
     }
     return Array.from(map.entries())
       .map(([company, count]) => ({ company, count }))
       .sort((a, b) => a.company.localeCompare(b.company, 'ko'));
-  }, [items, filter, search]);
+  }, [cards, filter, search]);
 
-  const filtered = items.filter(d => {
+  const filtered = cards.filter(d => {
     const matchBadge = filter === '전체' || d.badge === filter;
     const matchCompany = companyFilter === '전체' || canonCompany(d.company) === companyFilter;
-    const matchSearch = !search || d.company.toLowerCase().includes(search.toLowerCase()) || d.headline.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = !search || matchesSearch(d, search.toLowerCase());
     return matchBadge && matchCompany && matchSearch;
   });
 
@@ -215,12 +229,12 @@ export default function CompetitorTrendsPage() {
   const stats = useMemo(() => {
     const thisMonth = new Date().toISOString().slice(0, 7);
     return {
-      companies: new Set(items.map(i => canonCompany(i.company))).size,
-      monthly: items.filter(i => (i.date || '').startsWith(thisMonth)).length,
-      launch: items.filter(i => i.badge === '신규 출시').length,
-      price: items.filter(i => i.badge === '가격 변동').length,
+      companies: new Set(cards.map(i => canonCompany(i.company))).size,
+      monthly: cards.filter(i => (i.date || '').startsWith(thisMonth)).length,
+      launch: cards.filter(i => i.badge === '신규 출시').length,
+      price: cards.filter(i => i.badge === '가격 변동').length,
     };
-  }, [items]);
+  }, [cards]);
 
   const pageBg = isDark ? 'bg-[#0D1117]' : 'bg-gray-50';
   const headerBorder = isDark ? 'border-[#1E2530]' : 'border-gray-200';
@@ -341,6 +355,7 @@ export default function CompetitorTrendsPage() {
             <button
               key={type}
               onClick={() => setFilter(type)}
+              title={COMPETITOR_BADGE_HELP[type] ?? '전체 유형'}
               className={`px-3 py-1.5 rounded-full text-xs font-medium cursor-pointer whitespace-nowrap transition-all ${
                 filter === type ? filterActive : filterBtn
               }`}
@@ -362,7 +377,7 @@ export default function CompetitorTrendsPage() {
             >
               전체
               <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${companyFilter === '전체' ? 'bg-black/10' : 'bg-black/10'}`}>
-                {items.length}
+                {companyList.reduce((n, c) => n + c.count, 0)}
               </span>
             </button>
             {companyList.map(({ company, count }) => (
@@ -386,6 +401,11 @@ export default function CompetitorTrendsPage() {
         {!loading && !error && (
           <div className={`text-xs ${textMuted}`}>
             {filtered.length}건 표시
+            {items.length > cards.length && (
+              <span title="같은 브랜드·같은 유형·10일 이내 비슷한 기사 카드를 하나로 묶었습니다 (원본 행은 보존)">
+                {' '}· 중복 {items.length - cards.length}건 묶음
+              </span>
+            )}
           </div>
         )}
 
@@ -428,12 +448,27 @@ export default function CompetitorTrendsPage() {
                           <p className={`text-xs ${textMuted}`}>{item.date}</p>
                         </div>
                       </div>
-                      <span className={`text-xs font-semibold px-2 py-1 rounded-full whitespace-nowrap ${item.badgeColor || 'bg-gray-500/20 text-gray-400'}`}>
+                      <span
+                        className={`text-xs font-semibold px-2 py-1 rounded-full whitespace-nowrap ${item.badgeColor || 'bg-gray-500/20 text-gray-400'}`}
+                        title={[
+                          COMPETITOR_BADGE_HELP[item.badge],
+                          item.quality?.badge_original ? `자동 재분류 (원래: ${item.quality.badge_original})` : null,
+                          item.quality?.company_original ? `회사 교정 (원래: ${item.quality.company_original})` : null,
+                        ].filter(Boolean).join(' · ') || undefined}
+                      >
                         {item.badge}
                       </span>
                     </div>
 
                     <h4 className={`text-sm font-bold mb-2 leading-snug ${textMain}`}>{item.headline}</h4>
+                    {item.quality?.low_confidence && (
+                      <p
+                        className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 mb-2 rounded bg-amber-500/15 text-amber-600"
+                        title={`AI 요약에 다른 회사 브랜드가 주어로 등장 — 원문 확인 필요 (${(item.quality.flags ?? []).join(', ')})`}
+                      >
+                        <i className="ri-error-warning-line"></i>요약 검증 필요
+                      </p>
+                    )}
                     <p className={`text-xs leading-relaxed ${expanded === item.id ? '' : 'line-clamp-2'} ${textSub}`}>
                       {item.detail}
                     </p>
@@ -477,6 +512,17 @@ export default function CompetitorTrendsPage() {
                           </>
                         )}
                       </div>
+                      {(item.related?.length ?? 0) > 0 && (
+                        <button
+                          onClick={() => setRelatedOpen(relatedOpen === item.id ? null : item.id)}
+                          className={`flex items-center gap-1 text-xs font-medium cursor-pointer whitespace-nowrap transition-colors ml-auto mr-3 ${textSub} hover:opacity-80`}
+                          title="같은 브랜드·같은 유형·10일 이내 비슷한 기사 카드를 하나로 묶었습니다"
+                        >
+                          <i className="ri-stack-line text-xs"></i>
+                          관련 기사 {item.related!.length}건
+                          <i className={`text-xs ${relatedOpen === item.id ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'}`}></i>
+                        </button>
+                      )}
                       <button
                         onClick={() => setExpanded(expanded === item.id ? null : item.id)}
                         className={`flex items-center gap-1 text-xs font-medium cursor-pointer whitespace-nowrap transition-colors ${accentColor} hover:opacity-80`}
@@ -508,6 +554,25 @@ export default function CompetitorTrendsPage() {
                               </span>
                               <span className={`text-[11px] font-medium truncate flex-1 ${textMain}`}>{s.name || '출처 미상'}</span>
                               <span className={`text-[10px] flex-shrink-0 ${textMuted}`}>{s.pub_date}</span>
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    {relatedOpen === item.id && (item.related?.length ?? 0) > 0 && (
+                      <ul className={`mt-3 pt-3 border-t space-y-1 ${cardBorder}`}>
+                        {item.related!.map(r => (
+                          <li key={`rel-${item.id}-${r.id}`}>
+                            <a
+                              href={r.url ?? undefined}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={`flex items-center gap-2 px-1.5 py-1 rounded-md transition-colors ${isDark ? 'hover:bg-[#1E2530]/40' : 'hover:bg-gray-50'}`}
+                            >
+                              <span className={`text-[11px] font-medium truncate flex-1 ${textMain}`}>{r.headline}</span>
+                              <span className={`text-[10px] flex-shrink-0 ${textMuted}`}>{r.source || ''}</span>
+                              <span className={`text-[10px] flex-shrink-0 ${textMuted}`}>{r.date}</span>
                             </a>
                           </li>
                         ))}

@@ -179,3 +179,20 @@ def test_cumulative_events_unions_and_preserves(tmp_path):
     got = {e["event_id"]: e["subject"] for e in merged}
     assert got["old2"] == "B2"                       # 새 배치가 이김
     assert merged[0]["event_id"] == "new1"           # received_utc desc
+
+
+def test_ingest_default_root_matches_reader_root(monkeypatch, tmp_path):
+    """prod(/app/data)에서 admin ingest 가 리더와 다른 /opt/data 에 쓰던 경로 불일치 회귀 방지."""
+    import importlib
+    import agents.policy_analysis as pa
+    import agents.policy_intelligence_ingest as ing
+
+    monkeypatch.setenv("POLICY_INTELLIGENCE_ROOT", str(tmp_path / "pi"))
+    assert importlib.reload(ing).DEFAULT_ROOT == pa.default_root() == tmp_path / "pi"
+
+    monkeypatch.delenv("POLICY_INTELLIGENCE_ROOT")
+    real_exists = Path.exists
+    monkeypatch.setattr(Path, "exists", lambda self: True if str(self) == "/app/data" else real_exists(self))
+    assert importlib.reload(ing).DEFAULT_ROOT == Path("/app/data/policy_intelligence")
+    monkeypatch.undo()
+    importlib.reload(ing)

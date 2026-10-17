@@ -6070,7 +6070,8 @@ def mail_sub_test_request(item_id: int):
 
 _COMPETITOR_COLS = "id, company, logo, color, badge, badge_color, headline, detail, date, source, url, created_at, updated_at, source_type, importance, source_tier"
 
-_COMPETITOR_BADGES = ("신규 출시", "가격 변동", "임상 진행", "급여 등재", "파이프라인", "전략 변화")
+# '해외 승인'(FDA/EMA/NICE — 국내 출시 아님) · '급여 추진'(신청/심의/협상 중) — agents/competitor_trend_quality.py 와 동일
+_COMPETITOR_BADGES = ("신규 출시", "가격 변동", "임상 진행", "급여 등재", "파이프라인", "전략 변화", "해외 승인", "급여 추진")
 
 
 def _ensure_competitor_trend_schema() -> None:
@@ -6181,7 +6182,16 @@ def competitor_list():
                 f"SELECT {_COMPETITOR_COLS} FROM competitor_trend ORDER BY date DESC, id DESC"
             ).fetchall()
             smap = _competitor_trend_sources(conn, [r[0] for r in rows])
-        return jsonify({"items": [_competitor_row_to_dict(r, smap.get(r[0])) for r in rows]})
+        items = [_competitor_row_to_dict(r, smap.get(r[0])) for r in rows]
+        # 품질 가드(읽기 시점, DB 무변경): badge/회사 결정론 교정 + 같은 사건 묶음(group_id/related).
+        # ?raw=1 → 원본 그대로 (admin 편집 화면/감사용). 가드 실패는 원본 응답으로 폴백.
+        if request.args.get("raw", "0") != "1":
+            try:
+                from agents.competitor_trend_quality import annotate_trends
+                items = annotate_trends(items)
+            except Exception as qe:
+                logger.warning("competitor_list 품질 가드 실패 — 원본 응답: %s", qe)
+        return jsonify({"items": items})
     except Exception as e:
         logger.error("competitor_list 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500

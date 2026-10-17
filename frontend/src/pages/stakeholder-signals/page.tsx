@@ -133,6 +133,8 @@ export default function StakeholderSignalsPage() {
 
   const v = (n?: number | null) => (typeof n === 'number' ? n : '—');
   const preparing = (e: React.MouseEvent) => e.preventDefault();
+  const EXPORT_TIP = `${PREPARING} — 발언·출처 내보내기(Excel)는 아직 제공하지 않습니다. 필요한 발언은 상세의 원문 링크를 이용하세요.`;
+  const UPDATE_TIP = `${PREPARING} · 관리자 권한 — 행사는 정본 자료 동기화(관리자)로만 추가됩니다. 누락 행사는 관리자에게 요청하세요.`;
 
   return (
     <div className="sxbase sx1">
@@ -140,12 +142,30 @@ export default function StakeholderSignalsPage() {
         <div className="top">
           <div className="crumb">약가·건강보험 재정 / Intelligence Dashboard</div>
           <div className="actions">
-            <button className="btn" aria-disabled="true" title={PREPARING} onClick={preparing}>
+            <button
+              className="btn svx-tip"
+              aria-disabled="true"
+              data-tip={EXPORT_TIP}
+              aria-describedby="sv-export-tip"
+              onClick={preparing}
+            >
               내보내기
             </button>
-            <button className="btn dark" aria-disabled="true" title={PREPARING} onClick={preparing}>
+            <span id="sv-export-tip" className="svx-sr">
+              {EXPORT_TIP}
+            </span>
+            <button
+              className="btn dark svx-tip"
+              aria-disabled="true"
+              data-tip={UPDATE_TIP}
+              aria-describedby="sv-update-tip"
+              onClick={preparing}
+            >
               + 행사 업데이트
             </button>
+            <span id="sv-update-tip" className="svx-sr">
+              {UPDATE_TIP}
+            </span>
           </div>
         </div>
 

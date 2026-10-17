@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchMeetings, fetchPipeline, type MeetingSchedule, type PipelineDrug } from '@/api/reimbStatus';
-import { listCompetitorTrends, type CompetitorTrend } from '@/api/competitorTrends';
+import { listCompetitorTrends, primaryTrends, type CompetitorTrend } from '@/api/competitorTrends';
 import { fetchSignals, type SVPolicySignal } from '@/api/stakeholder';
 import { fetchForeignDrugList } from '@/api/foreign';
 import { fetchPolicyOverview } from '@/api/policyIntelligence';
@@ -39,7 +39,7 @@ export default function TodaySummary() {
   useEffect(() => {
     settle(fetchMeetings(), setMeetings);
     settle(fetchPipeline().then(st => st.flatMap(s => s.drugs).filter(d => d.msdFlag)), setMsdDrugs);
-    settle(listCompetitorTrends(), setTrends);
+    settle(listCompetitorTrends().then(primaryTrends), setTrends); // 같은 사건 중복 기사 제외
     settle(fetchSignals().then(r => r.signals?.[0] ?? null), setSignal);
     Promise.allSettled([fetchMsdSummary(), fetchForeignDrugList(), fetchPolicyOverview()]).then(([msd, foreign, policy]) => {
       const foreignLatest = foreign.status === 'fulfilled'

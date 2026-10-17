@@ -1,10 +1,62 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import Term from '@/components/ui/Term';
+import { getCurrentUser } from '@/utils/authUsers';
 import {
   listMailSubscriptions, createMailSubscription, updateMailSubscription,
   deleteMailSubscription, testSendMailSubscription,
   requestTestMail,
   type MailSubscription,
 } from '@/api/mailSubscriptions';
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/** 기본 수신자 = 로그인 사용자 이메일(형식이 맞을 때만). 공용 주소(marketaccess@…)를 자동으로 넣지 않는다. */
+const defaultRecipients = (): string[] => {
+  const me = (getCurrentUser() || '').trim();
+  return EMAIL_RE.test(me) ? [me] : [];
+};
+
+const DELIVERY_DEFS = {
+  approval: '관리자 승인 후 발송 — 발송 시각에 서버가 브리핑을 만들면 관리자(데일리 메일링 칸반)가 내용을 확인·승인한 뒤에 메일이 나갑니다. 승인 전에는 발송되지 않습니다.',
+  auto: '자동 발송 — 발송 시각에 서버가 브리핑을 만들고 품질 게이트(빈 브리핑·오류 검사)를 통과하면 사람 확인 없이 바로 발송합니다.',
+} as const;
+
+/** 미리보기 전용: '오늘의 한 줄' 의 영향 배지(위협/기회/참고)를 요약과 분리된 칩으로 그린다. 원본 HTML·발송본은 그대로. */
+const IMPACT_CHIP: Record<string, { label: string; bg: string; fg: string }> = {
+  위협: { label: '리스크', bg: '#FEE2E2', fg: '#B91C1C' },
+  위험: { label: '리스크', bg: '#FEE2E2', fg: '#B91C1C' },
+  기회: { label: '기회', bg: '#DCFCE7', fg: '#15803D' },
+  참고: { label: '참고', bg: '#E2E8F0', fg: '#334155' },
+};
+const decorateDigestPreview = (html: string): string => {
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const head = Array.from(doc.querySelectorAll('div')).find(d => d.textContent?.trim() === '오늘의 한 줄' && d.children.length === 0);
+    const body = head?.nextElementSibling as HTMLElement | null;
+    const text = body?.textContent?.trim() ?? '';
+    const m = text.match(/^(위협|위험|기회|참고)(?:\s*·\s*(.+?))?\s*—\s*(.+)$/);
+    if (!body || !m) return html;
+    const chip = IMPACT_CHIP[m[1]];
+    body.textContent = '';
+    const tag = (label: string, bg: string, fg: string, title?: string) => {
+      const s = doc.createElement('span');
+      s.textContent = label;
+      if (title) s.title = title;
+      s.setAttribute('style', `display:inline-block;margin:0 6px 0 0;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:800;background:${bg};color:${fg};vertical-align:middle;`);
+      return s;
+    };
+    const row = doc.createElement('div');
+    row.setAttribute('style', 'margin:0 0 4px;');
+    row.appendChild(tag(chip.label, chip.bg, chip.fg, `영향 구분: ${m[1]}`));
+    if (m[2]) row.appendChild(tag(m[2], '#1E293B', '#E2E8F0', '관련 자산'));
+    const summary = doc.createElement('div');
+    summary.textContent = m[3];
+    body.appendChild(row);
+    body.appendChild(summary);
+    return '<!doctype html>' + doc.documentElement.outerHTML;
+  } catch {
+    return html;
+  }
+};
 
 interface PreviewModalState {
   subscriptionName: string;
@@ -82,6 +134,10 @@ const MEDIA_CATEGORIES = [
   },
 ];
 
+/** 발송 소스(고정) 수·분류 — 폼·등록 카드가 같은 숫자를 쓴다. */
+const FIXED_SOURCE_COUNT = MEDIA_CATEGORIES.reduce((n, c) => n + c.items.length, 0);
+const FIXED_SOURCE_BREAKDOWN = MEDIA_CATEGORIES.map(c => `${c.category} ${c.items.length}`).join(' · ');
+
 export default function DailyMailingPage() {
   const [isDark, setIsDark] = useState(false);
   const [selectedKeywords, setSelectedKeywords] = useState<string[]>(['약가 인하', '급여 등재']);
@@ -100,7 +156,7 @@ export default function DailyMailingPage() {
   const [deliveryMode, setDeliveryMode] = useState<'approval' | 'auto'>('approval');
   const [includeTopMaNews, setIncludeTopMaNews] = useState(true);
   const [emailInput, setEmailInput] = useState('');
-  const [emailList, setEmailList] = useState<string[]>(['marketaccess@msd.com']);
+  const [emailList, setEmailList] = useState<string[]>(defaultRecipients);
   const [settingName, setSettingName] = useState('');
   const [savedSettings, setSavedSettings] = useState<MailSubscription[]>([]);
   const [listLoading, setListLoading] = useState(true);
@@ -111,7 +167,10 @@ export default function DailyMailingPage() {
   const [testingId, setTestingId] = useState<number | null>(null);
   const [testRequestId, setTestRequestId] = useState<number | null>(null);
   const [testRequestNote, setTestRequestNote] = useState<{ id: number; message: string; ok: boolean } | null>(null);
-  const [activeTab, setActiveTab] = useState<'new' | 'saved'>('new');
+  const [activeTab, setActiveTabState] = useState<'new' | 'saved'>('new');
+  // 사용자가 탭을 직접 고르기 전, 등록된 서비스가 있으면 '등록 서비스 관리' 목록을 먼저 연다.
+  const tabTouched = useRef(false);
+  const setActiveTab = (t: 'new' | 'saved') => { tabTouched.current = true; setActiveTabState(t); };
   const [previewModal, setPreviewModal] = useState<PreviewModalState | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
 
@@ -129,6 +188,7 @@ export default function DailyMailingPage() {
     try {
       const r = await listMailSubscriptions();
       setSavedSettings(r.items);
+      if (!tabTouched.current && r.items.length > 0) setActiveTabState('saved');
     } catch (e) {
       setListError(e instanceof Error ? e.message : '설정 목록 로드 실패');
     } finally {
@@ -176,7 +236,7 @@ export default function DailyMailingPage() {
   const [emailError, setEmailError] = useState('');
   const addEmail = () => {
     const trimmed = emailInput.trim();
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const emailRegex = EMAIL_RE;
     if (!trimmed) { setEmailError('이메일 주소를 입력하세요.'); return; }
     if (!emailRegex.test(trimmed)) { setEmailError('이메일 형식이 아닙니다. 예: name@msd.com'); return; }
     if (emailList.includes(trimmed)) { setEmailError('이미 추가된 주소입니다.'); return; }
@@ -193,7 +253,7 @@ export default function DailyMailingPage() {
     setSelectedPolicyTopics([]); setCustomPolicyTopic('');
     setSelectedDiseaseAreas([]); setCustomDiseaseArea('');
     setSchedule('Daily'); setScheduleTime('08:00'); setWeekDay('Monday'); setDeliveryMode('approval'); setIncludeTopMaNews(true);
-    setEmailInput(''); setEmailList(['marketaccess@msd.com']);
+    setEmailInput(''); setEmailList(defaultRecipients());
   };
 
   // 저장된 설정 카드 → 편집 모드: 저장값 전체를 폼 state 로 복원 후 '새 설정' 탭으로 이동.
@@ -415,10 +475,16 @@ export default function DailyMailingPage() {
           </div>
           <div className="flex items-center gap-2">
             <div className={`flex items-center gap-1 rounded-lg p-1 ${tabBg}`}>
-              {[
-                { key: 'new', label: '구독 설정', icon: 'ri-add-circle-line' },
-                { key: 'saved', label: '등록 서비스 관리', icon: 'ri-list-settings-line' },
-              ].map(tab => (
+              {(savedSettings.length > 0
+                ? [
+                    { key: 'saved', label: '등록 서비스 관리', icon: 'ri-list-settings-line' },
+                    { key: 'new', label: '구독 설정', icon: 'ri-add-circle-line' },
+                  ]
+                : [
+                    { key: 'new', label: '구독 설정', icon: 'ri-add-circle-line' },
+                    { key: 'saved', label: '등록 서비스 관리', icon: 'ri-list-settings-line' },
+                  ]
+              ).map(tab => (
                 <button key={tab.key} onClick={() => setActiveTab(tab.key as 'new' | 'saved')}
                   className={`flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-medium cursor-pointer whitespace-nowrap transition-all ${activeTab === tab.key ? tabActive : tabInactive}`}>
                   <span className="w-3.5 h-3.5 flex items-center justify-center"><i className={`${tab.icon} text-xs`}></i></span>
@@ -562,15 +628,22 @@ export default function DailyMailingPage() {
             {/* 발송 소스 (고정) — 시스템이 관리, 선택 불가 */}
             <div className={`${cardBg} rounded-2xl border ${cardBorder} p-6`}>
               <h3 className={`text-sm font-semibold ${textMain} mb-1 flex items-center gap-1.5`}>
-                <i className="ri-lock-line text-xs"></i> 발송 소스 (고정)
+                <i className="ri-lock-line text-xs"></i> 발송 소스 (고정 {FIXED_SOURCE_COUNT}개)
               </h3>
-              <p className={`${textSub} text-xs mb-3`}>시스템이 관리하는 고정 소스입니다 — 선택할 수 없습니다.</p>
-              <div className="flex flex-wrap gap-1.5">
-                {MEDIA_CATEGORIES.flatMap(cat => cat.items).map(item => (
-                  <span key={item.id}
-                    className={`text-xs px-2.5 py-1 rounded-full border ${isDark ? 'bg-[#161B27] text-[#8B9BB4] border-[#1E2530]' : 'bg-gray-50 text-gray-500 border-gray-200'} inline-flex items-center gap-1`}>
-                    <i className="ri-lock-line text-[10px] opacity-60"></i>{item.label}
-                  </span>
+              <p className={`${textSub} text-xs mb-3`}>
+                시스템이 관리하는 고정 소스입니다 — 선택할 수 없습니다. {FIXED_SOURCE_BREAKDOWN}
+              </p>
+              <div className="space-y-2">
+                {MEDIA_CATEGORIES.map(cat => (
+                  <div key={cat.category} className="flex flex-wrap items-center gap-1.5">
+                    <span className={`text-[11px] font-semibold w-24 shrink-0 ${textSub}`}>{cat.category} {cat.items.length}</span>
+                    {cat.items.map(item => (
+                      <span key={item.id}
+                        className={`text-xs px-2.5 py-1 rounded-full border ${isDark ? 'bg-[#161B27] text-[#8B9BB4] border-[#1E2530]' : 'bg-gray-50 text-gray-500 border-gray-200'} inline-flex items-center gap-1`}>
+                        <i className="ri-lock-line text-[10px] opacity-60"></i>{item.label}
+                      </span>
+                    ))}
+                  </div>
                 ))}
               </div>
             </div>
@@ -617,10 +690,15 @@ export default function DailyMailingPage() {
               </div>
               <div className="mt-4 flex flex-wrap items-center gap-6">
                 <div className="flex items-center gap-2">
-                  <span className={`${textSub} text-xs`}>발송 방식</span>
+                  <span className={`${textSub} text-xs`}>
+                    발송 방식{' '}
+                    <span className="text-[11px]">
+                      (<Term def={DELIVERY_DEFS.approval}>승인 후 발송</Term> · <Term def={DELIVERY_DEFS.auto}>자동 발송</Term>)
+                    </span>
+                  </span>
                   <div className={`flex items-center gap-1 rounded-xl p-1 ${tabBg}`}>
                     {([['approval', '승인 후 발송'], ['auto', '자동 발송']] as const).map(([mode, label]) => (
-                      <button type="button" key={mode} onClick={() => setDeliveryMode(mode)}
+                      <button type="button" key={mode} onClick={() => setDeliveryMode(mode)} title={DELIVERY_DEFS[mode]} aria-pressed={deliveryMode === mode}
                         className={`px-4 py-1.5 rounded-lg text-xs font-semibold cursor-pointer whitespace-nowrap transition-all ${deliveryMode === mode ? tabActive : tabInactive}`}>{label}</button>
                     ))}
                   </div>
@@ -765,7 +843,12 @@ export default function DailyMailingPage() {
                     </div>
                   </div>
                   <div>
-                    <p className={`${textMuted} text-xs mb-2`}>미디어 ({setting.media.length}개)</p>
+                    <p className={`${textMuted} text-xs mb-2`}>
+                      <Term def={`발송 소스는 시스템 고정 ${FIXED_SOURCE_COUNT}개(${FIXED_SOURCE_BREAKDOWN})입니다. 괄호 안 숫자는 이 설정에 예전에 저장된 매체 선택값으로, 고정 소스 중 일부를 표시한 것입니다.`}>
+                        발송 소스 고정 {FIXED_SOURCE_COUNT}개
+                      </Term>
+                      {setting.media.length > 0 && <> (저장된 매체 선택 {setting.media.length}개)</>}
+                    </p>
                     <div className="flex flex-wrap gap-1.5">
                       {setting.media.slice(0, 4).map(m => {
                         const found = MEDIA_CATEGORIES.flatMap(c => c.items).find(i => i.id === m);
@@ -842,7 +925,7 @@ export default function DailyMailingPage() {
               <div className={`rounded-xl border overflow-hidden ${cardBorder}`}>
                 <iframe
                   title="메일 미리보기"
-                  srcDoc={previewModal.html}
+                  srcDoc={decorateDigestPreview(previewModal.html)}
                   sandbox=""
                   className="w-full bg-white"
                   style={{ height: '480px' }}

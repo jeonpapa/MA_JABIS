@@ -117,10 +117,30 @@ export interface DrugHistoryItem {
   sessionId: number | null;
   sessionDate: string | null; // 'YYYY.MM.DD'
   cycle: number | null;
+  year?: number | null;       // 차수의 연도 (회의 연결 시)
+  cycleLabel?: string | null; // '2025년 9차' — 연도 없는 차수는 해마다 반복되어 모호
   attempt: number | null;
-  evidenceUrl: string | null;
+  evidenceUrl: string | null; // http(s) 링크일 때만
+  evidenceText?: string | null; // 링크가 아닌 근거 메모 (내부 키 제거)
   synthetic?: boolean;        // 통과일 컬럼 기반 합성 이벤트 (큐 미수집 차수)
 }
+
+/** 마지막 결과 — 위원회 이벤트 또는 공단 협상 결과 중 사건일이 가장 늦은 것 */
+export interface LastResult {
+  kind: 'committee' | 'negotiation';
+  committee: 'cancer' | 'evaluation' | null;
+  committeeLabel: string;     // '암질심' | '약평위' | '건보공단'
+  state: string;
+  label: string;              // '통과' | '재심의' | '대기' | '협상 타결' ...
+  date: string | null;        // 'YYYY-MM-DD' (협상은 'YYYY-MM-01')
+  month?: string | null;      // 협상 완료/등록 연월 'YYYY-MM'
+  sessionLinked: boolean;
+  cycleLabel: string | null;
+  source: string;             // 'queue' | 'pass_date' | 'nhis_official' | 'manual'
+}
+
+/** 카드가 이 일수보다 오래 갱신되지 않으면 경고 (백엔드 STALE_DAYS 와 동기) */
+export const STALE_DAYS = 60;
 
 /** 예상일의 성격 — forecast(미래 차수) / overdue(예상 차수가 지났는데 결과 미반영: 예보가 아니라 경과) */
 export type ExpectedStatus = 'forecast' | 'overdue';
@@ -149,6 +169,7 @@ export interface PipelineDrug {
   expectedSessionId?: number | null;
   expectedSessionDate?: string | null; // 'YYYY.MM.DD' — 상정예정 차수 일정
   expectedSessionCycle?: number | null; // 상정예정 차수 번호 (배지 "7차")
+  expectedSessionYearLabel?: string | null; // 상정예정 차수 연도 '2026년 ' (연도 없는 차수 모호 방지)
   expectedStatus?: ExpectedStatus | null; // 타임라인 미도래 단계 예상일의 성격 (overdue 하나라도 있으면 overdue)
   submittedDate: string | null;
   amjilsimPassDate: string | null;
@@ -161,8 +182,14 @@ export interface PipelineDrug {
   efficacyGroup: string | null;            // 공단 효능군
   listType: '신규' | '확대' | null;        // NHIS 신규/사용범위 확대 구분 (보드 필터칩)
   notes: string | null;
-  keyIssues: string[];        // 핵심 쟁점 (D±1 보고서 전사)
-  updatedDate: string | null; // 'YYYY.MM.DD'
+  keyIssues: string[];        // 핵심 쟁점 (D±1 보고서 전사, 내부 키 제거·연도 보강)
+  keyIssuesRaw?: string[];    // 원문
+  updatedDate: string | null; // 'YYYY.MM.DD' — 상태 기록(큐 관측·공단 자료 변화)이 마지막으로 바뀐 날
+  nhisCheckedAt?: string | null; // 'YYYY.MM.DD' — 공단 목록에서 마지막으로 확인한 날
+  staleDays?: number | null;  // 최근 갱신 이후 경과일
+  isStale?: boolean;          // STALE_DAYS 초과 (공단 자료로 최근 확인된 건 제외)
+  nextStep?: string;          // '암질심 심의' | '약평위 심의' | '건보공단 협상' | '협상 완료'
+  lastResult?: LastResult | null;
   history: DrugHistoryItem[];
   timeline: TimelineStep[];
 }
@@ -189,12 +216,14 @@ function adaptDrug(d: RawPipelineDrug): PipelineDrug {
     ...d,
     keyIssues: d.keyIssues ?? [],
     expectedSessionDate: fmtDot(d.expectedSessionDate),
+    expectedSessionYearLabel: d.expectedSessionDate ? `${d.expectedSessionDate.slice(0, 4)}년 ` : null,
     submittedDate: fmtDot(d.submittedDate),
     amjilsimPassDate: fmtDot(d.amjilsimPassDate),
     yakpyungwiPassDate: fmtDot(d.yakpyungwiPassDate),
     negotiationCompleteDate: fmtYm(d.negotiationCompleteDate),
     nhisRegisteredYm: fmtYm(d.nhisRegisteredYm),
     updatedDate: fmtDot(d.updatedDate),
+    nhisCheckedAt: fmtDot(d.nhisCheckedAt),
     history: (d.history ?? []).map(h => ({
       ...h,
       date: fmtDot(h.date),
@@ -206,15 +235,29 @@ function adaptDrug(d: RawPipelineDrug): PipelineDrug {
   };
 }
 
+export interface PipelineBoardData {
+  stages: PipelineStage[];
+  /** 공단 협상 완료(AGREED)로 보드에서 빠진 약제 수 — '협상 완료 내역' 에서 확인 */
+  completedExcluded: number;
+}
+
+export async function fetchPipelineBoard(): Promise<PipelineBoardData> {
+  const res = await api.get<{
+    stages: Array<{ id: PipelineStage['id']; count: number; drugs: RawPipelineDrug[] }>;
+    completedExcluded?: number;
+  }>('/api/reimbursement/pipeline');
+  return {
+    stages: (res.stages ?? []).map(s => ({
+      id: s.id,
+      count: s.count,
+      drugs: (s.drugs ?? []).map(adaptDrug),
+    })),
+    completedExcluded: res.completedExcluded ?? 0,
+  };
+}
+
 export async function fetchPipeline(): Promise<PipelineStage[]> {
-  const res = await api.get<{ stages: Array<{ id: PipelineStage['id']; count: number; drugs: RawPipelineDrug[] }> }>(
-    '/api/reimbursement/pipeline'
-  );
-  return (res.stages ?? []).map(s => ({
-    id: s.id,
-    count: s.count,
-    drugs: (s.drugs ?? []).map(adaptDrug),
-  }));
+  return (await fetchPipelineBoard()).stages;
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -266,6 +309,10 @@ interface RawReport {
   year: number | null;
   cycle: number | null;
   session_date: string | null;
+  // 표시용 파생 (agents/reimb_reports.report_dates) — session_date 는 출처별로 작성일/회의일이 섞여 있다
+  report_date?: string | null;        // 파일명 날짜 = 보고서 작성일
+  meeting_date?: string | null;       // 위원회·연도·차수로 찾은 회의일
+  report_offset_days?: number | null; // 작성일 - 회의일 (-1 = 회의 하루 전)
   summary: string | null;
   highlights: string[] | null;
   analyzed: number;
@@ -292,8 +339,12 @@ export interface IntelligenceReport {
   category: ReportCategory;
   categoryLabel: string;
   year: number;
-  date: string;       // 'YYYY.MM.DD' (생성일)
-  cycle: string;      // '2026년 6차 (2026-06-04)'
+  date: string;       // 'YYYY.MM.DD' (정렬 기준: 보고서 작성일 → 없으면 등록일)
+  reportDate: string | null;  // 'YYYY.MM.DD' 보고서 작성일 (파일명)
+  meetingDate: string | null; // 'YYYY.MM.DD' 회의일 (연간 일정과 같은 날짜)
+  registeredDate: string | null; // 'YYYY.MM.DD' 시스템 등록일
+  offsetLabel: string | null; // 'D-1' | 'D+1'
+  cycle: string;      // '2026년 8차 암질심'
   summary: string;
   highlights: string[];
   fileSize: string;   // '425 KB'
@@ -321,16 +372,26 @@ function adaptReport(r: RawReport): IntelligenceReport {
   const cycleParts: string[] = [];
   if (r.year != null) cycleParts.push(`${r.year}년`);
   if (r.cycle != null) cycleParts.push(`${r.cycle}차`);
-  const cycle = cycleParts.length > 0
-    ? `${cycleParts.join(' ')}${r.session_date ? ` (${r.session_date})` : ''}`
-    : (r.session_date ?? '회차 정보 없음');
+  const committeeKr = r.committee === 'cancer' ? '암질심' : r.committee === 'evaluation' ? '약평위' : '';
+  if (cycleParts.length > 0 && committeeKr) cycleParts.push(committeeKr);
+  // 회차 라벨에는 회의일만 쓴다 — 예전엔 session_date(=보고서 작성일 D-1/D+1)를 괄호에 넣어
+  // '8차 (2026-09-29)' 가 연간 일정 '8차 09.30' 과 충돌해 보였다.
+  const cycle = cycleParts.length > 0 ? cycleParts.join(' ') : '회차 정보 없음';
+  const off = r.report_offset_days;
+  const offsetLabel = off == null ? null : off === 0 ? '당일' : off < 0 ? `D${off}` : `D+${off}`;
+  const reportDate = fmtDot(r.report_date);
+  const registeredDate = fmtDot(r.created_at);
   return {
     id: r.id,
     title: r.title ?? r.file_name,
     category,
     categoryLabel: REPORT_CATEGORY_LABELS[category],
     year: r.year ?? new Date().getFullYear(),
-    date: fmtDot(r.created_at) ?? '—',
+    date: reportDate ?? registeredDate ?? '—',
+    reportDate,
+    meetingDate: fmtDot(r.meeting_date),
+    registeredDate,
+    offsetLabel,
     cycle,
     summary: r.summary ?? '',
     highlights: r.highlights ?? [],
@@ -381,11 +442,14 @@ export interface NhisNegotiation {
   drugId: number | null;
   sourceUrl: string;
   fetchedAt: string | null;
+  drugName?: string | null;       // 매칭된 추적 약제명
+  drugIndication?: string | null; // 매칭된 추적 약제 적응증 (병용 등재 맥락)
 }
 
 export interface NhisNegotiationResult {
   items: NhisNegotiation[];
-  counts: { completed: number; in_progress: number; total: number };
+  // superseded: 완료 행으로 대체되어 목록·카운트에서 빠진 '협상 중' 아카이브 행 수
+  counts: { completed: number; in_progress: number; total: number; superseded?: number };
 }
 
 interface RawNhisNegotiation extends Omit<NhisNegotiation, 'registeredYm' | 'completedYm'> {

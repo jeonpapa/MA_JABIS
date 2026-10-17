@@ -22,7 +22,19 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from agents.keyword_cloud_filter import (
+    COMPOUND_CANON,
+    brand_keep_terms,
+    is_health_relevant,
+    is_noise_token,
+    keyword_in_text,
+    normalize_compounds,
+)
+
 logger = logging.getLogger(__name__)
+
+# 브랜드명 keep (조사 strip 방지) — 모듈 로드 시 1회
+_BRAND_KEEP = brand_keep_terms()
 
 BASE_DIR = Path(__file__).parent.parent
 CACHE_DIR = BASE_DIR / "data" / "cache" / "gov_summary"
@@ -109,14 +121,16 @@ def _tokenize(text: str, keep: frozenset, ascii_keep: frozenset) -> list[str]:
     - ASCII 토큰은 keep 힌트에 등록된 약어(RSA 등)만 인정
     """
     out: list[str] = []
-    for tok in _TOKEN_RE.findall(text or ""):
+    # 복합 정책어('위험 분담제' → '위험분담', '약가 유연계약' → '약가유연계약')를 먼저 한 토큰으로 묶는다
+    keep = keep | COMPOUND_CANON | _BRAND_KEEP
+    for tok in _TOKEN_RE.findall(normalize_compounds(text or "")):
         tok = _strip_josa(tok, keep)
         if len(tok) < 2:
             continue
         if tok in keep:
             out.append(tok)
             continue
-        if tok in _STOPWORDS:
+        if tok in _STOPWORDS or is_noise_token(tok):
             continue
         out.append(tok)
     for tok in _ASCII_RE.findall(text or ""):
@@ -186,6 +200,9 @@ def build_agency_clouds(
         agency = (r.get("brand") or "").strip()
         if not agency:
             continue
+        # 비의료 기사 drop — '공단 위험분담' 검색이 국가철도공단·산림청(재선충 방제) 기사까지 끌어오던 오염 차단
+        if not is_health_relevant(r.get("title") or "", r.get("description") or ""):
+            continue
         grouped.setdefault(agency, []).append(r)
 
     ordered = [a for a in agency_order if a in grouped]
@@ -213,7 +230,7 @@ def build_agency_clouds(
             matched = []
             for it in items:
                 surface = f"{it.get('title') or ''} {it.get('description') or ''}"
-                if t in surface:
+                if keyword_in_text(t, surface):
                     matched.append({
                         "title": it.get("title") or "",
                         "url": it.get("naver_link") or it.get("url") or "",
@@ -237,7 +254,8 @@ def build_agency_clouds(
 def get_gov_agency_clouds(refresh: bool = False, window_days: int = WINDOW_DAYS) -> dict:
     """기관별 최근 7일 빈도 클라우드 — 일자 캐시."""
     today = datetime.now().strftime("%Y-%m-%d")
-    cache_file = CACHE_DIR / f"gov_agency_clouds_{today}.json"
+    # v2: 노이즈/불용어/복합어 필터 도입(2026-10) — 배포 당일 구 캐시(오염본) 재사용 방지
+    cache_file = CACHE_DIR / f"gov_agency_clouds_v2_{today}.json"
     if not refresh and window_days == WINDOW_DAYS and cache_file.exists():
         try:
             return json.loads(cache_file.read_text(encoding="utf-8"))

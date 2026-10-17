@@ -342,7 +342,7 @@ def apply(dry_run: bool = False) -> Dict[str, Dict[str, int]]:
                 continue
             if not dry_run:
                 c.execute(
-                    "UPDATE indications_by_agency SET approval_date=? WHERE indication_id=? AND agency=?",
+                    "UPDATE indications_by_agency SET approval_date=? WHERE indication_id=? AND agency=? AND COALESCE(raw_source, '') != 'manual_correction'",
                     (date, ind_id, agency),
                 )
             updated += 1

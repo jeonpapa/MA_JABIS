@@ -2,8 +2,8 @@ import { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { gradeLabel, safeHttpUrl, type SVStatementDetail } from '@/api/stakeholder';
 import { fmtDot, gradeCls } from '../sketch/helpers';
-import { integrityText, isMismatch, provenanceFor } from './evidence';
-import { ExcerptToggle, MismatchWarning, QuoteMarks } from './statementDetail';
+import { gradeTitle, integrityText, integrityTitle, isMismatch, provenanceFor } from './evidence';
+import { ExcerptToggle, LocatorDisclosure, MismatchWarning, QuoteMarks } from './statementDetail';
 import { useStatementDetail } from './useStatementDetail';
 
 // 스케치 001 aside.drawer — 우측 455px 슬라이드(스크림 없음), "닫기 ×", 이름 h2, 등급 배지, blockquote,
@@ -22,8 +22,8 @@ function DrawerBody({ detail, copyrightNotice }: { detail: SVStatementDetail; co
   return (
     <>
       <h2>{detail.speaker_name || '발언자 미상'}</h2>
-      <div className={`badge ${cls === 'role' ? 'role' : cls}`}>
-        {detail.evidence_grade || '등급 미표기'} · {gradeLabel(detail.evidence_grade)}
+      <div className={`badge ${cls === 'role' ? 'role' : cls}`} title={gradeTitle(detail.evidence_grade)}>
+        {gradeLabel(detail.evidence_grade)}
       </div>
 
       {quotes.length > 0 ? (
@@ -41,7 +41,7 @@ function DrawerBody({ detail, copyrightNotice }: { detail: SVStatementDetail; co
                 <div className="q-marks">
                   <MismatchWarning match={q.locator_match} />
                   <QuoteMarks quote={q} prov={prov} statementGrade={detail.evidence_grade} statementGradeClass={detail.grade_class} />
-                  {q.locator && <code className="q-loc">{q.locator}</code>}
+                  <LocatorDisclosure locator={q.locator} />
                 </div>
               </div>
             );
@@ -113,9 +113,8 @@ function DrawerBody({ detail, copyrightNotice }: { detail: SVStatementDetail; co
             )}
             , {fmtDot(p.publication_date ?? detail.publication_date)}
             <br />
-            로컬 원문: {locator ? locator.split(':')[0] : '—'}
-            <br />
-            {p.integrity_status === 'verified' ? '원문 SHA-256 검증 완료' : integrityText(p.integrity_status)}
+            <span title={integrityTitle(p.integrity_status, p.text_sha256 || p.sha256)}>{integrityText(p.integrity_status)}</span>
+            <LocatorDisclosure locator={locator} />
             <div className="src-excerpt">
               <ExcerptToggle
                 sourceId={p.source_id}

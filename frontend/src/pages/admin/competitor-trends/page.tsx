@@ -62,7 +62,7 @@ export default function AdminCompetitorTrendsPage() {
 
   const reload = async () => {
     setLoading(true); setError(null);
-    try { setItems(await listCompetitorTrends()); }
+    try { setItems(await listCompetitorTrends({ raw: true })); } // 편집 화면은 저장된 원본값 그대로 (읽기 보정값 저장 방지)
     catch (e) { setError(e instanceof Error ? e.message : '조회 실패'); }
     finally { setLoading(false); }
   };

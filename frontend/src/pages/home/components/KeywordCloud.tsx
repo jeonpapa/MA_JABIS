@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   fetchMediaIntelligence,
   fetchGovAgencyClouds,
@@ -75,6 +75,19 @@ export default function KeywordCloud({ isDark }: Props) {
   const [activeAgency, setActiveAgency] = useState<string | null>(null);
   const [drawerNews, setDrawerNews] = useState<BrandNewsView[]>([]);
   const [drawerLoading, setDrawerLoading] = useState(false);
+  // 키워드 클릭 → 근거 뉴스 패널이 클라우드 아래(접힌 영역)에 열려 반응이 없어 보이던 문제 — 패널로 스크롤 + 잠깐 강조
+  const newsPanelRef = useRef<HTMLDivElement | null>(null);
+  const [flashKeyword, setFlashKeyword] = useState<string | null>(null);
+  useEffect(() => {
+    if (!selectedKeyword) return;
+    const el = newsPanelRef.current;
+    if (el && typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    setFlashKeyword(selectedKeyword);
+    const t = window.setTimeout(() => setFlashKeyword(null), 1200);
+    return () => window.clearTimeout(t);
+  }, [selectedKeyword, activeAgency]);
 
   // 좌측(정부 기관별 7일 빈도 클라우드)과 우측(미디어)은 독립 로딩
   const { data: media, loading: mediaLoading, error: mediaError } = useApi(fetchMediaIntelligence, []);
@@ -266,7 +279,13 @@ export default function KeywordCloud({ isDark }: Props) {
           </div>
 
           {selectedKeyword && selectedNews.length > 0 && (
-            <div className={`relative z-10 border-t ${cardBorder} px-4 py-3 space-y-2 flex-shrink-0`}>
+            <div
+              ref={newsPanelRef}
+              aria-live="polite"
+              className={`relative z-10 border-t ${cardBorder} px-4 py-3 space-y-2 flex-shrink-0 scroll-mt-24 transition-colors duration-700 ${
+                flashKeyword === selectedKeyword ? (isDark ? 'bg-[#00E5CC]/10' : 'bg-teal-50') : ''
+              }`}
+            >
               <div className="flex items-center gap-2 mb-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-teal-500"></span>
                 <span className={`text-xs font-bold ${accentTeal}`}>{selectedKeyword}</span>
@@ -304,7 +323,7 @@ export default function KeywordCloud({ isDark }: Props) {
           )}
 
           {selectedKeyword && selectedNews.length === 0 && (
-            <div className={`relative z-10 border-t ${cardBorder} px-4 py-2.5 flex-shrink-0`}>
+            <div ref={newsPanelRef} aria-live="polite" className={`relative z-10 border-t ${cardBorder} px-4 py-2.5 flex-shrink-0 scroll-mt-24`}>
               <div className="flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-teal-500"></span>
                 <span className={`text-xs font-bold ${accentTeal}`}>{selectedKeyword}</span>

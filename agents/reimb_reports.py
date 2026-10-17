@@ -356,6 +356,7 @@ def list_reports() -> list[dict]:
         rows = conn.execute(
             "SELECT * FROM reimb_reports ORDER BY session_date DESC, id DESC"
         ).fetchall()
+        sessions = _load_sessions(conn)
     out = []
     for r in rows:
         d = dict(r)
@@ -366,8 +367,55 @@ def list_reports() -> list[dict]:
         d.pop("file_hash", None)
         blob = d.pop("pdf_blob", None)  # BLOB 은 목록 응답에서 제외 (다운로드 전용)
         d["has_blob"] = blob is not None
+        d.update(report_dates(d, sessions))
         out.append(d)
     return out
+
+
+# ── 보고서 작성일 vs 회의일 (표시용 파생 — DB 값은 바꾸지 않는다) ────────────────────────
+#
+# reimb_reports.session_date 는 출처별로 의미가 섞여 있다: git_sync 보고서는 파일명 앞 날짜(= 보고서 작성일,
+# D-2/D-1/D+1) 가 들어가고, inbox LLM 분석 보고서는 회의일이 들어간다. 그래서 '2026년 8차 (2026-09-29)' 가
+# 연간 일정의 8차 암질심 09.30 과 다른 날처럼 보였다 (2026-09-29 = D-1 사전 검토 보고서 작성일).
+#   report_date  : 파일명 날짜(보고서 작성일). 파일명에 날짜가 없으면 None.
+#   meeting_date : amjilsim_sessions 에서 (위원회, 연도, 차수) 로 찾은 회의일 → 없으면 session_date 가 그 위원회
+#                  회의일과 정확히 같을 때만 그 날. 못 찾으면 None (날조 금지).
+#   report_offset_days : report_date - meeting_date (예: -1 = 회의 하루 전 작성).
+
+_COMMITTEE_TO_DB = {"cancer": "AMJILSIM", "evaluation": "YAKPYUNGWI"}
+
+
+def _load_sessions(conn: sqlite3.Connection) -> list[dict]:
+    try:
+        rows = conn.execute(
+            "SELECT session_id, committee_type, year, session_date, "
+            "COALESCE(ordinal_official, ordinal_assumed) AS cycle FROM amjilsim_sessions").fetchall()
+    except sqlite3.Error:
+        return []  # 일정 테이블 없는 환경 (테스트·빈 DB)
+    return [dict(r) for r in rows]
+
+
+def report_dates(report: Mapping[str, Any], sessions: list[dict]) -> dict:
+    """보고서 한 건의 (작성일, 회의일) 분리. report: file_name/committee/committee_scope/year/cycle/session_date."""
+    m = _FN_DATE_RE.search(report.get("file_name") or "")
+    report_date = f"{m.group(1)}-{m.group(2)}-{m.group(3)}" if m else None
+    scope = report_scope(report)
+    committee_db = _COMMITTEE_TO_DB.get(scope)
+    meeting = None
+    if committee_db and report.get("year") is not None and report.get("cycle") is not None:
+        meeting = next((s for s in sessions if s["committee_type"] == committee_db
+                        and s["year"] == report.get("year") and s["cycle"] == report.get("cycle")), None)
+    if meeting is None and report.get("session_date"):
+        meeting = next((s for s in sessions if s["session_date"] == report.get("session_date")
+                        and (committee_db is None or s["committee_type"] == committee_db)), None)
+    meeting_date = meeting["session_date"] if meeting else None
+    offset = None
+    rd, md = _parse_date(report_date), _parse_date(meeting_date)
+    if rd and md:
+        offset = (rd - md).days
+    return {"report_date": report_date, "meeting_date": meeting_date,
+            "meeting_session_id": meeting["session_id"] if meeting else None,
+            "report_offset_days": offset}
 
 
 def get_report(report_id: int) -> Optional[dict]:

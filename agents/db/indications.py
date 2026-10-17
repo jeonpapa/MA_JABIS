@@ -66,12 +66,18 @@ class _IndicationsMixin:
             ON CONFLICT(indication_id, agency) DO UPDATE SET
                 biomarker_label = excluded.biomarker_label,
                 combination_label = excluded.combination_label,
-                approval_date = excluded.approval_date,
+                -- raw_source='manual_correction' 행은 사람이 근거를 확인해 고친 허가일이다. 자동 매칭(segment 오매칭 등)이
+                -- 같은 날짜를 다시 덮어쓰지 않도록 날짜·근거 메모·출처 표시는 보존한다 (2026-10-17 EV 병용 1차 사례).
+                approval_date = CASE WHEN indications_by_agency.raw_source = 'manual_correction'
+                                     THEN indications_by_agency.approval_date ELSE excluded.approval_date END,
                 label_excerpt = excluded.label_excerpt,
                 label_full_text = excluded.label_full_text,
-                label_url = excluded.label_url,
-                restriction_note = excluded.restriction_note,
-                raw_source = excluded.raw_source,
+                label_url = CASE WHEN indications_by_agency.raw_source = 'manual_correction'
+                                 THEN COALESCE(indications_by_agency.label_url, excluded.label_url) ELSE excluded.label_url END,
+                restriction_note = CASE WHEN indications_by_agency.raw_source = 'manual_correction'
+                                        THEN indications_by_agency.restriction_note ELSE excluded.restriction_note END,
+                raw_source = CASE WHEN indications_by_agency.raw_source = 'manual_correction'
+                                  THEN indications_by_agency.raw_source ELSE excluded.raw_source END,
                 fetched_at = excluded.fetched_at
         """
         with self._connect() as conn:

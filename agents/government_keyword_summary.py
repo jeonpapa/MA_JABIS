@@ -97,6 +97,10 @@ def _load_archive_news(days: int = 31, limit: int = 80, *, allow_fetch: bool = T
         except Exception as e:
             logger.warning("[GovSummary] 정책뉴스 크롤 실패: %s", e)
     if rows:
+        # 비의료 기사(국가철도공단·산림청 방제 등 '공단' 검색 오염) 는 LLM 입력에서 제외
+        from agents.keyword_cloud_filter import is_health_relevant
+        rows = [r for r in rows
+                if is_health_relevant(r.get("title") or "", r.get("description") or "")] or rows
         return [{
             "title": r["title"],
             "url": r["naver_link"] or r["url"],
@@ -355,6 +359,11 @@ def get_government_summary(refresh: bool = False, *, allow_fetch: bool = True) -
             news_by_kw[kw] = [{"title": m["title"], "url": m["url"],
                                "source": m["source"], "date": m["date"]} for m in matched]
         keywords = keywords[:14]
+
+    # 노이즈/불용어 키워드 제거 (표기는 유지 — newsByKeyword 키와 동기)
+    from agents.keyword_cloud_filter import filter_keywords
+    keywords = [k for k in keywords if filter_keywords([k["text"]])]
+    news_by_kw = {k["text"]: news_by_kw.get(k["text"], []) for k in keywords}
 
     result = {
         "updated_at": datetime.now().isoformat(),

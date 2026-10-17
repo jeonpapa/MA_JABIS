@@ -10,7 +10,10 @@ interface DrugDetailModalProps {
 
 function historyDetail(h: DrugHistoryItem): string {
   const parts: string[] = [];
-  if (h.cycle != null) parts.push(`${h.cycle}차 회차`);
+  // 연도 포함 차수 ('2025년 9차') — '9차' 만으로는 올해 9차(11.11)와 구분되지 않는다
+  if (h.cycleLabel) parts.push(`${h.cycleLabel} ${h.committee}`);
+  else if (h.cycle != null) parts.push(`${h.cycle}차 회차`);
+  else if (!h.synthetic) parts.push('연결 차수 미확인');
   if (h.sessionDate) parts.push(`회의일 ${h.sessionDate}`);
   if (h.attempt != null) parts.push(`${h.attempt}차 시도`);
   return parts.length > 0 ? parts.join(' · ') : '—';
@@ -32,7 +35,7 @@ export default function DrugDetailModal({ drug, stageLabel, isDark, onClose }: D
   }, [onClose]);
 
   const statusLabel = drug.status === 'scheduled'
-    ? `심의 상정예정${drug.expectedSessionCycle ? ` · ${drug.expectedSessionCycle}차` : ''}`
+    ? `심의 상정예정${drug.expectedSessionCycle ? ` · ${drug.expectedSessionYearLabel ?? ''}${drug.expectedSessionCycle}차` : ''}`
     : drug.status === 'completed' ? '협상완료'
     : drug.status === 'negotiating' ? '협상중' : '심의 대기';
   const statusColor = drug.status === 'scheduled'
@@ -116,11 +119,19 @@ export default function DrugDetailModal({ drug, stageLabel, isDark, onClose }: D
               <p className={`text-[10px] font-medium mb-0.5 ${infoLabel}`}>약평위 통과일</p>
               <p className={`text-sm font-bold ${infoValue}`}>{drug.yakpyungwiPassDate ?? '정보 없음'}</p>
             </div>
+            <div className={`rounded-lg p-3 border ${drug.isStale ? (isDark ? 'bg-amber-400/5 border-amber-400/30' : 'bg-amber-50 border-amber-200') : infoBg}`}>
+              <p className={`text-[10px] font-medium mb-0.5 ${infoLabel}`}>최근 갱신 (심의·협상 기록 변경일)</p>
+              <p className={`text-sm font-bold ${drug.isStale ? 'text-amber-600' : infoValue}`}>
+                {drug.updatedDate ?? '기록 없음'}
+                {drug.isStale && drug.staleDays != null && <span className="text-xs font-semibold"> · {drug.staleDays}일 동안 변경 없음 — 최신 여부 확인 필요</span>}
+              </p>
+              {drug.nhisCheckedAt && <p className={`text-[10px] mt-0.5 ${textMuted}`}>공단 공개자료 확인 {drug.nhisCheckedAt}</p>}
+            </div>
             {drug.status === 'scheduled' && drug.expectedSessionDate && (
               <div className={`rounded-lg p-3 border ${isDark ? 'bg-teal-400/5 border-teal-400/20' : 'bg-teal-50/60 border-teal-100'}`}>
                 <p className={`text-[10px] font-medium mb-0.5 ${isDark ? 'text-teal-400/70' : 'text-teal-500'}`}>상정 예정</p>
                 <p className={`text-sm font-bold ${isDark ? 'text-teal-300' : 'text-teal-700'}`}>
-                  {drug.expectedSessionDate}{drug.expectedSessionCycle ? ` (${drug.expectedSessionCycle}차)` : ''}
+                  {drug.expectedSessionDate}{drug.expectedSessionCycle ? ` (${drug.expectedSessionYearLabel ?? ''}${drug.expectedSessionCycle}차)` : ''}
                 </p>
               </div>
             )}
@@ -249,6 +260,9 @@ export default function DrugDetailModal({ drug, stageLabel, isDark, onClose }: D
                             <span className={`ml-1.5 text-[10px] px-1.5 py-0.5 rounded ${
                               isDark ? 'bg-[#1E2530] text-[#6B7A90]' : 'bg-gray-100 text-gray-400'
                             }`} title="통과일 컬럼 기반 — 개별 회차 큐 기록 미수집">통과일 기준</span>
+                          )}
+                          {!h.evidenceUrl && h.evidenceText && (
+                            <span className={textMuted}>{' · 근거: '}{h.evidenceText}</span>
                           )}
                           {h.evidenceUrl && (
                             <>

@@ -76,9 +76,35 @@ export interface QueueEvent {
   sessionId: number | null;
   sessionDate: string | null;
   cycle: number | null;
+  year?: number | null;
+  cycleLabel?: string | null;   // '2025년 9차'
   attempt: number | null;
-  evidenceUrl: string | null;
+  evidenceUrl: string | null;   // http(s) 링크일 때만
+  evidenceText?: string | null; // 링크가 아닌 근거 메모
+  observedAt?: string | null;
 }
+
+/** 마지막 결과 (백엔드 reimb_pipeline.last_result) — 위원회 이벤트·공단 협상 중 사건일이 가장 늦은 것 */
+export interface AdminLastResult {
+  kind: 'committee' | 'negotiation';
+  committee: Committee | null;
+  committeeLabel: string;
+  state: string;
+  label: string;
+  date: string | null;
+  month?: string | null;
+  sessionLinked: boolean;
+  cycleLabel: string | null;
+  source: string;
+}
+
+export type PipelineStatus = 'completed' | 'negotiating' | 'scheduled' | 'waiting';
+export const PIPELINE_STATUS_LABEL: Record<PipelineStatus, string> = {
+  waiting: '심의 대기',
+  scheduled: '상정 예정',
+  negotiating: '협상 중',
+  completed: '협상 완료',
+};
 
 export interface LatestQueue {
   id: number;
@@ -90,6 +116,7 @@ export interface LatestQueue {
   attempt: number | null;
   evidence_url: string | null;
   observed_at: string | null;
+  event_date?: string | null; // 사건일 (회의일 → 큐 등재일 → 관측일) — '최근' 판정 기준
 }
 
 /** GET /api/admin/reimb-pipeline/drugs → items[] (raw snake_case + 계산 필드) */
@@ -113,6 +140,16 @@ export interface AdminDrug {
   negotiation_status: NegotiationStatus | null;
   first_seen_at?: string | null;
   stage: Stage;
+  status?: PipelineStatus;
+  next_step?: string;              // '암질심 심의' | '약평위 심의' | '건보공단 협상' | '협상 완료'
+  last_result?: AdminLastResult | null;
+  updated_date?: string | null;
+  stale_days?: number | null;
+  is_stale?: boolean;
+  key_issues_display?: string[];
+  unlinked_events?: number;        // 회의 차수에 연결되지 않은 이벤트 수
+  negotiation_complete_date?: string | null;
+  negotiation_date_source?: string | null;
   latest_queue: LatestQueue | null;
   events: QueueEvent[];
 }

@@ -110,7 +110,7 @@ export default function NhisCompletedModal({ isDark, onClose }: {
             <input
               value={q}
               onChange={e => setQ(e.target.value)}
-              placeholder="제품명 · 제약사명 검색"
+              placeholder="제품명 · 제약사명 · 적응증(병용 약제) 검색"
               className={`w-full pl-9 pr-3 py-1.5 rounded-lg text-xs border outline-none transition-colors ${
                 isDark
                   ? 'bg-[#0D1117] border-[#1E2530] text-white placeholder-[#5A6A80] focus:border-teal-400/50'
@@ -158,7 +158,13 @@ export default function NhisCompletedModal({ isDark, onClose }: {
                       {it.matched && (
                         <span className={`ml-1.5 text-[9px] font-bold px-1 py-0.5 rounded align-middle ${
                           isDark ? 'bg-[#00E5CC]/15 text-[#00E5CC]' : 'bg-teal-50 text-teal-600'
-                        }`}>추적</span>
+                        }`} title="급여 파이프라인에서 추적 중인 약제와 매칭됨">추적</span>
+                      )}
+                      {/* 매칭된 추적 약제의 적응증 — 병용 등재(예: 파드셉 + 키트루다)는 공단 제품명만으론 알 수 없다 */}
+                      {it.drugIndication && (
+                        <span className={`block text-[10px] font-normal mt-0.5 ${isDark ? 'text-[#8B9BB4]' : 'text-gray-500'}`}>
+                          {it.drugIndication}
+                        </span>
                       )}
                     </td>
                     <td className={`px-3 py-2.5 text-xs ${isDark ? 'text-[#8B9BB4]' : 'text-gray-600'}`}>{it.manufacturer ?? '—'}</td>

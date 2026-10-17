@@ -32,7 +32,7 @@ export function QuoteMarks({
     <div className="svb-row">
       <GradeMark grade={quote.evidence_grade || statementGrade} gradeClass={quote.evidence_grade ? null : statementGradeClass} />
       <LocatorMatchBadge match={quote.locator_match} />
-      <IntegrityBadge status={prov?.integrity_status} />
+      <IntegrityBadge status={prov?.integrity_status} hash={prov?.text_sha256 || prov?.sha256} />
     </div>
   );
 }
@@ -46,14 +46,23 @@ export function MismatchWarning({ match }: { match?: string | null }) {
   );
 }
 
+/** 내부 파일 경로(sources/…txt:94-96)는 기본으로 숨기고 '근거 위치' 펼침으로만 보여 준다. */
+export function LocatorDisclosure({ locator }: { locator?: string | null }) {
+  if (!locator) return null;
+  return (
+    <details className="svx-loc">
+      <summary>근거 위치</summary>
+      <code title="내부 원문 파일 경로 · 줄 범위">{locator}</code>
+    </details>
+  );
+}
+
 export function ExcerptBox({ excerpt }: { excerpt: SVExcerpt }) {
   const { text, clamped } = clampExcerpt(excerpt.text);
   return (
     <div className="svx-excerpt">
-      <span className="svx-label">
-        원문 발췌 · locator 창 (최대 {EXCERPT_MAX_CHARS}자)
-        {excerpt.locator && <code>{excerpt.locator}</code>}
-      </span>
+      <span className="svx-label">원문 발췌 (최대 {EXCERPT_MAX_CHARS}자)</span>
+      <LocatorDisclosure locator={excerpt.locator} />
       {text}
       {clamped && <span style={{ color: '#888' }}> … (발췌 상한 {EXCERPT_MAX_CHARS}자)</span>}
     </div>

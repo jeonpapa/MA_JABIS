@@ -1,8 +1,8 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
 import MiniMarkdown from '@/components/ui/MiniMarkdown';
 import {
   fetchAnalogFacets, searchAnalog, fetchAnalogDetail, generateAnalogBrief, submitSearchFeedback,
-  FACET_LABELS, REVIEW_RESULT_KO, analogValueLabel,
+  FACET_LABELS, REVIEW_RESULT_KO, analogValueLabel, conceptChipLabel, displayBrandName, isIncompleteReport,
   type AnalogFacets, type AnalogReport, type AnalogSearchResult, type AnalogBrief, type EfficacyEndpoint,
 } from '@/api/analog';
 
@@ -197,6 +197,26 @@ function Timeline({ r }: { r: AnalogReport }) {
 // ── 상세 모달 ────────────────────────────────────────────────────────────────
 
 function DetailModal({ r, onClose }: { r: AnalogReport; onClose: () => void }) {
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  // Esc 닫기 + 열릴 때 대화상자 포커스 · 닫힐 때 이전 포커스(결과 행) 복원
+  useEffect(() => {
+    const prev = document.activeElement as HTMLElement | null;
+    dialogRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onCloseRef.current();
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      prev?.focus?.();
+    };
+  }, []);
   const efficacy = r.efficacy_data ?? [];
   const comparators = r.comparator_drugs ?? [];
   const trials = r.clinical_trials ?? [];
@@ -233,12 +253,13 @@ function DetailModal({ r, onClose }: { r: AnalogReport; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-white rounded-2xl border border-gray-200 w-full max-w-4xl max-h-[92vh] overflow-y-auto shadow-xl">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}
+        className="bg-white rounded-2xl border border-gray-200 w-full max-w-4xl max-h-[92vh] overflow-y-auto shadow-xl outline-none">
         {/* 헤더 */}
         <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-start justify-between z-10">
           <div>
-            <h2 className="text-xl font-bold flex items-center gap-2 flex-wrap">
-              {r.brand_name ?? '(약제명 미상)'}
+            <h2 id={titleId} className="text-xl font-bold flex items-center gap-2 flex-wrap">
+              {displayBrandName(r) || '(약제명 미상)'}
               {r.dosage && (
                 <span className="align-middle text-sm font-semibold text-gray-500 bg-gray-100 border border-gray-200 rounded px-2 py-0.5">
                   {r.dosage}
@@ -258,7 +279,7 @@ function DetailModal({ r, onClose }: { r: AnalogReport; onClose: () => void }) {
               {r.session_date} 약평위 {r.ordinal}차
             </p>
           </div>
-          <button onClick={onClose} className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400">
+          <button type="button" onClick={onClose} aria-label="닫기 (Esc)" title="닫기 (Esc)" className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400">
             <i className="ri-close-line text-lg"></i>
           </button>
         </div>
@@ -609,7 +630,14 @@ export default function AnalogSearchPage() {
       return n;
     });
 
-  const results = data?.results ?? [];
+  const [showIncomplete, setShowIncomplete] = useState(false);
+  const allResults = useMemo(() => data?.results ?? [], [data]);
+  const incompleteCount = useMemo(() => allResults.filter(isIncompleteReport).length, [allResults]);
+  // 약제명·질환명 모두 빈 행은 기본 숨김(토글로 보기) — 원본 데이터는 그대로
+  const results = useMemo(
+    () => (showIncomplete ? allResults : allResults.filter(r => !isIncompleteReport(r))),
+    [allResults, showIncomplete],
+  );
   const briefIds = useMemo(() => results.slice(0, 10).map(r => r.id), [results]);
 
   const makeBrief = async () => {
@@ -627,7 +655,7 @@ export default function AnalogSearchPage() {
   };
 
   const sendFeedback = async (intended: string, note: string) => {
-    const top = results.slice(0, 5).map(r => r.brand_name ?? r.brand_name_raw ?? '').filter(Boolean).join(', ');
+    const top = results.slice(0, 5).map(r => displayBrandName(r)).filter(Boolean).join(', ');
     await submitSearchFeedback({
       query: query.trim(),
       filters,
@@ -705,8 +733,11 @@ export default function AnalogSearchPage() {
         {data?.query_debug && data.query_debug.matched_concepts.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 text-xs">
             <span className="text-gray-400"><i className="ri-sparkling-line mr-0.5"></i>인식된 조건:</span>
-            {data.query_debug.matched_concepts.map((c, i) => {
+            {data.query_debug.matched_concepts
+              .filter((c, i, arr) => arr.findIndex(x => conceptChipLabel(x).label === conceptChipLabel(c).label) === i)
+              .map((c, i) => {
               const isField = c.type === 'field';
+              const chip = conceptChipLabel(c);
               return (
                 <Fragment key={c.concept_id}>
                   {data.query_debug?.and_rerank && i > 0 && (
@@ -719,8 +750,8 @@ export default function AnalogSearchPage() {
                         ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
                         : 'bg-teal-50 text-teal-700 border-teal-200')
                     }
-                    title={c.canonical_en ?? ''}>
-                    {c.canonical_ko ?? c.concept_id}
+                    title={chip.title}>
+                    {chip.label}
                   </span>
                 </Fragment>
               );
@@ -737,6 +768,13 @@ export default function AnalogSearchPage() {
         <div className="flex items-center justify-between">
           <p className="text-sm text-gray-500">
             {loading ? '검색 중…' : `${results.length}건`}
+            {!loading && incompleteCount > 0 && (
+              <button type="button" onClick={() => setShowIncomplete(v => !v)} aria-pressed={showIncomplete}
+                title="약제명과 질환명이 모두 비어 있는 행(원문 추출 실패 등)"
+                className="ml-2 text-xs text-gray-400 underline decoration-dotted hover:text-gray-600">
+                {showIncomplete ? `데이터 불완전 ${incompleteCount}건 포함 중 · 숨기기` : `데이터 불완전 ${incompleteCount}건 숨김 · 보기`}
+              </button>
+            )}
             {!loading && results.length >= 60 && <span className="ml-2 text-xs text-gray-400">· 관련도 상위 60건만 표시 — 조건을 좁히면 더 정확해집니다</span>}
             {data?.mode === 'search' && <span className="ml-2 text-teal-600 text-xs">관련도 정렬 (약제명·성분 우선)</span>}
           </p>
@@ -801,7 +839,7 @@ export default function AnalogSearchPage() {
                     className="border-b border-gray-100 last:border-0 hover:bg-teal-50/40 cursor-pointer">
                     <td className="px-3 py-2.5 text-gray-400 tabular-nums">{i + 1}</td>
                     <td className="px-3 py-2.5 max-w-[180px]">
-                      <div className="font-bold text-gray-900 truncate" title={r.brand_name ?? ''}>{r.brand_name ?? '(약제명 미상)'}</div>
+                      <div className="font-bold text-gray-900 truncate" title={r.brand_name ?? r.brand_name_raw ?? ''}>{displayBrandName(r) || '(약제명 미상)'}</div>
                       <div className="text-gray-400 truncate">
                         {r.generic_name_en || r.generic_name || ''}
                         {r.similarity != null && <span className="ml-1 text-teal-500">·{r.similarity.toFixed(2)}</span>}

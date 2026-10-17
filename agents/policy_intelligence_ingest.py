@@ -39,7 +39,11 @@ try:
 except Exception:  # pragma: no cover
     fitz = None
 
-DEFAULT_ROOT = Path(os.environ.get("POLICY_INTELLIGENCE_ROOT", "/opt/data/policy_intelligence"))
+# 리더(agents.policy_intelligence)와 같은 root 판정을 공유한다: env > /app/data(prod fly 볼륨) > /opt/data(Hermes VPS).
+# 예전 기본값 /opt/data 고정은 prod 에서 admin ingest 가 리더가 안 보는 경로에 쓰게 만들었다(경로 불일치).
+from agents.policy_analysis import default_root as _shared_default_root
+
+DEFAULT_ROOT = _shared_default_root()
 DEFAULT_QUERY = os.environ.get(
     "POLICY_INTELLIGENCE_GMAIL_QUERY",
     "(KRPIA OR 약가 OR 심평원 OR 복지부 OR HIRA OR MOHW OR NHIS) newer_than:30d",

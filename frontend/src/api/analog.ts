@@ -232,3 +232,40 @@ export interface SearchFeedbackInput {
 export function submitSearchFeedback(input: SearchFeedbackInput): Promise<{ ok: boolean; id: number }> {
   return api.post<{ ok: boolean; id: number }>('/api/analog/search-feedback', input);
 }
+
+// ── 표시 헬퍼 (화면 전용 — 원본 데이터는 바꾸지 않는다) ─────────────────────
+/** 평가결과 PDF 파일명 접두어('평가결과_', '심사결과-' 등)·확장자를 떼어 약제명만 보여 준다. */
+const BRAND_PREFIX_RE = /^\s*(?:\[[^\]]*\]\s*)?(?:약제\s*)?(?:평가|심사|급여)?\s*결과\s*[_\-\s·:]+/;
+const BRAND_EXT_RE = /\.(?:pdf|hwpx?|docx?|txt)$/i;
+
+export function displayBrandName(r: Pick<AnalogReport, 'brand_name' | 'brand_name_raw'>): string {
+  const raw = (r.brand_name ?? r.brand_name_raw ?? '').trim();
+  return raw.replace(BRAND_PREFIX_RE, '').replace(BRAND_EXT_RE, '').trim();
+}
+
+/** 약제명·질환명이 모두 비어 있는 행 = 데이터 불완전(기본 숨김). */
+export function isIncompleteReport(r: Pick<AnalogReport, 'brand_name' | 'brand_name_raw' | 'disease_name' | 'disease_name_ko'>): boolean {
+  return !displayBrandName(r) && !(r.disease_name_ko || r.disease_name || '').trim();
+}
+
+/** 인식된 조건 칩 라벨 — 한국어 라벨 안의 반복 토큰 제거('PD-1/PD-L1 면역항암제 PD-1/PD-L1' → 'PD-1/PD-L1 면역항암제'),
+ *  영문 canonical 이 라벨에 이미 들어 있으면 툴팁도 생략. */
+export function conceptChipLabel(c: { concept_id: string; canonical_ko?: string | null; canonical_en?: string | null }): {
+  label: string;
+  title?: string;
+} {
+  const ko = (c.canonical_ko ?? c.concept_id ?? '').trim();
+  const seen = new Set<string>();
+  const label = ko
+    .split(/\s+/)
+    .filter(t => {
+      const k = t.toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    })
+    .join(' ');
+  const en = (c.canonical_en ?? '').trim();
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, '');
+  return { label, title: en && !norm(label).includes(norm(en)) ? en : undefined };
+}

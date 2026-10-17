@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useApi } from '@/hooks/useApi';
-import { fetchPipeline, PipelineDrug, PipelineStage } from '@/api/reimbStatus';
+import { fetchPipelineBoard, PipelineDrug, PipelineStage, STALE_DAYS } from '@/api/reimbStatus';
 import DrugDetailModal from './DrugDetailModal';
 import NhisCompletedModal from './NhisCompletedModal';
 
@@ -13,6 +13,11 @@ const STAGE_META: Record<PipelineStage['id'], { label: string; description: stri
   nhis: { label: '건강보험공단', description: '건강보험공단 등재 및 급여 적용' },
 };
 
+// 배지 설명 (툴팁·범례 공용)
+const ISSUE_HINT = '핵심 쟁점: 위원회 결과·사전 검토 보고서에서 정리한 이 약제의 심의 쟁점 수. 카드를 누르면 내용을 볼 수 있습니다.';
+const NHIS_OFFICIAL_HINT = '공단 공식: 국민건강보험공단 약가협상 공개자료와 매칭되어, 협상 상태·연월이 공단 공개자료 기준입니다.';
+const STALE_HINT = `최근 갱신: 이 약제의 심의·협상 기록이 마지막으로 바뀐 날. ${STALE_DAYS}일 넘게 바뀌지 않았고 공단 자료로도 최근 확인되지 않으면 경고합니다.`;
+
 const STATUS_BADGE: Record<PipelineDrug['status'], { label: string; dark: string; light: string }> = {
   completed:   { label: '협상 완료', dark: 'text-emerald-300 bg-emerald-400/10 border-emerald-400/30', light: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
   negotiating: { label: '협상 중',   dark: 'text-sky-300 bg-sky-400/10 border-sky-400/30',           light: 'text-sky-600 bg-sky-50 border-sky-200' },
@@ -24,12 +29,16 @@ function StatusBadge({ drug, isDark }: { drug: PipelineDrug; isDark: boolean }) 
   const cfg = STATUS_BADGE[drug.status] ?? STATUS_BADGE.waiting;
   // 상정예정이면 차수 정보 부기 ("심의 상정예정 · 7차")
   const suffix = drug.status === 'scheduled' && drug.expectedSessionCycle
-    ? ` · ${drug.expectedSessionCycle}차` : '';
+    ? ` · ${drug.expectedSessionYearLabel ?? ''}${drug.expectedSessionCycle}차` : '';
+  // '심의 대기' 만으로는 암질심인지 약평위인지 모호 → 위원회명을 붙인다 (nextStep: '암질심 심의' | '약평위 심의')
+  const committee = (drug.status === 'waiting' || drug.status === 'scheduled')
+    ? (drug.nextStep?.startsWith('암질심') ? '암질심 ' : drug.nextStep?.startsWith('약평위') ? '약평위 ' : '')
+    : '';
   return (
     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${
       isDark ? cfg.dark : cfg.light
     }`}>
-      {cfg.label}{suffix}
+      {committee}{cfg.label}{suffix}
     </span>
   );
 }
@@ -104,7 +113,7 @@ function DrugCard({ drug, index, isDark, onClick }: {
             </span>
           )}
           {drug.negotiationDateSource === 'nhis_official' && (
-            <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full flex items-center gap-0.5 ${
+            <span title={NHIS_OFFICIAL_HINT} className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full flex items-center gap-0.5 ${
               isDark ? 'bg-emerald-400/10 text-emerald-300' : 'bg-emerald-50 text-emerald-600'
             }`}>
               <i className="ri-verified-badge-line text-[10px]"></i>공단 공식
@@ -117,17 +126,26 @@ function DrugCard({ drug, index, isDark, onClick }: {
       <div className={`flex items-center justify-between gap-2 mt-2 pt-2 border-t ${
         isDark ? 'border-[#1E2530]' : 'border-gray-100'
       }`}>
-        {drug.status === 'scheduled' && drug.expectedSessionDate ? (
-          <span className={`text-[10px] font-medium ${isDark ? 'text-teal-400' : 'text-teal-600'}`}>
-            <i className="ri-calendar-event-line text-[11px] mr-1"></i>예정 {drug.expectedSessionDate}
+        <div className="flex flex-col gap-0.5 min-w-0">
+          {drug.status === 'scheduled' && drug.expectedSessionDate && (
+            <span className={`text-[10px] font-medium ${isDark ? 'text-teal-400' : 'text-teal-600'}`}>
+              <i className="ri-calendar-event-line text-[11px] mr-1"></i>상정 예정 {drug.expectedSessionDate}
+            </span>
+          )}
+          <span
+            className={`text-[10px] ${drug.isStale ? 'text-amber-600 font-semibold' : isDark ? 'text-[#5A6A80]' : 'text-gray-400'}`}
+            title={STALE_HINT + (drug.nhisCheckedAt ? ` (공단 자료 확인 ${drug.nhisCheckedAt})` : '')}
+          >
+            <i className={`${drug.isStale ? 'ri-error-warning-line' : 'ri-history-line'} text-[11px] mr-1`}></i>
+            최근 갱신 {drug.updatedDate ?? '기록 없음'}
+            {drug.isStale && drug.staleDays != null && ` · ${drug.staleDays}일 경과`}
           </span>
-        ) : (
-          <span className={`text-[10px] ${isDark ? 'text-[#5A6A80]' : 'text-gray-400'}`}>
-            <i className="ri-calendar-line text-[11px] mr-1"></i>{drug.updatedDate ?? '—'}
-          </span>
-        )}
+        </div>
         {drug.keyIssues.length > 0 && (
-          <span className={`text-[10px] font-medium flex items-center gap-0.5 ${isDark ? 'text-[#8B9BB4]' : 'text-gray-500'}`}>
+          <span
+            className={`text-[10px] font-medium flex items-center gap-0.5 flex-shrink-0 ${isDark ? 'text-[#8B9BB4]' : 'text-gray-500'}`}
+            title={ISSUE_HINT}
+          >
             <i className="ri-lightbulb-flash-line text-[11px]"></i>쟁점 {drug.keyIssues.length}
           </span>
         )}
@@ -141,8 +159,10 @@ export default function PipelineBoard({ isDark }: { isDark: boolean }) {
   const [showCompleted, setShowCompleted] = useState(false);
   const [listFilter, setListFilter] = useState<ListFilter>('');
 
-  const { data, loading, error, reload } = useApi(fetchPipeline);
-  const pipelineStages = data ?? [];
+  const { data, loading, error, reload } = useApi(fetchPipelineBoard);
+  const pipelineStages = useMemo(() => data?.stages ?? [], [data]);
+  const completedExcluded = data?.completedExcluded ?? 0;
+  const staleCount = pipelineStages.reduce((n, s) => n + s.drugs.filter(d => d.isStale).length, 0);
 
   // 신규/확대 필터칩은 건강보험공단(nhis) 단계에만 적용 (해당 단계 약제만 신규/확대 구분 보유).
   const filteredStages = useMemo(() => pipelineStages.map(stage => ({
@@ -189,11 +209,15 @@ export default function PipelineBoard({ isDark }: { isDark: boolean }) {
                 : 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100'
             }`}
           >
-            <i className="ri-checkbox-circle-line text-sm"></i>협상 완료 내역
+            <i className="ri-checkbox-circle-line text-sm"></i>협상 완료 내역{completedExcluded > 0 ? ` (추적 ${completedExcluded})` : ''}
           </button>
         </div>
         <p className={`text-xs mb-5 ${isDark ? 'text-[#8B9BB4]' : 'text-gray-500'}`}>
-          급여 등재 진행 중 약제 (협상 완료 건은 별도) · 현재 {totalDrugs}개 약제
+          급여 등재 진행 중 약제 · 현재 {totalDrugs}개 약제
+          {completedExcluded > 0 && ` · 공단 협상이 끝난 추적 약제 ${completedExcluded}개는 '협상 완료 내역'에서 확인`}
+          {staleCount > 0 && (
+            <span className="text-amber-600 font-semibold" title={STALE_HINT}> · {STALE_DAYS}일 넘게 갱신 안 된 카드 {staleCount}개</span>
+          )}
         </p>
 
         {loading && (
@@ -306,6 +330,13 @@ export default function PipelineBoard({ isDark }: { isDark: boolean }) {
                 <span className={`text-[10px] ${isDark ? 'text-[#8B9BB4]' : 'text-gray-500'}`}>협상 완료</span>
               </div>
             </div>
+            {/* 배지·날짜 의미 — 카드만 보고도 읽히도록 */}
+            <ul className={`mt-2 space-y-0.5 text-[10px] leading-relaxed ${isDark ? 'text-[#5A6A80]' : 'text-gray-400'}`}>
+              <li><b>쟁점 N</b> — {ISSUE_HINT.replace(/^핵심 쟁점: /, '')}</li>
+              <li><b>공단 공식</b> — {NHIS_OFFICIAL_HINT.replace(/^공단 공식: /, '')}</li>
+              <li><b>최근 갱신</b> — {STALE_HINT.replace(/^최근 갱신: /, '')}</li>
+              <li><b>심의 대기 / 상정예정</b> — 단계 열(암질심·약평위)의 위원회 심의를 기다리는 중 / 다음 차수 안건으로 예정됨.</li>
+            </ul>
           </>
         )}
       </div>

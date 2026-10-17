@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   downloadPolicyDocument,
   fetchPolicyDocumentText,
@@ -6,6 +6,7 @@ import {
   PolicyEventDetail,
   PolicyEventDocument,
 } from '@/api/policyIntelligence';
+import { maskMailText, maskSender } from './maskMail';
 
 // 룰 엔진(대문자) + Hermes 큐레이션(소문자, "low" 포함) 모두 색상 매핑 — 대소문자 무관
 function severityTone(sev?: string): string {
@@ -26,7 +27,9 @@ function fmt(value: string | null | undefined): string {
   return d.toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' });
 }
 
-/** 정책/위원회 이벤트 상세 모달 — 메일 본문 + 첨부(추출텍스트 열람/원본 다운로드). */
+/** 정책/위원회 이벤트 상세 모달 — 메일 본문 + 첨부(추출텍스트 열람/원본 다운로드).
+ *  정책 인텔리전스 페이지 전용 사본(components/policy/EventModal 기반): dialog 시맨틱 · Esc 닫기 · 포커스 복원 ·
+ *  메일 원문의 외부 서명(이름·이메일·전화) 표시 전용 마스킹. */
 export default function PolicyEventModal({ eventId, onClose }: { eventId: string; onClose: () => void }) {
   const [detail, setDetail] = useState<PolicyEventDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -34,6 +37,29 @@ export default function PolicyEventModal({ eventId, onClose }: { eventId: string
   const [openDoc, setOpenDoc] = useState<string | null>(null);
   const [docText, setDocText] = useState<Record<string, string>>({});
   const [docBusy, setDocBusy] = useState<string | null>(null);
+  const titleId = useId();
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  // Esc 닫기(캡처 단계) + 열릴 때 닫기 버튼 포커스 · 닫힐 때 이전 포커스 복원
+  useEffect(() => {
+    const prev = document.activeElement as HTMLElement | null;
+    closeRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onCloseRef.current();
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      prev?.focus?.();
+    };
+  }, []);
+
+  const maskedBody = useMemo(() => maskMailText(detail?.email_body ?? ''), [detail?.email_body]);
 
   useEffect(() => {
     let mounted = true;
@@ -70,26 +96,26 @@ export default function PolicyEventModal({ eventId, onClose }: { eventId: string
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:p-8" onClick={onClose}>
-      <div className="w-full max-w-3xl rounded-2xl bg-white shadow-2xl" onClick={e => e.stopPropagation()}>
+      <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="w-full max-w-3xl rounded-2xl bg-white shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-4 border-b border-gray-200 p-5">
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-wide text-teal-700">관련 메일 원문</p>
-            <h3 className="mt-1 text-lg font-bold leading-6 text-gray-950">{detail?.subject || '(제목 없음)'}</h3>
+            <h3 id={titleId} className="mt-1 text-lg font-bold leading-6 text-gray-950">{detail?.subject || '(제목 없음)'}</h3>
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
               <span>{fmt(detail?.date)}</span>
-              {detail?.from && <span>· {detail.from}</span>}
+              {detail?.from && <span>· {maskSender(detail.from)}</span>}
               {detail?.agencies?.length ? <span>· {detail.agencies.join(', ')}</span> : null}
               {detail?.severity && (
                 <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${severityTone(detail.severity)}`}>{detail.severity}</span>
               )}
               {detail?.curation_source && (
                 <span className={`text-xs px-2 py-0.5 rounded ${detail.curation_source === 'hermes' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                  {detail.curation_source === 'hermes' ? 'AI 큐레이션' : '규칙 기본값'}
+                  {detail.curation_source === 'hermes' ? 'AI 큐레이션' : '자동 분류 기본값'}
                 </span>
               )}
             </div>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"><i className="ri-close-line text-xl" /></button>
+          <button ref={closeRef} type="button" onClick={onClose} aria-label="메일 원문 닫기 (Esc)" title="닫기 (Esc)" className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"><i className="ri-close-line text-xl" aria-hidden="true" /></button>
         </div>
 
         <div className="max-h-[70vh] overflow-y-auto p-5">
@@ -113,8 +139,13 @@ export default function PolicyEventModal({ eventId, onClose }: { eventId: string
               )}
               <section>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">메일 본문</p>
+                {maskedBody.masked && (
+                  <p className="mb-2 text-[11px] text-gray-500">
+                    <i className="ri-eye-off-line mr-1" aria-hidden="true" />외부 서명의 이름·이메일·전화번호는 화면에서만 가렸습니다(원본 데이터는 보존).
+                  </p>
+                )}
                 {detail.email_body
-                  ? <pre className="whitespace-pre-wrap break-words rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm leading-6 text-gray-800 font-sans">{detail.email_body}</pre>
+                  ? <pre className="whitespace-pre-wrap break-words rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm leading-6 text-gray-800 font-sans">{maskedBody.text}</pre>
                   : <p className="rounded-xl border border-dashed border-gray-200 p-4 text-sm text-gray-500">본문 텍스트가 없습니다.</p>}
               </section>
 
