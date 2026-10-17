@@ -114,6 +114,7 @@ Aside 와 Hermes 가 같은 과제를 집지 않는다.
 1. `AGENTS.md`, 본 문서, `docs/agent_team/VPS_SETUP.md`, `agents/ingest/{REIMB_DATA,POLICY_INTEL_CURATION,STAKEHOLDER_SYNC}_README.md`, `docs/agent_team/STAKEHOLDER_RUNBOOK.md` 읽기.
 2. 두 저장소 push 권한 확인: `jeonpapa/AccessRoutineAnalystic`(main), `jeonpapa/kr-drug-pricing-nhi-finance-intelligence`(main). 메인 repo(MA_AI_Dossier)에는 사이드카·메일 본문 발췌를 커밋하지 않는다.
 3. `role=agent` 서비스 계정 발급(admin) → VPS `.env`(600)에 `MA_API_BASE`·`MA_AGENT_EMAIL`·`MA_AGENT_PASSWORD`. admin 토큰은 VPS 에 두지 않는다.
+   - **2026-10-17 발급 완료**: `hermes-agent@marketintel.kr`(role=agent). 비밀번호는 운영자 노트북 `config/.env` 의 `HERMES_AGENT_PASSWORD` 에만 있다 — Slack·이메일·커밋으로 옮기지 말고 운영자가 VPS `.env` 로 직접 옮긴 뒤 노트북 항목을 지운다. 권한 검증: hermes/server 과제 조회 200, 가격요청 큐·admin 403.
 4. 디스패처 `--dry-run --owner hermes,server` → `planned` 검토 → 크론 등록(flock, 10분). `--owner aside` 는 쓰지 않는다.
 5. `/admin/agent-tasks` 에서 담당=Hermes 칩으로 대기 과제 확인 — 신선도 과제는 첫 줄의 `Hermes: ...` 조치를 그대로 수행하고, 끝나면 `POST /api/agent/tasks/<id>/claim` → `/resolve {"status":"closed","resolution":"<커밋 SHA·근거>"}`.
 6. 일일 루틴: 07:00 모니터링 커밋 → 07:40 감사 커밋 → 07:45 신선도 결과 확인 → 위원회 D+1 결과·보고서 커밋 → KRPIA 신규 메일 ingest·큐레이션.
@@ -122,7 +123,8 @@ Aside 와 Hermes 가 같은 과제를 집지 않는다.
 ## 5. Aside 체크리스트
 
 1. `docs/price_request_worker.md` + 계정 스킬 `nhis-foreign-drug-price` 읽기. 워커 루틴은 **배포 + Keytruda IT 1국가 실계정 e2e 검증 전까지 활성화하지 않는다**.
+   - **2026-10-17 e2e 완료**: 요청 `d28a997a…`(KEYTRUDA·IT) claim → AIFA DET 1185/2026 4행 업로드 → readback → 화면 확인 → verify → Gmail 발송(영수증 실제 message id) → `completed`. 10분 루틴(요청 1건 → 없으면 aside 원장 1건) 활성화.
 2. 자격증명은 `config/.env` 의 `PRICE_API_BASE_URL`·`PRICE_AGENT_EMAIL`·`PRICE_AGENT_PASSWORD` 만 사용(`role=price_agent`). `agent`·admin 자격증명을 노트북 루틴에 쓰지 않는다. 채팅에 노출된 사이트 자격증명(MIMS·Micromedex·Rote Liste·Vidal)은 교체 대상.
-3. 원장 루틴(선택, 이후): `GET /api/agent/tasks?owner=aside&status=new,triaged` → 처리할 과제만 `claim` → 해당 국가 재조사·증빙 → `resolve`(closed | blocked + 사유). 런북 API 는 쓰지 않는다(403).
+3. 원장 루틴: `node scripts/price_request_client.mjs tasks | task-claim N | task-resolve N --file` (price_agent, owner=aside 만) → 해당 국가 재조사·증빙 → `resolve`(closed | blocked + 사유). 런북 API 는 쓰지 않는다(403). price_agent 는 가격 요청을 만들 수 없으므로 재수집이 필요하면 blocked + "사용자 요청 필요: 제품·국가" 로 남긴다.
 4. 로그인 소스는 조회 후 로그아웃(좌석 제한). MIMS 권한 제한·JP/CH 차단은 실제 접속으로 확인하고, 안 되면 실패 사유로 보고(임의값·추정 금지).
 5. 노트북이 깨어 있어야 루틴이 돈다 — 놓친 실행은 자동 복구되지 않는다. 결과 메일은 요청 `notify_email` 로, 영수증은 실제 Gmail message id.
