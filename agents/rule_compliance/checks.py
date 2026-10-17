@@ -437,11 +437,11 @@ def check_foreign_price_coverage(name: str, root: Path) -> CheckResult:
             f"가격 커버리지 {len(covered)}/{len(slugs)} ({coverage:.0%}) — covered: {','.join(covered[:5])}",
             {"covered": covered, "missing": missing, "country_counts": country_counts},
         )
+    # 2026-10-17 사용자 결정: 해외약가는 실제 요청된 건만 조사·누적(Aside 요청 큐). 미요청 제품의 미수집은 결함이 아니다.
     return CheckResult(
-        name, "fail",
-        f"가격 커버리지 {len(covered)}/{len(slugs)} ({coverage:.0%}) — missing: {','.join(missing)} "
-        f"— `python -m agents.foreign_price_agent search <brand>` 로 백필",
-        {"covered": covered, "missing": missing},
+        name, "pass",
+        f"가격 커버리지 {len(covered)}/{len(slugs)} ({coverage:.0%}) — 요청 기반 수집: 미요청 제품 {','.join(missing)} 은 정상(백필 안 함)",
+        {"covered": covered, "missing": missing, "request_only": True},
     )
 
 

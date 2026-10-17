@@ -73,12 +73,19 @@ def test_probe_missing_credentials_names_keys_only_and_skips_login_optional():
 
 def test_probe_proxy_alternatives_and_required_keys():
     env = {k: v for k, v in FULL_ENV.items() if k not in ("FOREIGN_PROXY", "MIMS_UK_PROXY")}
-    keys = {p.key for p in cp.probe(env=env, importer=_ok_import)}
-    assert keys == {"JP:proxy", "CH:proxy", "UK:proxy"}
+    classes = cp.scraper_classes()
+    probe = lambda: {p.key for p in cp.probe_proxies(env, classes, request_only=frozenset())}   # 서버 수집 모드의 판정 로직
+    assert probe() == {"JP:proxy", "CH:proxy", "UK:proxy"}
     env["JP_MHLW_PROXY"] = "http://x"                                           # 국가 전용 키 하나로 충족
-    keys = {p.key for p in cp.probe(env=env, importer=_ok_import)}
-    assert keys == {"CH:proxy", "UK:proxy"}
+    assert probe() == {"CH:proxy", "UK:proxy"}
     env["FOREIGN_PROXY"] = "http://x"                                           # 공용 키는 JP·CH 둘 다, UK 는 아님
+    assert probe() == {"UK:proxy"}
+
+
+def test_probe_skips_request_only_countries_jp_ch():
+    """2026-10-17 결정: JP·CH 는 Aside 요청 큐 전담 — 프록시 미설정은 과제가 아니다. UK 는 여전히 판정."""
+    env = {k: v for k, v in FULL_ENV.items() if k not in ("FOREIGN_PROXY", "MIMS_UK_PROXY", "JP_MHLW_PROXY", "CH_COMPENDIUM_PROXY")}
+    assert cp.REQUEST_ONLY_PROXY_COUNTRIES == frozenset({"JP", "CH"})
     assert {p.key for p in cp.probe(env=env, importer=_ok_import)} == {"UK:proxy"}
 
 

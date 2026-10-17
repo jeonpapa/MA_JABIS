@@ -98,9 +98,17 @@ def probe_credentials(env: Mapping[str, str], scrapers: list[type]) -> list[Prob
     return out
 
 
-def probe_proxies(env: Mapping[str, str], scrapers: list[type]) -> list[Problem]:
+# 2026-10-17 사용자 결정: JP·CH 는 서버 라이브 수집(데이터센터 IP 차단 → 주거형 프록시 필요) 대신 Aside 요청 큐로만
+# 수집한다. 프록시 키 미설정은 문제가 아니므로 과제를 만들지 않는다. 서버 수집으로 되돌리면 여기서 빼고 프록시를 설정한다.
+REQUEST_ONLY_PROXY_COUNTRIES = frozenset({"JP", "CH"})
+
+
+def probe_proxies(env: Mapping[str, str], scrapers: list[type],
+                  request_only: frozenset[str] = REQUEST_ONLY_PROXY_COUNTRIES) -> list[Problem]:
     out: list[Problem] = []
     for cls in scrapers:
+        if getattr(cls, "COUNTRY", None) in request_only:
+            continue
         keys = tuple(getattr(cls, "PROXY_ENV_KEYS", ()) or ())
         if keys and not any(_is_set(env, k) for k in keys):
             out.append(Problem(f"{cls.COUNTRY}:proxy",

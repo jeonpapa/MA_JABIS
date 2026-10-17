@@ -55,6 +55,10 @@ SIGNALS_MAX_DAYS = 10
 NHIS_MAX_DAYS = 10
 FOREIGN_PRICE_MAX_DAYS = 45          # 추적 제품마다 '가격 있는' 최신 행이 이보다 오래되면 stale (P1.6 관측)
 FOREIGN_COVERAGE_WINDOW_DAYS = 90    # 이 창 안에 가격 행이 없는 국가는 (제도상 공백이 아니면) 수집 실패
+# 2026-10-17 사용자 결정: 해외약가는 **실제 요청된 건만** 조사해 DB 에 누적한다(Aside 요청 큐). 미요청 제품의 미수집·
+# 오래된 가격·국가 공백은 결함이 아니다 — 두 해외약가 신선도 도메인은 관측(evidence)만 남기고 과제를 만들지 않는다.
+FOREIGN_COLLECTION_REQUEST_ONLY = True
+FOREIGN_REQUEST_ONLY_NOTE = "요청 기반 수집(2026-10-17 결정) — 미요청 제품·국가는 과제 아님, 관측만 기록"
 PIPELINE_EXPECTED_LAG_DAYS = 14      # expected_session_id 가 이보다 오래 지난 차수를 가리키면(협상 미종결) 보드가 '예상일 경과' 를 그린다
 STAKEHOLDER_MONITORING_MAX_DAYS = 2  # VPS 일일 모니터링(07:00 커밋 → 08:20 sync) — 07:45 판정 시점의 정상 최신은 어제 런
 STAKEHOLDER_AUDIT_MAX_DAYS = 3       # VPS 커버리지 감사(07:40) — 감사는 degraded 로 하루 빠질 수 있어 하루 더 허용
@@ -292,6 +296,8 @@ def check_foreign_price_age(ctx: Ctx) -> Freshness:
     listing = ", ".join(f"{s}={d or '미수집'}" for s, d in last.items())
     evidence = (f"제품별 가격 있는 최신 행: {listing}; 기대≥{deadline} ({FOREIGN_PRICE_MAX_DAYS}일) — "
                 f"오래됨 {len(old)}건 {old}, 미수집 {len(never)}건 {never}. {FOREIGN_PRICE_GUIDANCE}")
+    if FOREIGN_COLLECTION_REQUEST_ONLY:
+        return Freshness("foreign_price_age", False, observed, deadline, f"{FOREIGN_REQUEST_ONLY_NOTE}. {evidence}", None, 2)
     return Freshness("foreign_price_age", bool(old or never), observed, deadline, evidence, None, 2)
 
 
@@ -324,6 +330,9 @@ def check_foreign_country_coverage(ctx: Ctx) -> Freshness:
                 f"수집 실패(기대했으나 창 안 가격 행 0건) {d['failed']} — 마지막 가격 행: {failed_last or '-'}; "
                 f"제도상 공백(과제 아님) {d['structural']} — country_coverage.is_structural_absence(추적 제품 {d['tracked']} 전부). "
                 f"{FOREIGN_PRICE_GUIDANCE}")
+    if FOREIGN_COLLECTION_REQUEST_ONLY:
+        return Freshness("foreign_country_coverage", False, failed_last or None, d["since"],
+                         f"{FOREIGN_REQUEST_ONLY_NOTE}. {evidence}", None, 2)
     return Freshness("foreign_country_coverage", bool(d["failed"]), failed_last or None, d["since"], evidence, None, 2)
 
 

@@ -52,7 +52,8 @@ def test_price_age_resolves_brand_and_inn_to_one_product_and_lists_each(tmp_path
         INSERT INTO foreign_drug_prices VALUES (4, 'Welireg', 'UK', 30, '2026-07-24T12:41:09', '20260531');
     """)
     r = fr.check_foreign_price_age(_ctx(tmp_path))
-    assert r.domain == "foreign_price_age" and r.stale is True
+    assert r.domain == "foreign_price_age" and r.stale is False          # 요청 기반 수집 — 관측만, 과제 없음
+    assert "요청 기반 수집" in r.evidence
     assert r.deadline == "2026-08-22"                                   # 45일
     assert "keytruda=2026-09-30" in r.evidence and "welireg=2026-07-24" in r.evidence and "gardasil=미수집" in r.evidence
     assert "human_papillomavirus_vaccine=" not in r.evidence            # inn 표기는 gardasil 로 합쳐진다
@@ -70,14 +71,14 @@ def test_price_age_fresh_when_every_product_priced_within_window(tmp_path):
     assert r.stale is False and r.observed == "2026-09-01"
 
 
-def test_price_age_never_priced_product_is_stale(tmp_path):
-    """추적 제품인데 가격 행이 한 번도 없으면(미수집) 가져올 수 있는지 확인된 적이 없다 — stale."""
+def test_price_age_never_priced_product_is_observed_not_stale(tmp_path):
+    """요청 기반 수집(2026-10-17): 미요청 제품의 미수집은 결함이 아니다 — evidence 에만 남기고 stale 아님."""
     _seed(tmp_path / "d.db", SCHEMA, """
         INSERT INTO foreign_drug_prices VALUES (1, 'keytruda', 'UK', 10, '2026-09-30T11:35:13', '20260831');
         INSERT INTO foreign_drug_prices VALUES (2, 'belzutifan', 'IT', 20, '2026-09-01T03:04:32', '20260831');
     """)
     r = fr.check_foreign_price_age(_ctx(tmp_path))
-    assert r.stale is True and "gardasil=미수집" in r.evidence and "미수집 1" in r.evidence
+    assert r.stale is False and "gardasil=미수집" in r.evidence and "미수집 1" in r.evidence
 
 
 def test_price_age_without_alias_table_falls_back_to_product_slug(tmp_path):
@@ -129,7 +130,7 @@ def test_country_coverage_separates_structural_absence_from_collection_failure(t
     assert d["recent"] == ["CH", "DE", "FR", "IT", "JP", "UK"]
     assert d["failed"] == ["US"] and d["structural"] == ["CA"]
     r = fr.check_foreign_country_coverage(_ctx(tmp_path))
-    assert r.domain == "foreign_country_coverage" and r.stale is True and r.runbook is None
+    assert r.domain == "foreign_country_coverage" and r.stale is False and r.runbook is None   # 요청 기반 — 관측만
     assert "수집 실패" in r.evidence and "['US']" in r.evidence and "제도상 공백" in r.evidence and "['CA']" in r.evidence
     assert "재검색" in r.evidence
 
