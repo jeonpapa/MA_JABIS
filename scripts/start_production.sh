@@ -23,6 +23,14 @@ if [ -d data/policy_intelligence_seed ]; then
     cp -nR data/policy_intelligence_seed/. data/policy_intelligence/ 2>/dev/null || true
 fi
 
+# 항암 레지멘 정본(onco_regimen/onco_regimen_drug) 시드 — 원본 xlsx 는 data/ 라 이미지에 없음.
+# 이미지 포함 seed/onco_regimen/onco_regimens.json 으로, 테이블이 비었을 때만 적재(멱등·사용자 테이블 미접근).
+# 실패해도 부팅을 막지 않음.
+if [ -f seed/onco_regimen/onco_regimens.json ]; then
+    python scripts/seed_onco_regimens.py --apply --if-empty || \
+        echo "[start] onco regimen seed 실패 — 부팅 계속 (수동: python scripts/seed_onco_regimens.py --apply --if-empty)"
+fi
+
 # 부팅 1회 — 헤르메스 git 위원회 데이터를 즉시 반영 (배포 직후 최신화, 멱등).
 # 실패해도 부팅을 막지 않음 (스케줄러가 매일 02:00 재시도).
 echo "[start] Reimbursement 데이터 sync (부팅 1회)..."

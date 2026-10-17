@@ -28,7 +28,16 @@ export interface OecdPrice {
   derivation_note: string | null; grade: 'A' | 'B' | 'C' | '-'; normalized_price: number | null;
   reference_mg: number | null; total_pkg_mg: number | null;
 }
+/** Whether an Aside worker has polled the queue recently. 'never'/'stale' = requests wait. */
+export interface PriceWorkerStatus {
+  state: 'active' | 'stale' | 'never';
+  last_seen_at: string | null;
+  stale_after_minutes: number;
+  open_requests: number;
+}
 export const fetchPriceCatalog = () => api.get<PriceCatalog>('/api/price-requests/catalog');
+export const fetchPriceWorkerStatus = async () =>
+  (await api.get<{ worker: PriceWorkerStatus }>('/api/price-requests/worker-status')).worker;
 export const submitPriceRequest = async (body: SubmitPriceRequest) =>
   (await api.post<{ request: PriceRequest }>('/api/price-requests', body)).request;
 export const fetchPriceRequests = async (scope: PriceScope, query?: string) => {

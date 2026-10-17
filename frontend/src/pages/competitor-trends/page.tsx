@@ -241,7 +241,7 @@ export default function CompetitorTrendsPage() {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className={`w-5 h-5 flex items-center justify-center ${accentColor}`}><i className="ri-bar-chart-grouped-line"></i></span>
-              <h1 className={`text-2xl font-bold ${textMain}`}>Competitor Trends</h1>
+              <h1 className={`text-2xl font-bold ${textMain}`}>경쟁사 동향</h1>
             </div>
             <p className={`${textSub} text-sm`}>MNC 동향 모니터링 및 전략 분석</p>
           </div>

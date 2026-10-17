@@ -10,6 +10,7 @@ config/.env
 config/foreign_credentials.json
 
 # 런타임 데이터 (볼륨이 /app/data 를 마운트 → 이미지 내용 shadow)
+# ⚠ 부팅 시 볼륨에 복사/적재할 정본 시드는 data/ 가 아닌 seed/ 에 둔다 (예: seed/onco_regimen/) — seed/ 는 제외 금지
 data/
 
 # 분석 소스 원본 (analog 은 agents/ingest/analog_corpus.json 사용 → PDF 원본 이미지 불필요)

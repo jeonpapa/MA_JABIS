@@ -114,6 +114,17 @@ export default function AdminServiceRequestsPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
 
+  // 필터를 바꿔 목록에서 빠진 요청의 상세·조작 버튼이 남아 있으면 '보이지 않는 요청'을 수정하게 된다 → 선택 해제
+  useEffect(() => {
+    if (loading || selectedId == null) return;
+    if (!items.some(it => it.id === selectedId)) {
+      setSelectedId(null);
+      setSelected(null);
+      setEvents([]);
+      setDetailError(null);
+    }
+  }, [items, loading, selectedId]);
+
   // 트리아지 편집 상태
   const [editStatus, setEditStatus] = useState<SRStatus>('open');
   const [editPriority, setEditPriority] = useState<SRPriority>('medium');

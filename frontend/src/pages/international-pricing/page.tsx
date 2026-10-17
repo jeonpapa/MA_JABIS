@@ -214,11 +214,11 @@ export default function InternationalPricingPage() {
   const tableHeadBg = isDark ? 'bg-[#0D1117]' : 'bg-gray-50';
 
   const chartAxis = isDark ? '#4A5568' : '#9CA3AF';
-  const chartGrid = isDark ? '#1E2530' : '#E5E7EB';
-  const chartBar = isDark ? '#00C9B1' : '#0D9488';
-  const chartMin = '#10B981';
-  const chartMax = '#EF4444';
-  const chartAvgLine = isDark ? '#F59E0B' : '#D97706';
+  const chartGrid = isDark ? '#1E2530' : 'rgba(60,60,67,0.1)';
+  const chartBar = isDark ? '#0A84FF' : '#0071E3';
+  const chartMin = '#34C759';
+  const chartMax = '#FF3B30';
+  const chartAvgLine = isDark ? '#FF9F0A' : '#FF9F0A';
 
   // ── 탭 공통 상태 컴포넌트 ──
   const TabLoading = ({ label }: { label: string }) => (
@@ -281,7 +281,7 @@ export default function InternationalPricingPage() {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className={`w-5 h-5 flex items-center justify-center ${accentColor}`}><i className="ri-global-line"></i></span>
-              <h1 className={`text-2xl font-bold ${textMain}`}>해외약가</h1>
+              <h1 className={`text-2xl font-bold ${textMain}`}>해외 약가</h1>
             </div>
             <p className={`${textSub} text-sm`}>A8 조정가 비교 / OECD·공단 추가국가 공개 가격 및 조사 요청</p>
           </div>

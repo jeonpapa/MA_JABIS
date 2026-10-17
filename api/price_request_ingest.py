@@ -141,6 +141,12 @@ def prepare_a8(raw, cc, query, rid, agent):
         r.update(exchange_rate=rate["rate"], exchange_rate_from=rate["from_month"], exchange_rate_to=rate["to_month"])
     r["per_unit_local"] = r["local_price"] / r["pack_count"]
     r["unit_strength_mg"] = agent._extract_per_unit_mg(r["form_type"], r["dosage_strength"], r["package_unit"], product_name=r["product_name"], dosage_form=r["dosage_form"])
+    # Same guard as the scraper pipeline: an implausible vial volume (e.g. "Inj Sol-240 mL Vial") is not a per-vial mg.
+    if r["form_type"] == "injection" and hasattr(agent, "_injection_unit_ambiguity"):
+        ambiguity = agent._injection_unit_ambiguity(r["dosage_strength"], r["package_unit"], product_name=r["product_name"], dosage_form=r["dosage_form"])
+        if ambiguity:
+            r["unit_strength_ambiguous"] = ambiguity
+            r["unit_strength_mg"] = None
     # These functions consume the same form-aware denominator as the native scraper pipeline.
     dosing_map = agent._load_dosing_map(query, [r["ingredient"]])
     dosing = agent._match_dosing(query, r["ingredient"], dosing_map)

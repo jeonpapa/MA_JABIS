@@ -178,7 +178,8 @@ def display_source_label(row: dict) -> Optional[str]:
     return label
 
 
-def a8_aggregate_eligibility(country: str, row: dict) -> tuple[bool, Optional[str]]:
+def a8_aggregate_eligibility(country: str, row: dict,
+                              check_injection_unit: bool = True) -> tuple[bool, Optional[str]]:
     """A8 min/avg 집계(UI 요약·리포트) 포함 여부 — (eligible, exclude_reason).
 
     pack-pricing 국가의 oral/unknown 행이 pack_count_source == "default" 면 팩가가 per-unit 으로 저장된
@@ -192,6 +193,14 @@ def a8_aggregate_eligibility(country: str, row: dict) -> tuple[bool, Optional[st
     form = (row.get("form_type") or "unknown").lower()
     if country in PACK_PRICING_COUNTRIES and src == "default" and form != "injection":
         return False, "pack_count_unverified"
+    # injection 바이알 단위가 출처 표기상 모호한 행(예: CA EAP Prevymis "20 mg/mL" + "Inj Sol-240 mL Vial Pk") 은
+    # 어느 바이알(240 mg? 4,800 mg?) 의 가격인지 확정할 수 없어 평균에서 뺀다 (2026-10-17). 카드 숫자는 남는다.
+    if check_injection_unit and form == "injection" and (
+            row.get("unit_strength_ambiguous")
+            or ForeignPriceAgent._injection_unit_ambiguity(
+                row.get("dosage_strength") or "", row.get("package_unit") or "",
+                product_name=row.get("product_name") or "", dosage_form=row.get("dosage_form") or "")):
+        return False, "injection_unit_ambiguous"
     return True, None
 
 
@@ -560,7 +569,14 @@ class ForeignPriceAgent:
             # (제형 보정 레이어도 이 플래그를 보고 regex fallback 으로 농도를 강도로 쓰지 않는다).
             item["unit_strength_unresolved"] = True
             item["total_pkg_mg"] = None
-            if item.get("daily_cost_note") != "suspicious_outlier":
+            ambiguity = self._injection_unit_ambiguity(
+                item.get("dosage_strength") or "", item.get("package_unit") or "",
+                product_name=item.get("product_name") or "", dosage_form=item.get("dosage_form") or "")
+            if ambiguity:
+                # 부피가 바이알로 비현실적 — '모름' 과 구분해 기록 (A8 집계 제외 사유와 짝)
+                item["unit_strength_ambiguous"] = ambiguity
+                item["daily_cost_note"] = "unit_mg_ambiguous"
+            elif item.get("daily_cost_note") != "suspicious_outlier":
                 item["daily_cost_note"] = "unit_mg_unresolved"
 
         if not dosing or adj is None or not unit_mg or not dosing.get("cycle_days"):
@@ -710,15 +726,24 @@ class ForeignPriceAgent:
             except Exception:
                 derived = None
             if derived is not None:
-                if not it.get("unit_strength_mg"):
+                # injection 은 form-aware per-vial 파싱이 권위 — 저장된 옛 값(예: IT Winrevair 50 = 용해 후 농도,
+                # 150 = 50×"3" ml)이 남아 있어도 덮어쓴다. oral 은 기존처럼 저장값 우선(包↔錠 등 제형 레이어 산물 보존).
+                if not it.get("unit_strength_mg") or (it.get("form_type") or "").lower() == "injection":
                     it["unit_strength_mg"] = derived
             elif (it.get("form_type") or "").lower() == "injection" and (
                     it.get("dosage_strength") or it.get("product_name")):
                 # 농도만 있고 volume 불명 — 저장된 값(예: 25 = per-mL 농도)을 강도로 쓰면 보정계수가 4× 틀어진다.
                 it["unit_strength_mg"] = None
                 it["unit_strength_unresolved"] = True
+                amb = self._injection_unit_ambiguity(
+                    it.get("dosage_strength") or "", it.get("package_unit") or "",
+                    product_name=it.get("product_name") or "", dosage_form=it.get("dosage_form") or "")
+                if amb:
+                    # 바이알 부피 모호 — 제형 레이어가 농도 remap(20 mg/mL→240mg) 으로 억지로 묶지 않게 표시
+                    it["unit_strength_ambiguous"] = amb
             elif not it.get("unit_strength_mg"):
                 it["unit_strength_mg"] = None
+        self._inherit_continuation_strength(all_items)
         updates = process_formulations(query, all_items)
         for u in updates:
             if u.get("id"):
@@ -726,6 +751,43 @@ class ForeignPriceAgent:
         if updates:
             nkeys = len({u.get("formulation_key") for u in updates})
             logger.info("[Formulation] %s: %d행 → %d제형 배정", query, len(updates), nkeys)
+
+    # 스크레이퍼 분할 잔여 "연속 조각" — UK MIMS 가격줄 "45mg powder …; 1-vial kit=£x; 2-vial kit=£y" 를 "=£" 로 나눌 때
+    # 두 번째 행 dosage_strength 가 "; 2-vial kit" 처럼 강도 없이 구분자로 시작한다. 강도가 없어 'unmatched' 탭
+    # "; 2-vial kit (주사)" 가 생겼다(2026-10-17 Winrevair). 같은 출처 페이지·같은 수집 배치의 바로 앞 행 강도를 잇는다.
+    _CONTINUATION_FRAGMENT = re.compile(r"^\s*[;,:+&]")
+
+    @classmethod
+    def _inherit_continuation_strength(cls, items: list) -> int:
+        """강도 없는 '연속 조각' 행에 직전 형제 행의 unit_strength_mg/form_type 을 잇는다. 이은 행 수 반환.
+
+        형제 = 같은 (country, product_name, source_url, searched_at). 순서 = id(있으면) → 입력 순서(스크레이퍼
+        파싱 순서). 조각에 mg 숫자가 있거나 직전 형제가 강도 불명이면 잇지 않는다(추정 금지).
+        근본 수정은 uk_mims._parse_price_page(가격줄 분할) — 이 보정은 저장된 조각 행을 위한 방어선.
+        """
+        groups: dict = {}
+        for idx, it in enumerate(items):
+            key = (it.get("country"), it.get("product_name") or "", it.get("source_url") or "",
+                   it.get("searched_at") or "")
+            groups.setdefault(key, []).append((it.get("id") or 0, idx, it))
+        n = 0
+        for members in groups.values():
+            members.sort(key=lambda t: (t[0], t[1]))
+            prev = None
+            for _, _, it in members:
+                ds = it.get("dosage_strength") or ""
+                is_fragment = bool(cls._CONTINUATION_FRAGMENT.match(ds)) and cls._extract_mg(ds) is None
+                if is_fragment and prev is not None and prev.get("unit_strength_mg"):
+                    it["unit_strength_mg"] = prev["unit_strength_mg"]
+                    it.pop("unit_strength_unresolved", None)
+                    if (it.get("form_type") or "unknown").lower() == "unknown" and prev.get("form_type"):
+                        it["form_type"] = prev["form_type"]
+                    it["strength_inherited_from"] = prev.get("id") or prev.get("dosage_strength")
+                    n += 1
+                    continue        # 조각은 다음 조각의 기준이 되지 않는다 — 첫 비조각 행이 기준
+                if not is_fragment:
+                    prev = it
+        return n
 
     def _load_dosing_map(self, query: str, ingredients: list[str]) -> dict:
         """query_name 또는 ingredient 로 foreign_drug_dosing 조회.
@@ -811,7 +873,7 @@ class ForeignPriceAgent:
         # 1) "N mg/M ml" (M>1) → 그 바이알 총량 N mg (강도 문자열 우선, 없으면 문맥)
         for text in (s, *ctx):
             m = cls._MG_PER_VOL.search(text)
-            if m and float(m.group(2)) > 1.0:
+            if m and cls._num(m.group(2)) > 1.0:
                 return float(m.group(1))
         # 2) 농도 (N mg/ml, N mg/1 ml) 가 어디든 있으면 N 은 per-mL — volume 이 있어야 per-vial
         conc = None
@@ -821,15 +883,101 @@ class ForeignPriceAgent:
                 conc = float(m.group(1))
                 break
         if conc is not None:
+            # 2a) 명시 바이알 총량 "N mg"(농도 아님) 이 있으면 그것이 라벨상의 per-vial 함량이다 (2026-10-17 감사).
+            #     - 분말+용제 키트: IT "WINREVAIR*1 flaconcino SC polv 45 mg + 1 sir preriempita solv 1 ml 50 mg/ml"
+            #       → 50 mg/ml 은 **용해 후 농도**, 1 ml/1,3 ml 은 **용제 시린지 부피** — 농도×부피(50·150) 가 아니라 45.
+            #     - 용액 바이알: IT TNF "395 mg - … flaconcino 2,4 ml (165 mg/ml)" → 165×2.4=396 ≈ 395 → 라벨 395.
+            #     명시값이 농도와 같으면(FR "25 mg" + "25 mg/mL") 그 숫자는 농도이므로 2b 로 간다.
+            explicit = cls._explicit_vial_mg(conc, s, *ctx)
             vol = cls._find_volume_ml(s, p, *ctx)
+            if explicit is not None:
+                if cls._is_powder_kit(s, p, *ctx):
+                    return explicit
+                if vol and abs(conc * vol - explicit) / explicit <= 0.05:
+                    return explicit
+            # 2b) 농도 × 바이알 부피. 바이알인데 부피가 비현실적(>100 mL)이면 출처 표기가 모호하다 —
+            #     CA Ontario EAP "20 mg/mL" + "Inj Sol-240 mL Vial Pk" 는 20×240=4,800 mg 이 되지만 실제 Prevymis
+            #     IV 바이알은 240 mg/12 mL·480 mg/24 mL 다("240 mL" 은 240 mg 의 오기로 보이나 추정 금지). → None.
+            if vol and cls._injection_unit_ambiguity(s, p, product_name or "", dosage_form or ""):
+                return None
             return conc * vol if vol else None
         # 3) 농도 표기 없음 → bare "N mg" 는 per-vial 총량
         return cls._extract_mg(s) if s else None
 
-    _MG_PER_VOL = re.compile(r"(\d+(?:\.\d+)?)\s*mg\s*/\s*(\d+(?:\.\d+)?)\s*m[lL]\b", re.IGNORECASE)
+    # 분말(동결건조)+용제 키트 표지 — 이 경우 "N mg/ml" 은 용해 후 농도이고 "V ml" 은 용제 부피라 곱하면 안 된다.
+    _POWDER_KIT = re.compile(
+        r"(?i)(?:\bpolv\w*|\bpowder|\bpoudre|\bpulver|\blyoph\w*|\blyophil\w*|\bliofilizz\w*|\bpd\s+for\s+sol"
+        r"|\btrockensub\w*|\bsolvent|\bsolvant|\bsolv\b|l[öo]sungsmittel)"
+    )
+    # 명시 per-vial 총량 후보 "N mg" — 뒤에 "/ml"·"/N ml" 이 붙은 농도 표기는 제외 ("45 mg/Vial"·"240 mg/-480 mg" 은 총량).
+    _BARE_MG = re.compile(
+        r"(?<![\d.,])(\d+(?:[.,]\d+)?)\s*mg(?!\s*/\s*(?:\d+(?:[.,]\d+)?\s*)?m[lL]\b)", re.IGNORECASE)
+    # 바이알류 용기 표지 — 부피 타당성(>100 mL) 검사는 바이알에만 적용 (수액 bag 은 250 mL 등이 정상).
+    _VIAL_WORDS = re.compile(
+        r"(?i)(?:vials?\b|\bflacon\w*|\bflaconcin\w*|\bfiala|\bfiale|\bampoule\w*|\bampul\w*|durchstechfl\w*"
+        r"|瓶|バイアル|바이알)"
+    )
+    MAX_PLAUSIBLE_VIAL_ML = 100.0
+
+    @staticmethod
+    def _num(s: str) -> float:
+        """"1,3" / "2.4" → float (소수점 쉼표 허용 — IT/FR/DE 표기)."""
+        return float(s.replace(",", "."))
+
+    @classmethod
+    def _is_powder_kit(cls, *texts: str) -> bool:
+        return any(t and cls._POWDER_KIT.search(t) for t in texts)
+
+    @classmethod
+    def _explicit_vial_mg(cls, conc: Optional[float], *texts: str) -> Optional[float]:
+        """농도 표기가 아닌 첫 "N mg" (강도 문자열 우선). 농도 값과 같은 숫자는 농도로 보고 건너뛴다."""
+        for t in texts:
+            if not t:
+                continue
+            for m in cls._BARE_MG.finditer(t):
+                v = cls._num(m.group(1))
+                if v <= 0 or (conc is not None and abs(v - conc) < 1e-9):
+                    continue
+                return v
+        return None
+
+    @classmethod
+    def _injection_unit_ambiguity(cls, dosage_strength: str, package_unit: str = "",
+                                  product_name: str = "", dosage_form: str = "") -> Optional[str]:
+        """injection 행의 per-vial mg 가 **출처 표기상 모호**하면 사유 문자열, 아니면 None.
+
+        현재 규칙: 농도(N mg/ml) × 바이알 부피에서 부피가 MAX_PLAUSIBLE_VIAL_ML(100 mL) 초과이고 용기가 바이알류.
+        (CA Ontario EAP Prevymis "Inj Sol-240 mL Vial Pk"/"480 mL" — 실제 바이알 12/24 mL.) 명시 총량 "N mg/M ml" 이나
+        명시 "N mg" 이 있으면 모호하지 않다. 호출측: per-vial mg=None + A8 집계 제외(`injection_unit_ambiguous`).
+        """
+        s = (dosage_strength or "").translate(cls._ZENKAKU)
+        p = (package_unit or "").translate(cls._ZENKAKU)
+        ctx = [t.translate(cls._ZENKAKU) for t in (dosage_form or "", product_name or "") if t]
+        for text in (s, *ctx):
+            m = cls._MG_PER_VOL.search(text)
+            if m and cls._num(m.group(2)) > 1.0:
+                return None
+        conc = None
+        for text in (s, *ctx):
+            m = cls._MG_PER_ML.search(text)
+            if m:
+                conc = float(m.group(1))
+                break
+        if conc is None or cls._explicit_vial_mg(conc, s, *ctx) is not None:
+            return None
+        vol = cls._find_volume_ml(s, p, *ctx)
+        if vol and vol > cls.MAX_PLAUSIBLE_VIAL_ML and any(t and cls._VIAL_WORDS.search(t) for t in (s, p, *ctx)):
+            return (f"vial_volume_implausible: {conc:g} mg/mL × {vol:g} mL = {conc * vol:g} mg — "
+                    f"출처 부피 표기가 바이알 크기로 비현실적(>{cls.MAX_PLAUSIBLE_VIAL_ML:g} mL), per-vial mg 추정 안 함")
+        return None
+
+    # 부피 숫자는 소수점 쉼표("1,3 ml"·"2,4 ml")를 허용한다 — 예전 정규식은 "1,3 ml" 의 "3 ml" 만 읽어 3 mL 로
+    # 오인했다(IT Winrevair 60 mg 키트 unit_strength 150 = 50 mg/ml × 3). 쉼표 뒤 1~2자리만 소수로 본다
+    # ("1,000 ml" 같은 천단위 쉼표는 소수로 읽지 않음 → 그 경우 매치 자체를 피하도록 lookbehind 에 쉼표 포함).
+    _MG_PER_VOL = re.compile(r"(\d+(?:\.\d+)?)\s*mg\s*/\s*(\d+(?:\.\d+|,\d{1,2}(?!\d))?)\s*m[lL]\b", re.IGNORECASE)
     _MG_PER_ML = re.compile(r"(\d+(?:\.\d+)?)\s*mg\s*/\s*(?:1\s*)?m[lL]\b", re.IGNORECASE)
-    _CONC_TOKEN = re.compile(r"mg\s*/\s*(?:\d+(?:\.\d+)?\s*)?m[lL]\b", re.IGNORECASE)
-    _VOLUME_ML = re.compile(r"(?<![\d.])(\d+(?:\.\d+)?)\s*m[lL]\b", re.IGNORECASE)
+    _CONC_TOKEN = re.compile(r"mg\s*/\s*(?:\d+(?:[.,]\d+)?\s*)?m[lL]\b", re.IGNORECASE)
+    _VOLUME_ML = re.compile(r"(?<![\d.,])(\d+(?:\.\d+|,\d{1,2}(?!\d))?)\s*m[lL]\b", re.IGNORECASE)
 
     @classmethod
     def _find_volume_ml(cls, *texts: str) -> Optional[float]:
@@ -839,7 +987,7 @@ class ForeignPriceAgent:
                 continue
             m = cls._VOLUME_ML.search(cls._CONC_TOKEN.sub("mg/_", t))
             if m:
-                v = float(m.group(1))
+                v = cls._num(m.group(1))
                 if v > 0:
                     return v
         return None
@@ -878,7 +1026,9 @@ class ForeignPriceAgent:
             (re.compile(r"\*\s*(\d{1,4})\s*(?:flaconcin|fiale|fiala|siring|penn)", re.I), "one"),                       # IT CSV "PREVYMIS*1 flaconcino"
             (re.compile(r"\bde\s+(\d{1,4})\s*(?:flacon|ampoule|seringue|stylo)", re.I), "one"),                          # FR "de 2 flacon(s)"
             (re.compile(r"(?<![\d.,/])(\d{1,3})\s*x\s*\d+(?:\.\d+)?\s*m[lL]\b", re.I), "one"),                           # "2 x 4 ml" → 2 바이알
-            (re.compile(rf"(?<![\d.,/])(\d{{1,4}})\s*{_INJ_UNIT_WORDS}(?![a-zA-Zäöü])", re.I), "one"),                  # "2 flaconcini", "1 flacon(s)", "1瓶"
+            # "-?" — UK MIMS 키트 표기 "1-vial kit"·"2-vial kit" (2026-10-17: "; 2-vial kit" 행이 단서 없음→default 1 이라
+            # 2바이알 팩가가 바이알가로 보일 수 있었다)
+            (re.compile(rf"(?<![\d.,/])(\d{{1,4}})\s*-?\s*{_INJ_UNIT_WORDS}(?![a-zA-Zäöü])", re.I), "one"),             # "2 flaconcini", "1 flacon(s)", "1瓶", "2-vial kit"
             (re.compile(rf"{_INJ_UNIT_WORDS}[^,]*?,\s*(\d{{1,4}})\b", re.I), "one"),                                     # UK MIMS "in vial, 2"
         ],
         "tail": [

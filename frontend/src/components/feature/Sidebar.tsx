@@ -20,38 +20,51 @@ export interface NavItem {
   label: string;
   icon: string;
   exact?: boolean;
+  group?: string;
 }
 
+// 업무 흐름 기준 그룹 — 가격 확인 → 급여·정책 판단 → 시장 → 지원
 export const allNavItems: NavItem[] = [
-  { path: '/', label: 'Dashboard Overview', icon: 'ri-dashboard-3-line', exact: true },
-  { path: '/domestic-pricing', label: 'Domestic Pricing', icon: 'ri-price-tag-3-line' },
-  { path: '/regimen-cost', label: 'Regimen Cost', icon: 'ri-bar-chart-box-line' },
-  { path: '/international-pricing', label: 'International Pricing', icon: 'ri-global-line' },
-  { path: '/market-share', label: 'Korean Market', icon: 'ri-pie-chart-2-line' },
-  { path: '/competitor-trends', label: 'Competitor Trends', icon: 'ri-radar-line' },
-  { path: '/daily-mailing', label: 'Daily Mailing', icon: 'ri-mail-settings-line' },
-  { path: '/reimbursement-status', label: 'Reimbursement Status', icon: 'ri-article-line' },
-  { path: '/policy-intelligence', label: 'Policy Intelligence', icon: 'ri-government-line' },
-  { path: '/analog-search', label: 'Listing Analog Search', icon: 'ri-search-eye-line' },
-  { path: '/stakeholder-signals', label: 'Stakeholder Signals', icon: 'ri-user-voice-line' },
-  { path: '/my-requests', label: '내 개선 요청', icon: 'ri-feedback-line' },
+  { path: '/', label: '대시보드', icon: 'ri-dashboard-line', exact: true, group: '개요' },
+  { path: '/domestic-pricing', label: '국내 약가', icon: 'ri-price-tag-3-line', group: '가격' },
+  { path: '/international-pricing', label: '해외 약가', icon: 'ri-global-line', group: '가격' },
+  { path: '/regimen-cost', label: '요법 비용', icon: 'ri-bar-chart-box-line', group: '가격' },
+  { path: '/reimbursement-status', label: '급여 현황', icon: 'ri-article-line', group: '급여·정책' },
+  { path: '/policy-intelligence', label: '정책 인텔리전스', icon: 'ri-government-line', group: '급여·정책' },
+  { path: '/stakeholder-signals', label: '정책 발언', icon: 'ri-user-voice-line', group: '급여·정책' },
+  { path: '/analog-search', label: '등재 아날로그', icon: 'ri-search-eye-line', group: '급여·정책' },
+  { path: '/market-share', label: '시장점유율', icon: 'ri-pie-chart-2-line', group: '시장' },
+  { path: '/competitor-trends', label: '경쟁사 동향', icon: 'ri-radar-line', group: '시장' },
+  { path: '/daily-mailing', label: '데일리 메일링', icon: 'ri-mail-line', group: '시장' },
+  { path: '/my-requests', label: '내 개선 요청', icon: 'ri-feedback-line', group: '지원' },
 ];
 
 // admin 전용 — tabVisibility 미적용 (관리 기능은 항상 노출)
 export const adminNavItems: NavItem[] = [
-  { path: '/admin/market-share', label: '시장점유율 업로드', icon: 'ri-upload-cloud-2-line' },
-  { path: '/admin/msd-pipeline', label: 'MSD 파이프라인', icon: 'ri-git-branch-line' },
-  { path: '/admin/competitor-trends', label: 'MNC 동향 관리', icon: 'ri-building-2-line' },
-  { path: '/admin/reimbursement', label: '급여 관리', icon: 'ri-health-book-line' },
-  { path: '/admin/reimbursement-pipeline', label: '심의 파이프라인 관리', icon: 'ri-route-line' },
-  { path: '/admin/daily-mailing-kanban', label: 'Daily Mailing 칸반', icon: 'ri-kanban-view' },
-  { path: '/admin/home-brands', label: '홈 브랜드 관리', icon: 'ri-capsule-line' },
-  { path: '/admin/service-requests', label: '서비스 보완 요청', icon: 'ri-customer-service-2-line' },
-  { path: '/admin/agent-tasks', label: '운영 원장', icon: 'ri-robot-line' },
-  { path: '/admin/stakeholder-people', label: '모니터링 인물 관리', icon: 'ri-contacts-line' },
-  { path: '/admin/stakeholder-audit', label: '모니터링 감사', icon: 'ri-shield-check-line' },
-  { path: '/admin/stakeholder-ops', label: '모니터링 운영 현황', icon: 'ri-pulse-line' },
+  { path: '/admin/agent-tasks', label: '운영 원장', icon: 'ri-pulse-line', group: '운영' },
+  { path: '/admin/service-requests', label: '서비스 보완 요청', icon: 'ri-customer-service-2-line', group: '운영' },
+  { path: '/admin/daily-mailing-kanban', label: '메일링 칸반', icon: 'ri-kanban-view', group: '운영' },
+  { path: '/admin/stakeholder-ops', label: '모니터링 운영 현황', icon: 'ri-heart-pulse-line', group: '운영' },
+  { path: '/admin/stakeholder-audit', label: '모니터링 감사', icon: 'ri-shield-check-line', group: '운영' },
+  { path: '/admin/stakeholder-people', label: '모니터링 인물', icon: 'ri-contacts-line', group: '운영' },
+  { path: '/admin/reimbursement', label: '급여 관리', icon: 'ri-health-book-line', group: '데이터 관리' },
+  { path: '/admin/reimbursement-pipeline', label: '심의 파이프라인', icon: 'ri-route-line', group: '데이터 관리' },
+  { path: '/admin/market-share', label: '시장점유율 업로드', icon: 'ri-upload-cloud-2-line', group: '데이터 관리' },
+  { path: '/admin/msd-pipeline', label: 'MSD 파이프라인', icon: 'ri-git-branch-line', group: '데이터 관리' },
+  { path: '/admin/competitor-trends', label: 'MNC 동향 관리', icon: 'ri-building-2-line', group: '데이터 관리' },
+  { path: '/admin/home-brands', label: '홈 브랜드 관리', icon: 'ri-capsule-line', group: '데이터 관리' },
 ];
+
+function groupItems(items: NavItem[]): [string, NavItem[]][] {
+  const out: [string, NavItem[]][] = [];
+  for (const it of items) {
+    const g = it.group || '';
+    const last = out[out.length - 1];
+    if (last && last[0] === g) last[1].push(it);
+    else out.push([g, [it]]);
+  }
+  return out;
+}
 
 type SettingsTab = 'account' | 'users' | 'tabs';
 
@@ -262,94 +275,73 @@ export default function Sidebar() {
   const initials = displayEmail.slice(0, 2).toUpperCase();
 
   return (
-    <aside className="fixed left-0 top-0 h-screen w-60 bg-[#0A0E1A] flex flex-col z-50 border-r border-[#1E2530]">
-      {/* Logo */}
-      <div className="flex items-center gap-3 px-5 py-5 border-b border-[#1E2530]">
-        <img
-          src="https://public.readdy.ai/ai/img_res/be30245e-c610-43e9-9d9b-6faaf65094e2.png"
-          alt="Logo"
-          className="w-8 h-8 object-contain"
-        />
-        <div>
-          <p className="text-white font-bold text-sm leading-tight">Market Intel</p>
-          <p className="text-[#8B9BB4] text-xs">Market Access Hub</p>
+    <aside className="ui-sidebar fixed left-0 top-0 h-screen w-64 flex flex-col z-50">
+      {/* Brand */}
+      <div className="flex items-center gap-2.5 px-5 pt-6 pb-3">
+        <span className="w-8 h-8 rounded-[9px] flex items-center justify-center" style={{ background: 'linear-gradient(180deg,#2b8cff,#0060df)' }}>
+          <i className="ri-capsule-fill text-white text-base"></i>
+        </span>
+        <div className="leading-tight">
+          <p className="text-[15px] font-semibold tracking-tight" style={{ color: 'var(--label)' }}>Market Access</p>
+          <p className="text-[11px]" style={{ color: 'var(--label-3)' }}>MSD Korea Intelligence Hub</p>
         </div>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 px-3 py-4 overflow-y-auto">
-        <p className="text-[#4A5568] text-xs font-semibold uppercase tracking-wider px-3 mb-3">Analytics</p>
-        <ul className="space-y-1">
-          {visibleNavItems.map((item) => (
-            <li key={item.path}>
-              <NavLink
-                to={item.path}
-                end={item.exact}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer whitespace-nowrap relative ${
-                    isActive
-                      ? 'text-[#00E5CC] bg-[#00E5CC]/10 before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:w-1 before:h-6 before:bg-[#00E5CC] before:rounded-r-full'
-                      : 'text-[#8B9BB4] hover:text-white hover:bg-white/5'
-                  }`
-                }
-              >
-                <span className="w-5 h-5 flex items-center justify-center">
-                  <i className={`${item.icon} text-base`}></i>
-                </span>
-                {item.label}
-              </NavLink>
-            </li>
-          ))}
-        </ul>
-
-        {adminMode && (
-          <>
-            <p className="text-[#4A5568] text-xs font-semibold uppercase tracking-wider px-3 mb-3 mt-6">Management</p>
-            <ul className="space-y-1">
-              {adminNavItems.map((item) => (
+      {/* Navigation — 업무 흐름 그룹 */}
+      <nav className="flex-1 px-3 pb-4 overflow-y-auto" aria-label="주요 메뉴">
+        {groupItems(visibleNavItems).map(([group, items]) => (
+          <div key={group}>
+            {group && <p className="ui-nav-section">{group}</p>}
+            <ul className="space-y-0.5">
+              {items.map(item => (
                 <li key={item.path}>
-                  <NavLink
-                    to={item.path}
-                    className={({ isActive }) =>
-                      `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer whitespace-nowrap relative ${
-                        isActive
-                          ? 'text-[#00E5CC] bg-[#00E5CC]/10 before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:w-1 before:h-6 before:bg-[#00E5CC] before:rounded-r-full'
-                          : 'text-[#8B9BB4] hover:text-white hover:bg-white/5'
-                      }`
-                    }
-                  >
-                    <span className="w-5 h-5 flex items-center justify-center">
-                      <i className={`${item.icon} text-base`}></i>
-                    </span>
-                    {item.label}
-                    {item.path === '/admin/service-requests' && outboxCount > 0 && (
-                      <span
-                        className="ml-auto flex-shrink-0 min-w-[18px] h-[18px] px-1.5 flex items-center justify-center rounded-full bg-[#00E5CC] text-[#0A0E1A] text-[10px] font-bold leading-none"
-                        title={`미처리 요청(outbox) ${outboxCount}건`}
-                      >
-                        {outboxCount > 99 ? '99+' : outboxCount}
-                      </span>
-                    )}
-                    {item.path === '/admin/stakeholder-audit' && svPendingCount > 0 && (
-                      <span
-                        className="ml-auto flex-shrink-0 min-w-[18px] h-[18px] px-1.5 flex items-center justify-center rounded-full bg-[#F59E0B] text-[#0A0E1A] text-[10px] font-bold leading-none"
-                        title={`미검토 감사 제안 ${svPendingCount}건`}
-                      >
-                        {svPendingCount > 99 ? '99+' : svPendingCount}
-                      </span>
-                    )}
+                  <NavLink to={item.path} end={item.exact}
+                    className={({ isActive }) => `ui-nav-item${isActive ? ' is-active' : ''}`}>
+                    <i className={item.icon} aria-hidden="true"></i>
+                    <span className="truncate">{item.label}</span>
                   </NavLink>
                 </li>
               ))}
             </ul>
-          </>
+          </div>
+        ))}
+
+        {adminMode && (
+          <div className="mt-3 pt-2" style={{ borderTop: '1px solid var(--separator)' }}>
+            {groupItems(adminNavItems).map(([group, items]) => (
+              <div key={group}>
+                <p className="ui-nav-section">관리 · {group}</p>
+                <ul className="space-y-0.5">
+                  {items.map(item => (
+                    <li key={item.path}>
+                      <NavLink to={item.path}
+                        className={({ isActive }) => `ui-nav-item${isActive ? ' is-active' : ''}`}>
+                        <i className={item.icon} aria-hidden="true"></i>
+                        <span className="truncate">{item.label}</span>
+                        {item.path === '/admin/service-requests' && outboxCount > 0 && (
+                          <span className="ui-nav-badge is-alert" title={`미처리 요청(outbox) ${outboxCount}건`}>
+                            {outboxCount > 99 ? '99+' : outboxCount}
+                          </span>
+                        )}
+                        {item.path === '/admin/stakeholder-audit' && svPendingCount > 0 && (
+                          <span className="ui-nav-badge is-alert" title={`미검토 감사 제안 ${svPendingCount}건`}>
+                            {svPendingCount > 99 ? '99+' : svPendingCount}
+                          </span>
+                        )}
+                      </NavLink>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
         )}
       </nav>
 
       {/* User Profile + Settings (admin only) */}
-      <div className="px-4 py-4 border-t border-[#1E2530] relative" ref={popupRef}>
+      <div className="px-4 py-3 relative" style={{ borderTop: '1px solid var(--separator)' }} ref={popupRef}>
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#00E5CC] to-[#7C3AED] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+          <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0" style={{ background: 'linear-gradient(180deg,#8e8e93,#636366)' }}>
             {initials}
           </div>
           <div className="flex-1 min-w-0">
@@ -362,7 +354,7 @@ export default function Sidebar() {
           {adminMode && (
             <button
               onClick={() => { setShowSettings(v => !v); }}
-              className="w-6 h-6 flex items-center justify-center cursor-pointer rounded-md hover:bg-white/10 transition-colors"
+              className="w-6 h-6 flex items-center justify-center cursor-pointer rounded-md hover:bg-black/5 transition-colors"
               title="관리자 설정"
             >
               <i className={`ri-settings-3-line text-sm transition-colors ${showSettings ? 'text-[#00E5CC]' : 'text-[#8B9BB4] hover:text-white'}`}></i>
@@ -371,7 +363,7 @@ export default function Sidebar() {
           {/* 로그아웃 — 모든 유저 */}
           <button
             onClick={handleLogout}
-            className="w-6 h-6 flex items-center justify-center cursor-pointer rounded-md hover:bg-white/10 transition-colors"
+            className="w-6 h-6 flex items-center justify-center cursor-pointer rounded-md hover:bg-black/5 transition-colors"
             title="로그아웃"
           >
             <i className="ri-logout-box-r-line text-sm text-[#8B9BB4] hover:text-red-400 transition-colors"></i>

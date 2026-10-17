@@ -21,7 +21,8 @@ type Metric = 'daily' | 'monthly' | 'yearly';
 const METRIC_LABEL: Record<Metric, string> = { daily: '일', monthly: '월', yearly: '연' };
 
 const fmt = (n: number | null | undefined) => n == null ? '—' : '₩' + Math.round(n).toLocaleString();
-const today = () => new Date().toISOString().slice(0, 10);
+// 기준일은 한국 날짜 (toISOString 은 UTC 라 KST 오전 9시 전에는 전날이 된다)
+const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
 const emptyRegimen = (name: string): Regimen => ({ name, kind: 'onco', drugs: [], oncoDrugs: [] });
 const extractInn = (s: string) => (s || '').match(/[A-Za-z][A-Za-z-]+/)?.[0] || s;
 const num = (s: string) => s.trim() === '' ? null : Number(s);
@@ -48,6 +49,9 @@ export default function RegimenCostPage() {
   const [results, setResults] = useState<DomesticProduct[]>([]);
   const [wapResults, setWapResults] = useState<WapResult[]>([]);
   const [searching, setSearching] = useState(false);
+  // 마지막으로 끝난 검색어/오류 — '검색 중'·'결과 없음'·'오류'를 구분해 보여준다
+  const [searchedFor, setSearchedFor] = useState('');
+  const [searchError, setSearchError] = useState('');
   const [busyCalc, setBusyCalc] = useState(false);
 
   const [saved, setSaved] = useState<RegimenComparison[]>([]);
@@ -66,7 +70,7 @@ export default function RegimenCostPage() {
   useEffect(() => {
     if (addTarget == null || !query.trim()) { setOncoHits([]); setResults([]); setWapResults([]); return; }
     const t = setTimeout(async () => {
-      setSearching(true);
+      setSearching(true); setSearchError('');
       try {
         if (addMode === 'onco') setOncoHits(await oncoSearch(query.trim()));
         else if (source === 'weighted_avg') {
@@ -74,8 +78,8 @@ export default function RegimenCostPage() {
           setWapResults(r.available ? (r.results || []).slice(0, 25) : []);
           if (!r.available) setMsg(r.reason || '가중평균 조회 불가');
         } else setResults((await searchDomesticPriceChanges(query)).slice(0, 12));
-      } catch { setOncoHits([]); setResults([]); setWapResults([]); }
-      finally { setSearching(false); }
+      } catch (e) { setOncoHits([]); setResults([]); setWapResults([]); setSearchError(e instanceof Error ? e.message : '검색 실패'); }
+      finally { setSearching(false); setSearchedFor(query.trim()); }
     }, 350);
     return () => clearTimeout(t);
   }, [query, addTarget, addMode, source, asOfDate]);
@@ -232,7 +236,7 @@ export default function RegimenCostPage() {
       <div className="max-w-[1500px] mx-auto">
         <div className="flex items-center justify-between mb-1">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2"><i className="ri-bar-chart-box-line text-teal-600"></i>투약 비용 비교</h1>
+            <h1 className="text-2xl font-bold flex items-center gap-2">요법 비용 비교</h1>
             <p className="text-sm text-gray-500 mt-1">레지멘(정본 DB)으로 기본 구성 후 자유 편집 · 환자 파라미터 기반 용량 + 기준일 약가로 치료비 비교.</p>
           </div>
           <div className="flex items-center gap-2">
@@ -266,6 +270,13 @@ export default function RegimenCostPage() {
               ))}
             </div>
           </div>
+          {chartData.every(d => !d.value) ? (
+            <div className="h-[260px] flex flex-col items-center justify-center text-center gap-1.5" role="status">
+              <i className="ri-bar-chart-box-line text-3xl text-gray-300"></i>
+              <p className="text-sm font-medium text-gray-600">아직 비교할 비용이 없습니다</p>
+              <p className="text-xs text-gray-400">아래 레지멘 카드에서 레지멘이나 약제를 추가하면 치료비가 계산됩니다.</p>
+            </div>
+          ) : (
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={chartData} margin={{ top: 24, right: 16, left: 8, bottom: 5 }}>
               <XAxis dataKey="name" tick={{ fontSize: 12 }} /><YAxis tickFormatter={v => `${Math.round(v / 10000)}만`} tick={{ fontSize: 11 }} />
@@ -276,6 +287,7 @@ export default function RegimenCostPage() {
               </Bar>
             </BarChart>
           </ResponsiveContainer>
+          )}
         </div>
 
         {/* 레지멘별 비용 비교 테이블 */}
@@ -416,6 +428,13 @@ export default function RegimenCostPage() {
                           placeholder={addMode === 'onco' ? '암종·레지멘·약제 (예: 소세포, EP)' : source === 'weighted_avg' ? '영문 성분명' : '제품·성분'}
                           className="text-xs border rounded-lg px-2 py-1.5 w-72 outline-none focus:border-teal-400" />
                         <button onClick={() => { setAddTarget(null); setQuery(''); }} className="text-xs text-gray-400 pt-1.5">닫기</button>
+                        {query.trim() && !searching && searchedFor === query.trim() && oncoHits.length === 0 && results.length === 0 && wapResults.length === 0 && (
+                          <div className="absolute z-10 top-9 left-0 w-[28rem] bg-white border rounded-lg shadow-lg px-3 py-3 text-xs" role="status">
+                            {searchError
+                              ? <p className="text-red-500">검색 실패: {searchError}</p>
+                              : <p className="text-gray-500">'{query.trim()}'에 맞는 {addMode === 'onco' ? '레지멘' : '약제'}이 없습니다.{addMode === 'onco' ? ' 암종(예: 비소세포폐암)이나 영문 성분명(예: pembrolizumab)으로 검색해 보세요.' : ''}</p>}
+                          </div>
+                        )}
                         {query.trim() && (searching || oncoHits.length > 0 || results.length > 0 || wapResults.length > 0) && (
                           <div className="absolute z-10 top-9 left-0 w-[28rem] bg-white border rounded-lg shadow-lg max-h-72 overflow-auto">
                             {searching && <p className="text-xs text-gray-400 px-3 py-2">검색 중…</p>}

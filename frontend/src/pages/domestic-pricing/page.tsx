@@ -260,7 +260,7 @@ export default function DomesticPricingPage() {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className={`w-5 h-5 flex items-center justify-center ${accentColor}`}><i className="ri-price-tag-3-line"></i></span>
-              <h1 className={`text-2xl font-bold ${textMain}`}>국내약가</h1>
+              <h1 className={`text-2xl font-bold ${textMain}`}>국내 약가</h1>
             </div>
             <p className={`${textSub} text-sm`}>건강보험 등재 약가 상세 정보 및 변동 이력</p>
           </div>

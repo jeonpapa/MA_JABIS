@@ -36,7 +36,7 @@ export default function HomePage() {
       <div className={`px-8 pt-8 pb-6 border-b ${headerBorder}`}>
         <div className="flex items-center justify-between">
           <div>
-            <h1 className={`text-2xl font-bold ${textMain}`}>Dashboard Overview</h1>
+            <h1 className={`text-2xl font-bold ${textMain}`}>대시보드</h1>
             <p className={`${textSub} text-sm mt-1`}>{ymLabel ? `${ymLabel} 기준 · ` : ''}Market Access Intelligence Hub</p>
           </div>
           <div className="flex items-center gap-3">

@@ -73,6 +73,12 @@ def build_price_request_blueprint(db_path, foreign_agent):
     def catalog():
         return jsonify(CATALOG)
 
+    @bp.get("/api/price-requests/worker-status")
+    @require_auth()
+    def worker_status():
+        # The dashboard only queues work. Show whether an Aside worker is actually polling.
+        return jsonify(worker=store.worker_status())
+
     @bp.post("/api/price-requests")
     @require_auth()
     @guarded
@@ -161,18 +167,21 @@ def build_price_request_blueprint(db_path, foreign_agent):
     @bp.get("/api/price-agent/requests")
     @require_auth(role="price_agent")
     def queue():
+        store.touch_worker(actor(), "queue")
         return jsonify(requests=store.list(queue=True))
 
     @bp.post("/api/price-agent/requests/<rid>/claim")
     @require_auth(role="price_agent")
     @guarded
     def claim(rid):
+        store.touch_worker(actor(), "claim")
         return jsonify(store.claim(rid, actor()))
 
     @bp.post("/api/price-agent/requests/<rid>/heartbeat")
     @require_auth(role="price_agent")
     @guarded
     def heartbeat(rid):
+        store.touch_worker(actor(), "heartbeat")
         return jsonify(store.renew(rid, actor(), lease()))
 
     @bp.get("/api/price-agent/requests/<rid>/readback")

@@ -20,7 +20,7 @@ export default function ReimbursementStatusPage() {
             <span className={`w-6 h-6 flex items-center justify-center ${isDark ? 'text-teal-400' : 'text-teal-600'}`}>
               <i className="ri-article-line text-lg"></i>
             </span>
-            <h1 className={`text-2xl font-bold tracking-tight ${headerText}`}>Reimbursement Status</h1>
+            <h1 className={`text-2xl font-bold tracking-tight ${headerText}`}>급여 현황</h1>
           </div>
           <p className={`text-sm ${headerSub}`}>
             약제 급여 등재 파이프라인 현황 및 심의위원회 회차별 인텔리전스 보고서

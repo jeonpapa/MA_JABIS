@@ -259,15 +259,18 @@ export async function uploadMarketShareXlsx(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** readdy mock 팔레트 — 도넛/요약 카드 (mocks/dashboardData.marketShareData). */
-export const PIE_COLORS = ['#00E5CC', '#7C3AED', '#F59E0B', '#EF4444', '#10B981'];
-export const OTHERS_COLOR = '#6B7280';
+// Apple system colors — blue, purple, orange, pink, green / gray
+export const PIE_COLORS = ['#0071E3', '#AF52DE', '#FF9F0A', '#FF375F', '#34C759'];
+export const OTHERS_COLOR = '#8E8E93';
 /** readdy 트렌드 라인 팔레트 (page CHART_COLORS). */
-export const LINE_COLORS = ['#0D9488', '#7C3AED', '#D97706', '#EF4444', '#10B981'];
+export const LINE_COLORS = ['#0071E3', '#AF52DE', '#FF9F0A', '#FF375F', '#34C759'];
 
 export interface PieSlice {
   name: string;
-  value: number;   // values_share_pct (%)
+  value: number;   // values_share_pct (%) — 매출(Values LC) 기준 점유율
   units: number;   // dosage_units
+  /** 물량 점유율 (%) = dosage_units / 시장 전체 dosage_units. 매출 점유율과 다르므로 별도 표기 */
+  unitShare: number | null;
   color: string;
   mfrName?: string;
   isOthers?: boolean;
@@ -280,12 +283,15 @@ export interface PieSlice {
  */
 export function buildPieData(market: MsAtc4Response, topN = 5): PieSlice[] {
   const products = market.products.filter(p => (p.values_lc ?? 0) > 0 || (p.dosage_units ?? 0) > 0);
+  const totalUnits = market.totals?.dosage_units ?? 0;
+  const unitShare = (u: number) => (totalUnits > 0 ? Number(((u / totalUnits) * 100).toFixed(1)) : null);
   const top = products.slice(0, topN);
   const rest = products.slice(topN);
   const items: PieSlice[] = top.map((p, i) => ({
     name: p.product_name,
     value: Number(p.values_share_pct.toFixed(1)),
     units: Math.round(p.dosage_units),
+    unitShare: unitShare(p.dosage_units),
     color: PIE_COLORS[i % PIE_COLORS.length],
     mfrName: p.mfr_name,
   }));
@@ -296,6 +302,7 @@ export function buildPieData(market: MsAtc4Response, topN = 5): PieSlice[] {
       name: `기타 (${rest.length})`,
       value: Number(pct.toFixed(1)),
       units: Math.round(units),
+      unitShare: unitShare(units),
       color: OTHERS_COLOR,
       isOthers: true,
     });

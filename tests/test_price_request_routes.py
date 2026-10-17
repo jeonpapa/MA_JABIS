@@ -85,6 +85,21 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/price-requests/catalog", headers=self.worker).status_code, 403)
         self.assertEqual(self.client.get("/api/price-agent/requests", headers=self.worker).status_code, 200)
 
+    def test_worker_status_reflects_polling_without_identity(self):
+        r = self.client.get("/api/price-requests/worker-status", headers=self.user)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json["worker"]["state"], "never")
+        self.assertEqual(self.client.get("/api/price-requests/worker-status").status_code, 401)
+        self.client.get("/api/price-agent/requests", headers=self.worker)
+        w = self.client.get("/api/price-requests/worker-status", headers=self.user).json["worker"]
+        self.assertEqual(w["state"], "active")
+        self.assertNotIn("worker@example.org", json.dumps(w))
+        # Older than the stale window reads as stopped, never as running.
+        from datetime import datetime, timedelta, timezone
+        store = PriceRequestStore(self.path)
+        later = datetime.now(timezone.utc) + timedelta(minutes=store.WORKER_STALE_MINUTES + 1)
+        self.assertEqual(store.worker_status(at=later)["state"], "stale")
+
     def test_other_requester_cannot_read(self):
         rid = self.create()
         self.assertEqual(self.client.get(f"/api/price-requests/{rid}", headers=self.other).status_code, 404)

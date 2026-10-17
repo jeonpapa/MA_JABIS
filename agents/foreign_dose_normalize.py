@@ -238,6 +238,68 @@ def route_of(form_type: str | None) -> str:
     return "injection" if ("inject" in ft or "주사" in ft or "주" == ft) else "oral"
 
 
+# form_type 이 unknown 인 행의 투여경로 텍스트 단서 (2026-10-17 Winrevair "45mg 경구"/"60mg 경구" 가짜 탭).
+# route_of("unknown") == "oral" 은 레거시 계약이라 유지하고, 행 단위 판정은 route_of_item 이 한다.
+_INJ_ROUTE_TEXT = re.compile(
+    r"(?i)(?:\binj\w*|\binfus\w*|\bperf\b|\bperfusion|\bvials?\b|\bflacon\w*|\bflaconcin\w*|\bfiala|\bfiale"
+    r"|\bampoule\w*|\bampul\w*|\bsyringe\w*|\bsir\b|\bsiring\w*|\bpreriempit\w*|\bseringue\w*|\bfertigspritz\w*"
+    r"|\bpd\s+for\s+sol|\bpowder\b|\bpoudre\b|\bpolv\w*|\bpulver\b|\blyoph\w*|\bsolvent\b|\bsolvant\b|\bsolv\b"
+    r"|l[öo]sungsmittel|\bsubcutan\w*|sous-cutan\w*|\bsottocutan\w*|\bintraven\w*|\bparenter\w*|\bs\.?c\.?\b"
+    r"|\bi\.?v\.?\b|durchstechfl\w*|注射|注用|皮下注|点滴|バイアル|주사|바이알)"
+)
+_ORAL_ROUTE_TEXT = re.compile(
+    r"(?i)(?:\btabs?\b|\btablets?\b|\bcaps?\b|\bcapsules?\b|\bcpr\b|\bcps\b|\bcompress\w*|\bcomprim\w*"
+    r"|\bg[ée]lules?\b|\bfilmtabl\w*|\btablette\w*|\bkapsel\w*|\boral\w*|\bbuvable\b|\bgranul\w*|\bsachets?\b"
+    r"|錠|カプセル|内服|経口|경구|칡슐)"
+)
+
+
+def _row_texts(item: dict) -> list[str]:
+    texts = [item.get(k) or "" for k in ("dosage_strength", "dosage_form", "package_unit", "product_name")]
+    extra = item.get("extra") if isinstance(item.get("extra"), dict) else None
+    if extra is None and isinstance(item.get("raw_data"), str) and item.get("raw_data"):
+        try:
+            extra = json.loads(item["raw_data"])
+        except (ValueError, TypeError):
+            extra = None
+    if isinstance(extra, dict):
+        # US Redbook extra.route="SUBCUTANEOUS", FR BDPM raw_data.route="sous-cutanée" 등 출처가 준 투여경로
+        texts.append(str(extra.get("route") or ""))
+    return [t for t in texts if t]
+
+
+def route_consensus(items: list[dict]) -> str | None:
+    """같은 약제 행들 중 form_type 이 명시(oral/injection)된 행의 경로가 하나뿐이면 그 경로, 아니면 None."""
+    known = set()
+    for it in items:
+        ft = (it.get("form_type") or "").lower()
+        if ft in ("oral", "injection"):
+            known.add(ft)
+    return known.pop() if len(known) == 1 else None
+
+
+def route_of_item(item: dict, consensus: str | None = None) -> str:
+    """행 단위 투여경로. 명시 form_type 우선 → (unknown 이면) 텍스트 단서 → 같은 약제의 명시 경로 합의 → oral.
+
+    unknown 을 무조건 oral 로 보면 주사 전용 약제(Winrevair SC 키트)의 "KIT"/"45 mg" 행이 "45mg 경구" 같은
+    가짜 탭을 만든다(US 행이면 canonical 까지 오염). 텍스트에 주사·경구 단서가 한쪽만 있으면 그쪽,
+    둘 다/둘 다 아니면 같은 약제에서 명시된 경로가 하나뿐일 때만 그 경로를 따른다.
+    """
+    ft = (item.get("form_type") or "").lower()
+    if ft in ("oral", "injection") or "inject" in ft or "주사" in ft:
+        return route_of(ft)
+    blob = " ".join(_row_texts(item))
+    inj = bool(_INJ_ROUTE_TEXT.search(blob))
+    oral = bool(_ORAL_ROUTE_TEXT.search(blob))
+    if inj and not oral:
+        return "injection"
+    if oral and not inj:
+        return "oral"
+    if consensus in ("oral", "injection"):
+        return consensus
+    return "oral"
+
+
 def _fmt_strength(mg: float):
     return int(mg) if abs(mg - round(mg)) < 1e-6 else round(mg, 2)
 
@@ -343,6 +405,12 @@ def _emit_unmatched(it: dict, updates: list) -> None:
     adj = it.get("adjusted_price_krw")
     route = it.get("_route") or route_of(it.get("form_type"))
     label = (it.get("dosage_strength") or "기타")[:30]
+    note = "제형 강도 불명 — 매칭 보류(원본가)"
+    if it.get("unit_strength_ambiguous"):
+        # 바이알 부피 모호(CA EAP "20 mg/mL" + "Inj Sol-240 mL Vial Pk") — 포장 표기까지 라벨에 넣어
+        # 240 mL/480 mL 행이 한 탭에 섞이지 않게 하고 사유를 남른다.
+        label = f"{it.get('dosage_strength') or ''} {it.get('dosage_form') or ''}".strip()[:40] or "기타"
+        note = "주사 바이알 단위 모호(출처 부피 표기) — 매칭 보류·A8 집계 제외"
     fields = {
         "formulation_key": f"unknown|{route}|{label}",
         "formulation_label": f"{label} ({'주사' if route == 'injection' else '경구'})",
@@ -351,7 +419,7 @@ def _emit_unmatched(it: dict, updates: list) -> None:
         "unit_strength_mg": it.get("_strength"), "reference_strength_mg": None,
         "dose_norm_factor": 1.0,
         "adjusted_price_krw_normalized": int(adj) if adj is not None else None,
-        "dose_norm_note": "제형 강도 불명 — 매칭 보류(원본가)",
+        "dose_norm_note": note,
     }
     it.update(fields)
     if it.get("id"):
@@ -425,9 +493,10 @@ def process_formulations(drug: str, items: list[dict]) -> list[dict]:
                or it.get("unit_strength_mg")]
     if not targets:
         return []
+    consensus = route_consensus(items)
     for it in targets:
         it["_strength"] = _strength_of(it)
-        it["_route"] = route_of(it.get("form_type"))
+        it["_route"] = route_of_item(it, consensus)
 
     # canonical 기준 국가: US 우선(강도 있는 행, 가격 무관), 없으면 제형 최다 국가
     us_rows = [it for it in targets if (it.get("country") or "").upper() == "US" and it["_strength"]]
@@ -458,7 +527,7 @@ def process_formulations(drug: str, items: list[dict]) -> list[dict]:
             if c:
                 canon_conc.setdefault(round(c, 3), it["_strength"])
 
-    def _conc_remap(s, r, ds):
+    def _conc_remap(s, r, ds, *ctx):
         """injection 행을 **농도 일치**로 canonical 총량에 매핑. 조건: s 가 실제 canonical
         총량이 아니어야(정당 강도 보호), 그리고 ds 의 명시농도 또는 s 자체가 canonical 농도와 일치.
         예 keytruda DE '25 mg'(=농도 25) → 100mg. 25mg 바이알이 실제 canonical 이면 remap 안 함."""
@@ -468,6 +537,13 @@ def process_formulations(drug: str, items: list[dict]) -> list[dict]:
             if cr == r and cs and s and abs(s - cs) / cs <= 0.01:
                 return None
         cand = _concentration_mg_per_ml(ds)
+        if cand is None and s is None:
+            # 강도 문자열이 bare "25 mg" 이고 농도는 제품명에만 있는 행(FR Vidal "KEYTRUDA 25 mg/ml sol diluer p perf")
+            # — 제품명/제형의 명시 농도로 결정론적 remap (예전엔 LLM 으로 넘어감).
+            for t in ctx:
+                cand = _concentration_mg_per_ml(t)
+                if cand:
+                    break
         for cv in [x for x in (cand, s) if x]:
             for cc, total in canon_conc.items():
                 if cc and abs(cv - cc) / cc <= 0.02:
@@ -477,9 +553,14 @@ def process_formulations(drug: str, items: list[dict]) -> list[dict]:
     pending = []
     for it in targets:
         s, r = it["_strength"], it["_route"]
+        if s is None and it.get("unit_strength_ambiguous"):
+            # 바이알 단위 모호 — 농도 remap(20 mg/mL → canonical 240mg) 을 하면 480 mL 행까지 240mg 탭에 들어간다.
+            # 추정하지 않고 unmatched(원본가) 로 둔다. LLM 에도 넘기지 않는다(같은 추정).
+            _emit_unmatched(it, updates)
+            continue
         if s is None:
             # 강도 미상(농도단독 '25 mg/ml' 등): 농도 remap 시도 → 실패 시 pending(LLM)
-            total = _conc_remap(s, r, it.get("dosage_strength"))
+            total = _conc_remap(s, r, it.get("dosage_strength"), it.get("product_name"), it.get("dosage_form"))
             if total is not None:
                 it["_strength"] = total
                 _emit(it, total, r, "us_canonical" if us_based else "foreign_ref",

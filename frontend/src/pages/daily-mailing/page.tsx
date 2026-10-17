@@ -405,7 +405,7 @@ export default function DailyMailingPage() {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className={`w-5 h-5 flex items-center justify-center ${accentColor}`}><i className="ri-mail-settings-line"></i></span>
-              <h1 className={`text-2xl font-bold ${textMain}`}>Daily Mailing Setting</h1>
+              <h1 className={`text-2xl font-bold ${textMain}`}>데일리 메일링</h1>
             </div>
             <p className={`${textSub} text-sm`}>키워드 모니터링 및 자동 메일 발송 스케줄 설정</p>
           </div>

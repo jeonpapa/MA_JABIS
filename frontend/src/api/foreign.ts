@@ -162,6 +162,7 @@ export interface A8Summary {
 export const A8_EXCLUDE_REASON_LABEL: Record<string, string> = {
   pack_count_unverified: '포장수량 미확인',
   no_adjusted_price: '조정가 미산출',
+  injection_unit_ambiguous: '주사 바이알 단위 모호 (출처 표기 확인 필요)',
 };
 
 export function a8ExcludeReasonLabel(reason?: string | null): string {

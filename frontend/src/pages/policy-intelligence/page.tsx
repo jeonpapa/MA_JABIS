@@ -303,7 +303,7 @@ export default function PolicyIntelligencePage() {
           <i className="ri-government-line text-xl" />
           <span className="text-sm font-bold uppercase tracking-[0.18em]">KRPIA / 정부 의견조회 / TF Tracker</span>
         </div>
-        <h1 className="mt-1 text-3xl font-black tracking-tight">Policy Intelligence Hub</h1>
+        <h1 className="mt-1 text-3xl font-black tracking-tight">정책 인텔리전스</h1>
         {overview && (
           <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
             <span className="rounded-full bg-gray-100 px-3 py-1">주제 {overview.topic_count}</span>

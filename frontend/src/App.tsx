@@ -46,9 +46,9 @@ function Layout() {
   }
 
   return (
-    <div className="flex min-h-screen bg-[#0D1117]">
+    <div className="flex min-h-screen" style={{ background: 'var(--page)' }}>
       <Sidebar />
-      <main className="flex-1 ml-60 min-h-screen overflow-y-auto">
+      <main className="flex-1 ml-64 min-h-screen overflow-y-auto">
         <AppRoutes />
       </main>
       {/* 글로벌 개선 요청 FAB — 인증된 레이아웃에서만 (로그인 페이지 제외) */}

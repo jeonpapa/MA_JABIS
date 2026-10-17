@@ -4900,7 +4900,17 @@ def onco_search():
     if not q:
         return jsonify({"results": []})
     custom = db.search_custom_regimens(q)
-    curated = [{**h, "source_kind": "onco"} for h in db.search_onco_regimens(q)]
+    hits = db.search_onco_regimens(q)
+    matched_inn = None
+    # 정본 DB 는 영문 INN·한글 암종명만 갖는다. 한글 제품명(키트루다 등)은 국내 약가 품목명 → 영문 INN 으로 한 번 더 찾는다.
+    if not hits and re.search(r"[가-힣]", q):
+        try:
+            matched_inn = db.english_inn_from_kr(q)
+        except Exception:
+            matched_inn = None
+        if matched_inn:
+            hits = db.search_onco_regimens(matched_inn)
+    curated = [{**h, "source_kind": "onco", **({"matched_inn": matched_inn} if matched_inn else {})} for h in hits]
     return jsonify({"results": custom + curated})
 
 

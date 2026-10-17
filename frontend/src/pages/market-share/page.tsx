@@ -125,6 +125,9 @@ export default function KoreanMarketPage() {
   const trendBrands = trend.data?.top_brands ?? [];
 
   const totalUnits = market.data ? Math.round(market.data.totals.dosage_units) : 0;
+  const totalValuesM = market.data ? formatLcKrw(market.data.totals.values_lc) : '';
+  const unitLine = (item: { units: number; unitShare: number | null }) =>
+    `물량 ${item.unitShare != null ? item.unitShare + '% · ' : ''}${item.units.toLocaleString()} Units`;
   const isLoading = !atc4Code || market.loading || trend.loading;
   const errorMsg = market.error || trend.error || actionError;
   const isEmpty = !isLoading && !market.error && market.data != null && pieData.length === 0;
@@ -242,7 +245,7 @@ export default function KoreanMarketPage() {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className={`w-5 h-5 flex items-center justify-center ${accentColor}`}><i className="ri-pie-chart-2-line"></i></span>
-              <h1 className={`text-2xl font-bold ${textMain}`}>Korean Market</h1>
+              <h1 className={`text-2xl font-bold ${textMain}`}>시장점유율</h1>
             </div>
             <p className={`${textSub} text-sm`}>
               국내 시장 점유율 현황 및 매출 추이 분석
@@ -360,7 +363,7 @@ export default function KoreanMarketPage() {
             <div className="grid grid-cols-4 gap-4">
               {[
                 { label: '제조사', value: selectedBrand.mfr_name || '정보 없음', icon: 'ri-building-2-line' },
-                { label: `시장 점유율 (${quarterLabel(selectedBrand.quarter)})`, value: `${selectedBrand.market_share_pct.toFixed(1)}%`, icon: 'ri-pie-chart-2-line', highlight: true },
+                { label: `매출 점유율 (${quarterLabel(selectedBrand.quarter)})`, value: `${selectedBrand.market_share_pct.toFixed(1)}%`, icon: 'ri-pie-chart-2-line', highlight: true },
                 { label: `분기 매출 (${quarterLabel(selectedBrand.quarter)})`, value: `₩${formatLcKrw(selectedBrand.quarterly.length > 0 ? selectedBrand.quarterly[selectedBrand.quarterly.length - 1].values_lc : 0)}M`, icon: 'ri-line-chart-line' },
                 { label: 'ATC4 시장 순위', value: selectedBrand.market_rank ? `#${selectedBrand.market_rank}` : '정보 없음', icon: 'ri-trophy-line' },
               ].map(item => (
@@ -378,8 +381,9 @@ export default function KoreanMarketPage() {
             {pieData.map(item => (
               <div key={item.name} className={`rounded-xl p-4 border ${sumBg}`}>
                 <div className="flex items-center gap-2 mb-2"><span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }}></span><span className={`text-xs truncate ${textSub}`}>{item.name}</span></div>
+                <p className={`text-[11px] ${textMuted}`}>매출 점유율</p>
                 <p className="text-xl font-bold" style={{ color: item.color }}>{item.value}%</p>
-                <p className={`text-xs mt-1 ${textMuted}`}>{item.units.toLocaleString()} Units</p>
+                <p className={`text-xs mt-1 ${textMuted}`}>{unitLine(item)}</p>
               </div>
             ))}
           </div>
@@ -396,7 +400,7 @@ export default function KoreanMarketPage() {
                     </h3>
                     <p className={`text-xs ${textSub}`}>
                       {shareSubView === 'snapshot'
-                        ? `${market.data ? quarterLabel(market.data.quarter) : ''} · 전체 시장 ${totalUnits.toLocaleString()} Units 기준 (Values LC)`
+                        ? `${market.data ? quarterLabel(market.data.quarter) : ''} · 매출(Values LC) 기준 점유율 · 시장 전체 매출 ₩${totalValuesM}M · 물량 ${totalUnits.toLocaleString()} Units`
                         : `분기별 시장 점유율 변화 추이 · ${trendRangeLabel(shareTrendRows)}`}
                     </p>
                   </div>
@@ -449,21 +453,22 @@ export default function KoreanMarketPage() {
                           <div className="text-center max-w-[150px]">
                             <p className={`text-[13px] font-bold truncate ${textMain}`}>{activeSlice.name}</p>
                             <p className={`text-xl font-bold ${accentColor}`}>{activeSlice.value}%</p>
-                            <p className={`text-[11px] ${textSub}`}>{activeSlice.units.toLocaleString()} Units</p>
+                            <p className={`text-[11px] ${textSub}`}>매출 점유율</p>
+                            <p className={`text-[11px] ${textSub}`}>{unitLine(activeSlice)}</p>
                           </div>
                         </div>
                       )}
                     </div>
                     <div className="space-y-3">
-                      <h3 className={`font-bold text-base mb-4 ${textMain}`}>제품별 점유율 상세</h3>
+                      <h3 className={`font-bold text-base mb-4 ${textMain}`}>제품별 점유율 상세 <span className={`text-xs font-normal ${textMuted}`}>매출 기준 · 물량 병기</span></h3>
                       {pieData.map((item, idx) => (
                         <div key={item.name} className={`p-3 rounded-xl border cursor-pointer transition-all ${safeActive === idx ? listActive : listDefault}`}
                           onMouseEnter={() => setActiveIndex(idx)}>
                           <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-2 min-w-0"><span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }}></span><span className={`text-sm font-semibold truncate ${textMain}`}>{item.name}</span>{item.mfrName && <span className={`text-[10px] truncate ${textMuted}`}>{item.mfrName}</span>}</div>
                             <div className="flex items-center gap-3 flex-shrink-0">
-                              <span className={`text-xs ${textMuted}`}>{item.units.toLocaleString()} Units</span>
-                              <span className={`text-sm font-bold ${textMain}`}>{item.value}%</span>
+                              <span className={`text-xs ${textMuted}`}>{unitLine(item)}</span>
+                              <span className={`text-sm font-bold ${textMain}`} title="매출(Values LC) 기준 점유율">매출 {item.value}%</span>
                             </div>
                           </div>
                           <div className={`w-full h-1.5 rounded-full overflow-hidden ${barTrack}`}><div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(item.value, 100)}%`, backgroundColor: item.color }}></div></div>

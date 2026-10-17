@@ -70,6 +70,12 @@ class PriceRequestStore:
               request_id TEXT PRIMARY KEY REFERENCES price_requests(id),
               payload TEXT NOT NULL, captured_at TEXT NOT NULL
             );
+            -- Last time any price_agent polled the queue. The worker is an external Aside routine
+            -- (it can be paused or the laptop can sleep), so the UI must not promise processing
+            -- when nobody has polled recently. One row per worker account; no request data.
+            CREATE TABLE IF NOT EXISTS price_worker_seen (
+              actor TEXT PRIMARY KEY, last_seen_at TEXT NOT NULL, last_action TEXT NOT NULL
+            );
             CREATE INDEX IF NOT EXISTS price_req_queue ON price_requests(status,created_at);
             CREATE INDEX IF NOT EXISTS oecd_price_query ON oecd_drug_prices(query_name,country,observed_at);
             """)
@@ -109,6 +115,30 @@ class PriceRequestStore:
     def detail(self, rid):
         with self.connect() as c:
             return self._detail(c, rid)
+
+    # Worker liveness. 10-minute routine + slack: 25 minutes without a poll = not running.
+    WORKER_STALE_MINUTES = 25
+
+    def touch_worker(self, actor, action):
+        with self.connect() as c:
+            c.execute("INSERT INTO price_worker_seen(actor,last_seen_at,last_action) VALUES(?,?,?) "
+                      "ON CONFLICT(actor) DO UPDATE SET last_seen_at=excluded.last_seen_at, last_action=excluded.last_action",
+                      (actor, now(), action))
+
+    def worker_status(self, at=None):
+        """Public summary only: no worker identity, no request content."""
+        with self.connect() as c:
+            row = c.execute("SELECT MAX(last_seen_at) AS seen FROM price_worker_seen").fetchone()
+            waiting = c.execute("SELECT COUNT(*) FROM price_requests WHERE status IN ('queued','processing','awaiting_verification')").fetchone()[0]
+        seen = row["seen"] if row else None
+        current = at or datetime.now(timezone.utc)
+        if not seen:
+            state = "never"
+        else:
+            age = current - datetime.fromisoformat(seen)
+            state = "active" if age <= timedelta(minutes=self.WORKER_STALE_MINUTES) else "stale"
+        return {"state": state, "last_seen_at": seen, "stale_after_minutes": self.WORKER_STALE_MINUTES,
+                "open_requests": waiting}
 
     def create(self, query, scope, countries, email, actor, identity=None):
         if scope not in CATALOG or scope == "note":

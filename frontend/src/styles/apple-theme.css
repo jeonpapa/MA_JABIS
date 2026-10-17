@@ -1,0 +1,175 @@
+/*
+ * Apple-style design layer (2026-10)
+ * ─────────────────────────────────────────────────────────────────────────────
+ * The app grew two palettes: hard-coded dark hex utilities (bg-[#161B27] …) and
+ * per-page light utilities (bg-white, gray-*, teal-*). Rather than rewriting ~20k
+ * lines at once, this layer maps every recurring color token to one light,
+ * Apple-like system (SF type, #F5F5F7 canvas, white grouped surfaces, hairline
+ * separators, system blue accent). Everything is scoped under html.apple so the
+ * layer can be removed by dropping one class. New code should use the CSS
+ * variables below (or the .ui-* helpers) instead of raw hex values.
+ */
+
+:root {
+  --page: #f5f5f7;
+  --surface: #ffffff;
+  --surface-inset: #f5f5f7;
+  --fill: rgba(118, 118, 128, 0.12);
+  --fill-strong: rgba(118, 118, 128, 0.2);
+  --separator: rgba(60, 60, 67, 0.12);
+  --separator-strong: rgba(60, 60, 67, 0.22);
+  --label: #1d1d1f;
+  --label-2: #6e6e73;
+  --label-3: #8e8e93;
+  --accent: #0071e3;
+  --accent-hover: #0077ed;
+  --accent-pressed: #006edb;
+  --accent-tint: rgba(0, 113, 227, 0.1);
+  --accent-tint-strong: rgba(0, 113, 227, 0.16);
+  --green: #248a3d;
+  --green-solid: #34c759;
+  --green-tint: rgba(52, 199, 89, 0.14);
+  --orange: #b25000;
+  --orange-solid: #ff9f0a;
+  --orange-tint: rgba(255, 159, 10, 0.14);
+  --red: #d70015;
+  --red-solid: #ff3b30;
+  --red-tint: rgba(255, 59, 48, 0.1);
+  --purple: #8944ab;
+  --purple-tint: rgba(175, 82, 222, 0.12);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.04);
+  --shadow-pop: 0 10px 40px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.06);
+  --radius-card: 18px;
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Apple SD Gothic Neo",
+    "Pretendard", "Noto Sans KR", "Helvetica Neue", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+/* ── Base ─────────────────────────────────────────────────────────────────── */
+html.apple {
+  background: var(--page);
+  color: var(--label);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "kern";
+}
+html.apple body { background: var(--page); color: var(--label); font-family: var(--font-ui); }
+html.apple :is(input, select, textarea, button) { font-family: inherit; }
+html.apple :is(h1, .text-2xl, .text-3xl, .text-4xl) { letter-spacing: -0.022em; }
+html.apple :is(h2, h3, .text-xl, .text-lg) { letter-spacing: -0.012em; }
+html.apple .font-mono { font-family: var(--font-mono); }
+html.apple ::selection { background: rgba(0, 113, 227, 0.22); }
+html.apple :focus-visible { outline: 3px solid rgba(0, 113, 227, 0.4); outline-offset: 2px; border-radius: 8px; }
+html.apple * { scrollbar-width: thin; scrollbar-color: rgba(0, 0, 0, 0.18) transparent; }
+
+/* ── Surfaces (dark tokens → grouped light surfaces) ─────────────────────── */
+html.apple :is([class~="bg-[#0D1117]"], [class~="bg-[#0A0E1A]"], [class~="bg-gray-50"], [class~="bg-[#121820]"]) { background-color: var(--page); }
+html.apple :is([class~="bg-[#0D1117]/30"], [class~="bg-[#0D1117]/40"], [class~="bg-[#0D1117]/50"], [class~="bg-[#0D1117]/60"]) { background-color: var(--surface-inset); }
+html.apple :is([class~="bg-[#161B27]"], [class~="bg-[#1A2035]/80"]) { background-color: var(--surface); }
+html.apple :is([class~="bg-[#1E2530]"], [class~="bg-[#2A3545]"], [class~="bg-gray-100"], [class~="bg-[#1E2530]/30"], [class~="bg-[#1A2035]/20"], [class~="bg-[#4A5568]/20"]) { background-color: var(--fill); }
+html.apple :is([class~="bg-[#0F1A18]"], [class~="bg-[#1E1A10]"]) { background-color: var(--surface-inset); }
+html.apple [class~="bg-[#4A5568]"], html.apple [class~="bg-[#64748B]"], html.apple [class~="bg-[#94A3B8]"] { background-color: #aeaeb2; }
+
+/* Cards get a whisper of elevation instead of heavy borders. */
+html.apple :is([class~="bg-[#161B27]"], .bg-white):is(.rounded-2xl, .rounded-xl) { box-shadow: var(--shadow-card); }
+html.apple .rounded-2xl { border-radius: var(--radius-card); }
+
+/* Hover fills */
+html.apple :is([class~="hover:bg-[#1E2530]"], [class~="hover:bg-[#2A3545]"], [class~="hover:bg-[#2A3441]"], [class~="hover:bg-[#1E2530]/30"], [class~="hover:bg-[#1E2530]/40"], [class~="hover:bg-[#1E2530]/50"], [class~="hover:bg-[#1E2530]/60"], [class~="hover:bg-white/5"], [class~="hover:bg-[#121820]"], [class~="hover:bg-[#0D1117]"]):hover { background-color: var(--fill); }
+html.apple [class~="hover:bg-gray-200"]:hover { background-color: var(--fill-strong); }
+
+/* ── Separators ───────────────────────────────────────────────────────────── */
+html.apple :is([class~="border-[#1E2530]"], [class~="border-[#1E2530]/50"], [class~="border-[#1E2530]/40"], [class~="border-gray-200"], [class~="border-gray-100"], [class~="divide-[#1E2530]"]) { border-color: var(--separator); }
+html.apple :is([class~="border-[#2A3545]"], [class~="border-[#2A3441]"], [class~="border-[#4A5568]"], [class~="border-gray-300"], [class~="border-gray-600"]) { border-color: var(--separator-strong); }
+html.apple :is([class~="hover:border-[#2A3545]"], [class~="hover:border-[#2A3441]"], [class~="hover:border-gray-300"]):hover { border-color: rgba(60, 60, 67, 0.3); }
+
+/* ── Text ─────────────────────────────────────────────────────────────────── */
+html.apple :is(.text-white, [class~="text-[#C9D4E3]"], [class~="text-[#C9D1D9]"], [class~="text-[#B0BCC9]"], .text-gray-900, .text-gray-100, .text-gray-800) { color: var(--label); }
+html.apple :is([class~="text-[#8B9BB4]"], .text-gray-500, .text-gray-600, .text-gray-300, [class~="hover:text-[#8B9BB4]"]) { color: var(--label-2); }
+html.apple :is([class~="text-[#4A5568]"], [class~="text-[#5A6A80]"], [class~="text-[#6B7A90]"], [class~="text-[#2A3545]"], [class~="text-[#1E2530]"], .text-gray-400) { color: var(--label-3); }
+html.apple :is([class~="placeholder-[#4A5568]"], .placeholder-gray-400)::placeholder { color: #a1a1a6; }
+html.apple [class~="hover:text-white"]:hover { color: var(--label); }
+
+/* White text stays white on solid accent / colored fills. */
+html.apple :is([class~="bg-[#00E5CC]"], [class~="bg-[#7C3AED]"], [class~="bg-[#F59E0B]"], [class~="bg-red-500"], [class~="bg-red-600"], [class~="bg-red-500/70"], [class*="bg-teal-5"], [class*="bg-teal-6"], [class*="bg-teal-7"], [class*="bg-blue-5"], [class*="bg-blue-6"], [class*="bg-blue-7"], [class*="bg-emerald-5"], [class*="bg-emerald-6"], [class*="bg-green-5"], [class*="bg-green-6"], [class*="bg-indigo-"], [class*="bg-purple-5"], [class*="bg-purple-6"], [class*="bg-gradient"], [class*="bg-amber-5"], [class*="bg-orange-5"], .bg-black, [class*="bg-gray-8"], [class*="bg-gray-9"], [class*="bg-slate-8"], [class*="bg-slate-9"], .ui-button).text-white,
+html.apple :is([class~="bg-[#00E5CC]"], [class~="bg-[#7C3AED]"], [class~="bg-[#F59E0B]"], [class~="bg-red-500"], [class~="bg-red-600"], [class~="bg-red-500/70"], [class*="bg-teal-5"], [class*="bg-teal-6"], [class*="bg-teal-7"], [class*="bg-blue-5"], [class*="bg-blue-6"], [class*="bg-blue-7"], [class*="bg-emerald-5"], [class*="bg-emerald-6"], [class*="bg-green-5"], [class*="bg-green-6"], [class*="bg-indigo-"], [class*="bg-purple-5"], [class*="bg-purple-6"], [class*="bg-gradient"], [class*="bg-amber-5"], [class*="bg-orange-5"], .bg-black, [class*="bg-gray-8"], [class*="bg-gray-9"], [class*="bg-slate-8"], [class*="bg-slate-9"], .ui-button) .text-white { color: #fff; }
+html.apple [class~="text-[#0A0E1A]"] { color: #fff; }
+
+/* ── Accent: teal → system blue ───────────────────────────────────────────── */
+html.apple :is([class~="text-[#00E5CC]"], [class~="text-[#00E5CC]/70"], .text-teal-600, .text-teal-700, .text-teal-500, .text-teal-400, [class~="text-[#60A5FA]"], [class~="text-[#3B82F6]"], [class~="text-[#38BDF8]"], [class~="hover:text-[#00E5CC]"]:hover, [class~="hover:text-[#00C9B1]"]:hover, [class~="hover:text-teal-600"]:hover, [class~="hover:text-teal-400"]:hover) { color: var(--accent); }
+html.apple :is([class~="bg-[#00E5CC]"], .bg-teal-600, .bg-teal-500) { background-color: var(--accent); }
+html.apple :is([class~="hover:bg-[#00C9B1]"], [class~="hover:bg-teal-700"], [class~="hover:bg-teal-600"]):hover { background-color: var(--accent-hover); }
+html.apple :is([class~="bg-[#00E5CC]/5"], [class~="bg-[#00E5CC]/8"], [class~="bg-[#00E5CC]/10"], [class~="bg-[#3B82F6]/10"], [class~="bg-[#0EA5E9]/10"], .bg-teal-50, [class~="bg-[#00857C]/20"]) { background-color: var(--accent-tint); }
+html.apple :is([class~="bg-[#00E5CC]/15"], [class~="bg-[#00E5CC]/20"], [class~="bg-[#3B82F6]/15"], .bg-teal-100) { background-color: var(--accent-tint-strong); }
+html.apple :is([class~="hover:bg-[#00E5CC]/5"], [class~="hover:bg-[#00E5CC]/8"], [class~="hover:bg-[#00E5CC]/10"], [class~="hover:bg-[#00E5CC]/20"], [class~="hover:bg-teal-50"]):hover { background-color: var(--accent-tint); }
+html.apple :is([class~="border-[#00E5CC]"], [class~="border-[#00E5CC]/60"], [class~="border-[#00E5CC]/50"], .border-teal-600, .border-teal-500) { border-color: var(--accent); }
+html.apple :is([class~="border-[#00E5CC]/20"], [class~="border-[#00E5CC]/25"], [class~="border-[#00E5CC]/30"], [class~="border-[#00E5CC]/40"], .border-teal-300, .border-teal-200, [class~="border-[#3B82F6]/30"]) { border-color: rgba(0, 113, 227, 0.35); }
+html.apple :is([class~="focus:border-[#00E5CC]/50"], [class~="focus:border-[#00E5CC]/60"], [class~="focus:border-[#00E5CC]"], [class~="focus:border-teal-400"]):focus,
+html.apple :is([class~="focus-within:border-[#00E5CC]/50"], [class~="focus-within:border-teal-300"]):focus-within { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.14); }
+html.apple :is([class~="hover:border-[#00E5CC]"], [class~="hover:border-[#00E5CC]/30"], [class~="hover:border-[#00E5CC]/40"], [class~="hover:border-[#00E5CC]/50"]):hover { border-color: rgba(0, 113, 227, 0.45); }
+html.apple [class~="accent-[#00E5CC]"] { accent-color: var(--accent); }
+html.apple .ring-teal-500 { --tw-ring-color: var(--accent); }
+
+/* ── Semantic tints ───────────────────────────────────────────────────────── */
+html.apple :is([class~="text-[#F59E0B]"], [class~="text-[#FFA500]"], [class~="text-[#FF7A00]/70"], .text-amber-600, .text-amber-400) { color: var(--orange); }
+html.apple :is([class~="bg-[#F59E0B]/10"], [class~="bg-[#F59E0B]/15"], [class~="hover:bg-[#F59E0B]/10"]:hover) { background-color: var(--orange-tint); }
+html.apple :is([class~="bg-[#F59E0B]/40"], [class~="hover:bg-[#F59E0B]/20"]:hover) { background-color: rgba(255, 159, 10, 0.24); }
+html.apple :is([class~="border-[#F59E0B]/15"], [class~="border-[#F59E0B]/25"], [class~="border-[#F59E0B]/30"]) { border-color: rgba(255, 159, 10, 0.35); }
+html.apple [class~="bg-[#F59E0B]"] { background-color: var(--orange-solid); }
+html.apple :is([class~="text-[#EF4444]"], [class~="text-[#FF6B6B]"], .text-red-400, .text-red-500) { color: var(--red); }
+html.apple :is([class~="bg-[#EF4444]/10"], [class~="bg-[#EF4444]/20"], [class~="bg-[#FF6B6B]/10"], [class~="bg-red-500/10"], [class~="bg-red-500/5"]) { background-color: var(--red-tint); }
+html.apple :is([class~="hover:bg-[#EF4444]/30"], [class~="hover:bg-[#FF6B6B]/20"]):hover { background-color: rgba(255, 59, 48, 0.16); }
+html.apple :is([class~="border-[#EF4444]/20"], [class~="border-red-500/30"], [class~="border-red-500/40"]) { border-color: rgba(255, 59, 48, 0.3); }
+html.apple :is([class~="text-[#7C3AED]"], [class~="text-[#A78BFA]"]) { color: var(--purple); }
+html.apple :is([class~="bg-[#7C3AED]/5"], [class~="bg-[#7C3AED]/10"], [class~="bg-[#7C3AED]/20"], [class~="bg-[#8B5CF6]/10"], [class~="hover:bg-[#7C3AED]/20"]:hover) { background-color: var(--purple-tint); }
+html.apple :is([class~="border-[#7C3AED]/30"], [class~="border-[#7C3AED]/40"]) { border-color: rgba(175, 82, 222, 0.32); }
+html.apple .text-emerald-600, html.apple .text-emerald-400, html.apple .text-green-600 { color: var(--green); }
+
+/* ── Charts: palettes live in code (legend dots share the constants); only soften chrome ── */
+html.apple :is([stroke="#1E2530"], [stroke="#E5E7EB"]) { stroke: rgba(60, 60, 67, 0.1); }
+html.apple .recharts-cartesian-axis-tick-value { fill: var(--label-3); }
+html.apple .recharts-default-tooltip { border-radius: 12px !important; border: 0 !important; box-shadow: var(--shadow-pop); }
+
+/* ── Controls ─────────────────────────────────────────────────────────────── */
+html.apple :is(input[type="text"], input[type="email"], input[type="search"], input[type="number"], input[type="date"], input[type="password"], input:not([type]), select, textarea) { border-radius: 10px; }
+html.apple :is(input, select, textarea):is([class~="bg-[#0D1117]"], [class~="bg-[#161B27]"], .bg-transparent) { background-color: var(--surface); }
+html.apple button { transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, transform 0.12s ease; }
+html.apple button:active:not(:disabled) { transform: scale(0.985); }
+html.apple .shadow-lg { box-shadow: var(--shadow-pop); }
+html.apple :is(button, a)[aria-disabled="true"], html.apple button:disabled { opacity: 0.4; cursor: not-allowed; }
+html.apple table thead :is(th, td) { color: var(--label-2); font-weight: 600; }
+
+/* Per-page dark/light toggles are retired: one consistent light system. */
+html.apple button:is([title="다크 모드"], [title="라이트 모드"]) { display: none; }
+
+/* ── Reusable helpers for new code ───────────────────────────────────────── */
+.ui-card { background: var(--surface); border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
+.ui-eyebrow { font-size: 12px; font-weight: 600; color: var(--label-2); letter-spacing: 0.01em; }
+.ui-title { font-size: 28px; line-height: 1.15; font-weight: 700; letter-spacing: -0.025em; color: var(--label); }
+.ui-subtitle { font-size: 15px; line-height: 1.5; color: var(--label-2); }
+.ui-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 36px; padding: 0 16px; border-radius: 980px; font-size: 14px; font-weight: 500; background: var(--accent); color: #fff; }
+.ui-button:hover:not(:disabled) { background: var(--accent-hover); }
+.ui-button:disabled { opacity: 0.4; cursor: not-allowed; }
+.ui-button-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 36px; padding: 0 16px; border-radius: 980px; font-size: 14px; font-weight: 500; background: var(--fill); color: var(--accent); }
+.ui-button-secondary:hover:not(:disabled) { background: var(--fill-strong); }
+.ui-button-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
+.ui-field { width: 100%; height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--separator-strong); background: var(--surface); color: var(--label); font-size: 14px; }
+.ui-field:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.14); }
+.ui-pill { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 980px; font-size: 12px; font-weight: 500; background: var(--fill); color: var(--label-2); }
+.ui-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.ui-notice { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 14px; font-size: 13px; line-height: 1.5; }
+.ui-notice-ok { background: var(--green-tint); color: #1c5a2b; }
+.ui-notice-warn { background: var(--orange-tint); color: #7a3c00; }
+.ui-notice-info { background: var(--accent-tint); color: #00418a; }
+
+/* ── Sidebar (vibrancy) ──────────────────────────────────────────────────── */
+.ui-sidebar { background: rgba(246, 246, 248, 0.82); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px); border-right: 1px solid var(--separator); }
+.ui-nav-section { padding: 18px 12px 6px; font-size: 11px; font-weight: 600; color: var(--label-3); letter-spacing: 0.02em; }
+.ui-nav-item { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 8px; font-size: 13.5px; font-weight: 500; color: var(--label); white-space: nowrap; }
+.ui-nav-item i { font-size: 16px; color: var(--accent); width: 18px; text-align: center; }
+.ui-nav-item:hover { background: rgba(0, 0, 0, 0.045); }
+.ui-nav-item.is-active { background: rgba(0, 0, 0, 0.075); font-weight: 600; }
+.ui-nav-badge { margin-left: auto; min-width: 18px; height: 18px; padding: 0 6px; border-radius: 9px; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; background: var(--fill-strong); color: var(--label-2); }
+.ui-nav-badge.is-alert { background: var(--accent); color: #fff; }
