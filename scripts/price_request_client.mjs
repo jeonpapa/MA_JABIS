@@ -34,13 +34,24 @@ async function http(endpoint, method = 'GET', body, token, lease) {
   return value;
 }
 async function main() {
-  if (!['queue', 'claim', 'heartbeat', 'upload', 'readback', 'verify', 'notify'].includes(command)) throw new Error('Commands: queue | claim ID | heartbeat ID | upload ID CC | readback ID | verify ID | notify ID. Mutations require --state TEMPFILE; upload/verify/notify also --file JSONFILE.');
+  if (!['queue', 'claim', 'heartbeat', 'upload', 'readback', 'verify', 'notify', 'tasks', 'task-claim', 'task-resolve'].includes(command)) throw new Error('Commands: queue | claim ID | heartbeat ID | upload ID CC | readback ID | verify ID | notify ID | tasks | task-claim N | task-resolve N --file JSONFILE. Mutations require --state TEMPFILE; upload/verify/notify also --file JSONFILE. task-resolve JSON: {"status":"closed|blocked|triaged","resolution":"..."}.');
   const email = get('PRICE_AGENT_EMAIL'), password = get('PRICE_AGENT_PASSWORD');
   if (!email || !password) throw new Error('Setup required: PRICE_AGENT_EMAIL and PRICE_AGENT_PASSWORD in config/.env');
   const login = await http('/api/auth/login', 'POST', {email, password});
   if (login.user?.role !== 'price_agent') throw new Error('Use the narrowly scoped price_agent account, not admin or agent');
   const token = login.token;
   if (command === 'queue') return http('/api/price-agent/requests', 'GET', undefined, token);
+  // Operations ledger (원장): price_agent is server-limited to owner=aside tasks (others → 403/409 OWNER_MISMATCH).
+  if (command === 'tasks') return http('/api/agent/tasks?owner=aside', 'GET', undefined, token);
+  if (command === 'task-claim' || command === 'task-resolve') {
+    const tid = pos[0];
+    if (!/^\d{1,9}$/.test(tid || '')) throw new Error('Invalid task ID');
+    if (command === 'task-claim') return http(`/api/agent/tasks/${tid}/claim`, 'POST', {}, token);
+    const tfile = flag('--file'); if (!tfile) throw new Error('--file JSONFILE required');
+    const tbody = JSON.parse(await fs.readFile(tfile, 'utf8'));
+    if (!['closed', 'blocked', 'triaged'].includes(tbody.status)) throw new Error('status must be closed|blocked|triaged');
+    return http(`/api/agent/tasks/${tid}/resolve`, 'POST', {status: tbody.status, resolution: String(tbody.resolution || '').slice(0, 2000)}, token);
+  }
   const rid = pos[0];
   if (!/^[a-f0-9]{32}$/.test(rid || '')) throw new Error('Invalid request ID');
   if (!statePath) throw new Error('--state temporary path is required');
