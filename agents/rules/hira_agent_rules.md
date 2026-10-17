@@ -129,3 +129,8 @@ A8 조정가격(KRW) = [(각국 공장도출하가 × 평균환율) × (1 + 부�
 - 보건복지부 고시: 「약제의 결정 및 조정기준」
 - 별첨1: 약제의 유용성 및 비용효과성 자료 제출범위 및 작성방법
 - 별첨2: 의약품 경제성평가지침
+
+## 급여 체크리스트(`indication_reimbursement`) = 사람 정본 (2026-10-17)
+- admin `/admin/reimbursement` 만 쓴다. 스케줄 잡·ingest·LLM 파서는 쓰지 않는다(읽기 union 만). Keytruda 31행은 2026-10-17 수동 입력.
+- MFDS 허가 Keytruda 적응증에 행이 없거나 고아 행(재빌드·병합으로 indication_id 변경)이 생기면 신선도 `reimbursement_checklist_mfds_gap`
+  과제 "급여 체크리스트 입력 필요"(담당 사람). 병합은 체크리스트를 dst 로 옮긴다. 상세: `agents/rules/data_contracts.md` §1.

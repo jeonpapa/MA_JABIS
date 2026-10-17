@@ -61,9 +61,14 @@ def _ensure_columns() -> None:
         if "expected_session_id" not in cols:
             conn.execute("ALTER TABLE amjilsim_drugs ADD COLUMN expected_session_id INTEGER")
             conn.commit()
+        # 등재 차수 테이블 (추가 전용). 읽기 전용 DB(테스트 가드·마운트)에서는 실패해도 import 를 막지 않는다 —
+        # 조회 경로는 테이블이 없으면 약제 행 = 가상 차수로 동작.
+        try:
+            ensure_round_schema(conn)
+            conn.commit()
+        except sqlite3.OperationalError:
+            conn.rollback()
 
-
-_ensure_columns()
 
 
 def _valid_date(value: Any, field: str) -> Optional[str]:
@@ -533,20 +538,27 @@ def _nhis_list_type_for_drug(conn: sqlite3.Connection, drug_id: int) -> Optional
     return None
 
 
-def _nhis_drug_dates(conn: sqlite3.Connection, drug_id: int) -> tuple[Optional[str], Optional[str]]:
+def _nhis_drug_dates(conn: sqlite3.Connection, drug_id: int,
+                     round_id: Optional[int] = None) -> tuple[Optional[str], Optional[str]]:
     """(공단 자료로 상태가 바뀐 최근 시각 = max first_seen_at, 공단 목록에서 최근 확인 = max fetched_at)."""
     if not _nhis_table_exists(conn):
         return None, None
+    if round_id is not None and _nhis_has_round_col(conn):  # 차수 카드: 그 차수에 연결된 공단 행만
+        row = conn.execute(
+            "SELECT MAX(first_seen_at) AS fs, MAX(fetched_at) AS fa FROM nhis_negotiations WHERE round_id = ?",
+            (round_id,)).fetchone()
+        return (row["fs"], row["fa"]) if row else (None, None)
     row = conn.execute(
         "SELECT MAX(first_seen_at) AS fs, MAX(fetched_at) AS fa FROM nhis_negotiations WHERE drug_id = ?",
         (drug_id,)).fetchone()
     return (row["fs"], row["fa"]) if row else (None, None)
 
 
-def _freshness(drug_id: int, queue_rows: list, conn: sqlite3.Connection, today: str) -> dict:
+def _freshness(drug_id: int, queue_rows: list, conn: sqlite3.Connection, today: str,
+               round_id: Optional[int] = None) -> dict:
     """카드 날짜 라벨 — '최근 갱신'(상태 기록이 마지막으로 바뀐 날)과 '공단 자료 확인'(NHIS 목록 재확인)을 분리."""
     observed = [q["observed_at"] for q in queue_rows if q["observed_at"]]
-    nhis_seen, nhis_checked = _nhis_drug_dates(conn, drug_id)
+    nhis_seen, nhis_checked = _nhis_drug_dates(conn, drug_id, round_id)
     updated = max([x for x in observed + [nhis_seen] if x], default=None)
     stale_days = _days_between(updated, today)
     checked_days = _days_between(nhis_checked, today)
@@ -558,7 +570,10 @@ def _freshness(drug_id: int, queue_rows: list, conn: sqlite3.Connection, today: 
 
 def _pipeline_drug_dict(drug: sqlite3.Row, queue_rows: list[sqlite3.Row],
                         today: str, conn: sqlite3.Connection,
-                        next_session_ids: dict[str, Optional[int]]) -> tuple[str, dict]:
+                        next_session_ids: dict[str, Optional[int]],
+                        round_meta: Optional[dict] = None) -> tuple[str, dict]:
+    """카드 1장. round_meta 가 있으면 drug 는 _round_view(차수 필드로 덮어쓴 약제 행), queue_rows 는 그 차수 이벤트."""
+    round_meta = round_meta or _virtual_round_meta(drug)
     stage = _drug_stage(drug, queue_rows)
     observed = [q["observed_at"] for q in queue_rows if q["observed_at"]]
     status = _drug_status(stage, drug, queue_rows, today, next_session_ids)
@@ -576,7 +591,7 @@ def _pipeline_drug_dict(drug: sqlite3.Row, queue_rows: list[sqlite3.Row],
     # 카드 수준 예상 상태: 타임라인의 미도래 위원회 단계 중 예상일이 있는 것의 성격 ('overdue' 가 하나라도 있으면 overdue)
     exp_statuses = [t.get("expectedStatus") for t in timeline if t.get("expectedStatus")]
     expected_status = ("overdue" if "overdue" in exp_statuses else exp_statuses[0] if exp_statuses else None)
-    fresh = _freshness(drug["drug_id"], queue_rows, conn, today)
+    fresh = _freshness(drug["drug_id"], queue_rows, conn, today, round_meta.get("roundId"))
     raw_issues = _key_issues(drug)
     item = {
         "id": drug["drug_id"],
@@ -603,8 +618,9 @@ def _pipeline_drug_dict(drug: sqlite3.Row, queue_rows: list[sqlite3.Row],
         "negotiationDateSource": _row_get(drug, "negotiation_date_source"),
         "nhisRegisteredYm": _row_get(drug, "nhis_registered_ym"),
         "efficacyGroup": _row_get(drug, "efficacy_group"),
-        # 신규/확대 구분 (매칭된 NHIS 공개자료 기준 — 보드 필터칩용)
-        "listType": _nhis_list_type_for_drug(conn, drug["drug_id"]),
+        # 신규/확대 구분 (차수 유형 → 매칭된 NHIS 공개자료 기준 — 보드 필터칩용)
+        "listType": (round_meta.get("listType") if round_meta.get("roundId") is not None
+                     else _nhis_list_type_for_drug(conn, drug["drug_id"])),
         "notes": drug["notes"],
         # 핵심 쟁점 — 내부 키(brdBltNo)·연도 없는 차수를 사람이 읽는 문장으로 (원문은 keyIssuesRaw)
         "keyIssues": [x for x in (humanize_issue(i) for i in raw_issues) if x],
@@ -619,7 +635,91 @@ def _pipeline_drug_dict(drug: sqlite3.Row, queue_rows: list[sqlite3.Row],
         "history": _history(queue_rows, drug),
         "timeline": timeline,
     }
+    # 등재 차수 — 브랜드(drugId) 아래 차수별 카드. 차수 미분할 브랜드는 roundId=None(약제 행 = 가상 차수)
+    item.update({k: v for k, v in round_meta.items() if k != "listType"})
+    item["drugId"] = drug["drug_id"]
+    item["cardKey"] = f"{drug['drug_id']}:{round_meta.get('roundId') or 0}"
     return stage, item
+
+
+def _virtual_round_meta(drug) -> dict:
+    """차수가 없는 브랜드 — 약제 행 자체가 차수 (하위 호환)."""
+    return {"roundId": None, "roundLabel": round_label_for(drug), "roundSeq": 1, "roundCount": 1,
+            "roundSource": None, "roundNeedsReview": False, "comboKey": None, "comboPartners": [],
+            "reimbStartDate": None, "indicationScope": _row_get(drug, "indication")}
+
+
+def _round_view(drug, rnd, is_primary: bool) -> dict:
+    """약제 행 + 차수 필드 덮어쓰기 — 기존 판정 함수(_drug_stage/_drug_status/_timeline/last_result)를 그대로 재사용.
+    상정 예정 차수·핵심 쟁점은 대표(진행 중) 차수에만 남긴다."""
+    v = dict(drug)
+    for col in ("amjilsim_pass_date", "yakpyungwi_pass_date", "submitted_date", "negotiation_status",
+                "negotiation_complete_date", "negotiation_date_source", "nhis_registered_ym"):
+        v[col] = rnd[col]
+    v["indication"] = rnd["indication_scope"]
+    v["listing_type"] = rnd["list_type"]
+    if rnd["notes"]:
+        v["notes"] = rnd["notes"]
+    if not is_primary:
+        v["expected_session_id"] = None
+        v["key_issues"] = None
+    return v
+
+
+def _round_meta(rnd, seq: int, count: int, combo_index: dict) -> dict:
+    partners = [p for p in combo_index.get(rnd["combo_key"], []) if p["drugId"] != rnd["drug_id"]] \
+        if rnd["combo_key"] else []
+    return {"roundId": rnd["round_id"], "roundLabel": rnd["round_label"], "roundSeq": seq, "roundCount": count,
+            "roundSource": rnd["source"], "roundNeedsReview": bool(rnd["needs_review"]),
+            "comboKey": rnd["combo_key"], "comboPartners": partners,
+            "reimbStartDate": rnd["reimb_start_date"], "indicationScope": rnd["indication_scope"],
+            "listType": rnd["list_type"]}
+
+
+def _combo_index(conn: sqlite3.Connection) -> dict:
+    out: dict[str, list[dict]] = {}
+    if not rounds_enabled(conn):
+        return out
+    for r in conn.execute("SELECT r.round_id, r.drug_id, r.round_label, r.combo_key, d.brand_kr "
+                          "FROM reimb_listing_rounds r LEFT JOIN amjilsim_drugs d ON d.drug_id = r.drug_id "
+                          "WHERE r.combo_key IS NOT NULL AND r.combo_key != ''"):
+        out.setdefault(r["combo_key"], []).append({"drugId": r["drug_id"], "name": r["brand_kr"],
+                                                   "roundId": r["round_id"], "roundLabel": r["round_label"]})
+    return out
+
+
+def drug_round_cards(conn: sqlite3.Connection, drug, today: str, next_ids: dict,
+                     rounds: Optional[list] = None, links: Optional[dict] = None,
+                     combo_index: Optional[dict] = None) -> list[dict]:
+    """브랜드 1개 → 차수별 카드 [{round, stage, item, queue_rows}]. 차수 없으면 가상 차수 1장(기존과 동일).
+
+    차수 이벤트 = 명시 링크(다른 브랜드의 병용 공유 이벤트 포함) + 아직 링크 없는 자기 이벤트는 규칙(pick_round_for_event)
+    으로 조회 시점 배정(쓰기 없음), 그래도 못 정하면 대표 차수.
+    """
+    did = drug["drug_id"]
+    own_rows = conn.execute(_QUEUE_JOIN_SQL, (did,)).fetchall()
+    rounds = list_rounds(conn, did) if rounds is None else rounds
+    if not rounds:
+        stage, item = _pipeline_drug_dict(drug, own_rows, today, conn, next_ids)
+        return [{"round": None, "stage": stage, "item": item, "queue_rows": own_rows}]
+    links = _event_links(conn) if links is None else links
+    combo_index = _combo_index(conn) if combo_index is None else combo_index
+    prim = primary_round(rounds)
+    per_round: dict[int, list] = {r["round_id"]: _round_queue_rows(conn, r["round_id"]) for r in rounds}
+    for q in own_rows:
+        if any(rd == did for _, rd, _ in links.get(q["id"], [])):
+            continue
+        target = pick_round_for_event(rounds, _event_date(q) or None, q["committee_type"]) or prim
+        per_round[target["round_id"]].append(q)
+    out = []
+    for i, r in enumerate(rounds, 1):
+        view = _round_view(drug, r, r["round_id"] == prim["round_id"])
+        qrows = per_round[r["round_id"]]
+        stage, item = _pipeline_drug_dict(view, qrows, today, conn, next_ids,
+                                          _round_meta(r, i, len(rounds), combo_index))
+        out.append({"round": r, "stage": stage, "item": item, "queue_rows": qrows,
+                    "is_primary": r["round_id"] == prim["round_id"]})
+    return out
 
 
 def get_pipeline(include_completed: bool = False) -> dict:
@@ -627,6 +727,9 @@ def get_pipeline(include_completed: bool = False) -> dict:
 
     include_completed=False (기본): 공단 협상 완료(negotiation_status='AGREED') 약제 제외 —
     이미 등재 마무리된 건은 '진행 중' 보드에서 빼고 별도 completed 카운트로만 노출.
+
+    등재 차수가 분할된 브랜드는 차수마다 카드 1장(roundLabel). 완료 제외도 차수 단위 — 키트루다 2025 차수가 끝났어도
+    2026 차수가 진행 중이면 그 카드만 보인다. completedExcluded = 제외된 카드(차수) 수.
     """
     today = date.today().isoformat()
     stages: dict[str, list[dict]] = {"cancer": [], "evaluation": [], "nhis": []}
@@ -636,13 +739,28 @@ def get_pipeline(include_completed: bool = False) -> dict:
         drugs = conn.execute(
             "SELECT * FROM amjilsim_drugs ORDER BY brand_kr"
         ).fetchall()
+        all_rounds = list_rounds(conn)
+        rounds_by_drug: dict[int, list] = {}
+        for r in all_rounds:
+            rounds_by_drug.setdefault(r["drug_id"], []).append(r)
+        links = _event_links(conn)
+        combo_index = _combo_index(conn)
         for drug in drugs:
-            if not include_completed and drug["negotiation_status"] == "AGREED":
-                completed_count += 1
-                continue
-            queue_rows = conn.execute(_QUEUE_JOIN_SQL, (drug["drug_id"],)).fetchall()
-            stage, item = _pipeline_drug_dict(drug, queue_rows, today, conn, next_ids)
-            stages[stage].append(item)
+            rounds = rounds_by_drug.get(drug["drug_id"], [])
+            if not rounds:  # 가상 차수 — 기존 동작 그대로
+                if not include_completed and drug["negotiation_status"] == "AGREED":
+                    completed_count += 1
+                    continue
+            elif not include_completed:
+                n_done = sum(1 for r in rounds if r["negotiation_status"] == "AGREED")
+                completed_count += n_done
+                if n_done == len(rounds):
+                    continue
+            for card in drug_round_cards(conn, drug, today, next_ids, rounds, links, combo_index):
+                rnd = card["round"]
+                if rnd is not None and not include_completed and rnd["negotiation_status"] == "AGREED":
+                    continue
+                stages[card["stage"]].append(card["item"])
     return {
         "stages": [
             {"id": sid, "count": len(items), "drugs": items}
@@ -670,6 +788,10 @@ def _nhis_row_dict(r: sqlite3.Row) -> dict:
         # 매칭된 추적 약제 (병용 등재 등 제품명만으로 알 수 없는 적응증 맥락)
         "drugName": _row_get(r, "drug_name"),
         "drugIndication": _row_get(r, "drug_indication"),
+        # 등재 차수 (nhis_negotiations.round_id 연결 시) — '키트루다 · 2026 확대 · 파드셉 병용 요로상피암 1차'
+        "roundId": _row_get(r, "round_id"),
+        "roundLabel": _row_get(r, "round_label"),
+        "roundLinkSource": _row_get(r, "round_link_source"),
     }
 
 
@@ -764,9 +886,15 @@ def list_nhis_negotiations(status: str = "completed",
         if not _nhis_table_exists(conn):
             return {"items": [], "counts": {"completed": 0, "in_progress": 0, "total": 0, "superseded": 0}}
         superseded = superseded_nhis_ids(conn)
+        round_join = (" LEFT JOIN reimb_listing_rounds rr ON rr.round_id = n.round_id"
+                      if rounds_enabled(conn) and _nhis_has_round_col(conn) else "")
+        round_cols = ", rr.round_label AS round_label, rr.indication_scope AS round_scope" if round_join else ""
+        if round_join and q:  # 차수 라벨·범위도 검색 — '파드셉' 으로 키트루다 병용 차수 행이 나온다
+            clause = clause.replace("OR d.notes LIKE ?)", "OR d.notes LIKE ? OR rr.round_label LIKE ? OR rr.indication_scope LIKE ?)")
+            params = params + [needle, needle]
         rows = conn.execute(
-            f"SELECT n.*, d.brand_kr AS drug_name, d.indication AS drug_indication "
-            f"FROM nhis_negotiations n LEFT JOIN amjilsim_drugs d ON d.drug_id = n.drug_id{clause} "
+            f"SELECT n.*, d.brand_kr AS drug_name, d.indication AS drug_indication{round_cols} "
+            f"FROM nhis_negotiations n LEFT JOIN amjilsim_drugs d ON d.drug_id = n.drug_id{round_join}{clause} "
             f"ORDER BY (n.completed_ym IS NULL OR n.completed_ym='') ASC, "
             f"n.completed_ym DESC, n.registered_ym DESC, n.product_name ASC",
             params).fetchall()
@@ -936,7 +1064,43 @@ def _validate_drug_field(key: str, value: Any) -> Any:
     return value
 
 
+def _latest_queue_dict(latest) -> Optional[dict]:
+    if latest is None:
+        return None
+    return {"id": latest["id"],
+            "committee": COMMITTEE_DB_TO_API.get(latest["committee_type"]),
+            "state": latest["queue_state"],
+            "session_id": latest["session_id"],
+            "session_date": latest["session_date"],
+            "queue_entry_date": latest["queue_entry_date"],
+            "attempt": latest["n_th_attempt"],
+            "evidence_url": latest["evidence_url"],
+            "observed_at": latest["observed_at"],
+            "event_date": _event_date(latest) or None}
+
+
+def _admin_nhis_rows(conn: sqlite3.Connection, drug_id: int, superseded: set[int]) -> list[dict]:
+    if not _nhis_table_exists(conn):
+        return []
+    has_round = _nhis_has_round_col(conn) and rounds_enabled(conn)
+    sql = ("SELECT n.*" + (", rr.round_label AS round_label" if has_round else "") +
+           " FROM nhis_negotiations n" +
+           (" LEFT JOIN reimb_listing_rounds rr ON rr.round_id = n.round_id" if has_round else "") +
+           " WHERE n.drug_id = ? ORDER BY n.registered_ym, n.id")
+    out = []
+    for r in conn.execute(sql, (drug_id,)).fetchall():
+        d = _nhis_row_dict(r)
+        d["superseded"] = r["id"] in superseded
+        out.append(d)
+    return out
+
+
 def list_drugs_admin() -> list[dict]:
+    """admin 목록 — 브랜드 1행(그룹) + rounds[] (등재 차수별 단계·결과·연결 이벤트/공단 행).
+
+    브랜드 수준 필드(stage/status/next_step/last_result …)는 대표 차수(진행 중 차수 중 최신, 없으면 최신 차수) 기준.
+    차수가 없는 브랜드는 rounds = [가상 차수 1개(round_id None)] — 약제 행 그대로.
+    """
     today = date.today().isoformat()
     out = []
     with _connect() as conn:
@@ -944,12 +1108,17 @@ def list_drugs_admin() -> list[dict]:
         drugs = conn.execute(
             "SELECT * FROM amjilsim_drugs ORDER BY drug_id"
         ).fetchall()
+        links = _event_links(conn)
+        combo_index = _combo_index(conn)
+        superseded = superseded_nhis_ids(conn)
         for drug in drugs:
-            queue_rows = conn.execute(_QUEUE_JOIN_SQL, (drug["drug_id"],)).fetchall()
+            own_rows = conn.execute(_QUEUE_JOIN_SQL, (drug["drug_id"],)).fetchall()
+            cards = drug_round_cards(conn, drug, today, next_ids, None, links, combo_index)
+            prim = next((c for c in cards if c.get("is_primary")), cards[-1])
+            item = prim["item"]
             d = dict(drug)
             d["msd_flag"] = bool(d["msd_flag"])
-            stage, item = _pipeline_drug_dict(drug, queue_rows, today, conn, next_ids)
-            d["stage"] = stage
+            d["stage"] = prim["stage"]
             d["status"] = item["status"]
             d["next_step"] = item["nextStep"]
             d["last_result"] = item["lastResult"]
@@ -957,23 +1126,56 @@ def list_drugs_admin() -> list[dict]:
             d["stale_days"] = item["staleDays"]
             d["is_stale"] = item["isStale"]
             d["key_issues_display"] = item["keyIssues"]
-            d["unlinked_events"] = sum(1 for q in queue_rows if q["session_id"] is None)
-            # 최근 상태 = 사건일(회의일→큐 등재일→관측일)이 가장 늦은 이벤트 (수집 시각 아님)
-            latest = latest_queue_row(queue_rows)
-            d["latest_queue"] = (
-                {"id": latest["id"],
-                 "committee": COMMITTEE_DB_TO_API.get(latest["committee_type"]),
-                 "state": latest["queue_state"],
-                 "session_id": latest["session_id"],
-                 "session_date": latest["session_date"],
-                 "queue_entry_date": latest["queue_entry_date"],
-                 "attempt": latest["n_th_attempt"],
-                 "evidence_url": latest["evidence_url"],
-                 "observed_at": latest["observed_at"],
-                 "event_date": _event_date(latest) or None}
-                if latest else None
-            )
-            d["events"] = _history(queue_rows)
+            d["unlinked_events"] = sum(1 for q in own_rows if q["session_id"] is None)
+            d["round_label"] = item.get("roundLabel")
+            d["round_count"] = len([c for c in cards if c["round"] is not None])
+            # 최근 상태 = 사건일(회의일→큐 등재일→관측일)이 가장 늦은 이벤트 (수집 시각 아님) — 브랜드 전체 기준
+            d["latest_queue"] = _latest_queue_dict(latest_queue_row(own_rows))
+            events = _history(own_rows)
+            for ev in events:  # 이벤트별 차수 링크 (자기 브랜드 차수 = roundId, 병용 공유 포함 전체 = linkedRoundIds)
+                ls = links.get(ev["id"], []) if ev["id"] is not None else []
+                own = [rid for rid, rd, _ in ls if rd == drug["drug_id"]]
+                ev["roundId"] = own[0] if own else None
+                ev["linkedRoundIds"] = [rid for rid, _, _ in ls]
+            d["events"] = events
+            d["nhis_rows"] = _admin_nhis_rows(conn, drug["drug_id"], superseded)
+            rounds_out = []
+            for c in cards:
+                r, it = c["round"], c["item"]
+                rounds_out.append({
+                    "round_id": r["round_id"] if r is not None else None,
+                    "round_label": it.get("roundLabel"),
+                    "list_type": (r["list_type"] if r is not None else drug["listing_type"]),
+                    "indication_scope": it.get("indicationScope"),
+                    "combo_key": it.get("comboKey"),
+                    "combo_partners": it.get("comboPartners") or [],
+                    "source": it.get("roundSource"),
+                    "needs_review": it.get("roundNeedsReview"),
+                    "is_primary": bool(c.get("is_primary")) or r is None,
+                    "submitted_date": it["submittedDate"],
+                    "amjilsim_pass_date": it["amjilsimPassDate"],
+                    "yakpyungwi_pass_date": it["yakpyungwiPassDate"],
+                    "negotiation_status": it["negotiationStatus"],
+                    "nhis_registered_ym": it["nhisRegisteredYm"],
+                    "negotiation_complete_date": it["negotiationCompleteDate"],
+                    "negotiation_date_source": it["negotiationDateSource"],
+                    "reimb_start_date": it.get("reimbStartDate"),
+                    "notes": (r["notes"] if r is not None else None),
+                    "stage": c["stage"],
+                    "status": it["status"],
+                    "next_step": it["nextStep"],
+                    "last_result": it["lastResult"],
+                    "event_ids": [q["id"] for q in c["queue_rows"]],
+                    # 다른 브랜드 이벤트(병용 공유 링크) — 예: 키트루다 2026 차수의 파드셉 약평위 2026-04-02
+                    "shared_events": [
+                        {**h, "drugId": q["drug_id"]}
+                        for q, h in ((q, _history([q])[0]) for q in c["queue_rows"])
+                        if q["drug_id"] != drug["drug_id"]],
+                    "nhis_ids": [n["id"] for n in d["nhis_rows"]
+                                 if r is not None and n.get("roundId") == r["round_id"]]
+                                if r is not None else [n["id"] for n in d["nhis_rows"]],
+                })
+            d["rounds"] = rounds_out
             out.append(d)
     return out
 
@@ -1027,6 +1229,14 @@ def update_drug(drug_id: int, payload: dict) -> dict:
 
 def delete_drug(drug_id: int) -> dict:
     with _connect() as conn:
+        if rounds_enabled(conn):  # 차수·링크 정리 (공단 아카이브 행은 보존, 차수 연결만 해제)
+            rids = [r["round_id"] for r in list_rounds(conn, drug_id)]
+            conn.execute("DELETE FROM reimb_round_events WHERE round_drug_id = ? OR queue_id IN "
+                         "(SELECT id FROM amjilsim_drug_queue_status WHERE drug_id = ?)", (drug_id, drug_id))
+            if rids and _nhis_has_round_col(conn):
+                conn.execute(f"UPDATE nhis_negotiations SET round_id = NULL, round_link_source = NULL "
+                             f"WHERE round_id IN ({','.join('?' for _ in rids)})", rids)
+            conn.execute("DELETE FROM reimb_listing_rounds WHERE drug_id = ?", (drug_id,))
         n_events = conn.execute(
             "DELETE FROM amjilsim_drug_queue_status WHERE drug_id = ?", (drug_id,)
         ).rowcount
@@ -1055,6 +1265,9 @@ def add_event(drug_id: int, payload: dict) -> dict:
     if not isinstance(attempt, int) or attempt < 1:
         raise ValueError("attempt 는 1 이상 정수여야 함")
     session_id = payload.get("session_id")
+    round_id = payload.get("round_id")  # 선택: 등재 차수 명시 연결
+    if round_id is not None and not isinstance(round_id, int):
+        raise ValueError("round_id 는 정수 또는 null")
 
     with _connect() as conn:
         drug = conn.execute(
@@ -1081,13 +1294,22 @@ def add_event(drug_id: int, payload: dict) -> dict:
             (drug_id, session_id, state, queue_entry_date, attempt,
              payload.get("evidence_url"), committee_db),
         )
-        conn.commit()
         event_id = cur.lastrowid
-    return {"event_id": event_id, "drug_id": drug_id}
+        if round_id is not None:
+            ensure_round_schema(conn)
+            if _get_round(conn, round_id)["drug_id"] != drug_id:
+                raise ValueError("round_id 가 이 약제의 차수가 아님 (다른 브랜드 공유는 차수 패널에서 연결)")
+            link_event_to_round(conn, event_id, round_id, "explicit")
+        elif rounds_enabled(conn) and list_rounds(conn, drug_id):
+            attach_unlinked_events(conn, drug_id, allow_create=False)
+        conn.commit()
+    return {"event_id": event_id, "drug_id": drug_id, "round_id": round_id}
 
 
 def delete_event(event_id: int) -> dict:
     with _connect() as conn:
+        if rounds_enabled(conn):
+            conn.execute("DELETE FROM reimb_round_events WHERE queue_id = ?", (event_id,))
         n = conn.execute(
             "DELETE FROM amjilsim_drug_queue_status WHERE id = ?", (event_id,)
         ).rowcount
@@ -1154,3 +1376,862 @@ def create_session(payload: dict) -> dict:
     except sqlite3.IntegrityError as e:
         raise ValueError(f"무결성 제약 위반 (session_date 중복 등): {e}")
     return {"session_id": session_id}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 등재 차수(listing round) — 브랜드(amjilsim_drugs) 1 : N 차수
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# 문제: 브랜드당 1행이라 같은 브랜드의 서로 다른 등재 차수가 한 카드에 섞였다.
+#   키트루다 = '확대 · 11개 적응증 · 약평위 2025-09-04' 행에 2026 파드셉 병용 요로상피암 1차 확대
+#   (암질심 2025-10-29 → 약평위 2026-04-02 → 공단 확대 2026-05 → 합의 2026-09 → 급여 2026-10-01)의 공단 협상이
+#   덮어써지고, 위원회 이력은 파드셉 행에만 있었다.
+#
+# 모델 (agents/db/schema.py REIMB_ROUNDS_DDL_STATEMENTS — 추가 전용):
+#   reimb_listing_rounds  : 차수 1행 = (브랜드 drug_id, round_label, list_type, indication_scope, 통과일·협상 필드, combo_key)
+#   reimb_round_events    : 위원회 큐 이벤트 ↔ 차수 (다대다; 같은 브랜드 안에서는 이벤트 1건 = 차수 1개)
+#   nhis_negotiations.round_id : 공단 협상 행 → 차수 (단일 컬럼 — 한 행이 두 차수에 붙지 않음)
+# 차수가 하나도 없는 브랜드는 기존처럼 약제 행 자체가 '가상 차수'(roundId=None) — 하위 호환.
+#
+# 매칭 규칙 (명시 링크 > 형제 행 > 병용 파트너 > 날짜 창):
+#   공단 행: ① round_id 명시 ② 같은 협상(같은 약제·목록·등록연월)의 다른 행이 붙은 차수 ③ combo_key 공유 차수의 파트너
+#            공단 행이 ±1개월 안에 있음 ④ 통과일(약평위, 없으면 암질심)이 등록연월 이전·12개월 이내이고 다른 협상을 아직
+#            갖지 않은 차수 중 통과일이 가장 늦은 것(동률 = 모호 → 미연결) ⑤ 없으면 새 차수 자동 생성(needs_review)
+#   위원회 이벤트: ① 명시 링크 ② 통과일과 같은 날·같은 위원회 ③ 이벤트일 이후 첫 통과일(앵커)을 가진 차수 — 진행 중(통과일 없음)
+#            차수는 맨 뒤 ④ 없으면 (허용 시) 새 차수 자동 생성
+# ──────────────────────────────────────────────────────────────────────────────
+
+NHIS_WINDOW_MONTHS = 12        # 위원회 통과 → 공단 등록 허용 간격
+NHIS_NEAR_CYCLE_MONTHS = 3     # 분할 제안 시 이보다 가까운 두 협상은 같은 차수(재등록)일 수 있어 모호
+ROUND_SOURCES = ("legacy", "migration", "auto_nhis", "auto_committee", "admin", "committee_import")
+_ROUND_FIELDS = {  # payload key → (column, kind)
+    "round_label": "text", "list_type": "list_type", "indication_scope": "text", "combo_key": "text",
+    "submitted_date": "date", "amjilsim_pass_date": "date", "yakpyungwi_pass_date": "date",
+    "negotiation_status": "neg", "nhis_registered_ym": "ym", "negotiation_complete_date": "ym",
+    "reimb_start_date": "date", "notes": "text", "needs_review": "bool",
+}
+_YM_RE = re.compile(r"^\d{4}-\d{2}$")
+_REJECT_RESULT_RE = re.compile(r"결렬|불발|중단|철회")
+
+
+def _load_rounds_ddl() -> tuple[str, ...]:
+    """DDL 단일 소스 = agents/db/schema.py. agents.db 패키지 __init__(pandas 등 무거운 의존)를 피해 파일 직접 로드."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("_ma_db_schema_rounds", BASE_DIR / "agents" / "db" / "schema.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return tuple(mod.REIMB_ROUNDS_DDL_STATEMENTS)
+
+
+REIMB_ROUNDS_DDL_STATEMENTS = _load_rounds_ddl()
+
+
+def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
+
+
+def rounds_enabled(conn: sqlite3.Connection) -> bool:
+    return _table_exists(conn, "reimb_listing_rounds") and _table_exists(conn, "reimb_round_events")
+
+
+def _nhis_has_round_col(conn: sqlite3.Connection) -> bool:
+    return _nhis_table_exists(conn) and "round_id" in {r[1] for r in conn.execute("PRAGMA table_info(nhis_negotiations)")}
+
+
+def ensure_round_schema(conn: sqlite3.Connection) -> None:
+    """차수 테이블 + nhis_negotiations.round_id 멱등 보강 (CREATE/ALTER IF NOT EXISTS 성격, 삭제 없음).
+    커밋하지 않는다 — 호출자 트랜잭션 안에서 실행 가능 (Python sqlite3 는 DDL 앞에서 암묵 커밋하지 않음)."""
+    for stmt in REIMB_ROUNDS_DDL_STATEMENTS:
+        conn.execute(stmt)
+    if _nhis_table_exists(conn):
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(nhis_negotiations)")}
+        if "round_id" not in cols:
+            conn.execute("ALTER TABLE nhis_negotiations ADD COLUMN round_id INTEGER")
+        if "round_link_source" not in cols:
+            conn.execute("ALTER TABLE nhis_negotiations ADD COLUMN round_link_source TEXT")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_nhis_round ON nhis_negotiations(round_id)")
+
+
+# ── 날짜 유틸 ────────────────────────────────────────────────────────────────
+
+def _ym_of(value: Optional[str]) -> Optional[str]:
+    return value[:7] if value and re.match(r"^\d{4}-\d{2}", str(value)) else None
+
+
+def _month_index(ym: str) -> int:
+    return int(ym[:4]) * 12 + int(ym[5:7]) - 1
+
+
+def _months_between(a_ym: str, b_ym: str) -> int:
+    """b - a (개월)."""
+    return _month_index(b_ym) - _month_index(a_ym)
+
+
+def _round_closed(r) -> bool:
+    return _row_get(r, "negotiation_status") in ("AGREED", "REJECTED")
+
+
+def _round_anchor(r) -> Optional[str]:
+    """차수의 위원회 종착 통과일 — 약평위, 없으면 암질심."""
+    return _row_get(r, "yakpyungwi_pass_date") or _row_get(r, "amjilsim_pass_date")
+
+
+def _round_sort_key(r) -> tuple:
+    return (_round_anchor(r) or (f"{r['nhis_registered_ym']}-01" if _row_get(r, "nhis_registered_ym") else None)
+            or _row_get(r, "submitted_date") or (_row_get(r, "created_at") or "")[:10] or "9999", r["round_id"])
+
+
+def round_label_for(drug_like, *, year_hint: Optional[str] = None) -> Optional[str]:
+    """'2025 확대 · 11개 적응증' — 연도(약평위→암질심→공단 등록→힌트) + 유형 + 적응증 범위. 없는 부분은 생략."""
+    year = (_round_anchor(drug_like) or _row_get(drug_like, "nhis_registered_ym")
+            or _row_get(drug_like, "submitted_date") or year_hint or "")[:4]
+    lt = _row_get(drug_like, "list_type") or _row_get(drug_like, "listing_type")
+    scope = _row_get(drug_like, "indication_scope") or _row_get(drug_like, "indication")
+    head = " ".join(x for x in (year, lt) if x)
+    label = " · ".join(x for x in (head, scope) if x)
+    return label or None
+
+
+def nhis_result_to_status(result: Optional[str], in_progress: bool) -> str:
+    """공단 결과 → negotiation_status (nhis_negotiation_import._result_to_status 와 동일 규칙)."""
+    if _REJECT_RESULT_RE.search(result or ""):
+        return "REJECTED"
+    return "IN_PROGRESS" if in_progress else "AGREED"
+
+
+def best_nhis_row(rows: list):
+    """한 협상 묶음에서 현재 상태를 대표하는 행.
+
+    최신 등록연월 우선. 같은 등록연월이면 **완료 행이 협상 중 행보다 우선** — 같은 협상의 '협상 중' 아카이브 행이
+    완료 행을 덮던 tie-break 버그 수정(2026-10-17). 그다음 완료연월·id.
+    """
+    if not rows:
+        return None
+    return max(rows, key=lambda r: (_row_get(r, "registered_ym") or "",
+                                    1 if _row_get(r, "completed_ym") else 0,
+                                    _row_get(r, "completed_ym") or "", _row_get(r, "id") or 0))
+
+
+# ── 조회 ─────────────────────────────────────────────────────────────────────
+
+def list_rounds(conn: sqlite3.Connection, drug_id: Optional[int] = None) -> list[sqlite3.Row]:
+    if not rounds_enabled(conn):
+        return []
+    if drug_id is None:
+        rows = conn.execute("SELECT * FROM reimb_listing_rounds").fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM reimb_listing_rounds WHERE drug_id = ?", (drug_id,)).fetchall()
+    return sorted(rows, key=lambda r: (r["drug_id"], _round_sort_key(r)))
+
+
+def _get_round(conn: sqlite3.Connection, round_id: int) -> sqlite3.Row:
+    row = conn.execute("SELECT * FROM reimb_listing_rounds WHERE round_id = ?", (round_id,)).fetchone() \
+        if rounds_enabled(conn) else None
+    if not row:
+        raise LookupError(f"차수 없음: {round_id}")
+    return row
+
+
+def primary_round(rounds: list):
+    """브랜드 요약에 쓰는 대표 차수 — 진행 중(협상 미종결) 차수 중 가장 늦은 것, 없으면 가장 늦은 차수."""
+    if not rounds:
+        return None
+    ordered = sorted(rounds, key=_round_sort_key)
+    open_ = [r for r in ordered if not _round_closed(r)]
+    return (open_ or ordered)[-1]
+
+
+def _event_links(conn: sqlite3.Connection) -> dict[int, list[tuple[int, int, str]]]:
+    """queue_id → [(round_id, round_drug_id, link_source)]."""
+    out: dict[int, list[tuple[int, int, str]]] = {}
+    if not rounds_enabled(conn):
+        return out
+    for r in conn.execute("SELECT round_id, queue_id, round_drug_id, link_source FROM reimb_round_events"):
+        out.setdefault(r["queue_id"], []).append((r["round_id"], r["round_drug_id"], r["link_source"]))
+    return out
+
+
+def _round_queue_rows(conn: sqlite3.Connection, round_id: int) -> list[sqlite3.Row]:
+    return conn.execute(
+        """SELECT q.*, s.session_date, s.ordinal_official, s.ordinal_assumed, s.year AS session_year
+           FROM reimb_round_events l
+           JOIN amjilsim_drug_queue_status q ON q.id = l.queue_id
+           LEFT JOIN amjilsim_sessions s ON s.session_id = q.session_id
+           WHERE l.round_id = ? ORDER BY q.observed_at, q.id""", (round_id,)).fetchall()
+
+
+def _round_nhis_rows(conn: sqlite3.Connection, round_id: int) -> list[sqlite3.Row]:
+    if not _nhis_has_round_col(conn):
+        return []
+    return conn.execute("SELECT * FROM nhis_negotiations WHERE round_id = ? ORDER BY registered_ym, id",
+                        (round_id,)).fetchall()
+
+
+def _nhis_cycles(conn: sqlite3.Connection, drug_id: int) -> list[dict]:
+    """약제의 공단 협상 묶음 — (목록, 등록연월) 키. 같은 협상의 협상중·완료 아카이브 행은 한 묶음."""
+    if not _nhis_table_exists(conn):
+        return []
+    rows = conn.execute("SELECT * FROM nhis_negotiations WHERE drug_id = ? ORDER BY registered_ym, id",
+                        (drug_id,)).fetchall()
+    cycles: dict[tuple, dict] = {}
+    for r in rows:
+        key = (r["list_type"], r["registered_ym"])
+        c = cycles.setdefault(key, {"list_type": r["list_type"], "registered_ym": r["registered_ym"], "rows": []})
+        c["rows"].append(r)
+    out = []
+    for c in cycles.values():
+        best = best_nhis_row(c["rows"])
+        c.update({"nhis_ids": [r["id"] for r in c["rows"]], "completed_ym": best["completed_ym"],
+                  "result": best["result"], "product_keys": sorted({_nhis_product_key(r["product_name"]) for r in c["rows"]}),
+                  "round_ids": sorted({_row_get(r, "round_id") for r in c["rows"] if _row_get(r, "round_id")})})
+        out.append(c)
+    return sorted(out, key=lambda c: (c["registered_ym"] or "", c["list_type"]))
+
+
+# ── 매칭 규칙 ────────────────────────────────────────────────────────────────
+
+def pick_round_for_event(rounds: list, event_date: Optional[str], committee: Optional[str]):
+    """위원회 이벤트 → 차수 (같은 브랜드 차수 목록 대상). 결정 불가 시 None."""
+    if not rounds or not event_date:
+        return None
+    d = event_date[:10]
+    col = "amjilsim_pass_date" if committee == "AMJILSIM" else "yakpyungwi_pass_date"
+    exact = [r for r in rounds if _row_get(r, col) == d]
+    if len(exact) == 1:
+        return exact[0]
+    if len(exact) > 1:
+        return None
+    # 이벤트일 이후 첫 위원회 통과(앵커)를 가진 차수 — 이벤트는 그 차수의 심의 과정. 통과일 없는 진행 중 차수는 맨 뒤.
+    cands = []
+    for r in rounds:
+        anchor = _round_anchor(r)
+        if anchor is None:
+            if _round_closed(r):
+                continue
+            anchor = "9999-12-31"
+        if anchor >= d:
+            cands.append((anchor, r))
+    if not cands:
+        return None
+    best_anchor = min(a for a, _ in cands)
+    tied = [r for a, r in cands if a == best_anchor]
+    if len(tied) == 1:
+        return tied[0]
+    if best_anchor == "9999-12-31":
+        return max(tied, key=lambda r: r["round_id"])  # 진행 중 차수 여럿 — 가장 최근 생성
+    return None
+
+
+def pick_round_for_nhis(conn: sqlite3.Connection, rounds: list, row) -> tuple[Optional[Any], str]:
+    """공단 협상 행 → (차수, 근거). 결정 불가 시 (None, 사유)."""
+    if not rounds:
+        return None, "no_rounds"
+    by_id = {r["round_id"]: r for r in rounds}
+    rid = _row_get(row, "round_id")
+    if rid and rid in by_id:
+        return by_id[rid], "explicit"
+    reg = _row_get(row, "registered_ym")
+    # ② 같은 협상 묶음(형제 행)
+    sib = conn.execute(
+        "SELECT round_id FROM nhis_negotiations WHERE drug_id = ? AND list_type = ? AND registered_ym IS ? "
+        "AND round_id IS NOT NULL AND id != ? LIMIT 1",
+        (row["drug_id"], row["list_type"], reg, row["id"])).fetchone()
+    if sib and sib["round_id"] in by_id:
+        return by_id[sib["round_id"]], "sibling"
+    if not reg or not _YM_RE.match(reg):
+        return None, "no_registered_ym"
+    # ③ 병용 파트너 — combo_key 공유 차수의 파트너 공단 행이 ±1개월
+    for r in rounds:
+        key = _row_get(r, "combo_key")
+        if not key:
+            continue
+        partner = conn.execute(
+            """SELECT n.registered_ym FROM nhis_negotiations n JOIN reimb_listing_rounds pr ON pr.round_id = n.round_id
+               WHERE pr.combo_key = ? AND pr.drug_id != ?""", (key, r["drug_id"])).fetchall()
+        if any(p["registered_ym"] and _YM_RE.match(p["registered_ym"])
+               and abs(_months_between(p["registered_ym"], reg)) <= 1 for p in partner):
+            return r, "combo"
+    # ④ 날짜 창 — 통과일이 등록연월 이전·12개월 이내, 다른 협상을 아직 갖지 않은 차수 중 통과일이 가장 늦은 것
+    held: dict[int, set] = {}
+    for n in conn.execute("SELECT round_id, list_type, registered_ym FROM nhis_negotiations "
+                          "WHERE drug_id = ? AND round_id IS NOT NULL", (row["drug_id"],)):
+        held.setdefault(n["round_id"], set()).add((n["list_type"], n["registered_ym"]))
+    cands = []
+    for r in rounds:
+        anchor = _round_anchor(r)
+        if not anchor:
+            continue
+        other = held.get(r["round_id"], set()) - {(row["list_type"], reg)}
+        if other:
+            continue
+        gap = _months_between(anchor[:7], reg)
+        if 0 <= gap <= NHIS_WINDOW_MONTHS:
+            cands.append(r)
+    if not cands:
+        return None, "no_window_match"
+    typed = [r for r in cands if not _row_get(r, "list_type") or r["list_type"] == row["list_type"]]
+    cands = typed or cands
+    latest = max(_round_anchor(r) for r in cands)
+    top = [r for r in cands if _round_anchor(r) == latest]
+    if len(top) > 1:
+        return None, "ambiguous_window"
+    return top[0], "window"
+
+
+# ── 쓰기 ─────────────────────────────────────────────────────────────────────
+
+def create_round_row(conn: sqlite3.Connection, drug_id: int, *, round_label: str,
+                     source: str = "admin", **fields) -> int:
+    """차수 INSERT (같은 브랜드·같은 라벨이 있으면 그 round_id 반환 — 멱등). 커밋하지 않음."""
+    if not (round_label or "").strip():
+        raise ValueError("round_label 필수")
+    if source not in ROUND_SOURCES:
+        raise ValueError(f"source 는 {ROUND_SOURCES} 중 하나")
+    ex = conn.execute("SELECT round_id FROM reimb_listing_rounds WHERE drug_id = ? AND round_label = ?",
+                      (drug_id, round_label.strip())).fetchone()
+    if ex:
+        return ex["round_id"]
+    cols = ["drug_id", "round_label", "source"]
+    vals: list[Any] = [drug_id, round_label.strip(), source]
+    for k, v in fields.items():
+        if (k in _ROUND_FIELDS or k == "negotiation_date_source") and k != "round_label" and v is not None:
+            cols.append(k)
+            vals.append(int(bool(v)) if _ROUND_FIELDS.get(k) == "bool" else v)
+    cur = conn.execute(f"INSERT INTO reimb_listing_rounds ({', '.join(cols)}) VALUES ({', '.join('?' for _ in cols)})",
+                       vals)
+    return cur.lastrowid
+
+
+def _unique_label(conn: sqlite3.Connection, drug_id: int, label: str) -> str:
+    base, n = label, 2
+    while conn.execute("SELECT 1 FROM reimb_listing_rounds WHERE drug_id = ? AND round_label = ?",
+                       (drug_id, label)).fetchone():
+        label = f"{base} #{n}"
+        n += 1
+    return label
+
+
+def link_event_to_round(conn: sqlite3.Connection, queue_id: int, round_id: int, source: str = "explicit") -> None:
+    """이벤트 ↔ 차수. 같은 브랜드의 다른 차수 링크는 교체(한 이벤트가 한 브랜드의 두 차수에 붙지 않음),
+    다른 브랜드 차수 링크(병용 공유)는 유지. 커밋하지 않음."""
+    rnd = _get_round(conn, round_id)
+    if not conn.execute("SELECT 1 FROM amjilsim_drug_queue_status WHERE id = ?", (queue_id,)).fetchone():
+        raise LookupError(f"이벤트 없음: {queue_id}")
+    conn.execute("DELETE FROM reimb_round_events WHERE queue_id = ? AND round_drug_id = ?", (queue_id, rnd["drug_id"]))
+    conn.execute("INSERT INTO reimb_round_events (round_id, queue_id, round_drug_id, link_source) VALUES (?,?,?,?)",
+                 (round_id, queue_id, rnd["drug_id"], source))
+
+
+def link_nhis_to_round(conn: sqlite3.Connection, nhis_id: int, round_id: Optional[int],
+                       source: str = "explicit", with_siblings: bool = True) -> list[int]:
+    """공단 행 → 차수 (round_id None = 연결 해제). 같은 협상 묶음의 형제 행(협상중 아카이브 등)도 함께. 커밋하지 않음."""
+    row = conn.execute("SELECT * FROM nhis_negotiations WHERE id = ?", (nhis_id,)).fetchone()
+    if not row:
+        raise LookupError(f"공단 협상 행 없음: {nhis_id}")
+    if round_id is not None:
+        rnd = _get_round(conn, round_id)
+        if row["drug_id"] is None:
+            raise ValueError("미매칭 공단 행(drug_id 없음)은 차수에 연결할 수 없음 — 먼저 약제 매칭")
+        if rnd["drug_id"] != row["drug_id"]:
+            raise ValueError(f"공단 행 약제({row['drug_id']}) ≠ 차수 브랜드({rnd['drug_id']}) — 병용은 각 브랜드 차수에 연결")
+    ids = [nhis_id]
+    if with_siblings and row["drug_id"] is not None:
+        ids = [r["id"] for r in conn.execute(
+            "SELECT id FROM nhis_negotiations WHERE drug_id = ? AND list_type = ? AND registered_ym IS ?",
+            (row["drug_id"], row["list_type"], row["registered_ym"]))]
+    for i in ids:
+        conn.execute("UPDATE nhis_negotiations SET round_id = ?, round_link_source = ? WHERE id = ?",
+                     (round_id, source if round_id is not None else None, i))
+    return ids
+
+
+def refresh_round_negotiation(conn: sqlite3.Connection, round_id: int) -> None:
+    """연결된 공단 행에서 차수 협상 필드 재계산 (공단 공식 우선). 연결 행이 없고 이전 값이 공단 출처면 비운다."""
+    rnd = _get_round(conn, round_id)
+    rows = _round_nhis_rows(conn, round_id)
+    if rows:
+        best = best_nhis_row(rows)
+        conn.execute(
+            """UPDATE reimb_listing_rounds SET negotiation_status = ?, nhis_registered_ym = ?,
+                 negotiation_complete_date = ?, negotiation_date_source = 'nhis_official',
+                 list_type = COALESCE(list_type, ?), updated_at = datetime('now') WHERE round_id = ?""",
+            (nhis_result_to_status(best["result"], not best["completed_ym"]), best["registered_ym"],
+             best["completed_ym"] or None, best["list_type"], round_id))
+    elif rnd["negotiation_date_source"] == "nhis_official":
+        conn.execute(
+            """UPDATE reimb_listing_rounds SET negotiation_status = NULL, nhis_registered_ym = NULL,
+                 negotiation_complete_date = NULL, negotiation_date_source = NULL, updated_at = datetime('now')
+               WHERE round_id = ?""", (round_id,))
+
+
+def _drug_row(conn: sqlite3.Connection, drug_id: int) -> sqlite3.Row:
+    d = conn.execute("SELECT * FROM amjilsim_drugs WHERE drug_id = ?", (drug_id,)).fetchone()
+    if not d:
+        raise LookupError(f"약제 없음: {drug_id}")
+    return d
+
+
+def materialize_default_round(conn: sqlite3.Connection, drug_id: int, source: str = "legacy") -> Optional[int]:
+    """차수가 없는 브랜드의 약제 행(가상 차수)을 실제 차수 1행으로 고정. 이미 차수가 있으면 None.
+    공단 출처 협상 필드는 복사하지 않는다 — 협상 상태는 연결된 공단 행에서만(refresh_round_negotiation)."""
+    if list_rounds(conn, drug_id):
+        return None
+    d = _drug_row(conn, drug_id)
+    manual_neg = d["negotiation_date_source"] != "nhis_official" if "negotiation_date_source" in d.keys() else True
+    label = round_label_for(d) or f"{d['brand_kr']} 등재"
+    return create_round_row(
+        conn, drug_id, round_label=label, source=source,
+        list_type=d["listing_type"] if d["listing_type"] in LISTING_TYPES else None,
+        indication_scope=d["indication"], submitted_date=d["submitted_date"],
+        amjilsim_pass_date=d["amjilsim_pass_date"], yakpyungwi_pass_date=d["yakpyungwi_pass_date"],
+        negotiation_status=d["negotiation_status"] if manual_neg else None,
+        negotiation_date_source="manual" if manual_neg and d["negotiation_status"] else None)
+
+
+def attach_unlinked_events(conn: sqlite3.Connection, drug_id: int, allow_create: bool = False) -> list[dict]:
+    """브랜드에 차수가 있을 때, 차수 미연결 자기 이벤트를 규칙으로 연결. allow_create 면 갈 곳 없는 통과·대기 이벤트로
+    새 차수(auto_committee, needs_review) 생성 — 모든 차수가 끝난 뒤 새 위원회 심의가 시작된 경우."""
+    rounds = list_rounds(conn, drug_id)
+    if not rounds:
+        return []
+    linked = {r["queue_id"] for r in conn.execute(
+        "SELECT queue_id FROM reimb_round_events WHERE round_drug_id = ?", (drug_id,))}
+    out = []
+    for q in conn.execute(_QUEUE_JOIN_SQL, (drug_id,)).fetchall():
+        if q["id"] in linked:
+            continue
+        d = _event_date(q) or None
+        rnd = pick_round_for_event(rounds, d, q["committee_type"])
+        if rnd is None and allow_create and d and q["queue_state"] in ("APPROVED", "QUEUE_PENDING", "REJECTED_REQUEUE"):
+            drug = _drug_row(conn, drug_id)
+            col = "amjilsim_pass_date" if q["committee_type"] == "AMJILSIM" else "yakpyungwi_pass_date"
+            label = _unique_label(conn, drug_id, round_label_for(
+                {"listing_type": drug["listing_type"], "indication": drug["indication"]}, year_hint=d) or f"{d[:4]} 등재")
+            rid = create_round_row(conn, drug_id, round_label=label, source="auto_committee", needs_review=1,
+                                   list_type=drug["listing_type"] if drug["listing_type"] in LISTING_TYPES else None,
+                                   indication_scope=drug["indication"],
+                                   **({col: d} if q["queue_state"] == "APPROVED" else {}))
+            rounds = list_rounds(conn, drug_id)
+            rnd = next(r for r in rounds if r["round_id"] == rid)
+            out.append({"queue_id": q["id"], "round_id": rid, "created": True})
+        if rnd is not None:
+            link_event_to_round(conn, q["id"], rnd["round_id"], "auto")
+            if not out or out[-1].get("queue_id") != q["id"]:
+                out.append({"queue_id": q["id"], "round_id": rnd["round_id"], "created": False})
+    return out
+
+
+def attach_unlinked_nhis(conn: sqlite3.Connection, drug_id: int, allow_create: bool = True) -> list[dict]:
+    """브랜드에 차수가 있을 때, 차수 미연결 공단 행을 규칙으로 연결 (등록연월 오름차순 — 앞 협상이 먼저 자리를 잡는다).
+    갈 곳이 없으면(allow_create) '공단 YYYY-MM 협상' 차수 자동 생성(needs_review). 모호(동률)면 미연결 유지."""
+    if not _nhis_has_round_col(conn):
+        return []
+    out = []
+    rows = conn.execute("SELECT * FROM nhis_negotiations WHERE drug_id = ? AND round_id IS NULL "
+                        "ORDER BY registered_ym, id", (drug_id,)).fetchall()
+    for row in rows:
+        cur = conn.execute("SELECT * FROM nhis_negotiations WHERE id = ?", (row["id"],)).fetchone()
+        if cur["round_id"] is not None:
+            continue  # 앞선 형제 행 연결로 이미 붙음
+        rounds = list_rounds(conn, drug_id)
+        rnd, why = pick_round_for_nhis(conn, rounds, cur)
+        if rnd is None and why == "no_window_match" and allow_create:
+            reg = cur["registered_ym"]
+            label = _unique_label(conn, drug_id, f"{reg[:4]} {cur['list_type']} · 공단 {reg} 협상")
+            rid = create_round_row(conn, drug_id, round_label=label, source="auto_nhis", needs_review=1,
+                                   list_type=cur["list_type"], nhis_registered_ym=reg)
+            link_nhis_to_round(conn, cur["id"], rid, "auto_new")
+            refresh_round_negotiation(conn, rid)
+            out.append({"nhis_id": cur["id"], "round_id": rid, "rule": "created"})
+            continue
+        if rnd is None:
+            out.append({"nhis_id": cur["id"], "round_id": None, "rule": why})
+            continue
+        link_nhis_to_round(conn, cur["id"], rnd["round_id"], why)
+        refresh_round_negotiation(conn, rnd["round_id"])
+        out.append({"nhis_id": cur["id"], "round_id": rnd["round_id"], "rule": why})
+    return out
+
+
+# ── 분할 제안 (마이그레이션·공단 적재 공용) ───────────────────────────────────
+
+_FORM_TAIL_RE = re.compile(r"(주사액|주사|주|정|캡슐|캅셀|액|시럽)$")
+
+
+def brand_short(name: Optional[str]) -> str:
+    """'파드셉주 20·30mg' → '파드셉', '키트루다' → '키트루다', '다잘렉스 PV' → '다잘렉스'."""
+    s = re.split(r"[\s\d(_·,/+]", (name or "").strip(), 1)[0]
+    s2 = _FORM_TAIL_RE.sub("", s)
+    return s2 if len(s2) >= 2 else s
+
+
+def _strip_combo_note(indication: Optional[str]) -> Optional[str]:
+    """'요로상피암 1차 (펨브로 병용)' → '요로상피암 1차'."""
+    if not indication:
+        return indication
+    return re.sub(r"\s*\([^)]*병용[^)]*\)", "", indication).strip() or indication
+
+
+def _find_combo_partner(conn: sqlite3.Connection, drug, registered_ym: str) -> Optional[dict]:
+    """같은 시기(±1개월) 공단 협상이 있고, 적응증·메모에 이 브랜드명이 나오는 다른 추적 약제 = 병용 파트너."""
+    short = brand_short(drug["brand_kr"])
+    if len(short) < 2 or not _nhis_table_exists(conn):
+        return None
+    hits = []
+    for p in conn.execute("SELECT * FROM amjilsim_drugs WHERE drug_id != ?", (drug["drug_id"],)):
+        text = " ".join(x for x in (p["indication"], p["notes"], p["brand_kr"]) if x)
+        if short not in text or "병용" not in text:
+            continue
+        for c in _nhis_cycles(conn, p["drug_id"]):
+            reg = c["registered_ym"]
+            if reg and _YM_RE.match(reg) and abs(_months_between(reg, registered_ym)) <= 1:
+                hits.append({"drug": p, "cycle": c})
+    return hits[0] if len(hits) == 1 else None
+
+
+def propose_split(conn: sqlite3.Connection, drug_id: int) -> dict:
+    """공단 협상 묶음이 2개 이상인 브랜드의 차수 분할 제안 (읽기 전용).
+
+    - 협상 묶음마다 차수 1개. 위원회 이벤트·통과일은 '그 날짜 이후 첫 공단 등록 묶음'에 귀속, 마지막 묶음 뒤의 것은
+      아직 공단 단계 전인 진행 중 차수.
+    - 약제 행의 적응증·유형 라벨은 약제 행 통과일(약평위→암질심)이 귀속된 차수가 갖는다.
+    - 위원회 근거가 없는 묶음은 병용 파트너(같은 시기 공단 협상 + 메모에 이 브랜드명)가 있으면 '<파트너> 병용 <적응증>',
+      없으면 '공단 YYYY-MM 협상' + needs_review.
+    모호(적용 금지): 등록연월 없음 / 두 묶음이 3개월 미만 간격 / 묶음별 제품명이 서로 다름(다른 제형·제품 가능) /
+      약제 행에 통과일이 없어 라벨 귀속 불가 / 라벨 유형(신규·확대)이 귀속 묶음 유형과 다름.
+    """
+    drug = _drug_row(conn, drug_id)
+    cycles = _nhis_cycles(conn, drug_id)
+    plan: dict[str, Any] = {"drug_id": drug_id, "brand": drug["brand_kr"], "cycles": [], "rounds": [],
+                            "partner_rounds": [], "ambiguous": False, "reasons": [],
+                            "existing_rounds": len(list_rounds(conn, drug_id))}
+    plan["cycles"] = [{k: c[k] for k in ("list_type", "registered_ym", "completed_ym", "result", "nhis_ids",
+                                         "product_keys")} for c in cycles]
+    if plan["existing_rounds"]:
+        plan["reasons"].append("이미 차수가 있음 — 분할 대신 attach 규칙 적용")
+        return plan
+    if len(cycles) < 2:
+        plan["reasons"].append("공단 협상 묶음 1개 이하 — 분할 불필요")
+        return plan
+    regs = [c["registered_ym"] for c in cycles]
+    if any(not r or not _YM_RE.match(r) for r in regs):
+        plan["ambiguous"] = True
+        plan["reasons"].append("등록연월 없는 공단 행")
+        return plan
+    for a, b in zip(cycles, cycles[1:]):
+        if _months_between(a["registered_ym"], b["registered_ym"]) < NHIS_NEAR_CYCLE_MONTHS:
+            plan["ambiguous"] = True
+            plan["reasons"].append(f"근접 협상 {a['list_type']} {a['registered_ym']} / {b['list_type']} {b['registered_ym']} "
+                                   "— 같은 차수 재등록인지 별도 차수인지 불명")
+    keys = {k for c in cycles for k in c["product_keys"]}
+    if len(keys) > 1:
+        plan["ambiguous"] = True
+        plan["reasons"].append(f"묶음별 공단 제품명 상이 {sorted(keys)} — 같은 브랜드의 다른 제품(제형)일 수 있음")
+
+    def target(d: Optional[str]) -> Optional[int]:
+        """날짜 → 귀속 묶음 index (len(cycles) = 공단 전 진행 중 차수)."""
+        if not d:
+            return None
+        ym = d[:7]
+        for i, c in enumerate(cycles):
+            if ym <= c["registered_ym"]:
+                return i
+        return len(cycles)
+
+    slots: dict[int, dict] = {i: {"events": [], "amj": None, "yak": None} for i in range(len(cycles) + 1)}
+    for q in conn.execute(_QUEUE_JOIN_SQL, (drug_id,)).fetchall():
+        d = _event_date(q) or None
+        i = target(d)
+        if i is None:
+            plan["ambiguous"] = True
+            plan["reasons"].append(f"사건일 없는 이벤트 #{q['id']}")
+            continue
+        slots[i]["events"].append(q["id"])
+        if q["queue_state"] == "APPROVED":
+            k = "amj" if q["committee_type"] == "AMJILSIM" else "yak"
+            slots[i][k] = max(filter(None, (slots[i][k], d)))
+    owner_date = drug["yakpyungwi_pass_date"] or drug["amjilsim_pass_date"]
+    owner = target(owner_date)
+    if owner is None:
+        owner = len(cycles) if slots[len(cycles)]["events"] else None
+    if owner is None:
+        plan["ambiguous"] = True
+        plan["reasons"].append("약제 행에 통과일이 없어 적응증 라벨을 어느 차수에 둘지 불명")
+    for col, k in (("amjilsim_pass_date", "amj"), ("yakpyungwi_pass_date", "yak")):
+        i = target(drug[col])
+        if i is not None and not slots[i][k]:
+            slots[i][k] = drug[col]
+
+    for i in range(len(cycles) + 1):
+        c = cycles[i] if i < len(cycles) else None
+        s = slots[i]
+        if c is None and not s["events"] and owner != i:
+            continue  # 공단 전 진행 중 차수 없음
+        r: dict[str, Any] = {"cycle_index": i, "list_type": c["list_type"] if c else drug["listing_type"],
+                             "nhis_registered_ym": c["registered_ym"] if c else None,
+                             "nhis_ids": c["nhis_ids"] if c else [], "event_ids": s["events"],
+                             "partner_event_ids": [], "amjilsim_pass_date": s["amj"], "yakpyungwi_pass_date": s["yak"],
+                             "combo_key": None, "combo_partner_drug_id": None, "needs_review": 0,
+                             "owns_drug_label": owner == i, "indication_scope": None}
+        if owner == i:
+            r["indication_scope"] = drug["indication"]
+            if c and drug["listing_type"] in LISTING_TYPES and drug["listing_type"] != c["list_type"]:
+                plan["ambiguous"] = True
+                plan["reasons"].append(f"약제 행 유형 {drug['listing_type']} ≠ 귀속 공단 묶음 유형 {c['list_type']} ({c['registered_ym']})")
+        elif c is not None and not s["amj"] and not s["yak"]:
+            partner = _find_combo_partner(conn, drug, c["registered_ym"])
+            if partner:
+                p = partner["drug"]
+                r["indication_scope"] = f"{brand_short(p['brand_kr'])} 병용 {_strip_combo_note(p['indication']) or ''}".strip()
+                r["combo_partner_drug_id"] = p["drug_id"]
+                r["combo_key"] = f"combo:{'+'.join(str(x) for x in sorted((drug_id, p['drug_id'])))}:{c['registered_ym']}"
+                r["amjilsim_pass_date"] = p["amjilsim_pass_date"] if (p["amjilsim_pass_date"] or "9")[:7] <= c["registered_ym"] else None
+                r["yakpyungwi_pass_date"] = p["yakpyungwi_pass_date"] if (p["yakpyungwi_pass_date"] or "9")[:7] <= c["registered_ym"] else None
+                lo = f"{_month_index(c['registered_ym']) // 12 - 1}"  # 대략 1년 전부터
+                r["partner_event_ids"] = [
+                    q["id"] for q in conn.execute(_QUEUE_JOIN_SQL, (p["drug_id"],)).fetchall()
+                    if (_event_date(q) or "")[:7] <= c["registered_ym"] and (_event_date(q) or "0")[:4] >= lo]
+                plan["partner_rounds"].append({"drug_id": p["drug_id"], "brand": p["brand_kr"],
+                                               "combo_key": r["combo_key"], "registered_ym": c["registered_ym"],
+                                               "existing_rounds": len(list_rounds(conn, p["drug_id"])),
+                                               "partner_cycles": len(_nhis_cycles(conn, p["drug_id"]))})
+            else:
+                r["needs_review"] = 1
+        else:
+            r["needs_review"] = 0 if (s["amj"] or s["yak"]) and r["indication_scope"] else 1
+        year_src = r["yakpyungwi_pass_date"] or r["amjilsim_pass_date"] or r["nhis_registered_ym"]
+        label_scope = r["indication_scope"] or (f"공단 {c['registered_ym']} 협상" if c else "진행 중")
+        r["round_label"] = " · ".join(x for x in (" ".join(x for x in ((year_src or "")[:4], r["list_type"]) if x),
+                                                     label_scope) if x)
+        plan["rounds"].append(r)
+    labels = [r["round_label"] for r in plan["rounds"]]
+    if len(set(labels)) != len(labels):
+        plan["ambiguous"] = True
+        plan["reasons"].append(f"차수 라벨 중복 {labels}")
+    return plan
+
+
+def apply_split_plan(conn: sqlite3.Connection, plan: dict, source: str = "migration") -> dict:
+    """propose_split 결과 적용 (모호 plan 거부). 커밋하지 않음 — 호출자 트랜잭션."""
+    if plan.get("ambiguous"):
+        raise ValueError(f"모호한 분할 제안은 적용 불가: {plan.get('reasons')}")
+    if plan.get("existing_rounds") or not plan.get("rounds"):
+        return {"drug_id": plan["drug_id"], "created": [], "skipped": True}
+    did = plan["drug_id"]
+    created = []
+    for r in plan["rounds"]:
+        rid = create_round_row(
+            conn, did, round_label=r["round_label"], source=source, list_type=r["list_type"],
+            indication_scope=r["indication_scope"], combo_key=r["combo_key"],
+            amjilsim_pass_date=r["amjilsim_pass_date"], yakpyungwi_pass_date=r["yakpyungwi_pass_date"],
+            needs_review=r["needs_review"],
+            submitted_date=_drug_row(conn, did)["submitted_date"] if r["owns_drug_label"] else None)
+        for nid in r["nhis_ids"]:
+            link_nhis_to_round(conn, nid, rid, source, with_siblings=False)
+        for qid in r["event_ids"]:
+            link_event_to_round(conn, qid, rid, source)
+        for qid in r["partner_event_ids"]:
+            link_event_to_round(conn, qid, rid, "combo")
+        refresh_round_negotiation(conn, rid)
+        created.append(rid)
+        # 공단 전 진행 중 차수는 약제 행의 수기 협상 상태를 이어받는다 (공단 행이 없으므로)
+        if not r["nhis_ids"]:
+            d = _drug_row(conn, did)
+            if d["negotiation_status"] and d["negotiation_date_source"] != "nhis_official":
+                conn.execute("UPDATE reimb_listing_rounds SET negotiation_status = ?, negotiation_date_source = 'manual' "
+                             "WHERE round_id = ?", (d["negotiation_status"], rid))
+    for pr in plan.get("partner_rounds", []):
+        _ensure_partner_combo_round(conn, pr, source)
+    return {"drug_id": did, "created": created, "skipped": False}
+
+
+def _ensure_partner_combo_round(conn: sqlite3.Connection, pr: dict, source: str) -> Optional[int]:
+    """병용 파트너 브랜드 쪽 차수에 같은 combo_key 를 단다 (파트너 차수가 없고 협상 묶음이 1개면 기본 차수로 고정)."""
+    pid = pr["drug_id"]
+    rounds = list_rounds(conn, pid)
+    if not rounds:
+        if len(_nhis_cycles(conn, pid)) > 1:
+            return None  # 파트너도 분할 대상 — 별도 검토
+        rid = materialize_default_round(conn, pid, source=source)
+        for q in conn.execute(_QUEUE_JOIN_SQL, (pid,)).fetchall():
+            link_event_to_round(conn, q["id"], rid, source)
+        for c in _nhis_cycles(conn, pid):
+            for nid in c["nhis_ids"]:
+                link_nhis_to_round(conn, nid, rid, source, with_siblings=False)
+        refresh_round_negotiation(conn, rid)
+        rounds = list_rounds(conn, pid)
+    target = None
+    for r in rounds:
+        regs = {n["registered_ym"] for n in _round_nhis_rows(conn, r["round_id"])}
+        if any(x and _YM_RE.match(x) and abs(_months_between(x, pr["registered_ym"])) <= 1 for x in regs):
+            target = r
+    if target is None:
+        return None
+    if not target["combo_key"]:
+        conn.execute("UPDATE reimb_listing_rounds SET combo_key = ?, updated_at = datetime('now') WHERE round_id = ?",
+                     (pr["combo_key"], target["round_id"]))
+    return target["round_id"]
+
+
+def sync_drug_rounds(conn: sqlite3.Connection, drug_id: int, *, allow_split: bool = True,
+                     allow_create: bool = True) -> dict:
+    """적재 후 호출 — 차수가 있으면 미연결 공단 행·이벤트를 규칙으로 연결, 없고 공단 협상이 2묶음 이상이면
+    (모호하지 않을 때만) 자동 분할. 커밋하지 않음."""
+    ensure_round_schema(conn)
+    if not list_rounds(conn, drug_id):
+        if not allow_split or len(_nhis_cycles(conn, drug_id)) < 2:
+            return {"drug_id": drug_id, "action": "none"}
+        plan = propose_split(conn, drug_id)
+        if plan["ambiguous"]:
+            return {"drug_id": drug_id, "action": "ambiguous", "reasons": plan["reasons"]}
+        res = apply_split_plan(conn, plan, source="auto_nhis")
+        return {"drug_id": drug_id, "action": "split", "rounds": res["created"]}
+    nhis = attach_unlinked_nhis(conn, drug_id, allow_create=allow_create)
+    events = attach_unlinked_events(conn, drug_id, allow_create=False)
+    for r in list_rounds(conn, drug_id):
+        refresh_round_negotiation(conn, r["round_id"])
+    return {"drug_id": drug_id, "action": "attached", "nhis": nhis, "events": events}
+
+
+# ── Admin CRUD: rounds ──────────────────────────────────────────────────────
+
+def _validate_round_field(key: str, value: Any) -> Any:
+    kind = _ROUND_FIELDS[key]
+    if value in (None, ""):
+        if key == "round_label":
+            raise ValueError("round_label 은 비울 수 없음")
+        return 0 if kind == "bool" else None
+    if kind == "date":
+        return _valid_date(value, key)
+    if kind == "ym":
+        if not isinstance(value, str) or not _YM_RE.match(value[:7]):
+            raise ValueError(f"{key} 는 YYYY-MM 형식이어야 함: {value!r}")
+        return value[:7]
+    if kind == "list_type" and value not in LISTING_TYPES:
+        raise ValueError(f"list_type 은 {LISTING_TYPES} 중 하나여야 함")
+    if kind == "neg" and value not in NEGOTIATION_STATUSES:
+        raise ValueError(f"negotiation_status 는 {NEGOTIATION_STATUSES} 중 하나여야 함")
+    if kind == "bool":
+        return 1 if value in (1, True, "1", "true") else 0
+    return str(value).strip()
+
+
+def create_round(drug_id: int, payload: dict) -> dict:
+    """admin 차수 추가. 브랜드에 차수가 없으면 먼저 약제 행을 기본 차수로 고정(기존 이벤트·공단 행 전부 기본 차수에
+    연결 — 빼앗지 않음)한 뒤 추가.
+    payload: round_label(필수), list_type, indication_scope, combo_key, 통과일·협상 필드, notes,
+             event_ids[](명시 연결), nhis_ids[](명시 연결)."""
+    if not isinstance(payload, dict) or not (payload.get("round_label") or "").strip():
+        raise ValueError("round_label 필수")
+    fields = {k: _validate_round_field(k, payload[k]) for k in _ROUND_FIELDS if k in payload and k != "round_label"}
+    with _connect() as conn:
+        ensure_round_schema(conn)
+        _drug_row(conn, drug_id)
+        if conn.execute("SELECT 1 FROM reimb_listing_rounds WHERE drug_id = ? AND round_label = ?",
+                        (drug_id, payload["round_label"].strip())).fetchone():
+            raise ValueError(f"같은 라벨의 차수가 이미 있음: {payload['round_label']}")
+        default_id = materialize_default_round(conn, drug_id, source="legacy")
+        if fields.get("negotiation_status") and "negotiation_date_source" not in fields:
+            fields["negotiation_date_source"] = "manual"
+        rid = create_round_row(conn, drug_id, round_label=payload["round_label"], source="admin", **fields)
+        if default_id:  # 기존 이벤트·공단 행은 전부 기본 차수에 남긴다 (새 차수로 옮길 것만 아래 명시 링크/관리 화면에서)
+            for q in conn.execute("SELECT id FROM amjilsim_drug_queue_status WHERE drug_id = ?", (drug_id,)).fetchall():
+                link_event_to_round(conn, q["id"], default_id, "legacy")
+            if _nhis_has_round_col(conn):
+                conn.execute("UPDATE nhis_negotiations SET round_id = ?, round_link_source = 'legacy' "
+                             "WHERE drug_id = ? AND round_id IS NULL", (default_id, drug_id))
+        for qid in payload.get("event_ids") or []:
+            link_event_to_round(conn, int(qid), rid, "explicit")
+        for nid in payload.get("nhis_ids") or []:
+            link_nhis_to_round(conn, int(nid), rid, "explicit")
+        for r in list_rounds(conn, drug_id):
+            refresh_round_negotiation(conn, r["round_id"])
+        conn.commit()
+    return {"round_id": rid, "drug_id": drug_id, "default_round_id": default_id}
+
+
+def update_round(round_id: int, payload: dict) -> dict:
+    if not isinstance(payload, dict) or not payload:
+        raise ValueError("수정할 필드 없음")
+    sets, vals = [], []
+    for key in _ROUND_FIELDS:
+        if key in payload:
+            sets.append(f"{key} = ?")
+            vals.append(_validate_round_field(key, payload[key]))
+    if not sets:
+        raise ValueError(f"허용 필드 없음. 허용: {sorted(_ROUND_FIELDS)}")
+    if "negotiation_status" in payload and "negotiation_date_source" not in payload:
+        sets.append("negotiation_date_source = ?")
+        vals.append("manual")
+    with _connect() as conn:
+        ensure_round_schema(conn)
+        _get_round(conn, round_id)
+        try:
+            conn.execute(f"UPDATE reimb_listing_rounds SET {', '.join(sets)}, updated_at = datetime('now') "
+                         f"WHERE round_id = ?", vals + [round_id])
+        except sqlite3.IntegrityError as e:
+            raise ValueError(f"무결성 제약 위반 (같은 브랜드 라벨 중복): {e}")
+        conn.commit()
+    return {"round_id": round_id, "updated_fields": len(sets)}
+
+
+def delete_round(round_id: int) -> dict:
+    """차수 삭제 — 링크만 해제(이벤트·공단 행 원본은 보존)."""
+    with _connect() as conn:
+        ensure_round_schema(conn)
+        _get_round(conn, round_id)
+        n_ev = conn.execute("DELETE FROM reimb_round_events WHERE round_id = ?", (round_id,)).rowcount
+        n_nh = conn.execute("UPDATE nhis_negotiations SET round_id = NULL, round_link_source = NULL "
+                            "WHERE round_id = ?", (round_id,)).rowcount if _nhis_has_round_col(conn) else 0
+        conn.execute("DELETE FROM reimb_listing_rounds WHERE round_id = ?", (round_id,))
+        conn.commit()
+    return {"round_id": round_id, "unlinked_events": n_ev, "unlinked_nhis": n_nh}
+
+
+def link_event_admin(round_id: int, payload: dict) -> dict:
+    """POST rounds/<id>/events {event_id} — 이벤트를 차수에 명시 연결 (다른 브랜드 이벤트 = 병용 공유 링크)."""
+    qid = (payload or {}).get("event_id")
+    if not isinstance(qid, int):
+        raise ValueError("event_id 정수 필수")
+    with _connect() as conn:
+        ensure_round_schema(conn)
+        link_event_to_round(conn, qid, round_id, "explicit")
+        conn.commit()
+    return {"round_id": round_id, "event_id": qid}
+
+
+def unlink_event_admin(round_id: int, event_id: int) -> dict:
+    with _connect() as conn:
+        ensure_round_schema(conn)
+        n = conn.execute("DELETE FROM reimb_round_events WHERE round_id = ? AND queue_id = ?",
+                         (round_id, event_id)).rowcount
+        conn.commit()
+    if n == 0:
+        raise LookupError(f"연결 없음: round {round_id} ↔ event {event_id}")
+    return {"round_id": round_id, "event_id": event_id}
+
+
+def set_nhis_round_admin(nhis_id: int, payload: dict) -> dict:
+    """PUT nhis/<id>/round {round_id|null} — 공단 행(+같은 협상 형제 행)을 차수에 명시 연결/해제."""
+    rid = (payload or {}).get("round_id")
+    if rid is not None and not isinstance(rid, int):
+        raise ValueError("round_id 는 정수 또는 null")
+    with _connect() as conn:
+        ensure_round_schema(conn)
+        before = conn.execute("SELECT round_id FROM nhis_negotiations WHERE id = ?", (nhis_id,)).fetchone()
+        ids = link_nhis_to_round(conn, nhis_id, rid, "explicit")
+        for r in {x for x in (rid, before["round_id"] if before else None) if x}:
+            refresh_round_negotiation(conn, r)
+        conn.commit()
+    return {"nhis_id": nhis_id, "round_id": rid, "rows": ids}
+
+
+# 모듈 로드 시 컬럼·차수 테이블 멱등 보강 (차수 함수 정의 이후에 호출해야 한다)
+# REIMB_PIPELINE_NO_AUTOMIGRATE=1 이면 건너뛴다 — scripts/split_listing_rounds.py dry-run 이 프로덕션 DB 에 쓰지 않도록.
+import os as _os
+
+if _os.environ.get("REIMB_PIPELINE_NO_AUTOMIGRATE") != "1":
+    try:
+        _ensure_columns()
+    except sqlite3.OperationalError:  # 읽기 전용 마운트 — 조회는 가능하다
+        pass

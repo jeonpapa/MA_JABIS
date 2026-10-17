@@ -77,6 +77,9 @@ def parse_rows(xlsx_path: Path = XLSX_PATH) -> tuple[list[dict], list[dict]]:
 def ingest(db, xlsx_path: Path = XLSX_PATH) -> tuple[int, int]:
     """DrugPriceDB 에 적재. 반환 (레지멘수, 약제행수)."""
     regimens, drugs = parse_rows(xlsx_path)
+    if not regimens or not drugs:
+        # 전체 교체(DELETE→INSERT) 라 빈 파싱이면 정본(onco_regimen, 부팅 시드)이 통째로 사라진다 — 거부(data_contracts.md §5).
+        raise ValueError(f"onco regimen 파싱 결과가 비었다 (레지멘 {len(regimens)} / 약제행 {len(drugs)}) — 적재 중단: {xlsx_path}")
     reg_cols = ("ref", "regimen_id", "cancer_no", "cancer", "regimen_name", "therapy", "line", "drug_group")
     drug_cols = ("regimen_ref", "seq", "ingredient", "drug_group", "dose_value", "unit", "dose_days",
                  "per_cycle", "cycle_days", "cycle_label", "total_cycles", "route", "note", "src", "verify")

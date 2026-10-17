@@ -82,6 +82,78 @@ export interface QueueEvent {
   evidenceUrl: string | null;   // http(s) 링크일 때만
   evidenceText?: string | null; // 링크가 아닌 근거 메모
   observedAt?: string | null;
+  roundId?: number | null;          // 이 브랜드의 등재 차수 링크 (없으면 미연결 — 조회 시 규칙 배정)
+  linkedRoundIds?: number[];        // 병용 공유 포함 전체 차수 링크
+  drugId?: number;                  // shared_events: 이벤트 소유 브랜드
+}
+
+/** 등재 차수(listing round) — 브랜드 1 : N. round_id null = 분할 전 가상 차수(약제 행 그대로) */
+export interface ComboPartner {
+  drugId: number;
+  name: string | null;
+  roundId: number;
+  roundLabel: string;
+}
+
+export interface AdminRound {
+  round_id: number | null;
+  round_label: string | null;       // '2026 확대 · 파드셉 병용 요로상피암 1차'
+  list_type: ListingType | null;
+  indication_scope: string | null;
+  combo_key: string | null;
+  combo_partners: ComboPartner[];
+  source: string | null;            // legacy|migration|auto_nhis|auto_committee|admin|committee_import
+  needs_review: boolean | null;
+  is_primary: boolean;
+  submitted_date: string | null;
+  amjilsim_pass_date: string | null;
+  yakpyungwi_pass_date: string | null;
+  negotiation_status: NegotiationStatus | null;
+  nhis_registered_ym: string | null;
+  negotiation_complete_date: string | null;
+  negotiation_date_source: string | null;
+  reimb_start_date: string | null;
+  notes: string | null;
+  stage: Stage;
+  status: PipelineStatus;
+  next_step: string;
+  last_result: AdminLastResult | null;
+  event_ids: number[];
+  shared_events: QueueEvent[];      // 다른 브랜드 이벤트 (병용 공유 링크)
+  nhis_ids: number[];
+}
+
+/** 브랜드의 공단 협상 행 (차수 연결 UI) */
+export interface AdminNhisRow {
+  id: number;
+  listType: ListingType;
+  productName: string;
+  registeredYm: string | null;
+  result: string | null;
+  completedYm: string | null;
+  inProgress: boolean;
+  superseded: boolean;              // 완료 행으로 대체된 협상 중 아카이브
+  roundId: number | null;
+  roundLabel: string | null;
+  roundLinkSource: string | null;
+}
+
+export interface RoundPayload {
+  round_label?: string;
+  list_type?: ListingType | null;
+  indication_scope?: string | null;
+  combo_key?: string | null;
+  submitted_date?: string | null;
+  amjilsim_pass_date?: string | null;
+  yakpyungwi_pass_date?: string | null;
+  negotiation_status?: NegotiationStatus | null;
+  nhis_registered_ym?: string | null;
+  negotiation_complete_date?: string | null;
+  reimb_start_date?: string | null;
+  notes?: string | null;
+  needs_review?: boolean;
+  event_ids?: number[];
+  nhis_ids?: number[];
 }
 
 /** 마지막 결과 (백엔드 reimb_pipeline.last_result) — 위원회 이벤트·공단 협상 중 사건일이 가장 늦은 것 */
@@ -152,6 +224,10 @@ export interface AdminDrug {
   negotiation_date_source?: string | null;
   latest_queue: LatestQueue | null;
   events: QueueEvent[];
+  round_label?: string | null;      // 대표 차수 라벨
+  round_count?: number;             // 실제 차수 수 (0 = 분할 전)
+  rounds?: AdminRound[];
+  nhis_rows?: AdminNhisRow[];
 }
 
 export interface DrugPayload {
@@ -177,6 +253,7 @@ export interface EventPayload {
   queue_entry_date?: string | null;
   attempt?: number;
   evidence_url?: string | null;
+  round_id?: number | null;         // 등재 차수 명시 연결
 }
 
 /** GET /api/reimbursement/meetings → items[] */
@@ -283,4 +360,43 @@ export interface NhisUnmatched {
 
 export async function listNhisUnmatched(): Promise<{ items: NhisUnmatched[]; count: number }> {
   return api.get<{ items: NhisUnmatched[]; count: number }>(`${BASE}/nhis-unmatched`);
+}
+
+// ── 등재 차수(listing round) ───────────────────────────────────────────────────
+
+export async function createRound(
+  drugId: number,
+  payload: RoundPayload,
+): Promise<{ round_id: number; drug_id: number; default_round_id: number | null }> {
+  return api.post(`${BASE}/drugs/${drugId}/rounds`, payload);
+}
+
+export async function updateRound(
+  roundId: number,
+  payload: RoundPayload,
+): Promise<{ round_id: number; updated_fields: number }> {
+  return api.patch(`${BASE}/rounds/${roundId}`, payload);
+}
+
+export async function deleteRound(
+  roundId: number,
+): Promise<{ round_id: number; unlinked_events: number; unlinked_nhis: number }> {
+  return api.delete(`${BASE}/rounds/${roundId}`);
+}
+
+/** 이벤트 → 차수 명시 연결 (같은 브랜드 다른 차수 링크는 교체, 다른 브랜드 이벤트 = 병용 공유 링크) */
+export async function linkEventToRound(roundId: number, eventId: number): Promise<{ round_id: number; event_id: number }> {
+  return api.post(`${BASE}/rounds/${roundId}/events`, { event_id: eventId });
+}
+
+export async function unlinkEventFromRound(roundId: number, eventId: number): Promise<{ round_id: number; event_id: number }> {
+  return api.delete(`${BASE}/rounds/${roundId}/events/${eventId}`);
+}
+
+/** 공단 협상 행(+같은 협상 형제 행) → 차수 연결 / null = 해제 */
+export async function setNhisRound(
+  nhisId: number,
+  roundId: number | null,
+): Promise<{ nhis_id: number; round_id: number | null; rows: number[] }> {
+  return api.put(`${BASE}/nhis/${nhisId}/round`, { round_id: roundId });
 }

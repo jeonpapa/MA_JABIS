@@ -89,6 +89,26 @@ function DrugCard({ drug, index, isDark, onClick }: {
         )}
       </h4>
 
+      {/* 등재 차수 — 같은 브랜드의 차수별 카드 구분 (키트루다 2025 확대 / 2026 파드셉 병용 확대) */}
+      {drug.roundLabel && (
+        <p
+          className={`text-[11px] font-semibold mb-1 leading-snug ${isDark ? 'text-teal-300' : 'text-teal-700'}`}
+          title={`등재 차수${drug.roundCount && drug.roundCount > 1 ? ` ${drug.roundSeq}/${drug.roundCount}` : ''}${drug.roundNeedsReview ? ' · 적응증 범위 검토 필요(자동 생성)' : ''}`}
+        >
+          {drug.roundLabel}
+          {drug.roundCount != null && drug.roundCount > 1 && (
+            <span className={`ml-1 font-normal ${isDark ? 'text-[#5A6A80]' : 'text-gray-400'}`}>({drug.roundSeq}/{drug.roundCount}차수)</span>
+          )}
+          {drug.roundNeedsReview && <span className="ml-1 text-amber-600" aria-label="검토 필요">*</span>}
+        </p>
+      )}
+      {(drug.comboPartners?.length ?? 0) > 0 && (
+        <p className={`text-[10px] mb-1 truncate ${isDark ? 'text-[#6B7A90]' : 'text-gray-400'}`}
+           title="같은 병용 등재 차수를 공유하는 브랜드">
+          <i className="ri-links-line mr-0.5"></i>병용: {drug.comboPartners!.map(p => p.name ?? `#${p.drugId}`).join(', ')}
+        </p>
+      )}
+
       <p className={`text-xs mb-2 truncate ${isDark ? 'text-[#8B9BB4]' : 'text-gray-500'}`}>
         {drug.ingredient ?? '성분 정보 없음'}
       </p>
@@ -292,7 +312,7 @@ export default function PipelineBoard({ isDark }: { isDark: boolean }) {
                   <div className="space-y-2">
                     {stage.drugs.map((drug, dIdx) => (
                       <DrugCard
-                        key={drug.id}
+                        key={drug.cardKey ?? drug.id}
                         drug={drug}
                         index={dIdx}
                         isDark={isDark}

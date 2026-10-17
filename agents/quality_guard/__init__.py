@@ -18,6 +18,7 @@ from .checks import (
     check_scraper_output,
     summarize_unverified_pack_rows,
 )
+from .data_contracts import check_data_contracts
 from .deviations import _write_deviation
 
 __all__ = [
@@ -25,6 +26,7 @@ __all__ = [
     "_write_deviation",
     "check_scraper_output",
     "check_foreign_price_data",
+    "check_data_contracts",
     "summarize_unverified_pack_rows",
     "check_code_pattern",
 ]

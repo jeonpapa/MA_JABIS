@@ -84,6 +84,26 @@ export default function DrugDetailModal({ drug, stageLabel, isDark, onClose }: D
               </span>
             </div>
             <h2 className={`text-xl font-bold ${textMain}`}>{drug.name}</h2>
+            {drug.roundLabel && (
+              <p className={`text-sm font-semibold mt-0.5 ${isDark ? 'text-teal-300' : 'text-teal-700'}`}>
+                {drug.roundLabel}
+                {drug.roundCount != null && drug.roundCount > 1 && (
+                  <span className={`ml-1.5 text-xs font-normal ${textMuted}`}>등재 차수 {drug.roundSeq}/{drug.roundCount}</span>
+                )}
+                {drug.roundNeedsReview && (
+                  <span className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600">적응증 범위 검토 필요</span>
+                )}
+              </p>
+            )}
+            {((drug.comboPartners?.length ?? 0) > 0 || drug.reimbStartDate) && (
+              <p className={`text-xs mt-0.5 ${textMuted}`}>
+                {(drug.comboPartners?.length ?? 0) > 0 && (
+                  <>병용 차수 공유: {drug.comboPartners!.map(p => `${p.name ?? `#${p.drugId}`} (${p.roundLabel})`).join(', ')}</>
+                )}
+                {(drug.comboPartners?.length ?? 0) > 0 && drug.reimbStartDate && ' · '}
+                {drug.reimbStartDate && <>급여 시행 {drug.reimbStartDate}</>}
+              </p>
+            )}
             <p className={`text-sm mt-0.5 ${textSub}`}>
               {drug.ingredient ?? '성분 정보 없음'}{drug.nameEn ? ` · ${drug.nameEn}` : ''}
             </p>

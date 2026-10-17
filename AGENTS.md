@@ -54,6 +54,13 @@
 - `reimbursement_xnational_sync_job` (분기 1회) — NICE/PBAC/CMS/CHUIKYO
 - `foreign_price_backfill_job` (주 1회 월요일 03:00) — 모든 indications_master product
 
+### 2-1. 운영 책임 (서버 크론 · Aside · Hermes) — `docs/ops/OWNERSHIP.md`
+
+- **서버 크론**(Fly `scheduler.py`): 서버 안에서 끝나는 단순 크론만(공개 소스 수집·git sync·스모크·신선도·QG·메일 발송).
+- **Aside**(노트북 브라우저 에이전트): 해외약가 전부 — `/api/price-agent/*`, 원장은 `/api/agent/tasks?owner=aside`(role `price_agent`).
+- **Hermes**(외부 VPS 팀): 판단·큐레이션·원장 사고 처리 — 디스패처 `scripts/agent_dispatcher.py --owner hermes[,server]`.
+- 원장 과제의 담당은 `agents/agent_tasks/owner.py` 가 결정적으로 계산(`owner` 필드, 역할 밖 담당 선점은 409 `OWNER_MISMATCH`).
+
 ## 3. 규칙 맵 (권위 소스)
 
 | 영역 | 파일 |
@@ -72,6 +79,7 @@
 | Market Intelligence | `agents/rules/market_intelligence_rules.md` |
 | Competitor Trends (주 1회 자동 크롤 + LLM 필터) | `agents/rules/competitor_trends_rules.md` |
 | Review (LLM 다수결) | `agents/rules/review_agent_rules.md` |
+| **데이터 계약 (사람 정본·보호 행·불변식)** | `agents/rules/data_contracts.md` |
 
 ## 4. 최소 원칙 (모든 에이전트 공통)
 

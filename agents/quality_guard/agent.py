@@ -84,6 +84,14 @@ class QualityGuardAgent:
                          ", ".join(sorted({f["check"] for f in findings})))
         return findings
 
+    def check_data_contracts(self) -> list[dict]:
+        """보호 행·불변식(data_contracts.md) 검사 — competitor badge, MFDS 병용 허가일, 해외약가 route/조각, 체크리스트 고아."""
+        from .data_contracts import check_data_contracts
+        findings = check_data_contracts(self.db_path)
+        if findings:
+            logger.error("[QualityGuard] 데이터 계약 위반: %s", ", ".join(f"{f['check']}={f['count']}" for f in findings))
+        return findings
+
     # ── 코드 스캔 ─────────────────────────────────────────────────────────
 
     def scan_codebase(self, target_dir: Optional[Path] = None) -> list[str]:
@@ -196,6 +204,20 @@ class QualityGuardAgent:
                 "file": str(py.relative_to(BASE_DIR)),
                 "severity": "WARNING",
             })
+
+        # data_contracts.md §2 — indications_by_agency.approval_date 를 직접 UPDATE 하는 자동 경로는 manual_correction 행을
+        # 건너뛰어야 한다 (2026-10-17: apply_mfds_official_dates 가 가드 없이 EV 병용 정정일을 덮을 수 있었다).
+        for root in (agents_dir, BASE_DIR / "scripts"):
+            for py in root.rglob("*.py"):
+                if "__pycache__" in str(py) or py.parent.name == "quality_guard":
+                    continue
+                text = py.read_text(encoding="utf-8", errors="ignore")
+                if self._MFDS_UPDATE_PATTERN.search(text) and "manual_correction" not in text:
+                    drifts.append({
+                        "rule": "data_contracts.md §2 — approval_date 자동 UPDATE 는 raw_source='manual_correction' 행 제외",
+                        "file": str(py.relative_to(BASE_DIR)),
+                        "severity": "WARNING",
+                    })
 
         for d in drifts:
             _write_deviation({
@@ -413,6 +435,9 @@ class QualityGuardAgent:
         # 해외약가 저장 행 데이터 검사 — 결과는 record_quality_review 가 읽는 rule_drifts 형태({rule, file, severity})
         # 로 합친다 (ERROR → ops_incident priority 2). 코드 grep 이 못 잡는 간접 fallback 을 값으로 잡는다.
         data_issues = self.check_foreign_price_data()
+        # 데이터 계약(2026-10-17 일회성 정정이 잡·재빌드로 되돌아오지 않는지) — 같은 data 형태, check 당 1건
+        contract_issues = self.check_data_contracts()
+        data_issues = list(data_issues) + contract_issues
         rule_drifts = list(rule_drifts) + data_issues
         suggestions = self.generate_suggestions()
         try:
@@ -426,19 +451,27 @@ class QualityGuardAgent:
             "## 요약",
             f"- 코드 패턴 위반: **{len(code_issues)}건**",
             f"- 규칙↔코드 drift: **{len(rule_drifts) - len(data_issues)}건**",
-            f"- 해외약가 데이터 검사: **{len(data_issues)}건**",
+            f"- 해외약가 데이터 검사: **{len(data_issues) - len(contract_issues)}건**",
+            f"- 데이터 계약 위반: **{len(contract_issues)}건**",
             f"- MFDS baseline 회귀: **{len(mfds_regressions)}건**",
             f"- 개선 제안: **{len(suggestions)}건**",
             "",
         ]
 
-        if data_issues:
+        foreign_issues = [d for d in data_issues if not d.get("contract")]
+        if foreign_issues:
             lines.append("## ❌ 해외약가 데이터 검사 (저장 행이 규칙과 어긋남)")
-            for d in data_issues:
+            for d in foreign_issues:
                 lines.append(f"- **{d['check']}** `{d['file']}` — {d.get('detail', '')}")
             lines.append("")
             lines.append("→ 해당 행 재수집(스크레이퍼가 volume/포장수량 포함) 또는 값 정정. "
                          "`agents/rules/foreign_agent_rules.md` §최소단위 · §pack_count")
+            lines.append("")
+
+        if contract_issues:
+            lines.append("## ❌ 데이터 계약 위반 (정정값 회귀·재발 — agents/rules/data_contracts.md)")
+            for d in contract_issues:
+                lines.append(f"- **{d['check']}** ({d['severity']}) — {d.get('detail', '')}")
             lines.append("")
 
         if mfds_regressions:

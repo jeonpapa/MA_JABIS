@@ -302,6 +302,21 @@ def _date_recency(date_str: str, window: int = 31) -> float:
     return max(0.3, min(1.0, 1.0 - age / max(1, window)))
 
 
+def _filter_cached_keywords(result: dict) -> dict:
+    """일자 캐시도 노이즈 필터를 통과시킨다 — 필터 배포 전(같은 날) 쓰인 오염 캐시가 그날 내내 노출되지 않게(2026-10-17).
+    filter_keywords 는 멱등이라 이미 걸러진 캐시는 그대로다."""
+    from agents.keyword_cloud_filter import filter_keywords
+    kws = result.get("keywords")
+    if isinstance(kws, list):
+        kept = [k for k in kws if isinstance(k, dict) and filter_keywords([k.get("text") or ""])]
+        if len(kept) != len(kws):
+            result["keywords"] = kept
+            nbk = result.get("newsByKeyword")
+            if isinstance(nbk, dict):
+                result["newsByKeyword"] = {k["text"]: nbk.get(k["text"], []) for k in kept}
+    return result
+
+
 def get_government_summary(refresh: bool = False, *, allow_fetch: bool = True) -> dict:
     """일자 캐시 → 아카이브 → LLM 요약. allow_fetch=False 는 스모크용(캐시/아카이브만, 크롤·live 검색 없음).
 
@@ -312,7 +327,7 @@ def get_government_summary(refresh: bool = False, *, allow_fetch: bool = True) -
     cache_file = CACHE_DIR / f"gov_summary_{today}.json"
     if not refresh and cache_file.exists():
         try:
-            return json.loads(cache_file.read_text(encoding="utf-8"))
+            return _filter_cached_keywords(json.loads(cache_file.read_text(encoding="utf-8")))
         except Exception:
             pass
 

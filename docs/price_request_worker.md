@@ -107,6 +107,17 @@ KRW·A8 조정가를 업로드해서 덮어쓰지 않는다. 서버는 기존 �
 7. 실제 메시지 ID를 확보한 뒤 `{"phase":"sent","receipt":"gmail:msg-f:실제숫자ID"}`를 notify. 지원되는 Gmail hex message id는 `gmail:실제16~64자리hex`도 가능. **예시 문자열/스레드ID/SMTP dry-run을 영수증으로 쓰지 않는다.** API는 Gmail receipt 형태를 검증하지만 외부 발송의 진위는 워커가 검증해야 한다.
 8. 발송 결과가 모호하면 `{"phase":"uncertain"}` 후 중단. 다음 실행에서는 Gmail Sent에서 요청ID·수신자 검색으로 실제 발송 여부 확인. 확인되면 실제 receipt로 sent. 미발송으로 판단되더라도 무조건 다시 보내지 말고 사용자 확인을 받고 `{"phase":"not_sent","human_confirmed":true,"receipt":"gmail-search:증빙경로;사용자확인"}`로만 pending 복구.
 
+## 원장 aside 과제 (2026-10-17 추가 — 루틴 미활성)
+
+해외약가 관련 운영 과제(`foreign_search:*`, `foreign_config_probe:config:*` JP/CH/UK 프록시·US/DE 자격증명, `foreign_price_age`·
+`foreign_country_coverage` 신선도, `foreign_price_backfill`)는 원장에서 담당 `aside` 로 분류된다(`agents/agent_tasks/owner.py`,
+`docs/ops/OWNERSHIP.md`). 같은 `price_agent` 계정으로:
+
+- `GET /api/agent/tasks?owner=aside&status=new,triaged` — price_agent 는 owner 를 생략해도 aside 로 고정, 다른 owner 는 403.
+- `POST /api/agent/tasks/<id>/claim` → 조사·증빙 → `POST /api/agent/tasks/<id>/resolve {"status":"closed|blocked","resolution":"..."}`.
+- aside 가 아닌 과제는 `409 OWNER_MISMATCH`. 서버 런북(`/runbook`)은 price_agent 에 403 — 런북은 Hermes/서버 몫이다.
+- 가격 요청 큐 처리가 우선이다. 원장 루틴은 워커 루틴 활성화 뒤에 별도 승인으로 켠다.
+
 ## 현재 환경의 검증 한계
 
 - 프로젝트 `.venv/bin/python`은 이 Aside 세션에서 실행 제한. 정상 프로젝트 환경에서 전체 회귀와 API서버 기동 확인 필요.

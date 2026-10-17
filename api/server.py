@@ -5733,6 +5733,7 @@ def daily_mailing_health():
 #   /api/agent/*  : VPS 디스패처(role='agent') 전용. 원장은 API 로만 수정한다(DB 직접 쓰기 금지).
 #   /api/admin/agent-tasks : 운영 원장 화면(admin). 계약은 frontend/src/api/agentTasks.ts 와 맞춘다.
 # ──────────────────────────────────────────────────────────────────────────────
+from agents.agent_tasks import owner as _agent_owner  # noqa: E402
 from agents.agent_tasks import policy as _agent_policy  # noqa: E402
 from agents.agent_tasks import runbooks as _agent_runbooks  # noqa: E402
 from agents.agent_tasks import store as _agent_store  # noqa: E402
@@ -5763,6 +5764,37 @@ def _agent_statuses_arg(default: tuple[str, ...]):
     return (values or default), err
 
 
+# 담당(owner) 라우팅 — agents/agent_tasks/owner.py, docs/ops/OWNERSHIP.md. 역할별 선점 가능 담당: agent=server·hermes,
+# price_agent=aside(최소 권한 — 조회·선점·회신만, 런북 실행 불가), admin=전부.
+_AGENT_TASK_ROLES = ("agent", "price_agent")
+
+
+def _agent_owners_arg(role: str | None):
+    """?owner=a,b → (owners, None) | (None, error). price_agent 는 aside 로 고정(다른 담당 요청은 403)."""
+    owners, err = _agent_multi_arg("owner", _agent_owner.OWNERS)
+    if err:
+        return None, err
+    if role == "price_agent":
+        if owners and set(owners) != {"aside"}:
+            return None, (jsonify({"error": "price_agent 는 owner=aside 과제만 조회한다",
+                                   "code": "AUTH_FORBIDDEN"}), 403)
+        owners = ("aside",)
+    return owners, None
+
+
+def _agent_owner_mismatch(task: dict, role: str | None):
+    """이 역할이 맡을 수 없는 담당의 과제 → 409 OWNER_MISMATCH (없으면 None).
+
+    409 인 이유: 구버전 디스패처(owner 필터 없음)는 409 를 '선점 실패' 로 보고 다음 과제로 넘어간다 —
+    Hermes 가 Aside 몫을 집어 blocked 로 만드는 충돌을 서버가 막는다.
+    """
+    owner = _agent_owner.task_owner(task)
+    if _agent_owner.role_may_handle(role, owner):
+        return None
+    return jsonify({"error": f"이 과제의 담당은 {owner} — {role} 는 다루지 않는다", "code": "OWNER_MISMATCH",
+                    "owner": owner}), 409
+
+
 def _agent_stale_claim(task: dict, actor: str, role: str | None):
     """선점자가 아닌 호출자의 런북 실행·회신을 막는다 → 409 STALE_CLAIM (없으면 None).
 
@@ -5779,7 +5811,7 @@ def _agent_stale_claim(task: dict, actor: str, role: str | None):
 
 
 @app.get("/api/agent/tasks")
-@require_auth(role="agent")
+@require_auth(role=_AGENT_TASK_ROLES)
 def agent_tasks_list():
     statuses, err = _agent_statuses_arg(_agent_store.OPEN_STATUSES)
     if err:
@@ -5788,10 +5820,14 @@ def agent_tasks_list():
     kinds, err = _agent_multi_arg("kind", _agent_store.KINDS)
     if err:
         return err
+    # owner=hermes|server|aside : 담당별 큐. Hermes 디스패처는 owner=hermes(기본), Aside 루틴은 owner=aside.
+    owners, err = _agent_owners_arg(request.user.get("role"))  # type: ignore[attr-defined]
+    if err:
+        return err
     limit = max(1, min(request.args.get("limit", default=50, type=int) or 50, 200))
     try:
         tasks = _agent_store.list_tasks(db_path=_AGENT_TASK_DB_PATH, statuses=statuses, kinds=kinds or None,
-                                        limit=limit)
+                                        limit=limit, owners=owners or None)
         return jsonify({"tasks": tasks, "policy": _agent_policy.get_policy(db_path=_AGENT_TASK_DB_PATH)})
     except Exception as e:
         logger.error("agent_tasks_list 실패: %s", e, exc_info=True)
@@ -5799,7 +5835,7 @@ def agent_tasks_list():
 
 
 @app.post("/api/agent/tasks/<int:task_id>/claim")
-@require_auth(role="agent")
+@require_auth(role=_AGENT_TASK_ROLES)
 def agent_task_claim(task_id: int):
     actor = request.user["sub"]  # type: ignore[attr-defined]
     allowed, reason = _agent_policy.spend_check(db_path=_AGENT_TASK_DB_PATH)
@@ -5808,6 +5844,9 @@ def agent_task_claim(task_id: int):
     task = _agent_store.get_task(task_id, db_path=_AGENT_TASK_DB_PATH)
     if task is None:
         return jsonify({"claimed": False, "error": "not found", "code": "NOT_FOUND"}), 404
+    mismatch = _agent_owner_mismatch(task, request.user.get("role"))  # type: ignore[attr-defined]
+    if mismatch is not None:
+        return mismatch
     if task["status"] == "new" and task["kind"] in _AGENT_AUTO_TRIAGE_KINDS:
         # 단일 트랜잭션 조건부 UPDATE(WHERE status='new') — 동시 claim 이 와도 하나만 분류하고 이벤트도
         # 한 번만 남는다. False(다른 실행이 먼저 분류·선점)면 아래 선점에서 판가름 난다.
@@ -5819,7 +5858,8 @@ def agent_task_claim(task_id: int):
         return jsonify({"claimed": False, "code": "NOT_CLAIMABLE", "reason": "attempts_exhausted"}), 409
     if outcome != "claimed":
         return jsonify({"claimed": False, "code": "NOT_CLAIMABLE"}), 409
-    return jsonify({"claimed": True, "task": _agent_store.get_task(task_id, db_path=_AGENT_TASK_DB_PATH)})
+    claimed = _agent_store.get_task(task_id, db_path=_AGENT_TASK_DB_PATH)
+    return jsonify({"claimed": True, "task": _agent_owner.annotate([claimed])[0] if claimed else claimed})
 
 
 @app.post("/api/agent/tasks/<int:task_id>/runbook")
@@ -5849,7 +5889,7 @@ def agent_task_runbook(task_id: int):
 
 
 @app.post("/api/agent/tasks/<int:task_id>/resolve")
-@require_auth(role="agent")
+@require_auth(role=_AGENT_TASK_ROLES)
 def agent_task_resolve(task_id: int):
     actor = request.user["sub"]  # type: ignore[attr-defined]
     body = request.get_json(silent=True) or {}
@@ -5859,6 +5899,9 @@ def agent_task_resolve(task_id: int):
     task = _agent_store.get_task(task_id, db_path=_AGENT_TASK_DB_PATH)
     if task is None:
         return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
+    mismatch = _agent_owner_mismatch(task, request.user.get("role"))  # type: ignore[attr-defined]
+    if mismatch is not None:
+        return mismatch
     stale = _agent_stale_claim(task, actor, request.user.get("role"))  # type: ignore[attr-defined]
     if stale is not None:
         return stale
@@ -5877,11 +5920,16 @@ def admin_agent_tasks():
     statuses, err = _agent_statuses_arg(_agent_store.STATUSES)
     if err:
         return err
+    owners, err = _agent_owners_arg("admin")
+    if err:
+        return err
     try:
         return jsonify({
             # 최근 갱신순: 200건이 넘어도 방금 난 사고가 첫 페이지에 보인다 (디스패처 목록은 우선순위순 유지)
+            # 각 과제에 owner(server|aside|hermes) 가 붙는다. ?owner= 로 좁힐 수 있다(화면은 전체를 받아 클라이언트에서 칩 필터).
             "tasks": _agent_store.list_tasks(db_path=_AGENT_TASK_DB_PATH, statuses=statuses, limit=200,
-                                             order="recent"),
+                                             order="recent", owners=owners or None),
+            "owners": list(_agent_owner.OWNERS),
             "policy": _agent_policy.get_policy(db_path=_AGENT_TASK_DB_PATH),
             "runbooks": _agent_runbooks.list_runbooks(),
             "activity": _agent_store.dispatcher_activity(db_path=_AGENT_TASK_DB_PATH),
@@ -5897,7 +5945,8 @@ def admin_agent_task_detail(task_id: int):
     task = _agent_store.get_task(task_id, db_path=_AGENT_TASK_DB_PATH)
     if task is None:
         return jsonify({"error": "not found", "code": "NOT_FOUND"}), 404
-    return jsonify({"task": task, "events": _agent_store.list_events(task_id, db_path=_AGENT_TASK_DB_PATH)})
+    return jsonify({"task": _agent_owner.annotate([task])[0],
+                    "events": _agent_store.list_events(task_id, db_path=_AGENT_TASK_DB_PATH)})
 
 
 @app.post("/api/admin/agent-policy")
@@ -6246,6 +6295,8 @@ def competitor_update(item_id: int):
         return jsonify({"error": "변경할 필드 없음", "code": "INVALID"}), 400
     from datetime import datetime, timezone
     fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+    # admin 이 고친 카드는 사람 정본 — 자동 크롤/promote 의 같은 url UPSERT 가 되돌리지 않게 manual 로 승격 (data_contracts.md §4)
+    fields.setdefault("source_type", "manual")
     set_clause = ", ".join(f"{k} = ?" for k in fields.keys())
     params = list(fields.values()) + [item_id]
     try:
@@ -7436,6 +7487,47 @@ def reimb_pipeline_admin_session_update(session_id: int):
 def reimb_pipeline_admin_session_create():
     return _reimb_pipeline_call(
         _reimb_pipeline.create_session, request.get_json(silent=True) or {})
+
+
+# 등재 차수(listing round) — 브랜드 1 : N 차수, 이벤트·공단 협상 행 연결 (agents/reimb_pipeline 차수 섹션)
+@app.post("/api/admin/reimb-pipeline/drugs/<int:drug_id>/rounds")
+@require_auth(role="admin")
+def reimb_pipeline_admin_round_create(drug_id: int):
+    return _reimb_pipeline_call(
+        _reimb_pipeline.create_round, drug_id, request.get_json(silent=True) or {})
+
+
+@app.patch("/api/admin/reimb-pipeline/rounds/<int:round_id>")
+@require_auth(role="admin")
+def reimb_pipeline_admin_round_update(round_id: int):
+    return _reimb_pipeline_call(
+        _reimb_pipeline.update_round, round_id, request.get_json(silent=True) or {})
+
+
+@app.delete("/api/admin/reimb-pipeline/rounds/<int:round_id>")
+@require_auth(role="admin")
+def reimb_pipeline_admin_round_delete(round_id: int):
+    return _reimb_pipeline_call(_reimb_pipeline.delete_round, round_id)
+
+
+@app.post("/api/admin/reimb-pipeline/rounds/<int:round_id>/events")
+@require_auth(role="admin")
+def reimb_pipeline_admin_round_link_event(round_id: int):
+    return _reimb_pipeline_call(
+        _reimb_pipeline.link_event_admin, round_id, request.get_json(silent=True) or {})
+
+
+@app.delete("/api/admin/reimb-pipeline/rounds/<int:round_id>/events/<int:event_id>")
+@require_auth(role="admin")
+def reimb_pipeline_admin_round_unlink_event(round_id: int, event_id: int):
+    return _reimb_pipeline_call(_reimb_pipeline.unlink_event_admin, round_id, event_id)
+
+
+@app.put("/api/admin/reimb-pipeline/nhis/<int:nhis_id>/round")
+@require_auth(role="admin")
+def reimb_pipeline_admin_nhis_round(nhis_id: int):
+    return _reimb_pipeline_call(
+        _reimb_pipeline.set_nhis_round_admin, nhis_id, request.get_json(silent=True) or {})
 
 
 # ──────────────────────────────────────────────────────────────────────────────

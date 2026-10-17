@@ -50,19 +50,24 @@ def _ensure_date_source_column(conn: sqlite3.Connection) -> None:
 def _apply_product(conn: sqlite3.Connection, item_seq: str,
                    results: list[MappingResult], apply: bool) -> dict:
     url = MFDS_HIST_URL_FMT.format(item_seq=item_seq)
-    stats = {"matched": 0, "unmatched": 0, "updated": 0, "unchanged": 0}
+    stats = {"matched": 0, "unmatched": 0, "updated": 0, "unchanged": 0, "protected": 0}
 
     for r in results:
         if r.official_date:
             stats["matched"] += 1
             cur = conn.execute(
-                "SELECT approval_date, date_source FROM indications_by_agency "
+                "SELECT approval_date, date_source, raw_source FROM indications_by_agency "
                 "WHERE agency='MFDS' AND indication_id=?",
                 (r.indication_id,),
             ).fetchone()
             if not cur:
                 continue
-            old_date, _ = cur
+            old_date, _, old_raw = cur
+            # raw_source='manual_correction' = 사람이 근거로 고친 허가일(2026-10-17 EV 병용 1차). 변경이력 자동 매칭이
+            # 다시 덮어쓰지 않는다 — agents/db/indications.upsert_indication_agency 와 같은 계약(data_contracts.md §2).
+            if old_raw == "manual_correction":
+                stats["protected"] += 1
+                continue
             raw = json.dumps({
                 "date_source": "mfds_official",
                 "confidence": r.confidence,
@@ -75,7 +80,8 @@ def _apply_product(conn: sqlite3.Connection, item_seq: str,
                     "UPDATE indications_by_agency "
                     "SET approval_date=?, date_source='mfds_official', "
                     "    label_url=?, raw_source=? "
-                    "WHERE agency='MFDS' AND indication_id=?",
+                    "WHERE agency='MFDS' AND indication_id=? "
+                    "  AND COALESCE(raw_source, '') != 'manual_correction'",
                     (r.official_date, url, raw, r.indication_id),
                 )
             if old_date != r.official_date:
@@ -89,7 +95,8 @@ def _apply_product(conn: sqlite3.Connection, item_seq: str,
                     "UPDATE indications_by_agency "
                     "SET date_source='unverified_estimate' "
                     "WHERE agency='MFDS' AND indication_id=? "
-                    "  AND (date_source IS NULL OR date_source='')",
+                    "  AND (date_source IS NULL OR date_source='') "
+                    "  AND COALESCE(raw_source, '') != 'manual_correction'",
                     (r.indication_id,),
                 )
     return stats
@@ -158,7 +165,8 @@ def main():
                       f"{str(r.official_date or '-'):<12}  conf={r.confidence}")
             stats = _apply_product(conn, item_seq, results, args.apply)
             print(f"  → matched={stats['matched']}  unmatched={stats['unmatched']}  "
-                  f"updated={stats['updated']}  unchanged={stats['unchanged']}")
+                  f"updated={stats['updated']}  unchanged={stats['unchanged']}  "
+                  f"protected(manual_correction)={stats['protected']}")
             for k in total:
                 total[k] += stats[k]
         if args.apply:

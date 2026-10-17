@@ -590,6 +590,52 @@ CREATE TABLE IF NOT EXISTS dosing_resolved (
 """
 
 
+# ── 급여 파이프라인 등재 차수(listing round) — 브랜드(amjilsim_drugs) 1 : N 차수 ──────────────────────
+# 한 브랜드의 '등재 차수'(예: 키트루다 2025 확대 11개 적응증 / 2026 확대 파드셉 병용 요로상피암 1차)를 분리 추적.
+# 추가 전용(additive) — 기존 테이블·행은 건드리지 않는다. 위원회 이벤트는 reimb_round_events(다대다,
+# 같은 브랜드 안에서는 이벤트 1건 = 차수 1개: UNIQUE(queue_id, round_drug_id)), 공단 협상 행은
+# nhis_negotiations.round_id(단일 컬럼 → 한 행이 두 차수에 붙지 않음; ALTER 는 agents/reimb_pipeline.ensure_round_schema).
+# 병용 차수는 브랜드별 행 + 공통 combo_key 로 교차 참조 (파드셉 이벤트를 키트루다 차수에 '공유 링크' — 이동 아님).
+REIMB_ROUNDS_DDL_STATEMENTS = (
+    """CREATE TABLE IF NOT EXISTS reimb_listing_rounds (
+        round_id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        drug_id                   INTEGER NOT NULL,      -- 부모 브랜드 키 (amjilsim_drugs.drug_id, soft FK)
+        round_label               TEXT NOT NULL,         -- '2025 확대 · 11개 적응증'
+        list_type                 TEXT,                  -- '신규' | '확대'
+        indication_scope          TEXT,                  -- 이 차수의 적응증 범위
+        combo_key                 TEXT,                  -- 병용 차수 교차 참조 키 (브랜드별 차수가 공유)
+        submitted_date            TEXT,
+        amjilsim_pass_date        TEXT,
+        yakpyungwi_pass_date      TEXT,
+        negotiation_status        TEXT,                  -- NONE|IN_PROGRESS|STALLED|AGREED|REJECTED
+        nhis_registered_ym        TEXT,                  -- 공단 등록연월 'YYYY-MM'
+        negotiation_complete_date TEXT,                  -- 공단 협상완료연월 'YYYY-MM'
+        negotiation_date_source   TEXT,                  -- 'nhis_official' | 'manual'
+        reimb_start_date          TEXT,                  -- 급여 시행일 'YYYY-MM-DD'
+        source                    TEXT NOT NULL DEFAULT 'admin',  -- legacy|migration|auto_nhis|auto_committee|admin|committee_import
+        needs_review              INTEGER NOT NULL DEFAULT 0,     -- 자동 생성(적응증 범위 미확인) 등 검토 필요
+        notes                     TEXT,
+        created_at                TEXT DEFAULT (datetime('now')),
+        updated_at                TEXT DEFAULT (datetime('now')),
+        UNIQUE(drug_id, round_label)
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_reimb_rounds_drug ON reimb_listing_rounds(drug_id)",
+    "CREATE INDEX IF NOT EXISTS idx_reimb_rounds_combo ON reimb_listing_rounds(combo_key)",
+    """CREATE TABLE IF NOT EXISTS reimb_round_events (
+        round_id       INTEGER NOT NULL,   -- reimb_listing_rounds.round_id
+        queue_id       INTEGER NOT NULL,   -- amjilsim_drug_queue_status.id
+        round_drug_id  INTEGER NOT NULL,   -- 차수의 브랜드 (비정규화 — 같은 브랜드 두 차수 중복 연결 차단)
+        link_source    TEXT NOT NULL DEFAULT 'auto',  -- explicit|auto|migration|combo|legacy
+        created_at     TEXT DEFAULT (datetime('now')),
+        PRIMARY KEY (round_id, queue_id),
+        UNIQUE (queue_id, round_drug_id)
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_reimb_round_events_queue ON reimb_round_events(queue_id)",
+)
+REIMB_ROUNDS_DDL = ";\n".join(REIMB_ROUNDS_DDL_STATEMENTS) + ";\n"
+DB_SCHEMA += REIMB_ROUNDS_DDL
+
+
 # 엑셀 컬럼명과 DB 컬럼명 매핑 후보 (다양한 HIRA 파일 포맷 대응)
 COL_CANDIDATES = {
     # 현행(2010년대~) 포맷

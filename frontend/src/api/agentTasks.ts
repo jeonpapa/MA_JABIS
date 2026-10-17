@@ -1,7 +1,7 @@
 import { api } from './client';
 
 // 에이전트 팀 운영 원장 계약 — agents/agent_tasks/** (P1) / api/server.py
-//   GET  /api/admin/agent-tasks        → { tasks, policy, runbooks }
+//   GET  /api/admin/agent-tasks        → { tasks, owners, policy, runbooks, activity }  (?owner=server|aside|hermes 선택)
 //   GET  /api/admin/agent-tasks/<id>   → { task, events }
 //   POST /api/admin/agent-policy       → { policy }   (body = 부분 정책)
 // 설계: docs/superpowers/specs/2026-09-30-agent-team-full-service-design.md §5·§7·§8
@@ -28,7 +28,12 @@ export interface AgentTask {
   resolution: string | null;
   created_at: string;
   updated_at: string;
+  /** 담당 — agents/agent_tasks/owner.py 가 source·source_ref·런북 힌트로 결정적으로 계산 (docs/ops/OWNERSHIP.md).
+   *  구버전 서버는 보내지 않는다 → 화면은 '미분류' 로 보여준다. */
+  owner?: AgentTaskOwner | null;
 }
+
+export type AgentTaskOwner = 'server' | 'aside' | 'hermes';
 
 export interface AgentPolicy {
   enabled: boolean;
@@ -48,10 +53,12 @@ export interface AgentTaskEvent {
 
 export interface AgentTasksResponse {
   tasks: AgentTask[];
+  /** 담당 값 목록 (server | aside | hermes) */
+  owners?: string[];
   policy: AgentPolicy;
   runbooks: string[];
-  /** 실제 처리 활동 — 마지막 선점 시각과 대기 과제 수 (스위치 상태와 별개) */
-  activity?: { last_claimed_at: string | null; waiting: number };
+  /** 실제 처리 활동 — 마지막 선점 시각과 대기 과제 수(담당별 포함) (스위치 상태와 별개) */
+  activity?: { last_claimed_at: string | null; waiting: number; waiting_by_owner?: Partial<Record<AgentTaskOwner, number>> };
 }
 
 export interface AgentTaskDetailResponse {

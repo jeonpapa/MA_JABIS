@@ -191,6 +191,23 @@ class _MergerMixin:
                         "WHERE indication_id = ? AND agency = ?",
                         (dst_id, src_id, a["agency"]),
                     )
+                elif a.get("raw_source") == "manual_correction":
+                    # 사람이 고친 허가일(data_contracts.md §2)은 병합으로 사라지면 안 된다 — dst 가 자동값이면 덮는다.
+                    c.execute(
+                        "UPDATE indications_by_agency SET approval_date = ?, "
+                        "label_url = COALESCE(?, label_url), restriction_note = ?, "
+                        "raw_source = 'manual_correction' WHERE indication_id = ? AND agency = ? "
+                        "AND COALESCE(raw_source, '') != 'manual_correction'",
+                        (a.get("approval_date"), a.get("label_url"), a.get("restriction_note"),
+                         dst_id, a["agency"]),
+                    )
+            # 급여 체크리스트(indication_reimbursement)는 사람이 입력한 정본 — src 행을 dst 로 옮긴다. dst 에 이미 행이
+            # 있으면 둘 다 사람 값이라 고르지 않고 src 를 남긴다(고아 행 → QG data_contract 가 보고).
+            try:
+                c.execute("UPDATE OR IGNORE indication_reimbursement SET indication_id = ? WHERE indication_id = ?",
+                          (dst_id, src_id))
+            except sqlite3.OperationalError:
+                pass   # 테이블 없음(테스트·구 DB)
             c.execute("DELETE FROM indications_by_agency WHERE indication_id = ?",
                       (src_id,))
             c.execute("DELETE FROM indications_master WHERE indication_id = ?",

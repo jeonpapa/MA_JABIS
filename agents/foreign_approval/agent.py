@@ -94,9 +94,12 @@ class ForeignApprovalAgent(_BuildersMixin, _MergerMixin, _MatrixMixin):
             if a not in self.SUPPORTED:
                 raise ValueError(f"Unsupported agency: {a} (지원: {self.SUPPORTED})")
 
+        protected: list[dict] = []
         if wipe:
+            protected = self._snapshot_manual_corrections(product_slug)
             self._wipe_product(product_slug)
-            logger.info("[%s] 기존 indication row 전부 삭제", product_slug)
+            logger.info("[%s] 기존 indication row 전부 삭제 (manual_correction %d행은 재빌드 후 복원)",
+                        product_slug, len(protected))
 
         results: list[AgencyResult] = []
         if "FDA" in agencies:
@@ -112,7 +115,45 @@ class ForeignApprovalAgent(_BuildersMixin, _MergerMixin, _MatrixMixin):
         if "TGA" in agencies:
             results.append(self._build_tga(product_slug, limit, codes))
 
+        if protected:
+            self._restore_manual_corrections(product_slug, protected)
         return BuildSummary(product=product_slug, agencies=results, wiped=wipe)
+
+    # raw_source='manual_correction' 는 사람이 근거로 고친 허가일(data_contracts.md §2). wipe 재빌드가 지우면 자동 매칭
+    # 값(2026-10-17 EV 병용 1차 = 제품 최초 허가일 오매칭)이 되돌아온다 → wipe 전 스냅샷, 빌드 후 같은 (indication_id, agency)에 복원.
+    _PROTECTED_COLS = ("approval_date", "label_url", "restriction_note", "raw_source")
+
+    def _snapshot_manual_corrections(self, product_slug: str) -> list[dict]:
+        with sqlite3.connect(str(self.db_path)) as c:
+            c.row_factory = sqlite3.Row
+            rows = c.execute(
+                "SELECT a.* FROM indications_by_agency a JOIN indications_master m ON m.indication_id = a.indication_id "
+                "WHERE m.product = ? AND a.raw_source = 'manual_correction'", (product_slug,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def _restore_manual_corrections(self, product_slug: str, rows: list[dict]) -> int:
+        restored = 0
+        with sqlite3.connect(str(self.db_path)) as c:
+            for r in rows:
+                cur = c.execute(
+                    "UPDATE indications_by_agency SET approval_date=?, label_url=COALESCE(?, label_url), "
+                    "restriction_note=?, raw_source='manual_correction' WHERE indication_id=? AND agency=?",
+                    (r.get("approval_date"), r.get("label_url"), r.get("restriction_note"),
+                     r["indication_id"], r["agency"]))
+                ok = cur.rowcount > 0
+                if not ok and c.execute("SELECT 1 FROM indications_master WHERE indication_id=?",
+                                        (r["indication_id"],)).fetchone():
+                    cols = [k for k in r if k != "id"]
+                    c.execute(f"INSERT INTO indications_by_agency ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
+                              [r[k] for k in cols])
+                    ok = True
+                if ok:
+                    restored += 1
+                else:
+                    logger.warning("[%s] manual_correction 복원 실패 — 재빌드 후 %s 마스터 없음 (%s %s) — 수동 확인",
+                                   product_slug, r["indication_id"], r["agency"], r.get("approval_date"))
+            c.commit()
+        return restored
 
     # ──────────────────────────────────────────────────────────
     # Helpers

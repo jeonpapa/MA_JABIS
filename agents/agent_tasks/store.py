@@ -170,9 +170,17 @@ ORDERS = {"priority": "priority, id", "recent": "updated_at DESC, id DESC"}
 
 def list_tasks(*, db_path: str | Path = DEFAULT_DB_PATH, statuses: tuple[str, ...] = OPEN_STATUSES,
                kinds: tuple[str, ...] | None = None, limit: int = 100,
-               order: str = "priority") -> list[dict]:
+               order: str = "priority", owners: tuple[str, ...] | None = None) -> list[dict]:
+    """행마다 담당(owner — owner.py, 저장 컬럼 아님)을 붙여 돌려준다. owners 를 주면 그 담당만.
+
+    담당은 detail 의 런북 힌트에서 계산되므로 SQL 로 거를 수 없다 — owners 필터가 있으면 LIMIT 없이 읽고 거른 뒤 자른다
+    (원장은 도메인·월당 1행 상한이라 수백 행 규모)."""
+    from .owner import OWNERS, annotate
     if order not in ORDERS:
         raise AgentTaskError(f"알 수 없는 order: {order}")
+    unknown = [o for o in (owners or ()) if o not in OWNERS]
+    if unknown:
+        raise AgentTaskError(f"알 수 없는 owner: {unknown}")
     conn = connect(db_path)
     try:
         sql = f"SELECT * FROM agent_task WHERE status IN ({','.join('?' for _ in statuses)})"
@@ -180,9 +188,14 @@ def list_tasks(*, db_path: str | Path = DEFAULT_DB_PATH, statuses: tuple[str, ..
         if kinds:
             sql += f" AND kind IN ({','.join('?' for _ in kinds)})"
             params += list(kinds)
-        sql += f" ORDER BY {ORDERS[order]} LIMIT ?"
-        params.append(int(limit))
-        return [dict(r) for r in conn.execute(sql, params).fetchall()]
+        sql += f" ORDER BY {ORDERS[order]}"
+        if not owners:
+            sql += " LIMIT ?"
+            params.append(int(limit))
+        rows = annotate(dict(r) for r in conn.execute(sql, params).fetchall())
+        if owners:
+            rows = [r for r in rows if r["owner"] in owners][: int(limit)]
+        return rows
     finally:
         conn.close()
 
@@ -193,9 +206,14 @@ def dispatcher_activity(*, db_path: str | Path = DEFAULT_DB_PATH) -> dict:
     with connect(db_path) as conn:
         row = conn.execute(
             "SELECT MAX(created_at) FROM agent_task_event WHERE event = 'claimed'").fetchone()
-        waiting = conn.execute(
-            "SELECT COUNT(*) FROM agent_task WHERE status IN ('new', 'triaged')").fetchone()[0]
-    return {"last_claimed_at": row[0] if row else None, "waiting": waiting}
+        waiting_rows = [dict(r) for r in conn.execute(
+            "SELECT source, source_ref, detail FROM agent_task WHERE status IN ('new', 'triaged')").fetchall()]
+    from .owner import OWNERS, task_owner
+    by_owner = {o: 0 for o in OWNERS}
+    for r in waiting_rows:
+        by_owner[task_owner(r)] += 1
+    # waiting_by_owner: 담당별 대기 — '처리 멈춤' 이 Hermes 쪽인지 Aside 쪽인지 화면에서 갈라 보인다
+    return {"last_claimed_at": row[0] if row else None, "waiting": len(waiting_rows), "waiting_by_owner": by_owner}
 
 
 def list_events(task_id: int, *, db_path: str | Path = DEFAULT_DB_PATH) -> list[dict]:

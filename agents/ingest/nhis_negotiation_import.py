@@ -6,7 +6,9 @@
     (negotiation_date_source='nhis_official'). 단, manual 로 수기 편집된 행은 보존 안 함 —
     NHIS 가 항상 우선이므로 nhis_official 로 덮어씀. (사용자 결정: NHIS 항상 우선)
   - 미매칭 행은 audit 리스트로 반환(자동 생성 안 함) → 수동 등록 대상.
-  - 동일 약제에 협상중·완료 행 공존 시 '완료' 우선 적용(최종 상태).
+  - 동일 약제에 협상중·완료 행 공존 시 '완료' 우선 적용(최종 상태) — 같은 등록연월 동률도 완료 우선(_better_current_row).
+  - 등재 차수(listing round): 매칭 후 reimb_pipeline.sync_drug_rounds 로 공단 행을 차수에 연결
+    (명시 > 같은 협상 형제 행 > 병용 파트너 combo_key > 통과일 창, 없으면 새 차수 needs_review).
 
 매칭 보수성: brand_core 일치 AND 제조사 토큰 겹침일 때만 자동 적용. 그 외는 audit.
 
@@ -90,6 +92,9 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
                 "nhis_registered_ym", "efficacy_group"):
         if col not in cols:
             conn.execute(f"ALTER TABLE amjilsim_drugs ADD COLUMN {col} TEXT")
+    # 등재 차수(listing round) 테이블 + nhis_negotiations.round_id (추가 전용, agents/reimb_pipeline)
+    from agents import reimb_pipeline as _rp
+    _rp.ensure_round_schema(conn)
     conn.commit()
 
 
@@ -176,6 +181,43 @@ def upsert_negotiations(conn: sqlite3.Connection, rows: list[dict]) -> int:
     return inserted
 
 
+def _better_current_row(r: dict, prev: dict | None) -> bool:
+    """약제의 '현재 협상 상태' 대표 행 선택 — r 이 prev 보다 나은가.
+
+    1) 최신 등록연월(가장 최근 협상)이 우선.
+    2) 같은 등록연월·같은 목록(신규/확대) = 같은 협상의 아카이브 쌍 → **완료 행 우선**.
+       (이전엔 협상 중 행을 우선해, 이미 타결된 협상이 '협상 중' 으로 되돌아갔다 — 2026-10-17 플래그된 tie-break 버그.
+        예: 키트루다 확대 2026-05 협상중 + 같은 2026-05 합의(2026-09) → 합의가 현재 상태.)
+    3) 같은 등록연월·다른 목록 = 동시에 진행되는 별개 협상 → 진행 중 우선 (보드 노출 보장).
+    4) 그 외 동률은 완료연월이 늦은 쪽.
+    """
+    if prev is None:
+        return True
+    reg, preg = r.get("registered_ym") or "", prev.get("registered_ym") or ""
+    if reg != preg:
+        return reg > preg
+    r_done, p_done = not r.get("is_in_progress"), not prev.get("is_in_progress")
+    if r_done != p_done:
+        if r.get("list_type") == prev.get("list_type"):
+            return r_done
+        return not r_done
+    return (r.get("completed_ym") or "") > (prev.get("completed_ym") or "")
+
+
+def sync_rounds(conn: sqlite3.Connection, drug_ids) -> list[dict]:
+    """매칭된 약제의 등재 차수 동기화 — 새 공단 행을 차수에 연결(명시 링크 > 같은 협상 형제 > 병용 파트너 > 통과일 창),
+    차수가 없고 협상 묶음이 2개 이상이면 모호하지 않을 때만 자동 분할. 커밋은 호출자."""
+    from agents import reimb_pipeline as _rp
+    out = []
+    for did in sorted(set(drug_ids)):
+        try:
+            out.append(_rp.sync_drug_rounds(conn, did))
+        except (ValueError, LookupError) as e:  # 한 약제 실패가 적재 전체를 막지 않게
+            logger.warning("[nhis_import] 차수 동기화 실패 drug_id=%s: %s", did, e)
+            out.append({"drug_id": did, "action": "error", "error": str(e)})
+    return out
+
+
 def match_and_apply(conn: sqlite3.Connection, rows: list[dict],
                     dry_run: bool = False) -> dict:
     """NHIS 행 ↔ amjilsim_drugs 매칭. 매칭 시 NHIS 공식값으로 교체.
@@ -211,15 +253,7 @@ def match_and_apply(conn: sqlite3.Connection, rows: list[dict],
         did = cand["drug_id"]
         matched_hashes[r["content_hash"]] = did
         prev = apply_map.get(did)
-        # 최신 등록연월(가장 최근 협상)이 현재 상태를 결정. 동일 연월이면 진행중 우선
-        # (현재 활성 협상이 최종 상태보다 우선 — 보드 노출 보장).
-        better = (
-            prev is None
-            or (r["registered_ym"] or "") > (prev["registered_ym"] or "")
-            or ((r["registered_ym"] or "") == (prev["registered_ym"] or "")
-                and r["is_in_progress"] and not prev["is_in_progress"])
-        )
-        if better:
+        if _better_current_row(r, prev):
             apply_map[did] = r
 
     if dry_run:
@@ -246,8 +280,12 @@ def match_and_apply(conn: sqlite3.Connection, rows: list[dict],
              r["efficacy_group"], did))
     conn.commit()
 
+    # 등재 차수 연결 (이번 수집으로 매칭된 약제만) — 실패해도 협상 상태 반영은 이미 커밋됨
+    rounds = sync_rounds(conn, set(matched_hashes.values()))
+    conn.commit()
+
     return {"matched_drugs": len(apply_map), "matched_rows": len(matched_hashes),
-            "unmatched": audit, "apply_map": apply_map}
+            "unmatched": audit, "apply_map": apply_map, "rounds": rounds}
 
 
 def run(dry_run: bool = False, db_path: Path = DB_PATH) -> dict:
@@ -265,6 +303,7 @@ def run(dry_run: bool = False, db_path: Path = DB_PATH) -> dict:
             "matched_rows": res["matched_rows"],
             "unmatched_count": len(res["unmatched"]),
             "unmatched": res["unmatched"],
+            "rounds": res.get("rounds", []),
         }
         return out
     finally:
@@ -281,6 +320,10 @@ def main() -> None:
     print(f"  수집 {res['fetched']}  |  신규 INSERT {res['inserted']}")
     print(f"  매칭: drug {res['matched_drugs']}개 / row {res['matched_rows']}건")
     print(f"  미매칭(audit): {res['unmatched_count']}건")
+    for rr in res.get("rounds", []):
+        if rr.get("action") in ("split", "ambiguous", "error") or any(
+                x.get("rule") in ("created", "ambiguous_window") for x in rr.get("nhis", [])):
+            print(f"    · 차수 drug_id={rr['drug_id']} {rr['action']} {rr.get('reasons') or rr.get('rounds') or rr.get('nhis') or ''}")
     for r in res["unmatched"][:30]:
         flag = "협상중" if r["is_in_progress"] else f"완료{r['completed_ym']}"
         print(f"    - [{r['list_type']}] {r['product_name'][:34]} | {r['manufacturer']} | {flag}")

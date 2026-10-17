@@ -37,6 +37,24 @@ JP, IT, FR, CH, UK, DE, CA (US는 구독 확인 필요)
   - 복원 불가 행은 제형 보정(`foreign_dose_normalize._strength_of`)도 regex fallback 으로 농도를 강도로 쓰지 않는다 (저장된 factor 4.0 은 `get_cached_results` 가 표시 시 미적용). 저장 행 정정은 재수집으로.
   - QG 데이터 검사 `quality_guard.checks.check_foreign_price_data` 가 매일 06:00 저장 행을 보고 unit_strength_mg 가 농도와 같거나 분모 불명인데 daily_cost 가 있으면 ERROR drift 로 원장에 올린다 (코드 grep 만으로는 간접 fallback 을 못 잡았다).
 
+### 강도 파싱 규칙 (2026-10-17 감사 — Winrevair·Keytruda FR·Prevymis CA, `tests/test_foreign_strength_regressions.py`)
+- **분말+용제 키트는 바이알 표기 총량이 per-vial**: 용해 후 농도(예: IT Winrevair 50 mg/ml) × 용제 부피로 per-vial 을 만들지 않는다 —
+  명시 바이알 총량 "45 mg"/"60 mg"(농도 아님)이 있으면 그것이 라벨 함량 (`_extract_per_unit_mg` 2a).
+- **부피 소수점 쉼표**: "1,3 ml" = 1.3 mL (3 mL 아님). 로케일 쉼표는 소수점으로 먼저 해석.
+- **injection 은 form-aware 재파싱이 저장값을 이긴다** (`_assign_formulations_and_persist`): 옛 저장 unit_strength(농도 25·50×3=150 등)를
+  재사용하지 않는다. oral 은 저장값 우선(包↔錠 등 제형 레이어 산물 보존).
+- **분할 조각 행**(UK MIMS "…; 1-vial kit=£x; 2-vial kit=£y" → 둘째 행 dosage_strength "; 2-vial kit"): 같은 (country, product_name,
+  source_url, searched_at) 의 직전 행 강도를 잇는다(`_inherit_continuation_strength`). 조각에 mg 숫자가 있거나 직전 행이 강도 불명이면 잇지 않음.
+  근본 수정은 스크레이퍼 가격줄 분할(`uk_mims._parse_price_page`). 키트 수 "N-vial kit" 는 pack_count 단서.
+- **투여경로**: form_type unknown 행은 `route_of_item`(텍스트 단서 → 같은 약제 명시 경로 합의 → oral). 주사 전용 약에 "45mg 경구" 탭 금지.
+  `route_of("unknown") == "oral"` 레거시 계약은 유지(행 단위 판정은 route_of_item).
+- **바이알 부피 모호**(CA Ontario EAP "20 mg/mL" + "Inj Sol-240 mL Vial Pk"): per-vial 확정 불가 → unit_strength NULL, daily_cost skip
+  (`unit_strength_ambiguous`), A8 집계 제외(`a8_exclude_reason=injection_unit_ambiguous`, 읽기 시 판정). 카드 숫자는 남는다.
+- **농도만 있고 volume 없음**(FR Vidal Keytruda "25 mg/ml"): 강도 NULL + 저장 factor 미적용. 같은 약제의 다른 행으로 제형 탭(100mg)에는 묶되 daily_cost 는 비운다.
+- 저장 행 정정은 `scripts/repair_foreign_strength.py`(현재 코드 재적용, dry-run 기본, 멱등) — **파서 수정 없이 값만 고치지 않는다**
+  (다음 검색 compact 가 정정 행을 지우고 버그 값을 다시 쓴다). 계약: `agents/rules/data_contracts.md` §3.
+- QG 데이터 계약(매일 06:00): `foreign_injection_route_as_oral`(ERROR) · `foreign_continuation_fragment`(WARNING) — `injection_concentration_as_unit` 과 함께.
+
 **injection pack_count 파싱 허용 단서** (scraper 가 직접 못 넣을 때만):
 - `(N x M)`, `N x M`
 - `N vial/flacon/flaconcino/瓶/バイアル/ampoule`
@@ -255,6 +273,13 @@ daily_cost_krw = daily_dose_mg × (adjusted_price_krw / unit_mg)
 2. `"X mg/1 ml"` 또는 `"X mg/ml"` (농도) + volume → conc × vol
 3. `"X mg"` 단독 → per-unit, count multiplier 별도 탐색
 4. Count multiplier: `(N x M)`, `de N`, `N tablet/comprim/caps/vial/flacon/瓶/錠/정`, `vial, N`, US `"ml Ns"`, `"Ns ea"`, trailing `, N`
+
+### 제형별 용법 오버라이드 (`FORMULATION_DOSING_OVERRIDES`, 2026-10-17)
+- `foreign_drug_dosing` 은 성분당 1행(대표 용법) — 같은 성분이라도 제형(경로×바이알 강도)마다 허가 용법이 다르면 코드 표로 교체한다.
+  현재: pembrolizumab/keytruda SC 395 mg → 395 mg Q3W, 790 mg → 790 mg Q6W (EU SmPC / US Keytruda Qlex). IV 100mg 바이알은 200mg Q3W 유지.
+- 매칭은 **form-aware per-unit mg**(`_extract_per_unit_mg`)가 표 강도와 ±0.5 mg 일치할 때만 — 농도·텍스트 추정 매칭 금지.
+  injection 행에만 적용, 원본 dosing dict 는 변경하지 않는다(사본 + `formulation_override=True`). 라벨(`dosing_schedule_label`)도 제형 용법으로.
+- 새 제형 용법은 표에 추가 + Keytruda baseline(`tests/test_keytruda_injection_baseline.py`) 재검증.
 
 ### Sanity cap
 - daily_cost > ₩10M/day → 이상치로 `daily_cost_krw=None`, `daily_cost_note="suspicious_outlier"` + WARN log

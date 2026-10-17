@@ -74,7 +74,7 @@ Python 이 3.9 미만이거나 venv 를 쓰지 않을 때는 아래 명령의 `.
 ## 3. 첫 실행은 반드시 `--dry-run`
 
 ```bash
-cd /srv/ma-dossier && set -a && . ./.env && set +a && ./venv/bin/python scripts/agent_dispatcher.py --dry-run
+cd /srv/ma-dossier && set -a && . ./.env && set +a && ./venv/bin/python scripts/agent_dispatcher.py --dry-run --owner hermes,server
 ```
 
 기대 출력(마지막 줄): `dispatch: {"planned": [{"task_id": 12, "runbook": "domestic_price_catchup"}, ...], "handled": 0, "candidates": N, "errors": 0}`
@@ -92,8 +92,10 @@ crontab -e
 ```
 
 ```cron
-*/10 * * * * cd /srv/ma-dossier && flock -n /srv/ma-dossier/agent.lock sh -c 'set -a && . ./.env && set +a && exec ./venv/bin/python scripts/agent_dispatcher.py' >> logs/agent.log 2>&1
+*/10 * * * * cd /srv/ma-dossier && flock -n /srv/ma-dossier/agent.lock sh -c 'set -a && . ./.env && set +a && exec ./venv/bin/python scripts/agent_dispatcher.py --owner hermes,server' >> logs/agent.log 2>&1
 ```
+
+- `--owner` (2026-10-17, `docs/ops/OWNERSHIP.md`): 디스패처는 자기 담당 과제만 집는다(기본 `hermes`, 환경변수 `MA_AGENT_OWNER`). 서버 런북 과제(`owner=server`)를 트리거할 실행기가 프로덕션 안에 없으므로 VPS 크론은 `hermes,server` 로 돈다. `aside`(해외약가)는 노트북 Aside 몫이라 지정하지 않는다 — 서버도 agent 토큰의 aside 과제 선점을 `409 OWNER_MISMATCH` 로 거부한다.
 
 - `flock -n /srv/ma-dossier/agent.lock` 은 **디스패처 실행이 겹치지 않게** 한다. 한 실행은 최대 `--max-tasks`(3) × 런북 시간(수 분)이라 10분 크론과 쉽게 겹치고, 겹치면 서버가 `domestic_price_catchup`(Playwright 크롤)을 **동시에** 여러 개 띄운다 — 1GB 머신에서는 OOM 이다. 잠금이 잡혀 있으면 이번 실행은 조용히 건너뛰고(`-n`: 대기 없음) 다음 10분에 다시 온다. 서버측 "실행 중 런북이 있으면 `409`" 는 P2(계획 문서 "P2 로 넘김").
 - 상주 데몬이 아니라 짧은 실행의 반복이다. 실행 하나가 죽어도 다음 실행이 이어받는다(자동 분류·선점 모두 조건부 UPDATE 1회라 중복 실행에도 안전 — 같은 과제를 두 실행이 동시에 집어도 하나만 선점된다. 잠금은 그 위에 **런북 동시 실행** 을 막는 층이다).

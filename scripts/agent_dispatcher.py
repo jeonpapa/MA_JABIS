@@ -7,7 +7,12 @@
   */10 * * * * cd /srv/ma-dossier && flock -n /srv/ma-dossier/agent.lock sh -c 'set -a && . ./.env \
                && set +a && exec ./venv/bin/python scripts/agent_dispatcher.py' >> logs/agent.log 2>&1
 
-환경변수: MA_API_BASE(예: https://ma-ai-dossier.fly.dev), MA_AGENT_EMAIL, MA_AGENT_PASSWORD.
+환경변수: MA_API_BASE(예: https://ma-ai-dossier.fly.dev), MA_AGENT_EMAIL, MA_AGENT_PASSWORD,
+          MA_AGENT_OWNER(선택, 기본 hermes,server — `--owner` 와 같음).
+
+담당(owner, docs/ops/OWNERSHIP.md · agents/agent_tasks/owner.py): 디스패처는 **자기 담당 과제만** 집는다(기본 hermes).
+서버 런북으로 풀리는 과제(owner=server)까지 트리거하려면 `--owner hermes,server`. Aside 몫(owner=aside — 해외약가)은
+절대 집지 않는다: 목록을 ?owner= 로 받고, 받은 과제의 owner 를 한 번 더 확인하고, 서버도 409 OWNER_MISMATCH 로 막는다.
 로그인은 매 실행마다 한다(7일 JWT 를 디스크에 보관하지 않는다).
 
 과제 상태: 프로덕션 신호(signals.py)는 과제를 new 로 만든다. 서버의 claim 이 ops_incident 를 자동
@@ -39,6 +44,11 @@ CLAIMABLE_STATUSES = "new,triaged"
 # P1 이 처리할 수 있는 종류만 받는다 — user_request 등이 --max-tasks 슬롯을 먹지 않게 (P2 에서 확장)
 CLAIMABLE_KINDS = "ops_incident"
 DEFAULT_MAX_TASKS = 3
+OWNERS = ("server", "aside", "hermes")          # agents/agent_tasks/owner.py:OWNERS 와 같다(표준 라이브러리만 쓰려고 복사)
+# VPS 디스패처(Hermes 팀)는 판단이 필요한 hermes 과제 + 서버 런북으로 자동 복구 가능한 server 과제를 함께 집는다.
+# aside 과제는 Aside 루틴(price_agent) 몫이라 기본에서 뺀다.
+DEFAULT_OWNERS = ("hermes", "server")
+DEFAULT_OWNER = ",".join(DEFAULT_OWNERS)
 # 요청별 타임아웃. login/list/claim/resolve 는 짧게 — 로그인 hang 하나가 프로세스를 10분 잡지 않게.
 REQUEST_TIMEOUT_SECONDS = 30
 # 런북 호출만 길게: 서버 안에서 동기 실행이다(domestic_price_catchup 은 Playwright 크롤로 수 분). 짧으면 서버는
@@ -94,8 +104,9 @@ class ApiClient:
     def _login(self, email: str, password: str) -> str:
         return self._request("POST", "/api/auth/login", {"email": email, "password": password})["token"]
 
-    def list_tasks(self, status: str, kind: str) -> list[dict]:
-        return self._request("GET", f"/api/agent/tasks?status={status}&kind={kind}")["tasks"]
+    def list_tasks(self, status: str, kind: str, owner: str | None = None) -> list[dict]:
+        query = f"/api/agent/tasks?status={status}&kind={kind}" + (f"&owner={owner}" if owner else "")
+        return self._request("GET", query)["tasks"]
 
     def claim(self, task_id: int) -> bool:
         try:
@@ -125,13 +136,21 @@ class ApiClient:
 
 
 class Dispatcher:
-    def __init__(self, client, *, max_tasks: int = DEFAULT_MAX_TASKS, dry_run: bool = False):
+    def __init__(self, client, *, max_tasks: int = DEFAULT_MAX_TASKS, dry_run: bool = False,
+                 owners: tuple[str, ...] = DEFAULT_OWNERS):
+        unknown = [o for o in owners if o not in OWNERS]
+        if unknown or not owners:
+            raise ValueError(f"알 수 없는 owner: {unknown or owners}")
         self.client = client
         self.max_tasks = max_tasks
         self.dry_run = dry_run
+        self.owners = tuple(owners)
 
     def run_once(self) -> dict:
-        tasks = sorted(self.client.list_tasks(CLAIMABLE_STATUSES, CLAIMABLE_KINDS),
+        listed = self.client.list_tasks(CLAIMABLE_STATUSES, CLAIMABLE_KINDS, owner=",".join(self.owners))
+        # 서버가 owner 를 붙여 준다. 구버전 서버(owner 없음)·필터를 무시한 응답에서도 남의 몫은 집지 않는다 —
+        # owner 가 없는 행은 구버전 서버의 행이라 기존 동작(전부 처리)을 유지한다.
+        tasks = sorted((t for t in listed if t.get("owner") in (None, *self.owners)),
                        key=lambda t: (t.get("priority", 3), t["id"]))
         planned: list[dict] = []
         handled = errors = skipped = 0
@@ -168,7 +187,7 @@ class Dispatcher:
                 except Exception as exc2:
                     logger.error("blocked 회신도 실패 task=%s: %s", task_id, exc2)
         return {"planned": planned, "handled": handled, "candidates": len(tasks), "errors": errors,
-                "skipped": skipped}
+                "skipped": skipped, "owners": list(self.owners), "foreign": len(listed) - len(tasks)}
 
     def _handle_claimed(self, task_id: int, runbook: str | None) -> int:
         """선점한 과제 하나: 런북 실행 → 회신. 처리 수(0|1)를 돌려주고 LostClaim 은 그대로 올린다."""
@@ -185,7 +204,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="에이전트 팀 디스패처 (P1 운영 감시자)")
     parser.add_argument("--dry-run", action="store_true", help="선점/실행 없이 계획만 출력")
     parser.add_argument("--max-tasks", type=int, default=DEFAULT_MAX_TASKS)
+    parser.add_argument("--owner", default=os.environ.get("MA_AGENT_OWNER", "").strip() or DEFAULT_OWNER,
+                        help="집을 과제의 담당(쉼표 구분). 기본 hermes,server. aside 는 Aside 루틴 몫이라 쓰지 않는다")
     args = parser.parse_args(argv)
+    owners = tuple(dict.fromkeys(o.strip() for o in args.owner.split(",") if o.strip()))
+    if not owners or any(o not in OWNERS for o in owners):
+        parser.error(f"--owner 는 {OWNERS} 중에서: {args.owner!r}")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     base = os.environ.get("MA_API_BASE", "").strip()
@@ -194,7 +218,8 @@ def main(argv: list[str] | None = None) -> int:
     if not (base and email and password):
         logger.error("MA_API_BASE·MA_AGENT_EMAIL·MA_AGENT_PASSWORD 환경변수가 필요합니다")
         return 2
-    out = Dispatcher(ApiClient(base, email, password), max_tasks=args.max_tasks, dry_run=args.dry_run).run_once()
+    out = Dispatcher(ApiClient(base, email, password), max_tasks=args.max_tasks, dry_run=args.dry_run,
+                     owners=owners).run_once()
     logger.info("dispatch: %s", json.dumps(out, ensure_ascii=False))
     return 0
 

@@ -192,6 +192,19 @@ export interface PipelineDrug {
   lastResult?: LastResult | null;
   history: DrugHistoryItem[];
   timeline: TimelineStep[];
+  // 등재 차수(listing round) — 같은 브랜드도 차수별 카드. roundId null = 분할 전(약제 행 = 차수)
+  drugId?: number;
+  cardKey?: string;                 // `${drugId}:${roundId ?? 0}` — 카드 React key
+  roundId?: number | null;
+  roundLabel?: string | null;       // '2026 확대 · 파드셉 병용 요로상피암 1차'
+  roundSeq?: number;
+  roundCount?: number;
+  roundSource?: string | null;
+  roundNeedsReview?: boolean;
+  comboKey?: string | null;
+  comboPartners?: { drugId: number; name: string | null; roundId: number; roundLabel: string }[];
+  reimbStartDate?: string | null;   // 'YYYY.MM.DD' 급여 시행일
+  indicationScope?: string | null;
 }
 
 export interface PipelineStage {
@@ -224,6 +237,7 @@ function adaptDrug(d: RawPipelineDrug): PipelineDrug {
     nhisRegisteredYm: fmtYm(d.nhisRegisteredYm),
     updatedDate: fmtDot(d.updatedDate),
     nhisCheckedAt: fmtDot(d.nhisCheckedAt),
+    reimbStartDate: fmtDot(d.reimbStartDate),
     history: (d.history ?? []).map(h => ({
       ...h,
       date: fmtDot(h.date),
@@ -444,6 +458,8 @@ export interface NhisNegotiation {
   fetchedAt: string | null;
   drugName?: string | null;       // 매칭된 추적 약제명
   drugIndication?: string | null; // 매칭된 추적 약제 적응증 (병용 등재 맥락)
+  roundId?: number | null;        // 연결된 등재 차수
+  roundLabel?: string | null;     // '2026 확대 · 파드셉 병용 요로상피암 1차' — 같은 브랜드의 어느 차수 협상인지
 }
 
 export interface NhisNegotiationResult {

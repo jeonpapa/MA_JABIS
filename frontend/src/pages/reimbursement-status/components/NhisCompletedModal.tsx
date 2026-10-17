@@ -161,9 +161,12 @@ export default function NhisCompletedModal({ isDark, onClose }: {
                         }`} title="급여 파이프라인에서 추적 중인 약제와 매칭됨">추적</span>
                       )}
                       {/* 매칭된 추적 약제의 적응증 — 병용 등재(예: 파드셉 + 키트루다)는 공단 제품명만으론 알 수 없다 */}
-                      {it.drugIndication && (
-                        <span className={`block text-[10px] font-normal mt-0.5 ${isDark ? 'text-[#8B9BB4]' : 'text-gray-500'}`}>
-                          {it.drugIndication}
+                      {(it.roundLabel || it.drugIndication) && (
+                        <span
+                          className={`block text-[10px] font-normal mt-0.5 ${isDark ? 'text-[#8B9BB4]' : 'text-gray-500'}`}
+                          title={it.roundLabel ? '등재 차수 (같은 브랜드의 차수별 협상 구분)' : undefined}
+                        >
+                          {it.roundLabel ?? it.drugIndication}
                         </span>
                       )}
                     </td>

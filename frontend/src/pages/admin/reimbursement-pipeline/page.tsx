@@ -14,6 +14,7 @@ import {
   type NhisUnmatched,
 } from '@/api/reimbPipelineAdmin';
 import { fetchMe } from '@/utils/authUsers';
+import RoundsPanel from './RoundsPanel';
 
 // ── 약물 폼 draft ─────────────────────────────────────────────────────────────
 
@@ -137,7 +138,7 @@ export default function AdminReimbursementPipelinePage() {
   const [addError, setAddError] = useState<string | null>(null);
 
   // 행 확장: 편집 / 이벤트
-  const [expanded, setExpanded] = useState<{ id: number; mode: 'edit' | 'events' } | null>(null);
+  const [expanded, setExpanded] = useState<{ id: number; mode: 'edit' | 'events' | 'rounds' } | null>(null);
   const [editDraft, setEditDraft] = useState<DrugDraft>(EMPTY_DRUG);
   const [editBusy, setEditBusy] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
@@ -310,6 +311,14 @@ export default function AdminReimbursementPipelinePage() {
     setExpanded({ id: d.drug_id, mode: 'events' });
     setEventDraft(EMPTY_EVENT);
     setEventError(null);
+  };
+
+  const toggleRounds = (d: AdminDrug) => {
+    if (expanded?.id === d.drug_id && expanded.mode === 'rounds') {
+      setExpanded(null);
+      return;
+    }
+    setExpanded({ id: d.drug_id, mode: 'rounds' });
   };
 
   // ── 이벤트 CRUD ────────────────────────────────────────────────────────────
@@ -562,6 +571,9 @@ export default function AdminReimbursementPipelinePage() {
                         onCancelExpand={() => setExpanded(null)}
                         onDelete={() => handleDelete(d)}
                         onToggleEvents={() => toggleEvents(d)}
+                        onToggleRounds={() => toggleRounds(d)}
+                        allDrugs={drugs}
+                        onRoundsChanged={reload}
                         eventDraft={eventDraft}
                         setEventDraft={setEventDraft}
                         eventBusy={eventBusy}
@@ -793,10 +805,13 @@ function DrugRowGroup({
   drug, expandedMode,
   editDraft, setEditDraft, editBusy, editError, onStartEdit, onSaveEdit, onCancelExpand, onDelete,
   onToggleEvents, eventDraft, setEventDraft, eventBusy, eventError, committeeSessions,
-  onAddEvent, onDeleteEvent,
+  onAddEvent, onDeleteEvent, onToggleRounds, allDrugs, onRoundsChanged,
 }: {
   drug: AdminDrug;
-  expandedMode: 'edit' | 'events' | null;
+  expandedMode: 'edit' | 'events' | 'rounds' | null;
+  onToggleRounds: () => void;
+  allDrugs: AdminDrug[];
+  onRoundsChanged: () => Promise<void> | void;
   editDraft: DrugDraft;
   setEditDraft: (d: DrugDraft) => void;
   editBusy: boolean;
@@ -826,6 +841,16 @@ function DrugRowGroup({
             )}
           </div>
           {drug.brand_en && <span className="text-[#4A5568] text-xs">{drug.brand_en}</span>}
+          {/* 등재 차수 — 브랜드 아래 차수 라벨 (분할 전이면 약제 행 라벨 1개) */}
+          {(drug.rounds ?? []).filter(r => r.round_label).map((r, i) => (
+            <span
+              key={r.round_id ?? `v${i}`}
+              className={`block text-[10px] leading-snug ${r.is_primary ? 'text-[#00E5CC]' : 'text-[#4A5568]'}`}
+              title={r.round_id == null ? '분할 전 — 약제 행 = 차수' : `${r.list_type ?? ''} 차수 · ${r.next_step}`}
+            >
+              {r.round_label}{r.status === 'completed' ? ' ✓' : ''}{r.needs_review ? ' *' : ''}
+            </span>
+          ))}
         </td>
         <td className="py-2.5 pr-3 text-[#8B9BB4]">{drug.ingredient_inn ?? <Dash />}</td>
         <td className="py-2.5 pr-3 text-[#8B9BB4]">{drug.manufacturer ?? <Dash />}</td>
@@ -860,6 +885,13 @@ function DrugRowGroup({
             className={`text-xs cursor-pointer ${expandedMode === 'events' ? 'text-[#00E5CC] font-semibold' : 'text-[#8B9BB4] hover:text-[#00E5CC]'}`}
           >
             이벤트 ({drug.events.length})
+          </button>
+          <button
+            onClick={onToggleRounds}
+            className={`ml-3 text-xs cursor-pointer ${expandedMode === 'rounds' ? 'text-[#00E5CC] font-semibold' : 'text-[#8B9BB4] hover:text-[#00E5CC]'}`}
+            title="등재 차수 — 추가 · 이벤트/공단 협상 연결"
+          >
+            차수 ({drug.round_count ?? 0})
           </button>
         </td>
       </tr>
@@ -920,6 +952,14 @@ function DrugRowGroup({
         </tr>
       )}
 
+      {expandedMode === 'rounds' && (
+        <tr className="border-b border-[#1E2530]/50 bg-[#0D1117]/60">
+          <td colSpan={8} className="py-4 px-3">
+            <RoundsPanel drug={drug} drugs={allDrugs} onChanged={onRoundsChanged} />
+          </td>
+        </tr>
+      )}
+
       {expandedMode === 'events' && (
         <tr className="border-b border-[#1E2530]/50 bg-[#0D1117]/60">
           <td colSpan={8} className="py-4 px-3">
@@ -937,6 +977,7 @@ function DrugRowGroup({
                     <th className="text-left py-1.5 pr-3">상태</th>
                     <th className="text-left py-1.5 pr-3">차수(회의일)</th>
                     <th className="text-left py-1.5 pr-3">시도</th>
+                    <th className="text-left py-1.5 pr-3">등재 차수</th>
                     <th className="text-right py-1.5">관리</th>
                   </tr>
                 </thead>
@@ -959,6 +1000,9 @@ function DrugRowGroup({
                         )}
                       </td>
                       <td className="py-1.5 pr-3 text-[#8B9BB4]">{ev.attempt ?? <Dash />}</td>
+                      <td className="py-1.5 pr-3 text-[#8B9BB4] text-[10px] max-w-[180px] truncate">
+                        {(drug.rounds ?? []).find(r => r.round_id != null && r.round_id === ev.roundId)?.round_label ?? <Dash />}
+                      </td>
                       <td className="py-1.5 text-right">
                         <button onClick={() => onDeleteEvent(ev.id)} className="text-[#8B9BB4] text-[11px] hover:text-red-400 cursor-pointer">삭제</button>
                       </td>

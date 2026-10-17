@@ -974,6 +974,8 @@ def run(source: "str | Path | dict | None" = None) -> dict:
             for ev in d.get("events", []):
                 if _upsert_event(conn, drug_id, ev, session_map):
                     events_added += 1
+            if d.get("round"):
+                _apply_round_spec(conn, drug_id, d, session_map)
         conn.commit()
 
         for brand, issues in key_issues.items():
@@ -997,6 +999,10 @@ def run(source: "str | Path | dict | None" = None) -> dict:
                              (_json.dumps(sup["key_issues"], ensure_ascii=False), did))
         conn.commit()
 
+        # 등재 차수가 있는 브랜드: 새 이벤트를 규칙으로 차수에 연결(모든 차수가 끝난 뒤의 새 심의 = 새 차수, needs_review)
+        rounds_synced = _sync_event_rounds(conn, drug_ids)
+        conn.commit()
+
         drugs_after = conn.execute("SELECT COUNT(*) c FROM amjilsim_drugs").fetchone()["c"]
         events_total = conn.execute(
             "SELECT COUNT(*) c FROM amjilsim_drug_queue_status").fetchone()["c"]
@@ -1009,9 +1015,55 @@ def run(source: "str | Path | dict | None" = None) -> dict:
             "drug_ids_touched": len(drug_ids),
             "events_added": events_added,
             "events_total": events_total,
+            "rounds_synced": rounds_synced,
         }
     finally:
         conn.close()
+
+
+def _sync_event_rounds(conn: sqlite3.Connection, drug_ids) -> int:
+    """차수가 이미 있는 브랜드만 — 미연결 이벤트를 차수에 연결. 차수 없는 브랜드는 약제 행 = 가상 차수로 둔다."""
+    from agents import reimb_pipeline as _rp
+    _rp.ensure_round_schema(conn)
+    n = 0
+    for did in sorted(drug_ids):
+        if _rp.list_rounds(conn, did):
+            n += len(_rp.attach_unlinked_events(conn, did, allow_create=True))
+    return n
+
+
+def _apply_round_spec(conn: sqlite3.Connection, drug_id: int, d: dict, session_map: dict) -> int:
+    """payload 약제의 선택 키 'round' — 등재 차수 명시 (큐레이션 JSON 에서 차수를 직접 지정할 때).
+
+    d["round"] = {round_label(필수), list_type, indication_scope, combo_key, amjilsim_pass_date, yakpyungwi_pass_date,
+                  reimb_start_date, notes}
+    이 약제의 events 중 이 차수 이벤트(위원회·회의일 일치)를 명시 연결한다. 차수가 처음 생기는 브랜드면 기존 약제 행을
+    먼저 기본 차수로 고정(가상 차수 보존)한다. 반환 round_id.
+    """
+    from agents import reimb_pipeline as _rp
+    spec = dict(d["round"])
+    _rp.ensure_round_schema(conn)
+    label = (spec.pop("round_label", None) or "").strip()
+    if not label:
+        raise ValueError(f"round.round_label 필수: {d.get('brand_kr')}")
+    existing = _rp.list_rounds(conn, drug_id)
+    if not existing:
+        default_label = _rp.round_label_for(conn.execute(
+            "SELECT * FROM amjilsim_drugs WHERE drug_id = ?", (drug_id,)).fetchone())
+        if default_label and default_label != label:
+            _rp.materialize_default_round(conn, drug_id, source="legacy")
+    fields = {k: v for k, v in spec.items() if k in _rp._ROUND_FIELDS}
+    rid = _rp.create_round_row(conn, drug_id, round_label=label, source="committee_import", **fields)
+    for ev in d.get("events", []):
+        sid = session_map.get((ev["committee"], ev.get("session_date")))
+        if sid is None:
+            continue
+        row = conn.execute(
+            "SELECT id FROM amjilsim_drug_queue_status WHERE drug_id = ? AND committee_type = ? AND session_id = ?",
+            (drug_id, ev["committee"], sid)).fetchone()
+        if row:
+            _rp.link_event_to_round(conn, row["id"], rid, "explicit")
+    return rid
 
 
 def _ensure_sessions_from(conn: sqlite3.Connection, missing: list) -> dict:

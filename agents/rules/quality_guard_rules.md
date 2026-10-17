@@ -176,3 +176,10 @@ baseline 업데이트 시 `QualityGuardAgent.MFDS_OFFICIAL_BASELINE` 와 `kr_mfd
 미해결 편차: 3건
 오늘 신규 편차: 1건
 ```
+
+## 데이터 계약 검사 (2026-10-17)
+- `review_codebase` 가 `check_foreign_price_data` 와 함께 `check_data_contracts`(`agents/quality_guard/data_contracts.py`) 를 돌린다 —
+  결과는 같은 data drift 형태(check 당 1건, file=`data_contract:<check>`)로 `rule_drifts`·`data_issues` 에 합쳐져 원장 ops_incident.
+- 항목: competitor badge 허용 집합/해외 승인 오분류, MFDS 후속 적응증 = 제품 최초 일자, manual_correction 날짜 공백,
+  해외약가 route_as_oral/연속 조각, 체크리스트 고아. `scan_rule_drift` 는 approval_date 직접 UPDATE 에 manual_correction 가드가 없는 파일을 WARNING.
+- 계약표: `agents/rules/data_contracts.md`.

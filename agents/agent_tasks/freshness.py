@@ -520,6 +520,35 @@ def check_reimbursement_checklist_coverage(ctx: Ctx) -> Freshness:
                      kind="improvement")
 
 
+# ── 7c' 허가됐는데 체크리스트 없음 (2026-10-17, improvement — 담당 사람) ─────────────
+# 7c 는 '절반 넘게 비었나' 만 본다 — 2026-10-17 에 Keytruda 체크리스트를 수동으로 채운 뒤에는 새 MFDS 적응증이
+# 허가돼도(foreign_approval 재빌드·병합으로 indication_id 가 바뀌어도) 비율이 기준 아래라 아무도 모른다. MFDS 허가일이 있는
+# Keytruda 적응증에 체크리스트 행이 하나라도 없거나, 체크리스트 행이 마스터에 없는 indication_id(고아)를 가리키면 과제.
+# 체크리스트는 사람이 입력한 정본(agents/rules/data_contracts.md §1) — 자동 잡은 쓰지 않는다.
+
+CHECKLIST_GAP_TITLE = "급여 체크리스트 입력 필요"
+
+
+def check_reimbursement_checklist_mfds_gap(ctx: Ctx) -> Freshness:
+    missing = [r[0] for r in _rows(ctx, """
+        SELECT DISTINCT m.indication_id FROM indications_master m
+        JOIN indications_by_agency a ON a.indication_id = m.indication_id AND a.agency = 'MFDS'
+             AND COALESCE(a.approval_date, '') != ''
+        LEFT JOIN indication_reimbursement r ON r.indication_id = m.indication_id
+        WHERE m.product = ? AND r.indication_id IS NULL ORDER BY m.indication_id""", (CHECKLIST_PRODUCT,))]
+    orphans = [r[0] for r in _rows(ctx, """
+        SELECT r.indication_id FROM indication_reimbursement r
+        LEFT JOIN indications_master m ON m.indication_id = r.indication_id
+        WHERE m.indication_id IS NULL ORDER BY r.indication_id""")]
+    evidence = (f"{CHECKLIST_GAP_TITLE}: MFDS 허가일이 있는 Keytruda 적응증 중 체크리스트(indication_reimbursement) 행 없음 "
+                f"{len(missing)}건" + (f" ({', '.join(missing[:10])}{' …' if len(missing) > 10 else ''})" if missing else "")
+                + f"; 마스터에 없는 indication_id 를 가리키는 체크리스트 행(고아) {len(orphans)}건"
+                + (f" ({', '.join(orphans[:10])})" if orphans else "")
+                + ". 담당: 사람 — /admin/reimbursement 에서 급여 여부·조건·공고 입력(고아는 새 indication_id 로 옮겨 입력)")
+    return Freshness("reimbursement_checklist_mfds_gap", bool(missing or orphans),
+                     f"missing={len(missing)},orphan={len(orphans)}", "0", evidence, None, 3, kind="improvement")
+
+
 # ── 7d 사람 몫 적체 (P1.6, improvement — 한 과제로 묶음, 싸게) ──────────────
 # Home 브랜드 후보(home_brand source='related'·active=0 — home_brand_related_refresh 가 만들고 사람이 /admin/home-brands 에서
 # 활성화/삭제)가 14일 넘게 대기 중인 것과, NHIS 협상 공개자료 중 amjilsim_drugs 와 매칭 안 된 행(nhis_negotiations.drug_id IS NULL —
@@ -795,6 +824,7 @@ DOMAIN_CHECKS: dict[str, Callable[[Ctx], Freshness]] = {
     "committee_reports": check_committee_reports,
     "pipeline_expected_sessions": check_pipeline_expected_sessions,
     "reimbursement_checklist_coverage": check_reimbursement_checklist_coverage,
+    "reimbursement_checklist_mfds_gap": check_reimbursement_checklist_mfds_gap,
     "human_backlog": check_human_backlog,
     "analog_reports": check_analog_reports,
     "market_share": check_market_share,
@@ -849,6 +879,58 @@ def write_domain_freshness(results: list[Freshness], *, db_path: str | Path = DE
         conn.close()
 
 
+# ── 담당별 구체 조치 (docs/ops/OWNERSHIP.md) ─────────────────────────────────────────
+# 런북이 없는 stale 은 '누가 무엇을 커밋·업로드해야 하는가' 가 한 줄로 보여야 한다 — 과제 제목 꼬리 + detail 첫 줄.
+# 담당은 owner.owner_for("domain_freshness", "<domain>:…", runbook=r.runbook) 가 정한다(등록 런북이면 server → 문구 없음).
+# {observed} 는 관측값(날짜면 YYYY-MM-DD). 저장소: 위원회·정책 = jeonpapa/AccessRoutineAnalystic,
+# Stakeholder = jeonpapa/kr-drug-pricing-nhi-finance-intelligence.
+HERMES_ACTIONS: dict[str, str] = {
+    "stakeholder_monitoring_run": "stakeholder monitoring run 커밋 필요 (마지막 {observed}) — "
+                                  "kr-drug-pricing-nhi-finance-intelligence monitoring-runs/<날짜>/daily_monitoring.json",
+    "stakeholder_audit_run": "stakeholder coverage audit run 커밋 필요 (마지막 {observed}) — "
+                             "audit-runs/<날짜>/coverage_audit.json, 감사 사전 실행(pre-run) 스크립트 복구",
+    "stakeholder_source_integrity": "source_manifest.json sha256·bytes 정정 커밋 필요 (실패 {observed}건)",
+    "stakeholder_quote_provenance": "정본 MD 인용문·locator 정정 커밋 필요 (원문 불일치 {observed}건)",
+    "stakeholder_proposal_backlog": "검토 대기 감사 제안 근거 보강 후 admin 검토 요청 (최초 {observed}) — /admin/stakeholder-audit",
+    "policy_intelligence": "KRPIA ingest 재개 필요 (마지막 ingest {observed}) — 누적 manifest·raw 볼륨 업로드 + 사이드카 커밋",
+    "committee_results": "committee_results.json 회차 결과 작성·커밋 필요 (최초 미반영 회차 {observed})",
+    "committee_reports": "D+1 결과 리뷰 PDF + reports_manifest.json 발행 필요 (창 안 최신 보고서 {observed})",
+    "pipeline_expected_sessions": "committee_results.json expected_next_session 갱신 필요 (최초 경과 차수 {observed})",
+    "committee_schedule": "다음 약평위·암질심 차수 일정 확보 → admin 입력 요청 (마지막 SCHEDULED {observed}, HIRA fetcher 미구현)",
+    "analog_reports": "약평위 결과 PDF 아날로그 반영 요청 (마지막 {observed}) — admin(Mac apply_analog_sync)",
+    "market_share": "마켓셰어 분기 엑셀 업로드 요청 (마지막 {observed}) — admin /admin/market-share",
+    "reimbursement_checklist_coverage": "Keytruda 급여 체크리스트 입력 요청 (마지막 편집 {observed}) — admin /admin/reimbursement",
+    "reimbursement_checklist_mfds_gap": "급여 체크리스트 입력 필요 — MFDS 허가 Keytruda 적응증 누락·고아 ({observed}) — admin /admin/reimbursement",
+    "human_backlog": "Home 브랜드 후보·NHIS 미매칭 적체 정리 요청 ({observed}) — admin /admin/home-brands·/admin/reimbursement-pipeline",
+}
+# 원인이 sync 설정 문제(evidence 의 'sync 설정 문제')면 커밋 요청은 오답이다 — 토큰·권한을 먼저 고친다
+HERMES_CONFIG_ACTION = "stakeholder_data_sync 설정 문제 해결 요청 (마지막 run {observed}) — STAKEHOLDER_SYNC_TOKEN·repo 권한, admin"
+ASIDE_ACTIONS: dict[str, str] = {
+    "foreign_price_age": "오래된·미수집 제품 해외약가 재조사 (가장 오래된 가격 {observed}) — 가격 요청 큐·증빙 캡처",
+    "foreign_country_coverage": "수집 실패 국가 재조사 (마지막 가격 행 {observed}) — 로그인 소스·JP/CH 접속 확인",
+}
+
+
+def _short(observed: str | None) -> str:
+    s = str(observed) if observed not in (None, "") else "기록 없음"
+    return s[:10] if re.match(r"^\d{4}-\d{2}-\d{2}[T ]", s) else s
+
+
+def owner_action(r: Freshness) -> tuple[str, str | None]:
+    """(담당, '담당명: 구체 조치' | None). 등록 런북으로 풀리는 server 몫은 문구가 없다(런북 줄이 조치다)."""
+    from .owner import owner_for
+    owner = owner_for("domain_freshness", f"{r.domain}:", runbook=r.runbook or "")
+    if owner == "server":
+        return owner, None
+    if owner == "hermes":
+        label = "Hermes"
+        tpl = HERMES_CONFIG_ACTION if "sync 설정 문제" in r.evidence else HERMES_ACTIONS.get(r.domain)
+    else:
+        label, tpl = "Aside", ASIDE_ACTIONS.get(r.domain)
+    tpl = tpl or (r.domain + " stale 확인 (관측 {observed})")
+    return owner, f"{label}: {tpl.format(observed=_short(r.observed))}"
+
+
 def record_freshness_problems(results: list[Freshness], *, today: date,
                               db_path: str | Path = DEFAULT_DB_PATH) -> list[int]:
     """stale 도메인마다 과제 id. 판정 불가·신선은 건너뛴다.
@@ -863,11 +945,15 @@ def record_freshness_problems(results: list[Freshness], *, today: date,
         if r.kind not in KINDS:
             raise ValueError(f"알 수 없는 kind: {r.kind!r} ({r.domain})")
         improvement = r.kind == "improvement"
+        _, action = owner_action(r)
+        title = f"사람 몫 적체 — {r.domain}" if improvement else f"데이터 신선도 — {r.domain} stale"
         ids.append(record_recurring(
             kind=r.kind, source="domain_freshness",
             source_ref=f"{r.domain}:{IMPROVEMENT_REF_SUFFIX}" if improvement else f"{r.domain}:{today:%Y-%m}",
-            title=f"사람 몫 적체 — {r.domain}" if improvement else f"데이터 신선도 — {r.domain} stale",
-            detail=f"{r.evidence}\n관측={r.observed} 기한={r.deadline}\n{runbook_line(r.runbook)}",
+            # 제목 꼬리는 조치의 첫 구절(' — ' 앞: 무엇을 + 마지막 시점), 전문은 detail 첫 줄
+            title=f"{title} — {action.split(' — ', 1)[0]}"[:300] if action else title,
+            detail=(f"{action}\n" if action else "")
+                   + f"{r.evidence}\n관측={r.observed} 기한={r.deadline}\n{runbook_line(r.runbook)}",
             priority=r.priority, actor="freshness", db_path=db_path, reopen_rejected=not improvement)[0])
     return ids
 

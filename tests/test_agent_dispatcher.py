@@ -27,7 +27,8 @@ class FakeClient:
         self.claim_ok = claim_ok
         self.calls = []
 
-    def list_tasks(self, status, kind):
+    def list_tasks(self, status, kind, owner=None):
+        self.owner_filter = owner
         self.calls.append(("list", status, kind))
         return self.tasks
 

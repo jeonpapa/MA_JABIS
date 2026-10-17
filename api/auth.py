@@ -72,8 +72,11 @@ def _extract_token() -> str | None:
 SERVICE_ROLES = frozenset({"agent", "price_agent"})
 
 
-def require_auth(role: str | None = None):
+def require_auth(role: str | tuple[str, ...] | None = None):
     """라우트 데코레이터.
+
+    - role=(역할, ...) 튜플: 그 역할들과 admin 만 허용. 예: /api/agent/tasks 는 ("agent", "price_agent") —
+      price_agent 는 핸들러가 담당 aside 과제로 다시 좁힌다(docs/ops/OWNERSHIP.md).
 
     - role 미지정: 로그인한 사람 사용자(user·admin) 허용. 서비스 역할(SERVICE_ROLES)은 403.
     - role=<역할> 지정: 그 역할과 admin 만 허용(admin 은 상위 권한).
@@ -90,8 +93,9 @@ def require_auth(role: str | None = None):
                 return jsonify({"error": "invalid token", "code": "AUTH_INVALID"}), 401
             actual = payload.get("role")
             if role:
-                if actual not in (role, "admin"):
-                    return jsonify({"error": f"{role} required", "code": "AUTH_FORBIDDEN"}), 403
+                allowed = (role,) if isinstance(role, str) else tuple(role)
+                if actual not in (*allowed, "admin"):
+                    return jsonify({"error": f"{'|'.join(allowed)} required", "code": "AUTH_FORBIDDEN"}), 403
             elif actual in SERVICE_ROLES:
                 return jsonify({"error": f"{actual} role is confined to its own routes",
                                 "code": "AUTH_FORBIDDEN"}), 403

@@ -22,7 +22,11 @@ const KIND_LABELS: Record<string, string> = {
 // P1 에서 실제로 쓰이는 값은 signals.py 의 두 가지(scheduler_job·daily_mailing_health). 나머지는 설계 §5 의 예정 값.
 const SOURCE_LABELS: Record<string, string> = {
   scheduler_job: '스케줄러 잡 실패',
+  scheduler_missed: '스케줄러 놓친 실행',
   daily_mailing_health: '메일링 헬스체크',
+  domain_freshness: '데이터 신선도',
+  foreign_search: '해외약가 수집',
+  known_debt: '구현 대기 부채',
   health_check: '헬스 체크',
   quality_guard: 'Quality Guard',
   rule_compliance: 'Rule Compliance',
@@ -30,6 +34,42 @@ const SOURCE_LABELS: Record<string, string> = {
   mail_stats: '메일 통계',
   manual: '수동',
 };
+
+// 담당(owner) — agents/agent_tasks/owner.py · docs/ops/OWNERSHIP.md. 서버가 source·source_ref·런북 힌트로 결정적으로 계산한다.
+//   server = 프로덕션 런북으로 풀림 · aside = 해외약가(노트북 Aside 브라우저 에이전트) · hermes = 판단·큐레이션(외부 VPS Hermes 팀)
+const OWNER_LABELS: Record<string, string> = {
+  server: '서버 크론',
+  aside: 'Aside',
+  hermes: 'Hermes',
+};
+const OWNER_HINTS: Record<string, string> = {
+  server: '프로덕션 런북으로 복구 — 디스패처 --owner server 가 트리거',
+  aside: '해외약가(A8/OECD·증빙·로그인 소스) — 노트북 Aside 가 /api/agent/tasks?owner=aside 로 처리',
+  hermes: '판단·큐레이션·에스컬레이션 — 외부 VPS Hermes 팀 (디스패처 기본 --owner hermes)',
+};
+const OWNER_FILTERS = ['all', 'server', 'aside', 'hermes', 'unknown'] as const;
+type OwnerFilter = typeof OWNER_FILTERS[number];
+
+function ownerOf(task: AgentTask): string {
+  const v = (task.owner || '').toLowerCase();
+  return v && OWNER_LABELS[v] ? v : 'unknown';
+}
+
+function ownerTone(owner: string): string {
+  if (owner === 'server') return 'bg-[#3B82F6]/10 text-[#60A5FA]';
+  if (owner === 'aside') return 'bg-[#00E5CC]/10 text-[#00E5CC]';
+  if (owner === 'hermes') return 'bg-[#7C3AED]/10 text-[#A78BFA]';
+  return 'bg-[#1E2530] text-[#8B9BB4]';
+}
+
+function OwnerBadge({ task }: { task: AgentTask }) {
+  const owner = ownerOf(task);
+  return (
+    <span className={`text-[10px] px-2 py-0.5 rounded whitespace-nowrap ${ownerTone(owner)}`} title={OWNER_HINTS[owner] ?? '담당 미분류(구버전 서버)'}>
+      {OWNER_LABELS[owner] ?? '미분류'}
+    </span>
+  );
+}
 
 const STATUS_LABELS: Record<string, string> = {
   new: '신규',
@@ -231,6 +271,7 @@ function TaskRow({ task, selected, onSelect }: { task: AgentTask; selected: bool
         {task.risk && <span className={`ml-1 text-[10px] px-1.5 py-0.5 rounded ${riskTone(task.risk)}`}>risk {task.risk}</span>}
       </td>
       <td className="py-2.5 pr-3 whitespace-nowrap"><StatusBadge status={task.status} /></td>
+      <td className="py-2.5 pr-3 whitespace-nowrap"><OwnerBadge task={task} /></td>
       <td className="py-2.5 pr-3 text-[#8B9BB4] text-xs whitespace-nowrap">
         {task.claimed_by ? (
           <>
@@ -329,7 +370,8 @@ function DetailPanel({ selectedId, detail, loading, error, onClose, onRetry }: {
           <div className="grid grid-cols-2 gap-x-4 gap-y-3 bg-[#0D1117] border border-[#1E2530] rounded-xl p-3">
             <MetaItem label="근거 소스" value={task.source ? (SOURCE_LABELS[task.source] ?? task.source) : null} />
             <MetaItem label="근거 참조" value={task.source_ref} mono />
-            <MetaItem label="담당" value={task.claimed_by} />
+            <MetaItem label="담당" value={OWNER_LABELS[ownerOf(task)] ?? '미분류'} />
+            <MetaItem label="선점자" value={task.claimed_by} />
             <MetaItem label="선점 시각" value={fmtDate(task.claimed_at)} />
             <MetaItem label="시도" value={toInt(task.attempts, 0)} />
             <MetaItem label="비용" value={fmtUsd(task.cost_usd)} mono />
@@ -396,6 +438,7 @@ export default function AdminAgentTasksPage() {
   const [error, setError] = useState<string | null>(null);
   const [policyBusy, setPolicyBusy] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>('all');
   const [detail, setDetail] = useState<AgentTaskDetailResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -479,7 +522,14 @@ export default function AdminAgentTasksPage() {
     );
   }
 
-  const tasks: AgentTask[] = Array.isArray(data?.tasks) ? data.tasks : [];
+  const allTasks: AgentTask[] = Array.isArray(data?.tasks) ? data.tasks : [];
+  const ownerCounts = allTasks.reduce<Record<string, number>>((acc, t) => {
+    const o = ownerOf(t);
+    acc[o] = (acc[o] ?? 0) + 1;
+    return acc;
+  }, {});
+  const tasks: AgentTask[] = ownerFilter === 'all' ? allTasks : allTasks.filter(t => ownerOf(t) === ownerFilter);
+  const waitingByOwner = data?.activity?.waiting_by_owner ?? {};
   const runbooks: string[] = Array.isArray(data?.runbooks) ? data.runbooks.filter((r): r is string => typeof r === 'string') : [];
   const policy = data?.policy ?? null;
   const statusOf = (t: AgentTask) => (t.status || '').toLowerCase();
@@ -568,9 +618,35 @@ export default function AdminAgentTasksPage() {
             <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_400px] gap-5 items-start">
               {/* Task table */}
               <div className="bg-[#161B27] rounded-2xl border border-[#1E2530] p-6 min-w-0">
-                <h2 className="text-white font-bold text-base mb-4">과제 원장</h2>
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                  <h2 className="text-white font-bold text-base">과제 원장</h2>
+                  <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="담당 필터">
+                    {OWNER_FILTERS.filter(o => o !== 'unknown' || (ownerCounts.unknown ?? 0) > 0).map(o => {
+                      const active = ownerFilter === o;
+                      const count = o === 'all' ? allTasks.length : (ownerCounts[o] ?? 0);
+                      const waiting = o === 'all' || o === 'unknown' ? null : (waitingByOwner as Record<string, number | undefined>)[o];
+                      const label = o === 'all' ? '전체' : (OWNER_LABELS[o] ?? '미분류');
+                      return (
+                        <button
+                          key={o}
+                          type="button"
+                          aria-pressed={active}
+                          onClick={() => setOwnerFilter(o)}
+                          title={o === 'all' ? '모든 담당' : (OWNER_HINTS[o] ?? '담당 미분류(구버전 서버)')}
+                          className={`text-[11px] px-2.5 py-1 rounded-full border cursor-pointer whitespace-nowrap ${active ? 'border-[#00E5CC] text-[#00E5CC] bg-[#00E5CC]/10' : 'border-[#2A3441] text-[#8B9BB4] hover:text-white'}`}
+                        >
+                          {label} {count}{waiting != null && waiting > 0 ? ` · 대기 ${waiting}` : ''}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
                 {tasks.length === 0 ? (
-                  <p className="text-[#4A5568] text-sm">아직 과제가 없습니다. 헬스 체크·Quality Guard 등 신호가 들어오면 여기에 쌓입니다.</p>
+                  <p className="text-[#4A5568] text-sm">
+                    {allTasks.length === 0
+                      ? '아직 과제가 없습니다. 헬스 체크·Quality Guard 등 신호가 들어오면 여기에 쌓입니다.'
+                      : '이 담당의 과제가 없습니다.'}
+                  </p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
@@ -581,6 +657,7 @@ export default function AdminAgentTasksPage() {
                           <th className="text-left py-2 pr-3">제목</th>
                           <th className="text-left py-2 pr-3">상태</th>
                           <th className="text-left py-2 pr-3">담당</th>
+                          <th className="text-left py-2 pr-3">선점</th>
                           <th className="text-left py-2 pr-3">시도</th>
                           <th className="text-left py-2 pr-3">비용</th>
                           <th className="text-left py-2 pr-3">근거</th>
