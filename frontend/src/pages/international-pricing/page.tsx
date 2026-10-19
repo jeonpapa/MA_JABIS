@@ -13,6 +13,7 @@ import {
   PRICING_COUNTRY_CODE,
   a8ExcludeReasonLabel,
 } from '@/api/foreign';
+import type { ForeignReportFormat } from '@/api/foreign';
 import PriceRequestPanel from './PriceRequestPanel';
 import type { PriceRequestPanelHandle } from './PriceRequestPanel';
 import OecdPrices from './OecdPrices';
@@ -147,7 +148,7 @@ export default function InternationalPricingPage() {
   const historyDownloadingRef = useRef(new Set<string>());
   const [showCalcLogic, setShowCalcLogic] = useState(false);     // 조정가 산출 로직 패널
   const [showReport, setShowReport] = useState(false);           // 리포트 다운로드 모달
-  const [reportFmt, setReportFmt] = useState<'xlsx' | 'hwpx'>('xlsx');
+  const [reportFmt, setReportFmt] = useState<ForeignReportFormat>('xlsx');
   const [appliedDisplay, setAppliedDisplay] = useState('');      // 국내 신청가 표시가
   const [appliedActual, setAppliedActual] = useState('');        // 국내 신청가 실제가
   const [reportBusy, setReportBusy] = useState(false);
@@ -841,12 +842,13 @@ export default function InternationalPricingPage() {
 
             <label className={`text-xs font-semibold ${textSub}`}>파일 형식</label>
             <div className="flex gap-2 mt-1 mb-4">
-              {(['xlsx', 'hwpx'] as const).map(f => (
-                <button key={f} onClick={() => setReportFmt(f)}
+              {(['xlsx', 'hwpx', 'flex'] as const).map(f => (
+                <button key={f} onClick={() => setReportFmt(f)} aria-pressed={reportFmt === f}
                   className={`flex-1 text-sm py-2 rounded-lg border ${reportFmt === f ? 'bg-teal-600 text-white border-teal-600' : `${textSub} ${cardBorder}`}`}>
-                  {f === 'xlsx' ? '엑셀 (.xlsx)' : '한글 (.hwpx)'}</button>
+                  {f === 'xlsx' ? '엑셀 (.xlsx)' : f === 'hwpx' ? '한글 (.hwpx)' : '약가유연계약 서식'}</button>
               ))}
             </div>
+            {reportFmt === 'flex' && <p className={`text-[11px] -mt-2 mb-4 ${textMuted}`}>공단 약가유연계약 신청서 A8 비교표 양식(엑셀). 국가별 최저수재가·단위가·환율·환산가·조정가와 A8 조정최고가, '자료원 증빙' 시트(원문 URL·검색일·증빙 위치)를 함께 만듭니다. 신청금액은 아래 표시가 칸 값을 씁니다.</p>}
 
             <label className={`text-xs font-semibold ${textSub}`}>국내 신청가격 (선택 — 비율 계산용)</label>
             <div className="grid grid-cols-2 gap-2 mt-1 mb-1">
@@ -867,7 +869,8 @@ export default function InternationalPricingPage() {
                     await downloadForeignReport(selected.query, reportFmt,
                       appliedDisplay ? Number(appliedDisplay) : null,
                       appliedActual ? Number(appliedActual) : null,
-                      activeGroup ? { key: activeGroup.key, label: activeGroup.label } : null);
+                      activeGroup ? { key: activeGroup.key, label: activeGroup.label } : null,
+                      headerName);
                     setShowReport(false);
                   } catch (e) { setReportErr(e instanceof Error ? e.message : '다운로드 실패'); }
                   finally { setReportBusy(false); }

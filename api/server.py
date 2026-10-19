@@ -1963,8 +1963,8 @@ def foreign_report_export():
     fmt = (request.args.get("format", "xlsx") or "xlsx").lower()
     if not query:
         return jsonify({"error": "query 필요"}), 400
-    if fmt not in ("xlsx", "hwpx"):
-        return jsonify({"error": "format 은 xlsx 또는 hwpx"}), 400
+    if fmt not in ("xlsx", "hwpx", "flex"):
+        return jsonify({"error": "format 은 xlsx · hwpx · flex(약가유연계약 서식)"}), 400
     body = request.get_json(silent=True) or {}
     # 선택(제형 탭) — ?formulation=<formulation_key>&formulation_label=<표시명>. 있으면 그 제형 행만으로 리포트를 만들고
     # 파일명에 제형을 넣는다 (IV 100mg 과 SC 395mg 가 한 리포트에 섞이지 않게).
@@ -1982,6 +1982,7 @@ def foreign_report_export():
             query, fmt, cached,
             applied_display=body.get("applied_price_display"),
             applied_actual=body.get("applied_price_actual"),
+            product_label=" ".join(x for x in [str(body.get("product_label") or "").strip()[:80], form_label] if x),
         )
         if form_key:
             tag = re.sub(r"[^\w가-힣.\-]+", "", form_label or form_key)[:40]
