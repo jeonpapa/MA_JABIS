@@ -140,6 +140,22 @@ def extract_header_fields(text: str) -> dict:
     return out
 
 
+_NOT_INGREDIENT_EXACT = {"미분화", "유전자재조합", "사람단백질씨", "분화", "단클론항체"}
+_NOT_INGREDIENT_RE = re.compile(
+    r"(스미스클라인|아스트라|화이자|노바티스|로슈|얀센|사노피|릴리|엠에스디|다케다|아스텔라스|암젠|애브비|바이엘|베링거|길리어드|세엘진|"
+    r"한국|지점|제약|약품|코리아|바이오|헬스|사이언스|파마|회사|그룹|암$|증$|질환|병$)")
+
+
+def _not_an_ingredient(cand: str) -> bool:
+    """파일명 괄호 안 한글이 성분명이 아닌 경우(회사명·질환명·조각)를 거른다. 틀린 성분명을 넣느니 비워 둔다."""
+    c = re.sub(r"\s", "", cand or "")
+    if len(c) < 3 or c in _NOT_INGREDIENT_EXACT:
+        return True
+    if re.search(r"(주|사)$", c) and len(c) <= 8:
+        return True
+    return bool(_NOT_INGREDIENT_RE.search(c))
+
+
 def korean_ingredient_from_name(brand_name_raw: str | None, file_name: str | None = None) -> str | None:
     """'가니레버프리필드시린지주0.25mg-0.5ml(가니렐릭스아세트산염)_(0.25mg-0.5mL)' → '가니렐릭스아세트산염'.
     파일명 괄호 안 한글 성분명. 규격 괄호('(0.25mg-0.5mL)')·회사 괄호는 한글 성분이 아니므로 건너뛴다."""
@@ -147,7 +163,7 @@ def korean_ingredient_from_name(brand_name_raw: str | None, file_name: str | Non
         s = unicodedata.normalize("NFC", src or "")
         for m in re.finditer(r"\(([가-힣][가-힣,\s·\-]{1,40}?)\)", s):
             cand = m.group(1).strip()
-            if re.search(r"(주|제약|약품|코리아|사)$", cand) and len(cand) <= 8:
+            if _not_an_ingredient(cand):
                 continue
             return cand
     return None
@@ -162,3 +178,30 @@ def looks_extractable(pages: list[str]) -> bool:
     if len(full) >= 300:
         return True
     return len(full) >= 40 and bool(re.search(r"제형\s*[,，]?\s*성분|효능\s*[·ㆍ]?\s*효과|심의\s*일|평가\s*결과", full))
+
+
+_RE_EFFECT_HEAD = re.compile(r"^[▢□\s]*효능\s*[·ㆍ]?\s*효과\s*[:：]?\s*(.*)$")
+_RE_NEXT_SECTION = re.compile(r"^[▢□]|심의|위원회|평가\s*(?:결과|내용)\s*$|^[나다라]\.\s|^※")
+_RE_NOT_EFFECT = re.compile(r"위원회|심의|평가\s*내용|평가\s*결과")
+
+
+def extract_effect_text(text: str, max_chars: int = 1200) -> str | None:
+    """보고서 1페이지 '▢ 효능·효과' 단락 원문(다음 ▢ 단락 전까지). 식약처 허가 효능 텍스트와 별개의 평가위 보고서 원천.
+
+    비어 있으면(2007~2009 공개 제외 보고서 등) None. 원문 그대로 이어 붙이며 요약·추정하지 않는다."""
+    lines = _clean_lines(text)
+    for i, ln in enumerate(lines):
+        m = _RE_EFFECT_HEAD.match(ln)
+        if not m:
+            continue
+        parts = [m.group(1).strip()] if m.group(1).strip() else []
+        for nxt in lines[i + 1:i + 40]:
+            if _RE_NEXT_SECTION.search(nxt):
+                break
+            parts.append(nxt)
+        body = re.sub(r"[\uf09f\uf0a7\u2022•]+", " ", " ".join(parts))
+        body = re.sub(r"\s+", " ", re.sub(r"(^|\s)-\s+", r"\1", body)).strip(" -:")
+        if len(re.sub(r"[\s\-·,.]", "", body)) < 4 or _RE_NOT_EFFECT.search(body):
+            return None      # 원문 단락이 비어 다음 섹션 제목을 잡은 경우
+        return body[:max_chars]
+    return None

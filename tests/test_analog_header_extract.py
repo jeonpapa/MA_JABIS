@@ -211,3 +211,32 @@ def test_strength_values_with_unit_noise_are_rejected():
     assert _split_inn_strength("1병 중 Obinuzutumab 1g (25mg/mL)") == ("obinuzutumab", "1g (25mg/mL)")
     assert _split_inn_strength("4:1 w/w mixed hydrogel of sodium hyaluronate gel 2.04g")[1] is None
     assert _split_inn_strength("1정 중 vedolizumab 300mg") == ("vedolizumab", "300mg")
+
+
+def test_korean_ingredient_rejects_company_disease_and_fragments():
+    """회귀(2026-10-20): 파일명 괄호 안의 회사명·질환 조각이 한글 성분명으로 들어갔다(글락소스미스클라인, 한국로슈, 미분화 등)."""
+    for bad in ("이페르잔주(글락소스미스클라인)", "트루리시티(한국릴리)", "조플루자정(한국로슈)", "갑상선암(미분화)", "아바스틴주(유전자재조합)"):
+        assert korean_ingredient_from_name(bad) is None, bad
+    assert korean_ingredient_from_name("오테즐라정(아프레밀라스트)") == "아프레밀라스트"
+    assert korean_ingredient_from_name("키트루다주(펨브롤리주맙,유전자재조합)") == "펨브롤리주맙,유전자재조합"
+
+
+def test_effect_text_extracted_until_next_section():
+    from agents.analog.header_extract import extract_effect_text
+    t = extract_effect_text(GASYBA)
+    assert t.startswith("동반 질환이 있으며 이전에 치료받은 적이 없는 만성림프구성백혈병")
+    assert t.endswith("병용투여") and "약제" not in t                      # 다음 ▢ 단락(심의일)을 끌어오지 않는다
+    assert extract_effect_text(OTEZLA + "\n▢ 효능·효과\n- 건선, 건선성 관절염\n▢ 약제급여평가위원회 심의일") == "건선, 건선성 관절염"
+
+
+def test_effect_text_none_when_source_is_blank():
+    from agents.analog.header_extract import extract_effect_text
+    assert extract_effect_text(OLD_BLANK) is None                          # 원문이 비어 있으면 지어내지 않는다
+    assert extract_effect_text(SHORT_BIEUP) is None
+
+
+def test_effect_text_rejects_next_section_heading_when_blank():
+    """회귀(2026-10-20): 효능·효과 단락이 비어 있는 보고서에서 다음 섹션 제목('약제 급여 평가 위원회 심의')이 효능 문구로 저장됐다."""
+    from agents.analog.header_extract import extract_effect_text
+    assert extract_effect_text("▢ 효능 효과 :\n약제 급여 평가 위원회 심의 일\n2013년 제3차 약제급여평가위원회: 2013년 5월 9일") is None
+    assert extract_effect_text("▢ 효능·효과\n- 다발성골수종\n▢ 약제급여평가위원회 심의일") == "다발성골수종"

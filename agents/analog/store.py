@@ -206,6 +206,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS analog_fts USING fts5(
 
 # 신규 컬럼 목록 (기존 설치 마이그레이션용)
 _NEW_COLS: list[tuple[str, str]] = [
+    ("report_effect_text", "TEXT"),   # 약평위 보고서 1페이지 '효능·효과' 원문(식약처 mfds_effect_text 와 별개 원천)
     ("brand_name_raw", "TEXT"),
     ("dosage", "TEXT"),
     ("generic_name_en", "TEXT"),

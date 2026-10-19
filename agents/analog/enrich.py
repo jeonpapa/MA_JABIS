@@ -98,13 +98,27 @@ def _parse_json_text(text: str) -> dict | None:
         return None
 
 
+def _call_openai_http(key: str, system: str, user: str, max_tokens: int) -> dict | None:
+    """openai SDK 없이 chat.completions REST 호출(JSON 모드)."""
+    import urllib.request
+    body = json.dumps({"model": "gpt-4o", "max_tokens": max_tokens, "response_format": {"type": "json_object"},
+                       "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}).encode()
+    req = urllib.request.Request("https://api.openai.com/v1/chat/completions", data=body,
+                                 headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return _parse_json_text(json.load(r)["choices"][0]["message"]["content"] or "")
+
+
 def _call_openai(system: str, user: str, max_tokens: int = 1024) -> dict | None:
     """gpt-4o 호출 (ANTHROPIC_API_KEY 부재 시 fallback). JSON 모드."""
     key = _openai_key()
     if not key:
         return None
     try:
-        from openai import OpenAI
+        try:
+            from openai import OpenAI
+        except ImportError:   # SDK 미설치 환경(로컬 시스템 python) — REST 직접 호출
+            return _call_openai_http(key, system, user, max_tokens)
         client = OpenAI(api_key=key)
         resp = client.chat.completions.create(
             model="gpt-4o",
@@ -196,8 +210,9 @@ def enrich_disease(limit: int = None) -> dict:
     ensure_schema()
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT id, file_hash, mfds_effect_text FROM analog_reports "
-            "WHERE mfds_effect_text IS NOT NULL AND mfds_effect_text != '' "
+            "SELECT id, file_hash, COALESCE(NULLIF(mfds_effect_text, ''), report_effect_text) AS mfds_effect_text "
+            "FROM analog_reports "
+            "WHERE COALESCE(NULLIF(mfds_effect_text, ''), NULLIF(report_effect_text, '')) IS NOT NULL "
             "AND disease_category_detail IS NULL "
             "ORDER BY session_date DESC"
         ).fetchall()
