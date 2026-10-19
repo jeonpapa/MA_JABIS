@@ -110,6 +110,43 @@ class PriceRequestStore:
             d["row_ids"] = json.loads(d["row_ids"])
             out["country_results"].append(d)
         out["dashboard_url"] = "/international-pricing?" + urlencode({"q": out["query"], "scope": out["scope"], "request": rid})
+        # 화면 표시용 요약(출처 링크·대표 가격). country_results 와 분리해 둔다 — verify digest · 동결 스냅샷은
+        # country_results 만 보므로, 여기 필드를 더해도 기존 검증 기록과 어긋나지 않는다.
+        out["country_sources"] = self._country_sources(c, rid, out["scope"], out["country_results"])
+        return out
+
+    @staticmethod
+    def _country_sources(c, rid, scope, country_results):
+        """국가 → {source_url, source_label, price} (가격행이 있는 국가만). 조회 실패는 빈 값 — 표시 보조일 뿐이다."""
+        out = {}
+        for country in country_results:
+            ids = country.get("row_ids") or []
+            if not ids:
+                continue
+            item = None
+            try:
+                arch = c.execute("SELECT payload FROM price_request_price_snapshots WHERE request_id=? AND country=? AND row_id=?",
+                                 (rid, country["country"], ids[0])).fetchone()
+                if arch:
+                    item = json.loads(arch["payload"])
+                elif scope == "a8":
+                    row = c.execute("SELECT * FROM foreign_drug_prices WHERE id=? AND country=?", (ids[0], country["country"])).fetchone()
+                    item = dict(row) if row else None
+                else:
+                    row = c.execute("SELECT payload FROM oecd_drug_prices WHERE id=? AND request_id=? AND country=?",
+                                    (ids[0], rid, country["country"])).fetchone()
+                    item = json.loads(row["payload"]) if row else None
+            except (sqlite3.Error, ValueError, TypeError):
+                item = None
+            if not item:
+                continue
+            url = str(item.get("source_url") or "")
+            out[country["country"]] = {
+                "source_url": url if url.startswith(("http://", "https://")) else None,
+                "source_label": item.get("source_label"),
+                "rows": len(ids),
+                "price": {k: item.get(k) for k in ("local_price", "currency", "price_tier", "vat_status", "package_unit")},
+            }
         return out
 
     def detail(self, rid):

@@ -45,6 +45,29 @@ class QueueTests(unittest.TestCase):
         ids = [i for cr in r["country_results"] for i in cr["row_ids"]]
         return self.store.verify(self.rid, "worker", self.token, sorted(ids), "proof.png", r["dashboard_url"])
 
+    def test_country_sources_summarize_priced_rows_without_touching_results(self):
+        """화면용 국가 요약(출처 링크·대표 가격)은 country_results 밖에 둔다 — verify digest 와 무관."""
+        self.claim()
+        self.accept(records=[{"observed_at": "2026-01-01T00:00:00Z", "product_name": "Keytruda",
+                              "source_url": "https://example.org/list", "source_label": "Official list",
+                              "local_price": 7596.68, "currency": "AUD", "price_tier": "ex_factory",
+                              "vat_status": "excluded", "package_unit": "2 vials"}])
+        r = self.accept("NZ", "failed")
+        src = r["country_sources"]
+        self.assertEqual(set(src), {"AU"})                            # 실패 국가는 가격행이 없으니 요약도 없다
+        self.assertEqual(src["AU"]["source_url"], "https://example.org/list")
+        self.assertEqual(src["AU"]["price"]["local_price"], 7596.68)
+        self.assertNotIn("source_url", r["country_results"][0])        # 검증 대상 구조는 그대로
+        ids = sorted(i for cr in r["country_results"] for i in cr["row_ids"])
+        v = self.store.verify(self.rid, "worker", self.token, ids, "proof.png", r["dashboard_url"])
+        self.assertEqual(v["status"], "verified")
+
+    def test_country_sources_drop_non_http_links(self):
+        self.claim()
+        r = self.accept(records=[{"observed_at": "2026-01-01T00:00:00Z", "product_name": "Keytruda",
+                                  "source_url": "javascript:alert(1)"}])
+        self.assertIsNone(r["country_sources"]["AU"]["source_url"])
+
     def test_catalog_scope(self):
         self.assertEqual(len(CATALOG["a8"]), 8)
         self.assertEqual(len(CATALOG["oecd"]), 29)

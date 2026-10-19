@@ -14,6 +14,12 @@ export interface PriceRequest {
   created_at: string; updated_at: string; verified_at: string | null;
   notification_status: 'pending' | 'sending' | 'sent' | 'uncertain'; notified_at: string | null;
   country_results: CountryProgress[]; dashboard_url: string;
+  /** 표시 보조: 가격행이 있는 국가의 출처 링크·대표 가격 (서버 구버전은 없을 수 있다). */
+  country_sources?: Record<string, CountrySource>;
+}
+export interface CountrySource {
+  source_url: string | null; source_label?: string | null; rows: number;
+  price: { local_price: number | null; currency: string | null; price_tier: string | null; vat_status: string | null; package_unit: string | null };
 }
 export interface SubmitPriceRequest {
   query: string; scope: PriceScope; countries: string[]; notify_email: string; identity?: PriceIdentity;

@@ -2,6 +2,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { USER_KEY } from '@/api/client';
 import { downloadPriceRequest, fetchPriceCatalog, fetchPriceRequest, fetchPriceRequests, fetchPriceWorkerStatus, submitPriceRequest } from '@/api/priceRequests';
 import type { PriceCatalog, PriceIdentity, PriceRequest, PriceScope, PriceWorkerStatus } from '@/api/priceRequests';
+import RequestHistoryCard from './RequestHistoryCard';
 
 interface RequestTarget { query: string; identity?: PriceIdentity }
 export interface PriceRequestPanelHandle { submit: (countries?: string[], target?: RequestTarget) => void }
@@ -10,10 +11,6 @@ interface Props {
   onResultsChanged?: (request: PriceRequest) => void;
 }
 const validEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && value.toLowerCase() !== 'admin@marketintel.kr';
-const date = (value?: string | null) => value ? new Date(value).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '아직 없음';
-const statusLabel: Record<string, string> = { queued: '접수 대기', processing: '국가별 조사 중', awaiting_verification: '대시보드 검증 대기', verified: '대시보드 검증됨 (전 국가 가격 확보 의미 아님)', completed: '완료 · 전체 가격 확인 및 이메일 발송', partial_completed: '부분 완료 · 미확정 국가 포함, 이메일 발송', blocked: '진행 차단 · 확인 필요' };
-const countryStatus: Record<string, string> = { pending: '대기', priced: '가격 확인', unconfirmed: '가격 미확정', failed: '수집 실패' };
-const notificationLabel: Record<string, string> = { pending: '발송 대기', sending: '발송 중', sent: '발송됨', uncertain: '발송 여부 미확정 · 중복 발송 주의' };
 const refreshStatuses = new Set(['verified', 'completed', 'partial_completed', 'blocked']);
 const timeOnly = (value?: string | null) => value ? new Date(value).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
 
@@ -151,7 +148,6 @@ const PriceRequestPanel = forwardRef<PriceRequestPanelHandle, Props>(function Pr
   useImperativeHandle(ref, () => ({ submit: (override, target) => { void enqueue(override, target); } }));
   const shell = isDark ? 'bg-[#161B27] border-[#1E2530] text-gray-100' : 'ui-card';
   const input = 'ui-field';
-  const labels = new Map((catalog?.[scope] ?? []).map(c => [c.code, c.label]));
   return (
     <section ref={panelRef} className={'p-6 space-y-4 ' + shell} aria-label="해외약가 조사 요청">
       <div className="space-y-3"><div><p className="ui-eyebrow">조사 요청</p><h2 className="text-[19px] font-semibold tracking-tight mt-0.5">{scope === 'a8' ? 'A8 8개국' : '공단 추가국가 (A8 외 29개국)'} 약가 조사</h2></div>
@@ -182,35 +178,13 @@ const PriceRequestPanel = forwardRef<PriceRequestPanelHandle, Props>(function Pr
         {loading && <p className="text-xs opacity-70">요청 목록 로딩 중…</p>}
         {listError && <p role="alert" className="text-sm text-red-500">상태 갱신 실패: {listError}. 기존 표시는 마지막 조회 상태이며, 30초 후 재시도합니다.</p>}
         {!loading && !listError && requests.length === 0 && <p className="text-xs opacity-70">아직 요청이 없습니다.</p>}
-        {requests.map(r => {
-          const canDownload = r.country_results.some(c => c.status !== 'pending');
-          const priced = r.country_results.filter(c => c.status === 'priced').length;
-          const unresolved = r.country_results.filter(c => c.status === 'failed' || c.status === 'unconfirmed');
-          return <article key={r.id} id={'price-request-' + r.id} ref={r.id === targetRequestId ? targetRef : undefined}
-            className={'rounded-xl p-4 space-y-2 text-xs ' + (r.id === targetRequestId ? 'ring-2 ring-teal-500 scroll-mt-6' : '')} style={{ background: 'var(--surface-inset)' }}>
-            {r.id === targetRequestId && <p className="font-semibold text-teal-600">링크에서 지정한 요청</p>}
-            <div className="flex justify-between gap-2 flex-wrap"><strong>{r.query}</strong><span>{statusLabel[r.status] || r.status}</span></div>
-            <p>가격 확인 {priced}/{r.countries.length}개국 · 요청 {date(r.created_at)} · 마지막 상태 갱신 {date(r.updated_at)}</p>
-            <div className="space-y-1">
-              <button type="button" disabled={!canDownload || downloadBusy[r.id]} aria-busy={!!downloadBusy[r.id]}
-                aria-describedby={'request-export-hint-' + r.id}
-                onClick={e => { e.stopPropagation(); void downloadResult(r.id); }}
-                onKeyDown={e => e.stopPropagation()}
-                className="ui-button-secondary">
-                {downloadBusy[r.id] ? '다운로드 중…' : '결과 Excel 다운로드'}
-              </button>
-              <p id={'request-export-hint-' + r.id} className="opacity-70">{canDownload ? '이 요청의 저장 결과 스냅샷입니다. 미확정·실패 국가의 상태와 사유도 포함합니다.' : '아직 국가별 결과가 없습니다. 한 국가라도 처리되면 다운로드할 수 있습니다.'}</p>
-              {downloadErrors[r.id] && <p role="alert" className="text-red-500">다운로드 실패: {downloadErrors[r.id]}</p>}
-            </div>
-            <p>마지막 대시보드 검증: {date(r.verified_at)}</p>
-            <p>이메일: {notificationLabel[r.notification_status] || r.notification_status} · {r.notify_email}{r.notified_at ? ' · ' + date(r.notified_at) : ''}</p>
-            {unresolved.length > 0 && <p className="text-amber-600">부분 미확정/실패 {unresolved.length}개국: 아래 사유를 확인하세요. 미허가 또는 가격 0을 의미하지 않습니다.</p>}
-            <div className="grid gap-2 md:grid-cols-2">{r.countries.map(code => {
-              const result = r.country_results.find(c => c.country === code);
-              return <div key={code} className="rounded-lg p-2.5" style={{ background: 'var(--surface)' }}><strong>{labels.get(code) || code}</strong> · <span className={result?.status === 'failed' ? 'text-red-500' : result?.status === 'unconfirmed' ? 'text-amber-600' : ''}>{countryStatus[result?.status || 'pending'] || result?.status}</span>{result?.reason && <p className="mt-1 break-words opacity-80">{result.reason}</p>}{result?.updated_at && <p className="opacity-60 mt-1">{date(result.updated_at)}</p>}</div>;
-            })}</div>
-          </article>;
-        })}
+        {requests.map(r => (
+          <RequestHistoryCard key={r.id} request={r} catalog={catalog?.[r.scope] ?? []}
+            highlighted={r.id === targetRequestId} defaultOpen={r.id === targetRequestId}
+            articleRef={r.id === targetRequestId ? targetRef : undefined}
+            downloadBusy={!!downloadBusy[r.id]} downloadError={downloadErrors[r.id] || ''}
+            onDownload={() => { void downloadResult(r.id); }} />
+        ))}
       </div>
     </section>
   );
