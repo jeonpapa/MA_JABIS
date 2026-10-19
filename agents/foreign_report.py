@@ -196,6 +196,21 @@ FLEX_FORM_SOURCE = {
     "FR": "프랑스보건부 (공장도출하), Vidal (약국판매가)", "IT": "Codifa (공장도출하)",
     "CH": "SL GGSL (공장도출하)", "JP": "후생노동성 (약국판매가)", "CA": "PMPRB (공장도출하)",
 }
+# 서식 기준 자료원 판정용 별칭 — 실제 수집 출처 라벨에 이 중 하나가 있으면 '서식과 같은 자료원'.
+# 스위스 compendium Publikumspreis 는 SL 등재 표기가 있어도 공장도출하가(SL GGSL)가 아니므로 별칭에 넣지 않는다.
+FLEX_SOURCE_ALIASES = {
+    "US": ("redbook", "red book"), "UK": ("mims",), "DE": ("rote liste", "rote-liste"),
+    "FR": ("vidal", "bdpm", "ansm", "medicaments.gouv", "ministère", "sante.gouv"),
+    "IT": ("codifa",), "CH": ("ggsl", "spezialitätenliste", "spezialitatenliste", "bag "),
+    "JP": ("mhlw", "厚生労働省", "후생노동성"), "CA": ("pmprb",),
+}
+
+
+def matches_form_source(country: str, label: str) -> bool:
+    low = (label or "").lower()
+    return any(a in low for a in FLEX_SOURCE_ALIASES.get(country, ()))
+
+
 TIER_KR = {"ex_factory": "공장도가", "pharmacy_purchase": "약국구입가", "pharmacy_retail": "약국판매가",
            "reimbursement": "급여가", "other": "기타"}
 VAT_KR = {"included": "VAT 포함", "excluded": "VAT 제외", "unknown": "VAT 미확인"}
@@ -263,7 +278,11 @@ def build_flex_model(cached: dict) -> dict:
 
         def _adj(r):
             return _num(r.get("adjusted_price_krw_normalized")) or _num(r.get("adjusted_price_krw")) or float("inf")
-        r = min(eligible, key=_adj)
+        # 최저 수재는 '같은 시점의 현행 수재가' 안에서 고른다 — 날짜가 다른 행끼리 비교하면 옛 목록의 싼 가격이
+        # 최신 결정문 가격을 이긴다(키트루다 IT €3,428 구목록 vs €3,798.34 DET 1185/2026). 최신 수집일(일 단위) 행만 남긴다.
+        latest_day = max((str(x.get("searched_at") or "")[:10] for x in eligible), default="")
+        current = [x for x in eligible if str(x.get("searched_at") or "")[:10] == latest_day] or eligible
+        r = min(current, key=_adj)
         meta = _raw_meta(r)
         pack = int(r.get("pack_count") or 1)
         per_unit = _num(r.get("per_unit_local"))
@@ -298,6 +317,11 @@ def build_flex_model(cached: dict) -> dict:
     top = max(ok, key=lambda c: c["adjusted"]) if ok else None
     period = next(((c["fx_from"], c["fx_to"]) for c in ok if c.get("fx_from")), ("", ""))
     return {"cols": cols, "max": top, "fx_period": period}
+
+
+def _safe_name(q: str) -> str:
+    import re
+    return re.sub(r"[\\/:*?\"<>|\s]+", "_", q or "").strip("_") or "report"
 
 
 def _period_text(p) -> str:
@@ -390,7 +414,7 @@ def export_flex_xlsx(query: str, model: dict, product_label: str = "", applied=N
         f"3) 환율: 하나은행 매매기준율 36개월 평균{(' (' + period + ')') if period else ''}, 통화 1단위당 원화.",
         "※ 조정가는 공단 A8 조정 산식(공장도율·VAT·유통마진) 적용 최소단위당 원화. 비공개 할인·환급은 반영되지 않음.",
     ]
-    diff = [c for c in cols if c["status"] == "ok" and c.get("source") and c["form_source"].split(" (")[0].split(",")[0].lower() not in c["source"].lower()]
+    diff = [c for c in cols if c["status"] == "ok" and c.get("source") and not matches_form_source(c["country"], c["source"])]
     if diff:
         notes.append("※ 서식 기준과 다른 자료원: " + " · ".join(f"{c['country_kr']}({c['source']} — 서식 기준 {c['form_source']})" for c in diff))
     for k, line in enumerate(notes, mrow + 2):
@@ -442,7 +466,7 @@ def generate(query: str, fmt: str, cached: dict,
         applied = applied_display if _num(applied_display) else applied_actual
         return (export_flex_xlsx(query, fm, product_label, applied),
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                f"{query}_A8_약가유연계약서식_{stamp}.xlsx")
+                f"{_safe_name(query)}_A8_약가유연계약서식_{stamp}.xlsx")
     model = build_report_model(cached, applied_display, applied_actual)
     if not model["cols"]:
         raise ValueError("리포트 생성할 가격 데이터가 없습니다.")

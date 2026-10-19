@@ -60,3 +60,21 @@ def test_flex_without_any_price_raises():
     except ValueError:
         return
     raise AssertionError("가격 없는 서식은 만들지 않는다")
+
+
+def test_flex_lowest_listing_is_chosen_within_latest_collection_day():
+    """옛 목록의 싼 가격이 최신 결정문 가격을 이기지 않는다 (키트루다 IT 회귀)."""
+    old = _row("IT", 3428.0, 1, 6441421, searched_at="2026-10-12T13:23:52")
+    new = _row("IT", 3798.34, 1, 7137312, searched_at="2026-10-17T12:20:00")
+    m = fr.build_flex_model({"IT": [old, new]})
+    it = next(c for c in m["cols"] if c["country"] == "IT")
+    assert it["local_price"] == 3798.34
+
+
+def test_flex_source_alias_matching():
+    assert fr.matches_form_source("US", "Micromedex Red Book (WAC)")
+    assert fr.matches_form_source("JP", "MHLW 薬価基準収載品目リスト")
+    assert fr.matches_form_source("FR", "BDPM/ANSM (CIS_CIP)")
+    assert not fr.matches_form_source("CH", "compendium.ch (Publikumspreis, SL)")      # 소비자가 ≠ SL GGSL 공장도
+    assert not fr.matches_form_source("IT", "AIFA TrovaNorme DET")                      # 서식 기준 Codifa 와 다른 출처
+    assert fr._safe_name("prevymis/letermovir") == "prevymis_letermovir"
