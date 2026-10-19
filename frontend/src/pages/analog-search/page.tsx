@@ -705,7 +705,7 @@ export default function AnalogSearchPage() {
           <h1 className="text-2xl font-bold">등재 아날로그 검색</h1>
         </div>
         <p className="text-gray-500 text-sm">
-          약평위 평가 607개 사례 (DREC Raw PDF) — 질환분류·OS/PFS·대체약제·등재국가수·타임라인·정책의도 포함
+          약평위 평가결과 PDF(DREC) 기반 — 질환분류·OS/PFS·대체약제·등재국가수·타임라인·정책의도 포함
         </p>
       </div>
 
