@@ -144,3 +144,70 @@ def test_lookup_first_permit_uses_injected_fetch_and_handles_miss():
     assert lookup_first_permit("네시나정", fetch=fetch)["permit_date"] == "2013.05.31"
     assert lookup_first_permit("없는약정", fetch=fetch) is None
     assert calls[0] == ("네시나정", 50)                                              # 50건까지 — 다품목 브랜드가 10건을 넘을 수 있다
+
+
+# ── 표본 대조(2026-10-19)에서 틀렸던 사례 — 틀린 값을 넣느니 비워 둔다 ─────────────────────────────
+
+ISTURISA = """약제 요양급여의 적정성 평가결과
+osilodrostat phosphate(as osilodrostat 1, 5㎎)
+(이스투리사필름코팅정1,5밀리그램(오실로드로스타트인산염),
+(주)레코르다티코리아)
+▢ 제형, 성분․함량:
+- 1정 중 osilodrostat phosphate 1.431mg, 7.155mg
+(osilodrostat로서 1mg, 5mg)
+▢ 효능·효과
+"""
+
+TRIMBOW = """약제 요양급여의 적정성 평가결과
+beclomethasone dipropionate 12mg(0.1mg/회),
+glycopyrronium bromide (as glycopyrronium 1.2mg(10μg/회))
+(트림보우흡입제100/6/12.5(베클로메타손디프로피오네이트,
+포르모테롤푸마르산염수화물, 글리코피로니움브롬화물), 코오롱제약㈜)
+▢ 제형, 성분․함량:
+- 무색 또는 노란색을 띤 액이 일정량씩 분무되는 밸브가 장착된 알루미늄캔에
+"""
+
+PRELECTIN = """약제 요양급여의 적정성 평가 결과
+doxylamine succinate 10mg, pyridoxine hydrochloride 10mg
+(프리렉틴장용정(독실아민숙신산염, 피리독신염산염), 한화제약㈜)
+▢ 제형, 성분․함량:
+- 1정당 독실아민숙신산염 10mg, 피리독신염산염 10mg
+"""
+
+OTEZLA = """약제 요양급여의 적정성 평가결과
+apremilast 30mg, 10mg/20mg/30mg
+(오테리아정(아프레밀라스트), 동아에스티㈜)
+▢ 제형, 성분․함량:
+- 10mg : 분홍색의 마름모형 필름코팅정제
+- 1정 중 apremilast 30mg
+"""
+
+
+def test_wrapped_brand_line_gives_company_not_a_strength():
+    """회귀: '(osilodrostat로서 1mg, 5mg)' 줄이 브랜드 줄로 오인돼 제조사가 '5mg' 으로 들어갔다."""
+    h = extract_header_fields(ISTURISA)
+    assert h["manufacturer"] == "(주)레코르다티코리아"
+    assert h["inn_en"] == "osilodrostat phosphate" and h["strength"] == "1.431mg, 7.155mg"
+
+
+def test_multiline_combination_brand_line_company():
+    h = extract_header_fields(TRIMBOW)
+    assert h["manufacturer"] == "코오롱제약㈜"
+    assert h["strength"] is None and h["inn_en"] is None            # 복합제·제형 서술 — 용량을 지어내지 않는다
+
+
+def test_combination_product_is_left_blank():
+    h = extract_header_fields(PRELECTIN)
+    assert h["manufacturer"] == "한화제약㈜" and h["inn_en"] is None and h["strength"] is None
+
+
+def test_ambiguous_multi_strength_keeps_inn_only():
+    h = extract_header_fields(OTEZLA)
+    assert h["manufacturer"] == "동아에스티㈜" and h["inn_en"] == "apremilast" and h["strength"] is None
+
+
+def test_strength_values_with_unit_noise_are_rejected():
+    from agents.analog.header_extract import _split_inn_strength
+    assert _split_inn_strength("1병 중 Obinuzutumab 1g (25mg/mL)") == ("obinuzutumab", "1g (25mg/mL)")
+    assert _split_inn_strength("4:1 w/w mixed hydrogel of sodium hyaluronate gel 2.04g")[1] is None
+    assert _split_inn_strength("1정 중 vedolizumab 300mg") == ("vedolizumab", "300mg")

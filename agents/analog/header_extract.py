@@ -23,6 +23,22 @@ _RE_SESSION = re.compile(
 # 성분·함량 값 — '1병 중 Obinuzutumab 1g (25mg/mL)' / 'trabectedin 1.0mg'
 _RE_STRENGTH_START = re.compile(r"\s(?=\d)")
 _RE_HAS_LATIN = re.compile(r"[A-Za-z]{3}")
+# ── 값 검증 게이트 — 틀린 값을 넣느니 비워 둔다(2026-10-19 표본 대조에서 9건 중 5건이 오추출) ───────────────────────
+_U = r"(?:mg|g|㎎|㎍|μg|µg|ug|mcg|iu|i\.u\.?|단위|ml|㎖|%|밀리그램|아이유)"
+_CLEAN_STRENGTH = re.compile(
+    rf"^\d[\d.,]*\s*{_U}(?:\s*[/:]\s*\d[\d.,]*\s*{_U})?(?:\s*\([^()]{{0,30}}\))?(?:\s*,\s*\d[\d.,]*\s*{_U})*$", re.I)
+_CLEAN_INN = re.compile(r"^[a-z][a-z \-]{2,59}(?:/[a-z][a-z \-]{2,59})?$")
+_COMPANY = re.compile(r"(㈜|\(주\)|\(유\)|\(재\)|\(사\)|제약|약품|코리아|바이오|헬스|사이언스|파마|제약사|Pharma|Korea|Ltd|Inc|등\s*\d+개사|[가-힣]{2,}사$)", re.I)
+_RE_STRENGTH_TOKEN = re.compile(r"\d\s*(?:mg|g|㎎|㎍|μg|µg|ug|mcg|iu|ml)\b", re.I)
+
+
+def _is_company(c: str) -> bool:
+    return bool(_COMPANY.search(c)) and not _RE_STRENGTH_TOKEN.search(c) and 2 <= len(c) <= 40
+
+
+def _is_combination(value: str) -> bool:
+    """복합제(성분 2개 이상)면 성분·함량을 한 칸에 담을 수 없다 — ', 영문성분' 또는 한글 성분 나열."""
+    return bool(re.search(r",\s*[A-Za-z]{3}", value)) or bool(re.search(r"[가-힣]+\s*\d[\d.]*\s*mg\s*,\s*[가-힣]", value))
 
 
 def _clean_lines(text: str) -> list[str]:
@@ -53,8 +69,10 @@ def _split_inn_strength(value: str) -> tuple[str | None, str | None]:
     m = _RE_STRENGTH_START.search(v)
     head, tail = (v[:m.start()], v[m.start() + 1:]) if m else (v, "")
     head = head.strip(" ,;")
-    inn = head.lower() if _RE_HAS_LATIN.search(head) and not re.search(r"[가-힣]", head) and len(head) <= 80 else None
-    strength = tail.strip() or None
+    if _is_combination(v):
+        return None, None
+    inn = head.lower() if _CLEAN_INN.match(head.lower()) else None
+    strength = tail.strip() if inn and _CLEAN_STRENGTH.match(tail.strip()) else None     # 성분을 확정 못 하면 용량도 쓰지 않는다
     return inn, strength
 
 
@@ -66,17 +84,31 @@ def extract_header_fields(text: str) -> dict:
 
     # (브랜드, 제조사) 줄 — 상단 15줄 안에서 '(' 로 시작하고 ')' 로 끝나며 ',' 가 있는 첫 줄.
     # 예) '(가싸이바주, 한국로슈(주))' · '(욘델리스주사1.0밀리그램(트라벡테딘), ((주)메디팁)' (괄호가 짝이 안 맞는 경우도 있다)
+    # 브랜드 줄이 2~3줄로 줄바꿈된 경우(복합제·긴 제품명)는 ')' 로 끝날 때까지 이어 붙인다.
+    merged: list[tuple[int, str]] = []
+    i = 0
+    head_lines = lines[:18]
+    while i < len(head_lines):
+        ln = head_lines[i]
+        j = i
+        if ln.startswith("(") and not ln.endswith(")"):
+            buf = ln
+            while j + 1 < len(head_lines) and j - i < 3 and not buf.endswith(")") and not head_lines[j + 1].startswith(("▢", "□")):
+                j += 1
+                buf = f"{buf} {head_lines[j]}"
+            ln = buf
+        merged.append((i, ln))
+        i = j + 1
     brand_idx = None
-    for i, ln in enumerate(lines[:15]):
+    for idx, ln in merged:
         if not (ln.startswith("(") and ln.endswith(")") and "," in ln):
             continue
-        inner = ln[1:-1]
-        brand, _, company = inner.rpartition(",")
+        brand, _, company = ln[1:-1].rpartition(",")
         company = company.strip()
         while company.startswith("(") and company.count("(") > company.count(")"):
             company = company[1:].strip()
-        if brand.strip() and 2 <= len(company) <= 40:
-            out["brand_in_header"], out["manufacturer"], brand_idx = brand.strip(), company, i
+        if brand.strip() and _is_company(company):
+            out["brand_in_header"], out["manufacturer"], brand_idx = brand.strip(), company, idx
             break
 
     # ① '▢ 제형, 성분․함량' 블록 (다음 ▢ 전까지)
@@ -101,7 +133,7 @@ def extract_header_fields(text: str) -> dict:
     if not (out["inn_en"] and out["strength"]) and brand_idx:
         prev = lines[brand_idx - 1] if brand_idx >= 1 else ""
         if prev and not re.search(r"평가\s*결과|적정성|위원회", prev):
-            inn, st = _split_inn_strength(prev.replace(", ", " "))
+            inn, st = _split_inn_strength(prev)
             out["inn_en"] = out["inn_en"] or inn
             out["strength"] = out["strength"] or st
             out["ingredient_text"] = out["ingredient_text"] or prev
