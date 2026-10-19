@@ -5,6 +5,7 @@ import {
   FACET_LABELS, REVIEW_RESULT_KO, analogValueLabel, conceptChipLabel, displayBrandName, isIncompleteReport,
   type AnalogFacets, type AnalogReport, type AnalogSearchResult, type AnalogBrief, type EfficacyEndpoint,
 } from '@/api/analog';
+import type { AnalogSort, AnalogSortKey } from '@/api/analog';
 
 const FACET_KEYS = [
   'disease_category', 'disease_category_detail', 'cancer_type', 'line_of_therapy',
@@ -575,6 +576,27 @@ function DetailModal({ r, onClose }: { r: AnalogReport; onClose: () => void }) {
   );
 }
 
+// ── 날짜 정렬 헤더 ─────────────────────────────────────────────────────────────
+
+const SORT_LABEL: Record<AnalogSortKey, string> = {
+  session_date: '약평위 날짜', mfds_permit_date: '식약처 허가일', first_reimbursement_date: '최초 약가 등재일',
+};
+
+function SortTh({ label, k, sort, onToggle }: { label: string; k: AnalogSortKey; sort: AnalogSort | null; onToggle: (k: AnalogSortKey) => void }) {
+  const active = sort?.key === k;
+  const dir = active ? sort!.order : null;
+  return (
+    <th className="px-3 py-2.5 font-semibold whitespace-nowrap" aria-sort={dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : 'none'}>
+      <button type="button" onClick={() => onToggle(k)}
+        title={active ? (dir === 'desc' ? '최신순 정렬 중 — 누르면 오래된순' : '오래된순 정렬 중 — 누르면 정렬 해제') : '누르면 최신순으로 정렬'}
+        className={'inline-flex items-center gap-1 hover:text-teal-700 ' + (active ? 'text-teal-700' : '')}>
+        {label}
+        <span aria-hidden className={'text-[10px] ' + (active ? '' : 'text-gray-300')}>{dir === 'asc' ? '▲' : dir === 'desc' ? '▼' : '↕'}</span>
+      </button>
+    </th>
+  );
+}
+
 // ── 메인 페이지 ───────────────────────────────────────────────────────────────
 
 export default function AnalogSearchPage() {
@@ -582,6 +604,9 @@ export default function AnalogSearchPage() {
   const [query, setQuery] = useState('');
   const [data, setData] = useState<AnalogSearchResult | null>(null);
   const [loading, setLoading] = useState(false);
+  // 날짜 정렬 — null 이면 기본(최신 약평위순). 헤더를 한 번 누르면 내림차순, 다시 누르면 오름차순, 세 번째는 해제.
+  const [sort, setSort] = useState<AnalogSort | null>(null);
+  const [limit, setLimit] = useState(60);
   const [selected, setSelected] = useState<AnalogReport | null>(null);
   const [brief, setBrief] = useState<AnalogBrief | null>(null);
   const [briefLoading, setBriefLoading] = useState(false);
@@ -603,7 +628,7 @@ export default function AnalogSearchPage() {
     setLoading(true); setBrief(null);
     try {
       const res = await searchAnalog({
-        filters, q: query.trim() || undefined, limit: 60,
+        filters, q: query.trim() || undefined, limit, sort,
       });
       setData(res);
     } catch (e) { console.error(e); setData(null); }
@@ -618,7 +643,12 @@ export default function AnalogSearchPage() {
     const t = window.setTimeout(() => { runSearch(); }, 250);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters]);
+  }, [filters, sort, limit]);
+
+  const toggleSort = (key: AnalogSortKey) => setSort(prev => {
+    if (!prev || prev.key !== key) return { key, order: 'desc' };
+    return prev.order === 'desc' ? { key, order: 'asc' } : null;
+  });
 
   // 캐스케이드: 한 단계를 바꾸면 그 뒤(하위) 단계 선택은 모두 해제 — 무효 조합 방지
   const setFacet = (k: string, v: string) =>
@@ -775,7 +805,13 @@ export default function AnalogSearchPage() {
                 {showIncomplete ? `데이터 불완전 ${incompleteCount}건 포함 중 · 숨기기` : `데이터 불완전 ${incompleteCount}건 숨김 · 보기`}
               </button>
             )}
-            {!loading && results.length >= 60 && <span className="ml-2 text-xs text-gray-400">· 관련도 상위 60건만 표시 — 조건을 좁히면 더 정확해집니다</span>}
+            {!loading && allResults.length >= limit && limit < 500 && (
+              <button type="button" onClick={() => setLimit(l => Math.min(l + 60, 500))}
+                className="ml-2 text-xs text-teal-600 underline decoration-dotted hover:text-teal-700">
+                {sort ? '더 보기 (+60건)' : `상위 ${limit}건만 표시 · 더 보기 (+60건)`}
+              </button>
+            )}
+            {sort && <span className="ml-2 text-xs text-teal-600">{SORT_LABEL[sort.key]} {sort.order === 'desc' ? '최신순' : '오래된순'} 정렬 · 값 없는 행은 맨 뒤{data?.mode === 'search' ? ' (검색 상위 결과 안에서)' : ''}</span>}
             {data?.mode === 'search' && <span className="ml-2 text-teal-600 text-xs">관련도 정렬 (약제명·성분 우선)</span>}
           </p>
           <div className="flex items-center gap-2">
@@ -830,7 +866,9 @@ export default function AnalogSearchPage() {
                   <th className="px-3 py-2.5 font-semibold whitespace-nowrap">결과</th>
                   <th className="px-3 py-2.5 font-semibold">트랙</th>
                   <th className="px-3 py-2.5 font-semibold">갭</th>
-                  <th className="px-3 py-2.5 font-semibold whitespace-nowrap">날짜·차수</th>
+                  <SortTh label="식약처 허가일" k="mfds_permit_date" sort={sort} onToggle={toggleSort} />
+                  <SortTh label="최초 약가 등재일" k="first_reimbursement_date" sort={sort} onToggle={toggleSort} />
+                  <SortTh label="약평위 날짜·차수" k="session_date" sort={sort} onToggle={toggleSort} />
                 </tr>
               </thead>
               <tbody>
@@ -881,14 +919,24 @@ export default function AnalogSearchPage() {
                         </span>
                       ) : <span className="text-gray-300">—</span>}
                     </td>
-                    <td className="px-3 py-2.5 text-gray-400 tabular-nums whitespace-nowrap">
-                      {r.session_date}{r.ordinal ? ` ·${r.ordinal}차` : ''}
+                    <td className="px-3 py-2.5 tabular-nums whitespace-nowrap text-gray-600">
+                      {r.mfds_permit_date ? r.mfds_permit_date.replace(/-/g, '.') : <span className="text-gray-300" title="식약처 API에서 확인되지 않았거나 원문에 없음">—</span>}
+                    </td>
+                    <td className="px-3 py-2.5 tabular-nums whitespace-nowrap text-gray-600">
+                      {r.first_reimbursement_date ? r.first_reimbursement_date.replace(/-/g, '.') : <span className="text-gray-300" title="국내 약가목록에서 확인되지 않음(비급여·미등재 포함)">—</span>}
+                    </td>
+                    <td className="px-3 py-2.5 text-gray-500 tabular-nums whitespace-nowrap">
+                      {!r.session_date ? <span className="text-gray-300">—</span>
+                        : r.session_date_precision === 'year'
+                          ? <span title="실제 회의일을 알 수 없어 연도만 표시합니다">{r.session_date.slice(0, 4)}년<span className="ml-1 text-[10px] text-amber-600">일자 미상</span></span>
+                          : r.session_date.replace(/-/g, '.')}
+                      {r.ordinal ? ` ·${r.ordinal}차` : ''}
                     </td>
                   </tr>
                 ))}
                 {!loading && results.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="px-3 py-10 text-center text-gray-400">
+                    <td colSpan={11} className="px-3 py-10 text-center text-gray-400">
                       조건에 맞는 사례 없음
                     </td>
                   </tr>

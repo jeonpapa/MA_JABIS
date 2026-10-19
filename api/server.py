@@ -6775,8 +6775,14 @@ def analog_search():
         # 통합 검색어: q 우선, 하위호환으로 fts/semantic 도 수용
         q = (request.args.get("q") or request.args.get("fts")
              or request.args.get("semantic") or "").strip() or None
-        limit = min(int(request.args.get("limit", "50")), 200)
-        return jsonify(_analog.search(filters=filters, q=q, limit=limit))
+        limit = min(int(request.args.get("limit", "50")), 500)
+        sort = (request.args.get("sort") or "").strip() or None
+        if sort and sort not in _analog.SORT_COLS:
+            return jsonify({"error": f"sort 는 {', '.join(_analog.SORT_COLS)} 중 하나", "code": "INVALID"}), 400
+        order = (request.args.get("order") or "desc").strip().lower()
+        if order not in ("asc", "desc"):
+            return jsonify({"error": "order 는 asc 또는 desc", "code": "INVALID"}), 400
+        return jsonify(_analog.search(filters=filters, q=q, limit=limit, sort=sort, order=order))
     except Exception as e:
         logger.error("analog search 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500

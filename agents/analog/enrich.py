@@ -466,6 +466,15 @@ def enrich_mfds(limit: int = None) -> dict:
             continue
         permit_date = res.get("permit_date")
         effect = res.get("effect_text")
+        # 허가일은 '첫 정상 품목' 이 아니라 같은 제품군의 최초 허가일 — 함량별 재허가·취하 이력이 있으면 lookup_permit 값은 수년 늦다
+        # (네시나정 2013-05-31 → 2023-10-30). 조회 실패 시에는 기존 값을 그대로 쓴다.
+        try:
+            from agents.analog.permit_first import lookup_first_permit
+            first = lookup_first_permit(brand)
+            if first and first.get("permit_date"):
+                permit_date = first["permit_date"]
+        except Exception as e:          # API 오류가 보강 전체를 막지 않게
+            logger.warning("[analog.enrich] 최초 허가일 조회 실패 %s: %s", brand, e)
         if permit_date:
             found += 1
         else:

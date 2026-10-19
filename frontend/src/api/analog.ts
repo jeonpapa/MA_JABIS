@@ -55,6 +55,8 @@ export interface AnalogReport {
   // 결정
   committee: string | null;
   session_date: string | null;
+  /** 'year' = 연도만 아는 자리표시값(YYYY-01-01, 실제 회의일 아님) · 'day' = 실제 회의일 */
+  session_date_precision?: 'year' | 'day' | null;
   review_result: string | null;            // APPROVED/REJECTED/...
   review_result_ko: string | null;
   post_url?: string | null;                // 약평위 HIRA 게시물 링크(메타 매칭)
@@ -197,10 +199,14 @@ export function fetchAnalogFacets(filters?: Record<string, string>): Promise<Ana
   return api.get<AnalogFacets>(`/api/analog/facets${suffix ? `?${suffix}` : ''}`);
 }
 
+export type AnalogSortKey = 'session_date' | 'mfds_permit_date' | 'first_reimbursement_date';
+export interface AnalogSort { key: AnalogSortKey; order: 'asc' | 'desc' }
+
 export function searchAnalog(params: {
   filters?: Record<string, string | number>;
   q?: string;
   limit?: number;
+  sort?: AnalogSort | null;
 }): Promise<AnalogSearchResult> {
   const qs = new URLSearchParams();
   Object.entries(params.filters ?? {}).forEach(([k, v]) => {
@@ -208,6 +214,7 @@ export function searchAnalog(params: {
   });
   if (params.q) qs.set('q', params.q);
   qs.set('limit', String(params.limit ?? 50));
+  if (params.sort) { qs.set('sort', params.sort.key); qs.set('order', params.sort.order); }
   return api.get<AnalogSearchResult>(`/api/analog/search?${qs.toString()}`);
 }
 

@@ -735,6 +735,9 @@ def _row_to_dict(r: sqlite3.Row, include_body: bool = False) -> dict:
         except (ValueError, TypeError):
             d[k] = []
     d.pop("embedding", None)
+    # 약평위 날짜 정밀도 — 'YYYY-01-01' 은 실제 회의일이 아니라 연도만 알 때 채운 자리표시값(1월 1일은 휴일이라 회의일일 수 없다).
+    sd = (d.get("session_date") or "").strip()
+    d["session_date_precision"] = None if not sd else ("year" if sd.endswith("-01-01") else "day")
     d.pop("_namerank", None)
     d.pop("_bm25", None)
     if not include_body:
@@ -743,8 +746,27 @@ def _row_to_dict(r: sqlite3.Row, include_body: bool = False) -> dict:
     return d
 
 
+# 날짜 정렬 허용 컬럼 — 화이트리스트(SQL 인젝션 방지). 값 형식이 컬럼마다 다르다(허가일 'YYYY.MM.DD', 나머지 'YYYY-MM-DD').
+SORT_COLS = ("session_date", "mfds_permit_date", "first_reimbursement_date")
+
+
+def _norm_sort_date(v) -> Optional[str]:
+    s = str(v or "").strip().replace(".", "-").replace("/", "-")[:10]
+    return s if len(s) >= 4 and s[:4].isdigit() else None
+
+
+def _sort_rows_by_date(rows: list, col: str, desc: bool) -> list:
+    """날짜 컬럼 기준 정렬. 값 없는 행은 방향과 무관하게 항상 맨 뒤(기존 순서 유지). 같은 날짜는 차수 → id 순."""
+    dated, undated = [], []
+    for r in rows:
+        (dated if _norm_sort_date(r[col]) else undated).append(r)
+    dated.sort(key=lambda r: (_norm_sort_date(r[col]), r["ordinal"] if r["ordinal"] is not None else 0, r["id"]), reverse=desc)
+    return dated + undated
+
+
 def search(filters: dict = None, q: str = None, fts: str = None,
-           semantic: str = None, limit: int = 50, debug: bool = False) -> dict:
+           semantic: str = None, limit: int = 50, debug: bool = False,
+           sort: str = None, order: str = "desc") -> dict:
     """패싯 필터 + 동의어 인지 통합 검색 (concept 확장 + 태그 오버랩 + bm25).
 
     q/fts/semantic 중 아무거나 들어오면 단일 통합 쿼리로 처리한다.
@@ -772,9 +794,16 @@ def search(filters: dict = None, q: str = None, fts: str = None,
         if not fts_match:
             fts_match = _fts_query(query)
 
+    sort_col = sort if sort in SORT_COLS else None
+    sort_desc = (order or "desc").lower() != "asc"
     select = "SELECT a.*"
     join = ""
-    order = "a.session_date DESC"
+    order_sql = "a.session_date DESC"
+    if sort_col:
+        dir_sql = "DESC" if sort_desc else "ASC"
+        # 값 없는 행은 항상 뒤로. 허가일은 점 표기라 하이픈으로 맞춰 비교한다.
+        order_sql = (f"(a.{sort_col} IS NULL OR TRIM(a.{sort_col}) = '') ASC, "
+                     f"REPLACE(a.{sort_col}, '.', '-') {dir_sql}, a.ordinal {dir_sql}, a.id {dir_sql}")
     where_clauses: list[str] = []
     params: list = []
 
@@ -796,7 +825,7 @@ def search(filters: dict = None, q: str = None, fts: str = None,
         join = " JOIN analog_fts f ON f.rowid = a.id"
         where_clauses.append("analog_fts MATCH ?")
         params.append(fts_match)
-        order = "_namerank ASC, _bm25 ASC, a.session_date DESC"
+        order_sql = "_namerank ASC, _bm25 ASC, a.session_date DESC"
 
     # ② 패싯 필터
     for col in _FILTER_COLS:
@@ -827,7 +856,7 @@ def search(filters: dict = None, q: str = None, fts: str = None,
     sql = select + " FROM analog_reports a" + join
     if where_clauses:
         sql += " WHERE " + " AND ".join(where_clauses)
-    sql += f" ORDER BY {order} LIMIT ?"
+    sql += f" ORDER BY {order_sql} LIMIT ?"
     params.append(pool)
 
     bm25_map: dict[int, float] = {}
@@ -846,6 +875,10 @@ def search(filters: dict = None, q: str = None, fts: str = None,
                     cand_ids.append(i)
 
         rows = _fetch_rows_by_ids(conn, cand_ids) if cand_ids else []
+        # IN (...) 조회는 SQL 의 ORDER BY 를 보존하지 않는다 — 후보 순서(= ORDER BY 결과)로 되돌려 둔다.
+        # 필터만 쓰는 목록(검색어 없음)은 이 순서가 곧 최종 순서이므로, 이전에는 날짜순이 아니라 id 순으로 나왔다.
+        _pos = {rid: i for i, rid in enumerate(cand_ids)}
+        rows = sorted(rows, key=lambda r: _pos.get(r["id"], len(_pos)))
 
         # ④ 태그 오버랩 점수 (concept 매칭된 경우)
         tag_score: dict[int, float] = {}
@@ -877,6 +910,9 @@ def search(filters: dict = None, q: str = None, fts: str = None,
             bm25_map.get(r["id"], 1e9),
         ),
     )[:limit]
+    # 검색어가 있으면 관련도 상위 N건을 뽑은 뒤 그 안에서 날짜순으로 다시 정렬한다(관련도 컷은 유지).
+    if sort_col and query:
+        rows = _sort_rows_by_date(rows, sort_col, sort_desc)
 
     results = []
     for r in rows:
@@ -888,6 +924,8 @@ def search(filters: dict = None, q: str = None, fts: str = None,
 
     out = {"mode": "search" if query else "facet",
            "count": len(results), "results": results}
+    if sort_col:
+        out["sort"] = {"key": sort_col, "order": "desc" if sort_desc else "asc"}
     if query and resolution:
         out["query_debug"] = {
             "matched_concepts": resolution.matched_concepts,

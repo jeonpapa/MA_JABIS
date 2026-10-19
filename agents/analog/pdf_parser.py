@@ -170,13 +170,13 @@ def _extract_pages(pdf_path: Path) -> list[str]:
 
 
 def _is_extractable(pages: list[str]) -> bool:
-    """스캔 PDF 탐지: 텍스트 레이어 없거나 CID 문자 과다."""
-    full = "".join(pages[:3])
-    if len(full.strip()) < 300:
-        return False
-    if full.count("(cid:") > 10:
-        return False
-    return True
+    """스캔 PDF 탐지: 텍스트 레이어 없거나 CID 문자 과다.
+
+    예전 기준(첫 3페이지 300자 미만 = 스캔)은 2007~2012년의 짧은 평가결과(중앙값 약 240자)를 전부 스캔으로 오판했다
+    (추출 불가 275건 중 273건이 정상 텍스트 PDF, 223건에 정확한 심의일, 241건에 제형·성분·함량). → header_extract.looks_extractable
+    """
+    from agents.analog.header_extract import looks_extractable
+    return looks_extractable(pages)
 
 
 # ── 파일명 파싱 ───────────────────────────────────────────────────────────────
@@ -624,9 +624,14 @@ def parse_drec_pdf(path: Path) -> dict:
         full_text, has_rsa=has_rsa, pe_waiver=pe_waiver, has_postmarket=has_postmarket
     )
 
+    from agents.analog.header_extract import extract_header_fields, korean_ingredient_from_name
+    hdr = extract_header_fields(page1)
+    if not base.get("dosage") and hdr["strength"]:
+        base["dosage"] = hdr["strength"]            # 파일명에 용량이 없으면 보고서 헤더 '제형, 성분·함량' 에서
+    base["generic_name"] = korean_ingredient_from_name(fn_info["brand_name_raw"], fname)
     base.update({
-        "generic_name_en": _extract_generic_name(page1),
-        "manufacturer": _extract_manufacturer(page1),
+        "generic_name_en": _extract_generic_name(page1) or hdr["inn_en"],
+        "manufacturer": _extract_manufacturer(page1) or hdr["manufacturer"],
         "mfds_effect_text": _extract_effect_text(page1),
         "session_date": session_date,
         "review_result": review_result,
