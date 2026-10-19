@@ -127,6 +127,9 @@ export interface A8Pricing {
   formType: FormType;
   productName: string;
   dosageStrength?: string;
+  /** 원문 제형·포장 문구 — 최소단위 이름(정/포/캡슐/바이알) 판정용 */
+  dosageForm?: string;
+  packageUnit?: string;
   sourceLabel?: string;
   sourceUrl?: string;
   adjustedPriceKrw?: number;   // A8 조정가 (per-unit KRW, 원본 단위강도 기준)
@@ -291,6 +294,8 @@ interface RawPricingEntry {
   raw_data?: string;
   form_type?: string | null;
   dosage_strength?: string | null;
+  dosage_form?: string | null;
+  package_unit?: string | null;
   pack_count?: number | null;
   pack_count_source?: string | null;
   a8_aggregate_eligible?: boolean | null;
@@ -517,6 +522,8 @@ function mapPricingEntry(raw: RawPricingEntry, variantCount: number): A8Pricing 
     formType,
     productName: raw.product_name,
     dosageStrength: raw.dosage_strength || undefined,
+    dosageForm: raw.dosage_form || undefined,
+    packageUnit: raw.package_unit || undefined,
     // JP 구 수집행 오타 보정 (서버 display_source_label 과 동일 — 구버전 응답 대비)
     sourceLabel: raw.source_label?.replace('後生労働省', '厚生労働省'),
     sourceUrl: raw.source_url,
@@ -683,7 +690,8 @@ export async function fetchPricingTab(query: string): Promise<PricingTabData> {
     formulations.push({
       key: fkey, label: g.label || fkey,
       strengthMg: g.canonical_strength_mg, route: g.route || 'oral',
-      isUsListed: g.is_us_listed === 1,
+      // 서버 그룹 판정 + 방어: 이 제형에 US 가격 카드가 있으면 'US 미등재' 가 아니다
+      isUsListed: g.is_us_listed === 1 || (a8.usa?.price != null && a8.usa.price > 0),
       a8Pricing: a8, summary: _buildSummary(a8),
     });
   }

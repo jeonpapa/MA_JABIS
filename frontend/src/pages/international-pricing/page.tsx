@@ -1,3 +1,4 @@
+import { unitWordFor } from './unitWord';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bar, BarChart, Cell, LabelList, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -66,7 +67,7 @@ const numText = (s: string) => String(Number(s.replace(',', '.')));
 function packLine(cell: A8Pricing): string {
   const raw = toHalfWidth(cell.dosageStrength || '');
   const name = toHalfWidth(cell.productName || '');
-  const unitWord = cell.formType === 'injection' ? '바이알' : cell.formType === 'oral' ? '정' : '단위';
+  const unitWord = unitWordFor(cell);
   const perUnit = cell.unitStrengthMg != null && cell.unitStrengthMg > 0 ? `${cell.unitStrengthMg} mg` : '';
   const CONC = /(\d+(?:[.,]\d+)?)\s*mg\s*\/\s*(?:1\s*)?ml\b/i;
   let strength = '';

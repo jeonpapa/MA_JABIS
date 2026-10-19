@@ -1277,6 +1277,11 @@ class ForeignPriceAgent:
                         "countries": {},
                     }
                     groups[fk] = g
+                # 그룹의 US 등재 여부는 '그룹 안 어느 행이든 US canonical' 이면 참이다. 첫 행(JP 등 foreign_ref)
+                # 값만 쓰면 US WAC 카드가 있는 제형도 'US 미등재' 로 뜬다(2026-10-19 PREVYMIS 검증 차단).
+                if row.get("is_us_listed") == 1 and g.get("is_us_listed") != 1:
+                    g["is_us_listed"] = 1
+                    g["source"] = row.get("formulation_source") or g.get("source")
                 country = row.get("country")
                 prev = g["countries"].get(country)
                 # 같은 (제형, 국가) 중복 시 priced 우선
