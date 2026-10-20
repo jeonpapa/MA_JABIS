@@ -261,3 +261,58 @@ def test_admin_competitor_patch_promotes_card_to_manual():
     src = (Path(__file__).resolve().parent.parent / "api" / "server.py").read_text(encoding="utf-8")
     body = re.search(r"def competitor_update\(item_id: int\):([\s\S]*?)\n@app\.", src).group(1)
     assert 'fields.setdefault("source_type", "manual")' in body
+
+
+# ── §6 analog_reports 완성도 가드 ───────────────────────────────────────────────────────────────
+
+ANALOG_DDL = ("CREATE TABLE analog_reports (id INTEGER PRIMARY KEY, brand_name TEXT, generic_name TEXT, report_effect_text TEXT, "
+              "pdf_extractable INTEGER, mfds_permit_date TEXT, disease_category TEXT, dosage TEXT, session_date TEXT);")
+
+
+def _analog_rows(p: Path, n: int, **over):
+    base = {"generic_name": "아프레밀라스트", "report_effect_text": "건선", "pdf_extractable": 1,
+            "mfds_permit_date": "2020.01.01", "disease_category": "비항암", "dosage": "10mg", "session_date": "2023-07-06"}
+    base.update(over)
+    with sqlite3.connect(p) as c:
+        for i in range(n):
+            c.execute("INSERT INTO analog_reports (id, brand_name, generic_name, report_effect_text, pdf_extractable, mfds_permit_date, "
+                      "disease_category, dosage, session_date) VALUES (?,?,?,?,?,?,?,?,?)",
+                      (i + 1, f"약{i}", base["generic_name"], base["report_effect_text"], base["pdf_extractable"],
+                       base["mfds_permit_date"], base["disease_category"], base["dosage"], base["session_date"]))
+
+
+def _checks(p: Path) -> dict:
+    from agents.quality_guard.data_contracts import check_data_contracts
+    return {f["check"]: f for f in check_data_contracts(p, write_deviation=False)}
+
+
+def test_analog_guard_clean_db_has_no_findings(tmp_path):
+    p = _db(tmp_path, ANALOG_DDL)
+    _analog_rows(p, 60)
+    assert not [k for k in _checks(p) if k.startswith("analog_")]
+
+
+def test_analog_guard_flags_company_as_ingredient_and_junk_effect_text(tmp_path):
+    p = _db(tmp_path, ANALOG_DDL)
+    _analog_rows(p, 3, generic_name="한국로슈", report_effect_text="약제 급여 평가 위원회 심의")
+    f = _checks(p)
+    assert f["analog_generic_name_not_ingredient"]["severity"] == "ERROR" and f["analog_generic_name_not_ingredient"]["count"] == 3
+    assert f["analog_effect_text_not_effect"]["severity"] == "ERROR"
+
+
+def test_analog_guard_flags_scan_misjudgement_and_blank_rate_and_placeholder(tmp_path):
+    p = _db(tmp_path, ANALOG_DDL)
+    _analog_rows(p, 60, mfds_permit_date=None, session_date="2008-01-01")        # 노출 60건 전부 허가일 빈칸·일자 미상
+    with sqlite3.connect(p) as c:
+        for i in range(100, 150):
+            c.execute("INSERT INTO analog_reports (id, brand_name, pdf_extractable) VALUES (?,?,0)", (i, f"숨김{i}"))
+    f = _checks(p)
+    assert "analog_scan_misjudged" in f and f["analog_scan_misjudged"]["count"] == 50
+    assert "analog_visible_gap_high" in f and f["analog_visible_gap_high"]["check"] == "analog_visible_gap_high"
+    assert "analog_year_placeholder_high" in f
+
+
+def test_analog_guard_skips_ratio_checks_on_tiny_samples(tmp_path):
+    p = _db(tmp_path, ANALOG_DDL)
+    _analog_rows(p, 5, mfds_permit_date=None)
+    assert "analog_visible_gap_high" not in _checks(p)

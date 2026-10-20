@@ -14,6 +14,11 @@
   - foreign_continuation_fragment     : dosage_strength 가 ';' 등 구분자로 시작하는 조각 행이 formulation_key 'unmatched'
                                         또는 unit_strength NULL 로 priced → WARNING (UK MIMS '; 2-vial kit')
   - checklist_orphan                  : indication_reimbursement 행이 indications_master 에 없는 indication_id → WARNING
+  - analog_generic_name_not_ingredient: analog_reports.generic_name 이 회사명·질환·조각('한국로슈','미분화') → ERROR
+  - analog_effect_text_not_effect     : analog_reports.report_effect_text 가 다음 섹션 제목('…위원회 심의') → ERROR
+  - analog_scan_misjudged             : pdf_extractable=0(화면 제외) 행이 기준보다 많음(스캔 오판 재발) → WARNING
+  - analog_visible_gap_high           : 화면 노출 행의 허가일·질환·용량 빈칸 비율이 기준 초과(보강 파이프라인 회귀) → WARNING
+  - analog_year_placeholder_high      : 약평위 날짜가 YYYY-01-01 자리표시인 노출 행이 기준보다 많음 → WARNING
 
 결과는 check 당 1건(건수·표본 id) — record_quality_review 가 내용 키(숫자 제거)로 원장 1행에 모은다(예산 ≤3건/일).
 DB 는 read-only 로 연다. 테이블/컬럼이 없으면 그 항목만 건너뛴다.
@@ -144,7 +149,56 @@ def _checklist(conn, findings: list) -> None:
                                  "마스터에 없는 indication_id (재빌드·병합으로 id 변경) — /admin/reimbursement 에서 옮겨 입력"))
 
 
-CHECKS = (_competitor, _indications, _foreign_prices, _checklist)
+# analog(등재 아날로그) 완성도 기준 — 2026-10-20 보강 직후 실측에 여유를 둔 회귀 감지선. 개선되면 낮춘다.
+ANALOG_MAX_HIDDEN = 40            # 실측 28 (PDF 텍스트가 정말 비어 있는 보고서)
+ANALOG_MAX_PLACEHOLDER = 45       # 실측 30 (연도만 아는 약평위 날짜)
+ANALOG_MAX_BLANK_RATE = {"mfds_permit_date": 0.25, "disease_category": 0.20, "dosage": 0.40}   # 실측 17% · 10% · 31%
+
+
+def _analog(conn, findings: list) -> None:
+    cols = _table_cols(conn, "analog_reports")
+    if not cols:
+        return
+    from agents.analog.header_extract import _not_an_ingredient
+    vis = "pdf_extractable = 1" if "pdf_extractable" in cols else "1=1"
+    if "generic_name" in cols:
+        bad = [r[0] for r in conn.execute("SELECT id, generic_name FROM analog_reports WHERE generic_name IS NOT NULL AND generic_name != ''")
+               if _not_an_ingredient(r[1])]
+        if bad:
+            findings.append(_finding("analog_generic_name_not_ingredient", "ERROR",
+                                     f"{RULE} §6 — 한글 성분명은 성분이어야 한다(회사명·질환·조각 금지)", bad,
+                                     "header_extract._not_an_ingredient 차단 규칙 확인·해당 값 비우기"))
+    if "report_effect_text" in cols:
+        bad = [r[0] for r in conn.execute("SELECT id FROM analog_reports WHERE report_effect_text GLOB '*위원회*' OR report_effect_text GLOB '*심의*'")]
+        if bad:
+            findings.append(_finding("analog_effect_text_not_effect", "ERROR",
+                                     f"{RULE} §6 — report_effect_text 는 효능·효과 원문이어야 한다", bad,
+                                     "효능 단락이 비어 다음 섹션 제목을 잡음 — extract_effect_text 가드 확인·값 비우기"))
+    if "pdf_extractable" in cols:
+        hidden = [r[0] for r in conn.execute("SELECT id FROM analog_reports WHERE pdf_extractable = 0")]
+        if len(hidden) > ANALOG_MAX_HIDDEN:
+            findings.append(_finding("analog_scan_misjudged", "WARNING",
+                                     f"{RULE} §6 — 화면 제외(pdf_extractable=0)는 진짜 스캔·빈 보고서만(기준 {ANALOG_MAX_HIDDEN})", hidden,
+                                     "looks_extractable 판정 회귀 의심 — 텍스트 PDF 가 스캔으로 분류되고 있지 않은지 확인"))
+    total = conn.execute(f"SELECT COUNT(*) FROM analog_reports WHERE {vis}").fetchone()[0]
+    if total >= 50:       # 표본이 너무 작은 테스트·초기 DB 는 비율 판정 생략
+        for col, limit in ANALOG_MAX_BLANK_RATE.items():
+            if col not in cols:
+                continue
+            blank = [r[0] for r in conn.execute(f"SELECT id FROM analog_reports WHERE {vis} AND ({col} IS NULL OR TRIM({col}) = '')")]
+            if len(blank) / total > limit:
+                findings.append(_finding("analog_visible_gap_high", "WARNING",
+                                         f"{RULE} §6 — 노출 {total}건 중 {col} 빈칸 {len(blank) * 100 // total}% > 기준 {int(limit * 100)}%", blank,
+                                         f"{col} 보강 파이프라인(drec_sync·backfill) 회귀 — 신규 반영분이 보강되지 않았는지 확인"))
+    if "session_date" in cols:
+        ph = [r[0] for r in conn.execute(f"SELECT id FROM analog_reports WHERE {vis} AND session_date LIKE '%-01-01'")]
+        if len(ph) > ANALOG_MAX_PLACEHOLDER:
+            findings.append(_finding("analog_year_placeholder_high", "WARNING",
+                                     f"{RULE} §6 — 약평위 날짜 자리표시(YYYY-01-01) 노출 행 기준 {ANALOG_MAX_PLACEHOLDER} 초과", ph,
+                                     "정확한 심의일 추출(header_extract.extract_session_dates) 회귀 확인"))
+
+
+CHECKS = (_competitor, _indications, _foreign_prices, _checklist, _analog)
 
 
 def check_data_contracts(db_path: Path | str, *, write_deviation: bool = True) -> list[dict]:

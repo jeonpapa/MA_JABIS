@@ -51,3 +51,19 @@
   파싱 결과가 비면 거부(ValueError) — 빈 xlsx 로 정본이 통째 삭제되지 않게.
 - 키워드 클라우드: 쓰기 시 `keyword_cloud_filter` 적용 + 일자 캐시(`gov_summary_{날짜}.json`)도 읽을 때 필터(배포 당일 구 캐시 노출 방지).
   기관별 클라우드 캐시는 `_v2_` 키(필터 이후 버전).
+
+
+## §6 `analog_reports` (등재 아날로그) — 보강 원천과 완성도
+
+- **원천 구분**: `mfds_effect_text` = 식약처 허가 효능(API), `report_effect_text` = 약평위 보고서 1페이지 '▢ 효능·효과' 원문. 섞지 않는다.
+  질환 분류(`enrich_disease`)는 `COALESCE(mfds_effect_text, report_effect_text)` 를 읽는다.
+- **빈 칸은 빈 칸**: 원문이 비어 있으면(2007~2009 공개 제외 등) None. 틀린 값을 넣느니 비운다 — `header_extract` 는 값 검증 게이트
+  (`_CLEAN_STRENGTH`·`_CLEAN_INN`·`_is_company`·`_not_an_ingredient`)를 통과한 값만 돌려준다.
+- **식약처 허가일 = 같은 제품군의 최초 허가일**(`permit_first.earliest_permit`). '첫 정상 품목' 금지(함량별 재허가·취하로 수년 늦어짐).
+  API 오류는 '미확인' 이 아니라 재시도 대상이다.
+- **최초 등재일은 brand 매칭만 자동 적용**. 성분(ingredient) 매칭은 신뢰도가 낮아 사람 검토 후에만. 등재일 < 허가일이면 매칭 오류로 버린다.
+- **신규 반영 경로**: `agents/analog/drec_sync.py` — HIRA 게시판 번호 순차 탐색 → 평가결과 PDF → 파싱 → 신규 행만 보강. 기본 dry-run.
+  접속 실패를 '게시물 없음' 으로 세지 않는다(cursor 는 첫 실패 직전).
+- **운영 DB 변경은 compare-and-set 패치**(기록된 이전 값과 같을 때만 쓴다) + 볼륨 스냅샷. `apply_analog_sync` 통째 교체는 운영에서 따로
+  바뀐 값을 지우므로, 원본과 운영이 같은지 먼저 대조한 뒤에만 쓴다.
+- 검사: QG `analog_*` 5종(성분명 오염·효능문구 오염 ERROR / 스캔 오판·노출 행 빈칸 비율·일자 미상 WARNING). 테스트 `tests/test_analog_*.py`.
