@@ -72,3 +72,28 @@ def test_explicit_blts_mode_fetches_only_given_posts_and_keeps_cursor(tmp_path, 
     res = drec_sync.run(apply=False, get=get, db_path=p, incoming=tmp_path / "in", blts=[47089, 46979])
     assert seen == [47089, 46979] and res["posts_found"] == 1 and res["cursor_before"] == res["cursor_after"] == 47104
     assert res["preview"][0]["blt"] == 47089
+
+
+def test_same_product_twice_in_one_batch_creates_one_row_and_second_is_absorbed(tmp_path, monkeypatch):
+    """한 번에 같은 제품·약평위 게시물이 둘 들어와도(코센틱스 46665·46666) 행은 하나."""
+    import sqlite3 as sq
+    from agents.analog import store
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "t.db")
+    monkeypatch.setattr(drec_sync, "DB_PATH", tmp_path / "t.db")
+    store.ensure_schema()
+    with sq.connect(store.DB_PATH) as c:
+        c.execute("CREATE TABLE IF NOT EXISTS yakpyungwi_meta (blt_no TEXT, product_name TEXT, company TEXT, result_raw TEXT, result_norm TEXT, post_url TEXT, norm_brand TEXT, ingredient_kr TEXT, created_at TEXT)")
+    reps = {47001: "평가결과_코센틱스A.pdf", 47002: "평가결과_코센틱스B.pdf"}
+
+    def build(post, path):
+        return {"file_name": reps[post.blt], "file_hash": f"h{post.blt}", "brand_name": "코센틱스프리필드시린지", "brand_name_raw": "코센틱스프리필드시린지",
+                "session_date": "2017-06-08", "review_result": "APPROVED", "pdf_extractable": True, "_post": {"url": post.url, "blt": post.blt, "title": "", "post_date": None, "report_effect_text": None}}
+    monkeypatch.setattr(drec_sync, "build_report", build)
+    monkeypatch.setattr(drec_sync, "_post_ingest", lambda reports, db: {"rows": len(reports)})
+    html = POST_HTML.replace("47098", "47001")
+    get = lambda url: b"%PDF-1.4" if "bbsCDownLoad" in url else (POST_HTML if "47001" not in url and "47002" not in url else POST_HTML).encode()
+    res = drec_sync.run(apply=True, get=get, db_path=store.DB_PATH, incoming=tmp_path / "in", embed=False, blts=[47001, 47002])
+    with sq.connect(store.DB_PATH) as c:
+        n = c.execute("SELECT COUNT(*) FROM analog_reports WHERE brand_name='코센틱스프리필드시린지'").fetchone()[0]
+        alias = c.execute("SELECT COUNT(*) FROM analog_file_alias").fetchone()[0]
+    assert n == 1 and alias == 1 and len(res["absorbed_duplicates"]) == 1

@@ -20,7 +20,8 @@ from pathlib import Path
 from typing import Callable
 
 from agents.analog import drec_collector as col
-from agents.analog.header_extract import clean_company, extract_effect_text, extract_header_fields, korean_ingredient_from_name
+from agents.analog.header_extract import (clean_company, extract_effect_text, extract_header_fields, extract_session_dates,
+                                          korean_ingredient_from_name)
 from agents.analog.store import BASE_DIR, DB_PATH, ensure_schema, ingest_corpus
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,12 @@ def _page1(path: Path) -> str:
     return pages[0] if pages else ""
 
 
+def _head_pages(path: Path, n: int = 2) -> str:
+    """심의일은 상품이 여러 개인 보고서에서 1페이지를 넘겨 2페이지에 나오기도 한다(보카브리아·레캄비스)."""
+    from agents.analog.pdf_parser import _extract_pages
+    return "\n".join((_extract_pages(path) or [])[:n])
+
+
 def build_report(post: col.Post, pdf_path: Path) -> dict:
     """PDF → ingest 용 report dict. 파서 결과에 헤더 보강을 얹는다(빈 칸만)."""
     from agents.analog.pdf_parser import parse_drec_pdf
@@ -67,8 +74,9 @@ def build_report(post: col.Post, pdf_path: Path) -> dict:
     if not rep.get("generic_name"):
         rep["generic_name"] = korean_ingredient_from_name(rep.get("brand_name_raw"), pdf_path.name)
     sd = rep.get("session_date") or ""
-    if (not sd or sd.endswith("-01-01")) and hdr["session_dates"]:
-        rep["session_date"] = hdr["session_dates"][-1]["date"]       # 헤더의 정확한 심의일(여러 개면 가장 마지막 회차)
+    dates = hdr["session_dates"] or extract_session_dates(_head_pages(pdf_path))
+    if (not sd or sd.endswith("-01-01")) and dates:
+        rep["session_date"] = dates[-1]["date"]       # 헤더의 정확한 심의일(여러 개면 가장 마지막 회차)
     rep["_post"] = {"blt": post.blt, "url": post.url, "title": post.title, "post_date": post.post_date,
                     "report_effect_text": extract_effect_text(page1)}
     return rep
@@ -120,7 +128,7 @@ def run(*, apply: bool = False, get: Callable[[str], bytes] = col.http_get, limi
     ensure_schema()
     from agents.analog import dedupe
     from agents.analog.store import _INSERT_COLS
-    fresh, absorbed = [], []
+    fresh, absorbed, batch_dups, seen = [], [], [], set()
     conn = sqlite3.connect(str(db_path))
     try:
         for r in reports:
@@ -131,7 +139,14 @@ def run(*, apply: bool = False, get: Callable[[str], bytes] = col.http_get, limi
                     filled = dedupe.absorb_report(conn, existing, r, _INSERT_COLS)
                 absorbed.append({"file": r["file_name"][:60], "into": existing, "filled": filled})
             else:
-                fresh.append(r)
+                key = (dedupe.product_key(r.get("brand_name")), r.get("session_date"))
+                if key[0] and key[1] and key in seen:
+                    batch_dups.append(r)          # 같은 배치의 같은 제품·약평위 — 첫 건이 들어간 뒤 흡수
+                elif r["file_name"] in {x["file_name"] for x in fresh}:
+                    continue
+                else:
+                    seen.add(key)
+                    fresh.append(r)
     finally:
         conn.close()
     out["absorbed_duplicates"] = absorbed
@@ -140,6 +155,16 @@ def run(*, apply: bool = False, get: Callable[[str], bytes] = col.http_get, limi
                    "reports": [{k: v for k, v in r.items() if k != "_post"} for r in fresh]}
         out["ingest"] = ingest_corpus(payload, embed=embed)
         out["enrich"] = _post_ingest(fresh, db_path)
+    if batch_dups:
+        conn = sqlite3.connect(str(db_path))
+        try:
+            for r in batch_dups:
+                cid = dedupe.find_existing(conn, r)
+                if cid:
+                    with conn:
+                        absorbed.append({"file": r["file_name"][:60], "into": cid, "filled": dedupe.absorb_report(conn, cid, r, _INSERT_COLS)})
+        finally:
+            conn.close()
     return out
 
 
