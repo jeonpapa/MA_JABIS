@@ -126,3 +126,22 @@ def test_guard_flags_conditional_price_stored_as_rejected_and_duplicates(db):
         c.execute("UPDATE analog_reports SET review_result='CONDITIONAL_PRICE' WHERE id=4")
     f2 = {x["check"] for x in check_data_contracts(db, write_deviation=False)}
     assert "analog_duplicate_rows" not in f2 and "analog_conditional_price_as_rejected" not in f2
+
+
+def test_prefix_key_merges_company_suffix_and_broken_names_and_fixes_the_surviving_name(tmp_path, monkeypatch):
+    """회귀(2026-10-20): '루타테라주 옥소도트레오타이드)_-1병'(깨진 표기)과 '루타테라주', '오테밀라정'과 '오테밀라정동구바이오제약'이 별도 행으로 남았다."""
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "p.db")
+    store.ensure_schema()
+    rows = [("a.pdf", "루타테라주 옥소도트레오타이드)_-1병", "2021-11-11", 7), ("평가결과_b.pdf", "루타테라주", "2021-11-11", None),
+            ("c.pdf", "오테밀라정", "2024-10-10", 10), ("평가결과_d.pdf", "오테밀라정동구바이오제약", "2024-10-10", None),
+            ("e.pdf", "듀피젠트", "2024-10-10", 10)]                  # 접두(3자)라 합치지 않는다
+    with sqlite3.connect(store.DB_PATH) as c:
+        for i, (f, b, sd, o) in enumerate(rows, 1):
+            c.execute("INSERT INTO analog_reports (file_name, file_hash, brand_name, brand_name_raw, session_date, ordinal, review_result, pdf_extractable) "
+                      "VALUES (?,?,?,?,?,?, 'APPROVED', 1)", (f, f"h{i}", b, b, sd, o))
+        pl = dedupe.plan(c)
+        assert sorted((m["keep"], m["drop"]) for m in pl["merges"]) == [(1, 2), (3, 4)]
+        dedupe.apply_plan(c, pl)
+        names = [r[0] for r in c.execute("SELECT brand_name FROM analog_reports ORDER BY id")]
+    assert "루타테라주" in names and "오테밀라정" in names and len(names) == 3 and "루타테라주 옥소도트레오타이드)_-1병" not in names
+    assert dedupe.keys_match("루타테라주옥소도트레오타이드", "루타테라주") and not dedupe.keys_match("듀피젠트", "듀피")

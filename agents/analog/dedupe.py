@@ -43,10 +43,20 @@ def product_key(name: str | None) -> str:
     """같은 제품 판정용 키: 함량 꼬리·'등 N품목…'·공백·구두점 제거. '(성분)' 괄호 꼬리도 제거."""
     s = clean_brand(name)
     s = _RE_ETC.sub("", s)
-    s = re.sub(r"\(.*$", "", s)                  # '(성분…' 이후
+    s = re.sub(r"[()_\[].*$", "", s)             # '(성분…'·'_-1병'·'[성분' 이후 — 깨진 표기('루타테라주 옥소도트레오타이드)_-1병')도 흡수
     s = re.sub(r"[\s\-_·.,\[\]]+", "", s)
     s = re.sub(r"\d.*$", "", s)                   # 남은 숫자 이후(8,16밀리그램 등)
     return s.lower()
+
+
+def keys_match(k1: str, k2: str) -> bool:
+    """같은 제품 키: 같거나, 한쪽이 다른 쪽의 접두(4자 이상)면 — 깨진 표기('루타테라주 옥소도트레오타이드)_-1병')도 같은 제품으로 본다."""
+    if not k1 or not k2:
+        return False
+    if k1 == k2:
+        return True
+    short, long_ = (k1, k2) if len(k1) <= len(k2) else (k2, k1)
+    return len(short) >= 4 and long_.startswith(short)
 
 
 def _same_session(a, b) -> bool:
@@ -95,18 +105,25 @@ def plan(conn: sqlite3.Connection) -> dict:
         if k:
             groups[k].append(r)
     merges, drop_ids = [], set()
-    for k, rs in groups.items():
+    by_session: dict = defaultdict(list)
+    for r in rows:
+        if r["session_date"] and product_key(r["brand_name"]):
+            by_session[r["session_date"]].append(r)
+    for sd, rs in by_session.items():
         for i, a in enumerate(rs):
             if a["id"] in drop_ids:
                 continue
+            ka = product_key(a["brand_name"])
             for b in rs[i + 1:]:
-                if b["id"] in drop_ids or not _same_session(a, b) or not _dosage_compatible(a, b):
+                if b["id"] in drop_ids or not keys_match(ka, product_key(b["brand_name"])):
+                    continue
+                if not _same_session(a, b) or not _dosage_compatible(a, b):
                     continue
                 keep, drop = (b, a) if (_is_addon(a) and not _is_addon(b)) else (a, b)
                 fills = {c: drop[c] for c in drop.keys()
                          if c not in SKIP_COLS and (keep[c] is None or (isinstance(keep[c], str) and not keep[c].strip()))
                          and drop[c] is not None and not (isinstance(drop[c], str) and not drop[c].strip())}
-                merges.append({"key": k, "keep": keep["id"], "drop": drop["id"], "keep_file": keep["file_name"],
+                merges.append({"key": ka, "keep": keep["id"], "drop": drop["id"], "keep_file": keep["file_name"],
                                "drop_file": drop["file_name"], "drop_hash": drop["file_hash"], "keep_brand": keep["brand_name"],
                                "drop_brand": drop["brand_name"], "session": keep["session_date"], "fills": fills})
                 drop_ids.add(drop["id"])
@@ -129,6 +146,12 @@ def plan(conn: sqlite3.Connection) -> dict:
                 continue
             if r["brand_name"] != target:
                 renames.append({"id": r["id"], "old": r["brand_name"], "new": target})
+    # 병합 후 남는 행의 이름이 흡수되는 행보다 길고 그 접두를 포함하면(깨진 표기) 깔끔한 쪽 이름으로 교정
+    have = {rn["id"] for rn in renames}
+    for m in merges:
+        kb, db = clean_brand(m["keep_brand"]), clean_brand(m["drop_brand"])
+        if m["keep"] not in have and kb != db and len(db) < len(kb) and product_key(kb).startswith(product_key(db)) and product_key(kb) != product_key(db):
+            renames.append({"id": m["keep"], "old": m["keep_brand"], "new": db})
     return {"merges": merges, "renames": renames}
 
 
@@ -170,7 +193,7 @@ def find_existing(conn: sqlite3.Connection, report: dict):
         return None
     probe = {"session_date": report["session_date"], "ordinal": report.get("ordinal")}
     for r in conn.execute("SELECT id, brand_name, session_date, ordinal FROM analog_reports WHERE session_date=?", (report["session_date"],)):
-        if product_key(r["brand_name"]) == key and _same_session(probe, r):
+        if keys_match(product_key(r["brand_name"]), key) and _same_session(probe, r):
             return r["id"]
     return None
 
