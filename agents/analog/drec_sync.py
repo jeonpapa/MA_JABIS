@@ -75,9 +75,22 @@ def build_report(post: col.Post, pdf_path: Path) -> dict:
 
 
 def run(*, apply: bool = False, get: Callable[[str], bytes] = col.http_get, limit: int | None = None,
-        embed: bool = True, db_path: Path = DB_PATH, incoming: Path = INCOMING_DIR) -> dict:
+        embed: bool = True, db_path: Path = DB_PATH, incoming: Path = INCOMING_DIR, blts: list[int] | None = None) -> dict:
+    """blts 를 주면 발견 모드 대신 그 게시물 번호만 처리한다(과거 누락분 보충). 기존 행과 같은 제품·약평위는 흡수된다."""
     cursor = known_cursor(db_path)
-    posts, new_cursor, failed = col.discover(cursor, get=get)
+    if blts:
+        posts, failed = [], []
+        for b in blts:
+            try:
+                p = col.fetch_post(b, get=get)
+            except Exception:
+                failed.append(b)
+                continue
+            if p:
+                posts.append(p)
+        new_cursor = cursor            # 보충 모드는 cursor 를 움직이지 않는다
+    else:
+        posts, new_cursor, failed = col.discover(cursor, get=get)
     if limit:
         posts = posts[:limit]
     out: dict = {"mode": "apply" if apply else "dry-run", "cursor_before": cursor, "cursor_after": new_cursor,
@@ -200,5 +213,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--blts", default=None, help="게시물 번호 JSON 배열 파일(과거 누락분 보충)")
     a = ap.parse_args()
-    print(json.dumps(run(apply=a.apply, limit=a.limit), ensure_ascii=False, indent=1, default=str))
+    blts = json.loads(Path(a.blts).read_text()) if a.blts else None
+    print(json.dumps(run(apply=a.apply, limit=a.limit, blts=blts), ensure_ascii=False, indent=1, default=str))

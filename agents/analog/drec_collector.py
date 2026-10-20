@@ -118,6 +118,11 @@ def discover(cursor: int, *, get: Callable[[str], bytes] = http_get, max_gap: in
     return posts, new_cursor, failed
 
 
+def fetch_post(blt: int, *, get: Callable[[str], bytes] = http_get) -> Optional[Post]:
+    """게시물 번호 하나를 직접 조회(발견 모드가 아닌 지정 보충용). 첨부가 없으면 None."""
+    return parse_post(get(BOARD_URL.format(blt=blt)).decode("utf-8", "replace"), blt)
+
+
 def download(att: Attachment, *, get: Callable[[str], bytes] = http_get) -> bytes:
     data = get(att.url)
     if not data.startswith(b"%PDF"):

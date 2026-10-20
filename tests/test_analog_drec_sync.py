@@ -55,3 +55,20 @@ def test_parse_failure_is_recorded_not_raised(tmp_path, monkeypatch):
     monkeypatch.setattr(drec_sync, "build_report", boom)
     res = drec_sync.run(apply=False, get=_get_factory({47095: POST_HTML}), db_path=p, incoming=tmp_path / "in")
     assert res["posts_found"] == 1 and res["preview"] == [] and res["errors"][0]["blt"] == 47095
+
+
+def test_explicit_blts_mode_fetches_only_given_posts_and_keeps_cursor(tmp_path, monkeypatch):
+    """과거 누락분 보충: 지정한 번호만 조회하고 발견 모드 cursor 는 건드리지 않는다."""
+    p = _db(tmp_path, post_blt=47104, meta_blt=47104)
+    monkeypatch.setattr(drec_sync, "build_report", lambda post, path: {"brand_name": "타이바소흡입액", "session_date": "2026-06-04",
+                                                                      "review_result": "CONDITIONAL_PRICE", "_post": {"report_effect_text": None}})
+    seen = []
+
+    def get(url):
+        if "bbsCDownLoad" in url:
+            return b"%PDF-1.4 fake"
+        seen.append(int(url.split("brdBltNo=")[1].split("&")[0]))
+        return POST_HTML.encode() if seen[-1] == 47089 else EMPTY_HTML.encode()
+    res = drec_sync.run(apply=False, get=get, db_path=p, incoming=tmp_path / "in", blts=[47089, 46979])
+    assert seen == [47089, 46979] and res["posts_found"] == 1 and res["cursor_before"] == res["cursor_after"] == 47104
+    assert res["preview"][0]["blt"] == 47089
