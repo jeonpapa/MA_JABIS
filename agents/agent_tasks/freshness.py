@@ -595,7 +595,7 @@ def check_analog_reports(ctx: Ctx) -> Freshness:
     r = _max_ts(ctx, "analog_reports", "SELECT MAX(session_date) FROM analog_reports", ANALOG_MAX_DAYS, None,
                 "analog_reports MAX(session_date)", 3)
     return Freshness(r.domain, r.stale, r.observed, r.deadline,
-                     r.evidence + " — 주간 잡 drec_analog_sync(월 04:30, HIRA 게시판 자동 수집) 실행 기록 확인 — 잡이 정상인데 stale 이면 HIRA 게시가 없었던 것", None, 3,
+                     r.evidence + " — 담당: 사람(확인) — 주간 잡 drec_analog_sync(월 04:30, HIRA 게시판 자동 수집) 실행 기록 확인, 잡이 정상인데 stale 이면 HIRA 게시가 없었던 것", None, 3,
                      kind="improvement")
 
 
