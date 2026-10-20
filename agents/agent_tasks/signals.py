@@ -53,6 +53,7 @@ JOB_RUNBOOK: dict[str, str | None] = {
     "daily_mailing_top_news": "daily_mailing_top_news",
     "daily_mailing_health": None,
     "nhis_negotiation_sync": "nhis_negotiation_sync",
+    "drec_analog_sync": None,   # 실패 = HIRA 게시판 구조 변경·PDF 형식 변화 등 판단 필요 → Hermes(사람). 일시 접속 실패는 다음 주 자동 재시도
     "home_brand_related_refresh": None,
     "domain_freshness": None,                 # 판정기 자체의 실패용. stale 도메인 과제는 freshness.py 가 도메인별 런북 힌트로 만든다
     "scheduler_heartbeat": None,     # T4: /api/health 가 stale 을 보면 같은 source_ref 로 기록(하루 1건) — 사람 확인

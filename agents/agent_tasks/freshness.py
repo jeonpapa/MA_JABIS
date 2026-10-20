@@ -595,7 +595,7 @@ def check_analog_reports(ctx: Ctx) -> Freshness:
     r = _max_ts(ctx, "analog_reports", "SELECT MAX(session_date) FROM analog_reports", ANALOG_MAX_DAYS, None,
                 "analog_reports MAX(session_date)", 3)
     return Freshness(r.domain, r.stale, r.observed, r.deadline,
-                     r.evidence + " — 담당: 사람 — 약평위 결과 PDF 는 Mac 에서 apply_analog_sync 로 수동 반영", None, 3,
+                     r.evidence + " — 주간 잡 drec_analog_sync(월 04:30, HIRA 게시판 자동 수집) 실행 기록 확인 — 잡이 정상인데 stale 이면 HIRA 게시가 없었던 것", None, 3,
                      kind="improvement")
 
 
@@ -906,7 +906,7 @@ HERMES_ACTIONS: dict[str, str] = {
     "committee_reports": "D+1 결과 리뷰 PDF + reports_manifest.json 발행 필요 (창 안 최신 보고서 {observed})",
     "pipeline_expected_sessions": "committee_results.json expected_next_session 갱신 필요 (최초 경과 차수 {observed})",
     "committee_schedule": "다음 약평위·암질심 차수 일정 확보 → admin 입력 요청 (마지막 SCHEDULED {observed}, HIRA fetcher 미구현)",
-    "analog_reports": "약평위 결과 PDF 아날로그 반영 요청 (마지막 {observed}) — admin(Mac apply_analog_sync)",
+    "analog_reports": "약평위 결과 아날로그 반영 확인 (마지막 {observed}) — 주간 잡 drec_analog_sync 결과·HIRA 게시 여부 확인",
     "market_share": "마켓셰어 분기 엑셀 업로드 요청 (마지막 {observed}) — admin /admin/market-share",
     "reimbursement_checklist_coverage": "Keytruda 급여 체크리스트 입력 요청 (마지막 편집 {observed}) — admin /admin/reimbursement",
     "reimbursement_checklist_mfds_gap": "급여 체크리스트 입력 필요 — MFDS 허가 Keytruda 적응증 누락·고아 ({observed}) — admin /admin/reimbursement",

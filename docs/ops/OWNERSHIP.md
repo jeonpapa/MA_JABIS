@@ -65,6 +65,7 @@ Aside 와 Hermes 가 같은 과제를 집지 않는다.
 | 동향 승격 `competitor_trend_promote` | 매일 07:00 | 뉴스 아카이브 | 경쟁사 동향 카드 | `competitor_trends` | 런북 `competitor_trend_promote` | — |
 | Access Insight `access_insight_fresh_signals` | 월 04:00 | 공개 매체 | 신호 | `access_insight_signals` | 런북(분리) | — |
 | NHIS 협상 `nhis_negotiation_sync` | 월 02:30 | NHIS 공개자료 | 파이프라인 보드 | `nhis_negotiations` | 런북 `nhis_negotiation_sync` | — |
+| 약평위 아날로그 `drec_analog_sync` | 월 04:30 | HIRA 약평위 공개 게시판(평가결과 PDF) | 등재 아날로그 | `analog_reports`·`yakpyungwi_meta`·`data/drec_incoming/` | 런북 없음(다음 주 자동 재시도, 반복 실패는 Hermes) | `OPENAI_API_KEY`·`MFDS_PATENT_API_KEY`(보강) |
 | 위원회 sync `reimb_data_sync` | 매일 02:00 + 부팅 | git raw: AccessRoutineAnalystic `agents/ingest/committee_results.json`·`reports_manifest.json` | 위원회 보드·보고서 | 잡 + `committee_*` | 잡 실패면 런북 `reimb_data_sync`, 소스 미갱신이면 **Hermes** | `REIMB_DATA_URL`, `REIMB_DATA_TOKEN`, `REPORTS_DATA_URL` |
 | 정책 사이드카 `policy_intel_analysis_sync` | 매일 02:10 + 부팅 | AccessRoutineAnalystic `policy_intelligence/analysis/` | Policy Intelligence | `policy_intelligence`(analysis) | 런북 `policy_intel_analysis_sync` | `POLICY_ANALYSIS_URL`, `POLICY_ANALYSIS_TOKEN` |
 | Stakeholder sync `stakeholder_data_sync` | 02:20·08:20 | kr-drug-pricing-nhi-finance-intelligence `main` | Stakeholder Signals·감사 | 잡 + `stakeholder_*` | transient 런북 / `:config` 는 Hermes→사람 | `STAKEHOLDER_SYNC_REPO`, `STAKEHOLDER_SYNC_TOKEN` |

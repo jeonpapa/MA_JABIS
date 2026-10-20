@@ -751,6 +751,31 @@ def nhis_negotiation_sync_job():
             "errors": errors}
 
 
+@guarded_job("drec_analog_sync")
+def drec_analog_sync_job():
+    """매주 월요일 04:30 Seoul — HIRA 약제급여평가위원회 공개 게시판 신규 평가결과 → 등재 아날로그 반영.
+
+    agents.analog.drec_sync.run(apply=True): 마지막으로 아는 게시물 번호 다음부터 순차 탐색 → 평가결과 PDF 다운로드
+    (data/drec_incoming 보관) → 파싱·헤더 보강 → analog_reports UPSERT·임베딩 → 게시물 링크·메타 → 신규 행 식약처 최초
+    허가일·최초 등재일(brand 매칭)·질환·효과지표·태그(미보강 행 증분). 공개 사이트·자격증명 불필요.
+    접속 실패·파싱 실패는 '게시물 없음' 이 아니다 → errors 로 올려 원장 과제가 된다(cursor 는 첫 실패 직전에 머문다).
+    """
+    logger.info("━━━ 약평위 평가결과 → 등재 아날로그 주간 반영 시작 ━━━")
+    from agents.analog import drec_sync
+    res = drec_sync.run(apply=True)
+    ing = res.get("ingest") or {}
+    logger.info("약평위 반영: cursor %s→%s · 신규 게시물 %d · 적재 %s · 오류 %d · 접속실패 %s",
+                res["cursor_before"], res["cursor_after"], res["posts_found"], ing.get("inserted", 0),
+                len(res["errors"]), res["failed_fetch"])
+    errors = [f"게시물 {e['blt']} 처리 실패: {e['error']}" for e in res["errors"]]
+    if res["failed_fetch"]:
+        errors.append(f"HIRA 게시물 접속 실패 {res['failed_fetch'][:5]} — 다음 실행에서 재시도")
+    return {"ok": not errors,
+            "counts": {"posts_found": res["posts_found"], "inserted": ing.get("inserted", 0),
+                       "cursor": res["cursor_after"], "no_result_pdf": len(res["no_result_pdf"])},
+            "errors": errors}
+
+
 @guarded_job("home_brand_related_refresh")
 def home_brand_related_refresh_job():
     """매주 월요일 05:00 Seoul — Home 브랜드 목록(home_brand) 활성 브랜드마다 Naver
@@ -1050,6 +1075,8 @@ def build_job_specs(sched_cfg: dict) -> list[JobSpec]:
         JobSpec("daily_mailing_health", "Daily Mailing 헬스체크 매일 09:30", daily_mailing_health_job, _cron(hour=9, minute=30)),
         JobSpec("nhis_negotiation_sync", "NHIS 약가협상 공개자료 주간 sync (신규/확대 → 매칭 교체)", nhis_negotiation_sync_job,
                 _cron(day_of_week="mon", hour=2, minute=30), misfire_grace_time=PERIODIC_GRACE),
+        JobSpec("drec_analog_sync", "약평위 평가결과 → 등재 아날로그 주간 반영 (월 04:30, HIRA 공개 게시판)",
+                drec_analog_sync_job, _cron(day_of_week="mon", hour=4, minute=30), misfire_grace_time=PERIODIC_GRACE),
         JobSpec("home_brand_related_refresh", "Home 브랜드 Naver 연관검색어 확장 (주간, 후보 제안 → admin 승인 대기)",
                 home_brand_related_refresh_job, _cron(day_of_week="mon", hour=5, minute=0),
                 misfire_grace_time=PERIODIC_GRACE),
