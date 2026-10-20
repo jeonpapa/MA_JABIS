@@ -53,6 +53,11 @@ _RE_PE_WAIVER = re.compile(r'경제성평가\s*자료?\s*제출\s*생략')
 _RE_POSTMARKET_COND = re.compile(r'\(사후관리\s*조건부\)\s*급여의\s*적정성이\s*있음')
 _RE_POSTMARKET_KW = re.compile(r'사후관리\s*조건부|사후관리\s*계획|사후관리\s*조건')
 _RE_APPROVED = re.compile(r'급여의\s*적정성이\s*있음')
+# 심의 판정 '비급여하되 평가금액(대체약제 가중평균가 환산금액) 이하를 수용할 경우 급여의 적정성이 있음' — 제약사 수용 여부와 무관하게
+# 약평위의 판정이 같다. 심의 시점의 조건 문구가 없고 '제약사가 … 수용하였으므로 급여의 적정성이 있음' 만 있는 문서는 수용 후 확정 결과(APPROVED)다.
+_RE_COND_PRICE = re.compile(
+    r'수용\s*(?:할\s*경우|시|하는\s*경우|하면)[^.]{0,40}?급여\s*(?:의\s*)?적정성\s*(?:이\s*)?있'
+    r'|조건부\s*비급여')
 _RE_REJECTED = re.compile(r'급여의\s*적정성이\s*없음')
 _RE_COND_APPROVED = re.compile(r'(?:조건\s*부|조건부)\s*급여의\s*적정성이\s*있음')
 # 구형(2007-2019) 결정 마커: "▢ 비급여" / "○ 비급여" 헤더, "...비급여함." 결정동사
@@ -364,6 +369,8 @@ def _extract_review_result(ga_text: str, full_text: str) -> str:
         return "APPROVED_WITH_POSTMARKET"
     if _RE_COND_APPROVED.search(src):
         return "CONDITIONAL_APPROVED"
+    if _RE_COND_PRICE.search(src):
+        return "CONDITIONAL_PRICE"
     if _RE_APPROVED.search(src):
         return "APPROVED"
     if _RE_REJECTED.search(src):

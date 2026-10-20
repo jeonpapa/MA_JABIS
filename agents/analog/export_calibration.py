@@ -149,7 +149,7 @@ def label_of(review_result: str | None) -> str | None:
         return "통과"
     if review_result == "REJECTED":
         return "미통과"
-    return None  # UNKNOWN → 제외
+    return None  # UNKNOWN·CONDITIONAL_PRICE(수용 여부에 따라 통과/미통과 갈림) → 제외
 
 
 # ─────────────────────────── 순서형 파생 (yakpyeong) ───────────────────────────

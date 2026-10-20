@@ -32,7 +32,7 @@ from agents.analog.store import _connect, ensure_schema
 logger = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).resolve().parents[2]
 
-_PASS_STATES = {"APPROVED", "CONDITIONAL_APPROVED", "APPROVED_WITH_POSTMARKET"}
+_PASS_STATES = {"APPROVED", "CONDITIONAL_APPROVED", "APPROVED_WITH_POSTMARKET", "CONDITIONAL_PRICE"}
 _GAP_TYPES = {"축소", "확대", "구체화", "동일", "비교불가"}
 
 
@@ -785,7 +785,7 @@ def enrich_committee(limit: int = None) -> dict:
                 if isinstance(tags, list) and "비용효과 불인정" in tags:
                     approved = (r["review_result"] or "").startswith("APPROVED") \
                         or r["review_result"] in ("CONDITIONAL_APPROVED",
-                                                  "APPROVED_WITH_POSTMARKET")
+                                                  "APPROVED_WITH_POSTMARKET", "CONDITIONAL_PRICE")
                     if approved and ce_evidence:
                         tags = [t for t in tags if t != "비용효과 불인정"]
                         if "비용효과 입증" not in tags:

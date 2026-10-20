@@ -19,6 +19,8 @@
   - analog_scan_misjudged             : pdf_extractable=0(화면 제외) 행이 기준보다 많음(스캔 오판 재발) → WARNING
   - analog_visible_gap_high           : 화면 노출 행의 허가일·질환·용량 빈칸 비율이 기준 초과(보강 파이프라인 회귀) → WARNING
   - analog_year_placeholder_high      : 약평위 날짜가 YYYY-01-01 자리표시인 노출 행이 기준보다 많음 → WARNING
+  - analog_conditional_price_as_rejected : HIRA 게시 결과 '조건부비급여' 또는 원문이 '수용 시 급여 적정'인데 심의결과가 REJECTED → ERROR
+  - analog_duplicate_rows             : 같은 제품·같은 약평위가 두 행으로 존재(표기만 다름) → WARNING
 
 결과는 check 당 1건(건수·표본 id) — record_quality_review 가 내용 키(숫자 제거)로 원장 1행에 모은다(예산 ≤3건/일).
 DB 는 read-only 로 연다. 테이블/컬럼이 없으면 그 항목만 건너뛴다.
@@ -190,6 +192,24 @@ def _analog(conn, findings: list) -> None:
                 findings.append(_finding("analog_visible_gap_high", "WARNING",
                                          f"{RULE} §6 — 노출 {total}건 중 {col} 빈칸 {len(blank) * 100 // total}% > 기준 {int(limit * 100)}%", blank,
                                          f"{col} 보강 파이프라인(drec_sync·backfill) 회귀 — 신규 반영분이 보강되지 않았는지 확인"))
+    if {"result_meta", "review_result"} <= cols:
+        sel = "result_meta = '조건부비급여'" + (" OR review_result_pdf = 'CONDITIONAL_PRICE'" if "review_result_pdf" in cols else "")
+        bad = [r[0] for r in conn.execute(f"SELECT id FROM analog_reports WHERE review_result = 'REJECTED' AND ({sel})")]
+        if bad:
+            findings.append(_finding("analog_conditional_price_as_rejected", "ERROR",
+                                     f"{RULE} §6 — '비급여하되 평가금액 수용 시 급여 적정'은 CONDITIONAL_PRICE (불인정 아님)", bad,
+                                     "yakpyungwi_meta_import.RESULT_NORM·pdf_parser._RE_COND_PRICE 회귀 확인"))
+    if {"brand_name", "session_date", "file_name"} <= cols:
+        try:
+            from agents.analog import dedupe
+            conn.row_factory = None
+            pl = dedupe.plan(conn)
+            if pl["merges"]:
+                findings.append(_finding("analog_duplicate_rows", "WARNING",
+                                         f"{RULE} §6 — 같은 제품·같은 약평위는 한 행(표기만 다른 중복 금지)", [m["drop"] for m in pl["merges"]],
+                                         "scripts/dedupe_analog.py 로 병합 — 신규 수집은 drec_sync 가 흡수해야 함"))
+        except sqlite3.Error:
+            pass
     if "session_date" in cols:
         ph = [r[0] for r in conn.execute(f"SELECT id FROM analog_reports WHERE {vis} AND session_date LIKE '%-01-01'")]
         if len(ph) > ANALOG_MAX_PLACEHOLDER:

@@ -105,10 +105,28 @@ def run(*, apply: bool = False, get: Callable[[str], bytes] = col.http_get, limi
     if not apply or not reports:
         return out
     ensure_schema()
-    payload = {"schema_version": 2, "source": "HIRA 게시판 자동 수집",
-               "reports": [{k: v for k, v in r.items() if k != "_post"} for r in reports]}
-    out["ingest"] = ingest_corpus(payload, embed=embed)
-    out["enrich"] = _post_ingest(reports, db_path)
+    from agents.analog import dedupe
+    from agents.analog.store import _INSERT_COLS
+    fresh, absorbed = [], []
+    conn = sqlite3.connect(str(db_path))
+    try:
+        for r in reports:
+            exists = conn.execute("SELECT id FROM analog_reports WHERE file_name=?", (r["file_name"],)).fetchone()
+            existing = None if exists else dedupe.find_existing(conn, r)
+            if existing:                  # 같은 제품·같은 약평위 — 새 행을 만들지 않고 흡수(씨트렐린 같은 중복 방지)
+                with conn:
+                    filled = dedupe.absorb_report(conn, existing, r, _INSERT_COLS)
+                absorbed.append({"file": r["file_name"][:60], "into": existing, "filled": filled})
+            else:
+                fresh.append(r)
+    finally:
+        conn.close()
+    out["absorbed_duplicates"] = absorbed
+    if fresh:
+        payload = {"schema_version": 2, "source": "HIRA 게시판 자동 수집",
+                   "reports": [{k: v for k, v in r.items() if k != "_post"} for r in fresh]}
+        out["ingest"] = ingest_corpus(payload, embed=embed)
+        out["enrich"] = _post_ingest(fresh, db_path)
     return out
 
 

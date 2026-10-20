@@ -24,6 +24,7 @@ const RESULT_COLOR: Record<string, string> = {
   APPROVED: 'text-emerald-600 bg-emerald-50',
   CONDITIONAL_APPROVED: 'text-amber-600 bg-amber-50',
   APPROVED_WITH_POSTMARKET: 'text-blue-600 bg-blue-50',
+  CONDITIONAL_PRICE: 'text-violet-600 bg-violet-50',
   REJECTED: 'text-red-500 bg-red-50',
   UNKNOWN: 'text-gray-400 bg-gray-50',
 };

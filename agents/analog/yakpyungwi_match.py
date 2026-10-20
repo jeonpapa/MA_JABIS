@@ -93,6 +93,9 @@ def run() -> dict:
         old = rep["review_result"]
         new = hit["result_norm"]
         result_source = "pdf"
+        if old == "CONDITIONAL_PRICE" and new in ("APPROVED", "REJECTED", "CONDITIONAL_PRICE"):
+            # 심의 판정은 '평가금액 수용 시 급여 적정'. 메타의 급여/비급여는 수용 여부 반영 → 심의결과는 유지하고 메타는 result_meta 로만 보존
+            new = old
         if new and new != "UNKNOWN":
             if not old or old == "UNKNOWN":
                 filled += 1; result_source = "meta"

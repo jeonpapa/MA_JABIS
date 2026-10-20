@@ -186,6 +186,7 @@ export const REVIEW_RESULT_KO: Record<string, string> = {
   APPROVED: '급여 적정',
   CONDITIONAL_APPROVED: '조건부 급여',
   APPROVED_WITH_POSTMARKET: '사후관리 조건부 급여',
+  CONDITIONAL_PRICE: '조건부 급여(평가금액 수용 시)',
   REJECTED: '급여 불인정',
   UNKNOWN: '미확인',
 };

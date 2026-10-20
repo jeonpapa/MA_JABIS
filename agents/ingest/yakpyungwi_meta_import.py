@@ -30,7 +30,8 @@ RESULT_NORM = {
     "급여": "APPROVED",
     "조건부급여": "CONDITIONAL_APPROVED",
     "비급여": "REJECTED",
-    "조건부비급여": "REJECTED",
+    # HIRA 게시 결과 '조건부비급여' = 비급여하되 평가금액 이하 수용 시 급여 적정 — 불인정이 아니다(대부분 수용 후 등재: 2025 건 10행 중 9행 등재)
+    "조건부비급여": "CONDITIONAL_PRICE",
 }
 
 _SCHEMA = """

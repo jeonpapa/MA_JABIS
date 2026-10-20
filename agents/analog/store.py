@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS analog_reports (
     -- 결정
     committee                   TEXT,
     session_date                TEXT,
-    review_result               TEXT,    -- APPROVED/REJECTED/CONDITIONAL_APPROVED/APPROVED_WITH_POSTMARKET/UNKNOWN
+    review_result               TEXT,    -- APPROVED/REJECTED/CONDITIONAL_APPROVED/CONDITIONAL_PRICE(비급여하되 평가금액 수용 시 급여 적정)/APPROVED_WITH_POSTMARKET/UNKNOWN
     review_result_ko            TEXT,    -- 한국어 레이블
     reimbursement_track         TEXT,    -- 기존 호환
     reimbursement_track_ko      TEXT,    -- 경제성평가 생략 (PE Waiver) + 위험분담제
@@ -299,6 +299,8 @@ def ensure_schema() -> None:
     with _connect() as conn:
         # 1단계: 테이블 + 보조 캐시 테이블 (FTS 제외)
         conn.executescript(_SCHEMA_TABLE)
+        from agents.analog.dedupe import ALIAS_DDL      # 병합으로 사라진 중복 파일 → 정본 행 별칭
+        conn.execute(ALIAS_DDL)
         # 2단계: 신규 컬럼 마이그레이션 (기존 설치 — FTS 생성 전에 먼저 실행)
         existing_cols = {
             r[1] for r in conn.execute("PRAGMA table_info(analog_reports)").fetchall()
@@ -579,8 +581,12 @@ def ingest_corpus(payload: dict, embed: bool = True) -> dict:
                 "SELECT id, file_name, file_hash, embedding FROM analog_reports"
             )
         }
+        aliased = {a[0] for a in conn.execute("SELECT file_name FROM analog_file_alias")}
         for r in reports:
             fn, fh = r["file_name"], r["file_hash"]
+            if fn in aliased:        # 동일 제품·약평위로 기존 행에 병합된 파일 — 새 행을 만들지 않는다
+                skipped += 1
+                continue
             vals = {}
             for k in _INSERT_COLS:
                 v = r.get(k)
