@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Callable
 
 from agents.analog import drec_collector as col
-from agents.analog.header_extract import extract_effect_text, extract_header_fields, korean_ingredient_from_name
+from agents.analog.header_extract import clean_company, extract_effect_text, extract_header_fields, korean_ingredient_from_name
 from agents.analog.store import BASE_DIR, DB_PATH, ensure_schema, ingest_corpus
 
 logger = logging.getLogger(__name__)
@@ -63,6 +63,7 @@ def build_report(post: col.Post, pdf_path: Path) -> dict:
         rep["generic_name_en"] = hdr["inn_en"]
     if not rep.get("manufacturer") and hdr["manufacturer"]:
         rep["manufacturer"] = hdr["manufacturer"]
+    rep["manufacturer"] = clean_company(rep.get("manufacturer"))
     if not rep.get("generic_name"):
         rep["generic_name"] = korean_ingredient_from_name(rep.get("brand_name_raw"), pdf_path.name)
     sd = rep.get("session_date") or ""

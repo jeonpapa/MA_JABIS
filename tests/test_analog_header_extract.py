@@ -240,3 +240,14 @@ def test_effect_text_rejects_next_section_heading_when_blank():
     from agents.analog.header_extract import extract_effect_text
     assert extract_effect_text("▢ 효능 효과 :\n약제 급여 평가 위원회 심의 일\n2013년 제3차 약제급여평가위원회: 2013년 5월 9일") is None
     assert extract_effect_text("▢ 효능·효과\n- 다발성골수종\n▢ 약제급여평가위원회 심의일") == "다발성골수종"
+
+
+def test_clean_company_fixes_unbalanced_parentheses_and_strength_prefix():
+    """회귀(2026-10-20): '부광약품(주' · '(유)한국비엠에스제약)' · '150/320마이크로그램 (한국노바티스(주)' 가 제조사로 저장됐다."""
+    from agents.analog.header_extract import clean_company
+    assert clean_company("부광약품(주") == "부광약품(주)"
+    assert clean_company("(유)한국비엠에스제약)") == "(유)한국비엠에스제약"
+    assert clean_company("150/320마이크로그램 (한국노바티스(주)") == "한국노바티스(주)"
+    assert clean_company("150(한국노바티스(주)") == "한국노바티스(주)"
+    assert clean_company("(주)한국로슈") == "(주)한국로슈" and clean_company("한국릴리(유)") == "한국릴리(유)"
+    assert clean_company(None) is None

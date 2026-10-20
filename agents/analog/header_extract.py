@@ -108,7 +108,7 @@ def extract_header_fields(text: str) -> dict:
         while company.startswith("(") and company.count("(") > company.count(")"):
             company = company[1:].strip()
         if brand.strip() and _is_company(company):
-            out["brand_in_header"], out["manufacturer"], brand_idx = brand.strip(), company, idx
+            out["brand_in_header"], out["manufacturer"], brand_idx = brand.strip(), clean_company(company), idx
             break
 
     # ① '▢ 제형, 성분․함량' 블록 (다음 ▢ 전까지)
@@ -205,3 +205,23 @@ def extract_effect_text(text: str, max_chars: int = 1200) -> str | None:
             return None      # 원문 단락이 비어 다음 섹션 제목을 잡은 경우
         return body[:max_chars]
     return None
+
+
+_RE_STRENGTH_LEAD = re.compile(r"^\d[\d/.,\s]*(?:mg|g|㎎|㎍|μg|µg|ug|mcg|IU|단위|밀리그램|마이크로그램)?\s*\(\s*(.+)$", re.I)
+
+
+def clean_company(c: str | None) -> str | None:
+    """제조사 문자열 정리: 앞에 붙은 함량 조각('150/320마이크로그램 (한국노바티스(주)')과 짝 안 맞는 괄호('부광약품(주')를 바로잡는다."""
+    if not c:
+        return c
+    c = c.strip()
+    m = _RE_STRENGTH_LEAD.match(c)
+    if m:
+        c = m.group(1).strip()
+    while c.startswith("(") and c.count("(") > c.count(")"):
+        c = c[1:].strip()
+    if c.count("(") > c.count(")"):
+        c += ")" * (c.count("(") - c.count(")"))
+    while c.endswith(")") and c.count(")") > c.count("("):
+        c = c[:-1].strip()
+    return c
