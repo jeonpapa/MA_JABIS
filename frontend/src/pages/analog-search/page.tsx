@@ -1,5 +1,5 @@
-import AiAnalysisPanel from './AiAnalysisPanel';
-import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
+import AiAnalysisPanel, { type AiStatus } from './AiAnalysisPanel';
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import MiniMarkdown from '@/components/ui/MiniMarkdown';
 import {
   fetchAnalogFacets, searchAnalog, fetchAnalogDetail, generateAnalogBrief, submitSearchFeedback,
@@ -612,6 +612,9 @@ export default function AnalogSearchPage() {
   const [selected, setSelected] = useState<AnalogReport | null>(null);
   const [brief, setBrief] = useState<AnalogBrief | null>(null);
   const [briefLoading, setBriefLoading] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiStatus, setAiStatus] = useState<AiStatus>('idle');
+  const closeAi = useCallback(() => setAiOpen(false), []);
   const [showHelp, setShowHelp] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbackSent, setFeedbackSent] = useState(false);
@@ -826,6 +829,14 @@ export default function AnalogSearchPage() {
               </button>
             )}
             {results.length > 0 && (
+              <button onClick={() => setAiOpen(o => !o)} title="현재 검색 결과에 질문하고, 본문에서 근거 문장을 찾아 줍니다"
+                className={`relative flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-lg transition-colors border ${aiOpen ? 'bg-teal-600 border-teal-600 text-white' : 'bg-white border-teal-300 text-teal-700 hover:bg-teal-50'}`}>
+                <i className={aiStatus === 'running' ? 'ri-loader-4-line animate-spin' : 'ri-sparkling-2-line'}></i>
+                {aiStatus === 'running' ? 'AI 분석 중…' : aiStatus === 'done' && !aiOpen ? 'AI 분석 결과 보기' : 'AI 분석'}
+                {aiStatus === 'done' && !aiOpen && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-500"></span>}
+              </button>
+            )}
+            {results.length > 0 && (
               <button onClick={makeBrief} disabled={briefLoading}
                 className="flex items-center gap-1.5 bg-white border border-teal-300 text-teal-700 text-xs font-bold px-4 py-2 rounded-lg hover:bg-teal-50 transition-colors disabled:opacity-60">
                 <i className={briefLoading ? 'ri-loader-4-line animate-spin' : 'ri-lightbulb-flash-line'}></i>
@@ -834,9 +845,6 @@ export default function AnalogSearchPage() {
             )}
           </div>
         </div>
-
-        {/* AI 질문형 분석 — 현재 검색 결과 범위 */}
-        {results.length > 0 && <AiAnalysisPanel reportIds={results.map(r => r.id)} onOpen={openDetail} />}
 
         {/* 브리프 */}
         {brief && (
@@ -951,6 +959,9 @@ export default function AnalogSearchPage() {
           </div>
         </div>
       </div>
+
+      {/* AI 질문형 분석 — 정책 발언처럼 오른쪽에서 열림. 닫아도 상태 유지 */}
+      <AiAnalysisPanel open={aiOpen} onClose={closeAi} reportIds={results.map(r => r.id)} onOpen={openDetail} onStatusChange={setAiStatus} />
 
       {selected && <DetailModal r={selected} onClose={() => setSelected(null)} />}
       {showHelp && <SearchHelpModal onClose={() => setShowHelp(false)} />}

@@ -1,4 +1,6 @@
-// 등재 아날로그 — AI 질문형 분석 패널 (현재 검색 결과 범위)
+// 등재 아날로그 — AI 질문형 분석 (현재 검색 결과 범위) · 오른쪽 슬라이드 패널
+// 정책 발언의 TimelineDrawer 와 같은 방식: 화면 오른쪽에 고정, 스크림 없음, 0.25초 슬라이드, ESC·닫기로 닫음.
+// 닫아도 컴포넌트는 유지되어 진행 중인 분석·결과가 사라지지 않는다.
 // 질문 → 본문에서 표현 찾기 → 분류·인용(원문 검증) → 제품별 근거 표 + 엑셀
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -19,13 +21,17 @@ const STRENGTH_STYLE: Record<AnalogAiStrength, string> = {
 const STRENGTH_HELP = '강: 직접 말함 · 중: 같은 취지 · 약: 단어만 있거나 간접적(AI 판정, 사람이 확인 필요)';
 const STAGE_LABEL: Record<string, string> = { plan: '질문을 분석하는 중', candidates: '후보 문단을 찾는 중', judge: 'AI가 문단을 판정하는 중' };
 
+export type AiStatus = 'idle' | 'running' | 'done';
+
 interface Props {
+  open: boolean;
+  onClose: () => void;
   reportIds: number[];
   onOpen: (id: number) => void;
+  onStatusChange?: (s: AiStatus) => void;
 }
 
-export default function AiAnalysisPanel({ reportIds, onOpen }: Props) {
-  const [open, setOpen] = useState(false);
+export default function AiAnalysisPanel({ open, onClose, reportIds, onOpen, onStatusChange }: Props) {
   const [question, setQuestion] = useState('');
   const [limits, setLimits] = useState<AnalogAiLimits | null>(null);
   const [job, setJob] = useState<AnalogAiJob | null>(null);
@@ -34,9 +40,23 @@ export default function AiAnalysisPanel({ reportIds, onOpen }: Props) {
   const [showTerms, setShowTerms] = useState(false);
   const [showWeak, setShowWeak] = useState(false);
   const timer = useRef<number | null>(null);
+  const textRef = useRef<HTMLTextAreaElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
 
   const stop = () => { if (timer.current) { window.clearInterval(timer.current); timer.current = null; } };
   useEffect(() => stop, []);
+  useEffect(() => {
+    onStatusChange?.(busy || job?.status === 'running' ? 'running' : job?.status === 'done' ? 'done' : 'idle');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy, job?.status]);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    const t = window.setTimeout(() => (job ? closeRef : textRef).current?.focus(), 260);
+    return () => { window.removeEventListener('keydown', onKey); window.clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, onClose]);
   useEffect(() => {
     if (!open) return;
     fetchAnalogAiLimits().then(setLimits).catch(() => setLimits(null));
@@ -77,20 +97,23 @@ export default function AiAnalysisPanel({ reportIds, onOpen }: Props) {
   const pct = job?.progress && job.progress.total ? Math.round((job.progress.done / job.progress.total) * 100) : 0;
 
   return (
-    <div className="rounded-2xl border border-teal-200 bg-white">
-      <button type="button" onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between px-5 py-3 text-left">
-        <span className="flex items-center gap-2 text-sm font-bold text-teal-700">
-          <i className="ri-sparkling-2-line"></i>
-          AI 분석 <span className="font-normal text-xs text-gray-500">— 현재 검색 결과 {reportIds.length}건에 질문하기</span>
-        </span>
-        <i className={open ? 'ri-arrow-up-s-line text-gray-400' : 'ri-arrow-down-s-line text-gray-400'}></i>
-      </button>
+    <aside
+      aria-label="AI 분석" aria-hidden={!open}
+      style={{ visibility: open ? 'visible' : 'hidden', transition: open ? 'transform .25s' : 'transform .25s, visibility 0s linear .25s' }}
+      className={`fixed top-0 right-0 h-screen w-[560px] max-w-[94vw] bg-white shadow-[-10px_0_30px_rgba(0,0,0,0.12)] z-40 overflow-y-auto ${open ? 'translate-x-0' : 'translate-x-full'}`}>
+      <div className="sticky top-0 bg-white/95 backdrop-blur border-b border-gray-100 px-6 py-4 flex items-center justify-between z-10">
+        <div>
+          <h2 className="flex items-center gap-2 text-base font-bold text-teal-700"><i className="ri-sparkling-2-line"></i>AI 분석</h2>
+          <p className="text-[11px] text-gray-500 mt-0.5">현재 검색 결과 {reportIds.length}건에 질문합니다</p>
+        </div>
+        <button ref={closeRef} type="button" onClick={onClose} tabIndex={open ? 0 : -1}
+          className="text-xs bg-gray-100 hover:bg-gray-200 rounded-md px-3 py-1.5">닫기 ×</button>
+      </div>
 
-      {open && (
-        <div className="px-5 pb-5 space-y-4 border-t border-gray-100 pt-4">
+      {(
+        <div className="px-6 py-5 space-y-4">
           <div>
-            <textarea value={question} onChange={e => setQuestion(e.target.value.slice(0, 300))} rows={2}
+            <textarea ref={textRef} value={question} onChange={e => setQuestion(e.target.value.slice(0, 300))} rows={2}
               placeholder="예: 계열 효과(class effect)로 볼 수 있는 표현이 있는 보고서는?"
               className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300" />
             <div className="flex flex-wrap items-center gap-2 mt-2">
@@ -201,6 +224,6 @@ export default function AiAnalysisPanel({ reportIds, onOpen }: Props) {
           )}
         </div>
       )}
-    </div>
+    </aside>
   );
 }

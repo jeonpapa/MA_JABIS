@@ -38,8 +38,16 @@ logger = logging.getLogger(__name__)
 
 ANALYSIS_VERSION = 3
 MODEL = os.environ.get("ANALOG_AI_MODEL", "gpt-4.1")
-PRICE_IN_PER_M = float(os.environ.get("ANALOG_AI_PRICE_IN", "2.0"))      # USD / 1M input tokens
-PRICE_OUT_PER_M = float(os.environ.get("ANALOG_AI_PRICE_OUT", "8.0"))    # USD / 1M output tokens
+# USD / 1M tokens (입력, 출력). OpenAI 공식 가격(2026-10 확인). 모르는 모델은 보수적으로 gpt-4.1 가격을 쓴다.
+# 추론 모델은 '생각 토큰'이 출력으로 과금되므로 실제 비용은 usage.completion_tokens(추론 포함)로 계산한다.
+MODEL_PRICES = {
+    "gpt-4.1": (2.00, 8.00), "gpt-4.1-mini": (0.40, 1.60), "gpt-4o": (2.50, 10.00), "gpt-4o-mini": (0.15, 0.60),
+    "gpt-6.1-sol": (2.00, 10.00), "gpt-6-luna": (0.10, 0.50), "gpt-5.4-mini": (0.75, 4.50),
+}
+_DEFAULT_PRICE = (2.00, 8.00)
+PRICE_IN_PER_M = float(os.environ["ANALOG_AI_PRICE_IN"]) if os.environ.get("ANALOG_AI_PRICE_IN") else None     # 둘 다 주면 모델표보다 우선
+PRICE_OUT_PER_M = float(os.environ["ANALOG_AI_PRICE_OUT"]) if os.environ.get("ANALOG_AI_PRICE_OUT") else None
+REASONING_PREFIXES = ("gpt-5", "gpt-6", "o1", "o3", "o4")
 MAX_REPORTS = int(os.environ.get("ANALOG_AI_MAX_REPORTS", "150"))
 MAX_PASSAGES = int(os.environ.get("ANALOG_AI_MAX_PASSAGES", "600"))
 PER_REPORT_PASSAGES = 8
@@ -154,29 +162,43 @@ def call_llm(system: str, user: str, max_tokens: int = 1500, model: str | None =
     key = _api_key()
     if not key:
         raise AnalysisError("OPENAI_API_KEY 가 없어 AI 분석을 사용할 수 없습니다.", "NO_KEY")
-    body = json.dumps({
-        "model": model or MODEL, "temperature": 0, "max_tokens": max_tokens,
-        "response_format": {"type": "json_object"},
-        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-    }).encode()
+    m = model or MODEL
+    params: dict[str, Any] = {"model": m, "response_format": {"type": "json_object"},
+                              "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
+    if m.startswith(REASONING_PREFIXES):
+        # 추론 모델: temperature/max_tokens 미지원. 생각 토큰 여유를 더해 max_completion_tokens 로 한도를 준다.
+        params["max_completion_tokens"] = max_tokens + 6000
+        params["reasoning_effort"] = "low"
+    else:
+        params["temperature"] = 0
+        params["max_tokens"] = max_tokens
     last = ""
-    for attempt in range(3):
-        req = urllib.request.Request("https://api.openai.com/v1/chat/completions", data=body,
+    for attempt in range(4):
+        req = urllib.request.Request("https://api.openai.com/v1/chat/completions", data=json.dumps(params).encode(),
                                      headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
         try:
-            r = json.loads(urllib.request.urlopen(req, timeout=120).read())
+            r = json.loads(urllib.request.urlopen(req, timeout=180).read())
             txt = r["choices"][0]["message"]["content"] or "{}"
             usage = r.get("usage") or {}
             return json.loads(txt), {"in": usage.get("prompt_tokens", 0), "out": usage.get("completion_tokens", 0)}
         except urllib.error.HTTPError as e:
             last = f"HTTP {e.code}"
-            if e.code in (429, 500, 502, 503, 504) and attempt < 2:
+            if e.code == 400:                      # 모델이 모르는 파라미터는 한 번씩 빼고 다시 시도
+                try:
+                    bad = (json.loads(e.read()).get("error") or {}).get("param")
+                except Exception:
+                    bad = None
+                if bad in params and bad not in ("model", "messages"):
+                    params.pop(bad)
+                    continue
+                break
+            if e.code in (429, 500, 502, 503, 504) and attempt < 3:
                 time.sleep(2 ** attempt * 2)
                 continue
             break
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
             last = type(e).__name__
-            if attempt < 2:
+            if attempt < 3:
                 time.sleep(2)
                 continue
     raise AnalysisError(f"AI 호출에 실패했습니다({last}). 잠시 뒤 다시 시도해 주세요.", "LLM_FAILED")
@@ -185,8 +207,15 @@ def call_llm(system: str, user: str, max_tokens: int = 1500, model: str | None =
 LLM = Callable[[str, str, int], tuple[dict, dict]]
 
 
+def _prices(model: str | None = None) -> tuple[float, float]:
+    if PRICE_IN_PER_M is not None and PRICE_OUT_PER_M is not None:
+        return PRICE_IN_PER_M, PRICE_OUT_PER_M
+    return MODEL_PRICES.get(model or MODEL, _DEFAULT_PRICE)
+
+
 def _cost(tokens_in: int, tokens_out: int) -> float:
-    return round(tokens_in / 1e6 * PRICE_IN_PER_M + tokens_out / 1e6 * PRICE_OUT_PER_M, 4)
+    pin, pout = _prices()
+    return round(tokens_in / 1e6 * pin + tokens_out / 1e6 * pout, 4)
 
 
 # ── ① plan ─────────────────────────────────────────────────────────────────

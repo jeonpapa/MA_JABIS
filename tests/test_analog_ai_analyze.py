@@ -226,3 +226,56 @@ def test_strength_defaults_to_weak_when_missing_and_sorting_puts_strong_first():
     assert res["hits"][0]["report_id"] == 2                                                   # 강한 근거 보고서가 맨 앞
     assert res["strength_counts"] == {"strong": 1, "moderate": 0, "weak": 2}
     assert res["strength_reports"] == {"strong": 1, "moderate": 0, "weak": 2}
+
+
+class _Resp:
+    def __init__(self, data): self._d = data
+    def read(self): import json as _j; return _j.dumps(self._d).encode()
+
+
+def _capture(monkeypatch, responder):
+    import json as _j
+    sent = []
+
+    def fake_urlopen(req, timeout=0):
+        body = _j.loads(req.data)
+        sent.append(body)
+        return responder(body, len(sent))
+    monkeypatch.setattr(ai, "_api_key", lambda: "k")
+    monkeypatch.setattr(ai.urllib.request, "urlopen", fake_urlopen)
+    return sent
+
+
+_OK = {"choices": [{"message": {"content": "{\"a\": 1}"}}], "usage": {"prompt_tokens": 11, "completion_tokens": 22}}
+
+
+def test_call_llm_uses_reasoning_params_only_for_reasoning_models(monkeypatch):
+    sent = _capture(monkeypatch, lambda b, n: _Resp(_OK))
+    data, usage = ai.call_llm("s", "u", 1000, model="gpt-6.1-sol")
+    assert data == {"a": 1} and usage == {"in": 11, "out": 22}
+    b = sent[0]
+    assert b["max_completion_tokens"] > 1000 and b["reasoning_effort"] == "low"
+    assert "temperature" not in b and "max_tokens" not in b
+    ai.call_llm("s", "u", 1000, model="gpt-4.1")
+    b = sent[1]
+    assert b["temperature"] == 0 and b["max_tokens"] == 1000
+    assert "max_completion_tokens" not in b and "reasoning_effort" not in b
+
+
+def test_call_llm_drops_a_parameter_the_model_rejects_and_retries(monkeypatch):
+    import io as _io
+    import json as _j
+    import urllib.error as _ue
+
+    def responder(body, n):
+        if n == 1:
+            raise _ue.HTTPError("u", 400, "bad", {}, _io.BytesIO(_j.dumps({"error": {"param": "reasoning_effort"}}).encode()))
+        return _Resp(_OK)
+    sent = _capture(monkeypatch, responder)
+    data, _ = ai.call_llm("s", "u", 500, model="gpt-6-luna")
+    assert data == {"a": 1} and len(sent) == 2 and "reasoning_effort" not in sent[1]
+
+
+def test_prices_per_model_and_unknown_model_is_conservative():
+    assert ai._prices("gpt-6.1-sol") == (2.00, 10.00) and ai._prices("gpt-6-luna") == (0.10, 0.50)
+    assert ai._prices("some-future-model") == (2.00, 8.00)
