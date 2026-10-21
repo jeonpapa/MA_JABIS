@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   startAnalogAiAnalysis, fetchAnalogAiJob, fetchAnalogAiLimits, downloadAnalogAiExcel,
-  REVIEW_RESULT_KO, type AnalogAiJob, type AnalogAiLimits, type AnalogAiResult,
+  REVIEW_RESULT_KO, type AnalogAiJob, type AnalogAiLimits, type AnalogAiResult, type AnalogAiStrength,
 } from '../../api/analog';
 
 const EXAMPLES = [
@@ -12,6 +12,11 @@ const EXAMPLES = [
   '비용효과성 근거로 해외 급여 사례를 인용한 보고서는?',
 ];
 const CAT_COLORS = ['bg-teal-100 text-teal-700', 'bg-blue-100 text-blue-700', 'bg-violet-100 text-violet-700', 'bg-amber-100 text-amber-700', 'bg-rose-100 text-rose-700'];
+const STRENGTH_KO: Record<AnalogAiStrength, string> = { strong: '강', moderate: '중', weak: '약' };
+const STRENGTH_STYLE: Record<AnalogAiStrength, string> = {
+  strong: 'bg-emerald-100 text-emerald-700', moderate: 'bg-sky-100 text-sky-700', weak: 'bg-gray-100 text-gray-500',
+};
+const STRENGTH_HELP = '강: 직접 말함 · 중: 같은 취지 · 약: 단어만 있거나 간접적(AI 판정, 사람이 확인 필요)';
 const STAGE_LABEL: Record<string, string> = { plan: '질문을 분석하는 중', candidates: '후보 문단을 찾는 중', judge: 'AI가 문단을 판정하는 중' };
 
 interface Props {
@@ -27,6 +32,7 @@ export default function AiAnalysisPanel({ reportIds, onOpen }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
+  const [showWeak, setShowWeak] = useState(false);
   const timer = useRef<number | null>(null);
 
   const stop = () => { if (timer.current) { window.clearInterval(timer.current); timer.current = null; } };
@@ -55,7 +61,7 @@ export default function AiAnalysisPanel({ reportIds, onOpen }: Props) {
   const canRun = !busy && question.trim().length > 0 && reportIds.length > 0 && !tooBig && !noLeft;
 
   const run = async () => {
-    setError(null); setJob(null); setBusy(true); setShowTerms(false);
+    setError(null); setJob(null); setBusy(true); setShowTerms(false); setShowWeak(false);
     try {
       const r = await startAnalogAiAnalysis(question.trim(), reportIds);
       poll(r.job_id);
@@ -64,6 +70,10 @@ export default function AiAnalysisPanel({ reportIds, onOpen }: Props) {
 
   const result: AnalogAiResult | undefined = job?.status === 'done' ? job.result : undefined;
   const catIndex = (key: string) => Math.max(0, (result?.by_category ?? []).findIndex(c => c.key === key));
+  const visibleHits = (result?.hits ?? [])
+    .map(h => ({ ...h, items: showWeak ? h.items : h.items.filter(it => it.strength !== 'weak') }))
+    .filter(h => h.items.length > 0);
+  const weakOnlyReports = (result?.hits.length ?? 0) - (result?.hits ?? []).filter(h => h.items.some(it => it.strength !== 'weak')).length;
   const pct = job?.progress && job.progress.total ? Math.round((job.progress.done / job.progress.total) * 100) : 0;
 
   return (
@@ -128,7 +138,7 @@ export default function AiAnalysisPanel({ reportIds, onOpen }: Props) {
                 <p className="text-sm font-bold text-teal-800">{result.interpretation || result.question}</p>
                 <p className="text-xs text-gray-600 mt-1">
                   범위 {result.scope.reports}건 중 후보 문단이 있는 보고서 {result.scope.reports_with_candidates}건 · 판정한 문단 {result.scope.passages_judged}개
-                  · <b className="text-teal-700">근거가 확인된 보고서 {result.hits.length}건</b>
+                  · <b className="text-teal-700">근거가 확인된 보고서 {result.hits.length}건</b> (<span title={STRENGTH_HELP}>강 {result.strength_reports.strong} · 중 {result.strength_reports.moderate} · 약 {result.strength_reports.weak}</span>)
                   {result.dropped_unverified > 0 && <span className="text-gray-400"> · 원문 검증에서 버린 인용 {result.dropped_unverified}건</span>}
                 </p>
                 <button type="button" onClick={() => setShowTerms(v => !v)} className="text-[11px] text-gray-500 underline decoration-dotted mt-1">
@@ -145,17 +155,23 @@ export default function AiAnalysisPanel({ reportIds, onOpen }: Props) {
                     {c.label} · 보고서 {c.reports}건 / 인용 {c.quotes}건
                   </span>
                 ))}
+                {result.strength_counts.weak > 0 && (
+                  <button type="button" onClick={() => setShowWeak(v => !v)} title={STRENGTH_HELP}
+                    className="text-xs text-gray-500 underline decoration-dotted hover:text-gray-700">
+                    {showWeak ? '약한 근거 숨기기' : `약한 근거 ${result.strength_counts.weak}건 보기`}
+                  </button>
+                )}
                 <button type="button" onClick={() => downloadAnalogAiExcel(job.job_id).catch(e => setError(e instanceof Error ? e.message : String(e)))}
                   className="ml-auto flex items-center gap-1.5 text-xs font-bold text-teal-700 border border-teal-300 rounded-lg px-3 py-1.5 hover:bg-teal-50">
                   <i className="ri-file-excel-2-line"></i> 엑셀 받기
                 </button>
               </div>
 
-              {result.hits.length === 0 ? (
-                <p className="text-sm text-gray-500 bg-gray-50 rounded-lg px-4 py-3">이 범위에서 질문에 해당하는 근거 문장을 찾지 못했습니다. 위 "찾은 표현"에 없는 다른 말로 쓰였을 수 있습니다.</p>
+              {visibleHits.length === 0 ? (
+                <p className="text-sm text-gray-500 bg-gray-50 rounded-lg px-4 py-3">{result.hits.length === 0 ? '이 범위에서 질문에 해당하는 근거 문장을 찾지 못했습니다. 위 "찾은 표현"에 없는 다른 말로 쓰였을 수 있습니다.' : `강·중 근거는 없고 약한 근거 ${result.strength_counts.weak}건만 있습니다. 위 "약한 근거 보기"로 확인할 수 있습니다.`}</p>
               ) : (
                 <div className="divide-y divide-gray-100 border border-gray-100 rounded-xl">
-                  {result.hits.map(h => (
+                  {visibleHits.map(h => (
                     <div key={h.report_id} className="p-4">
                       <div className="flex flex-wrap items-center gap-2 mb-2">
                         <button type="button" onClick={() => onOpen(h.report_id)} className="text-sm font-bold text-gray-800 hover:text-teal-700 hover:underline">{h.brand_name ?? '(약제명 없음)'}</button>
@@ -166,6 +182,7 @@ export default function AiAnalysisPanel({ reportIds, onOpen }: Props) {
                       <div className="space-y-2">
                         {h.items.map((it, k) => (
                           <div key={k} className="text-xs">
+                            <span className={`inline-block font-bold rounded px-2 py-0.5 mr-1 ${STRENGTH_STYLE[it.strength]}`} title={STRENGTH_HELP}>근거 {STRENGTH_KO[it.strength]}</span>
                             <span className={`inline-block font-bold rounded px-2 py-0.5 mr-2 ${CAT_COLORS[catIndex(it.category) % CAT_COLORS.length]}`}>{result.category_labels[it.category] ?? it.category}</span>
                             <span className="text-gray-400">{it.reason}</span>
                             <blockquote className="mt-1 border-l-2 border-gray-300 pl-3 text-gray-700 leading-relaxed">“{it.quote}”</blockquote>

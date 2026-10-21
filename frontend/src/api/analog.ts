@@ -281,15 +281,17 @@ export function conceptChipLabel(c: { concept_id: string; canonical_ko?: string 
 
 // ── AI 질문형 분석 (현재 검색 결과 범위) ─────────────────────────────────────────
 export interface AnalogAiCategory { key: string; label: string; definition: string; reports: number; quotes: number; }
-export interface AnalogAiItem { category: string; quote: string; reason: string; pos: number; }
+export type AnalogAiStrength = 'strong' | 'moderate' | 'weak';
+export interface AnalogAiItem { category: string; strength: AnalogAiStrength; quote: string; reason: string; pos: number; }
 export interface AnalogAiHit {
   report_id: number; brand_name: string | null; session_date: string | null; review_result: string | null;
-  post_url: string | null; file_name: string | null; items: AnalogAiItem[];
+  post_url: string | null; file_name: string | null; top_strength: AnalogAiStrength; items: AnalogAiItem[];
 }
 export interface AnalogAiResult {
   question: string; interpretation: string; terms: string[]; stems?: string[]; model: string;
   scope: { reports: number; reports_with_candidates: number; passages_found: number; passages_judged: number; truncated: boolean };
   hits: AnalogAiHit[]; by_category: AnalogAiCategory[]; category_labels: Record<string, string>;
+  strength_counts: Record<AnalogAiStrength, number>; strength_reports: Record<AnalogAiStrength, number>;
   dropped_unverified: number; limitations: string[];
 }
 export interface AnalogAiJob {

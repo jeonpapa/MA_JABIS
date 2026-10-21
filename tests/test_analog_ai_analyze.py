@@ -19,7 +19,7 @@ def fake_llm(system, user, max_tokens):
                 {"in": 300, "out": 120})
     # 판정: 문단 1번은 유효 인용, 2번은 원문에 없는 인용(환각), 3번은 없는 분류, 99번은 범위 밖
     return ({"items": [
-        {"p": 1, "category": "class_evidence", "quote": "동일 계열의 P-CAB 약제에 대해 교과서 및 임상진료지침에서", "reason": "같은 계열 약제의 근거를 인용"},
+        {"p": 1, "category": "class_evidence", "strength": "strong", "quote": "동일 계열의 P-CAB 약제에 대해 교과서 및 임상진료지침에서", "reason": "같은 계열 약제의 근거를 인용"},
         {"p": 1, "category": "class_evidence", "quote": "이 약은 모든 PPI와 같은 계열 효과를 가진다", "reason": "환각"},
         {"p": 1, "category": "nope", "quote": "동일 계열의 P-CAB 약제에 대해", "reason": "없는 분류"},
         {"p": 99, "category": "class_evidence", "quote": "동일 계열의 P-CAB 약제에 대해", "reason": "범위 밖"}]},
@@ -177,7 +177,7 @@ def test_build_xlsx_has_three_sheets_and_quotes():
     wb = load_workbook(io.BytesIO(ai.build_xlsx(res)))
     assert wb.sheetnames == ["요약", "근거 표", "방법·한계"]
     rows = list(wb["근거 표"].iter_rows(min_row=2, values_only=True))
-    assert rows and all("P-CAB" in r[4] for r in rows) and rows[0][0] == "계열 근거 준용"
+    assert rows and all("P-CAB" in r[5] for r in rows) and rows[0][0] == "강" and rows[0][1] == "계열 근거 준용"
 
 
 def test_cache_hit_by_another_user_gives_own_readable_job_and_no_usage(tmp_path, monkeypatch):
@@ -208,3 +208,21 @@ def test_plan_parses_stems_and_drops_duplicates_of_terms():
                  "categories": [{"key": "a", "label": "라벨", "definition": "d"}]}, {"in": 1, "out": 1})
     pl, _ = ai.plan("질문", llm)
     assert pl["stems"] == ["계열", "기전"]
+
+
+def test_strength_defaults_to_weak_when_missing_and_sorting_puts_strong_first():
+    def llm(system, user, mt):
+        if "분석을 설계한다" in system:
+            return fake_llm(system, user, mt)
+        return ({"items": [
+            {"p": 1, "category": "class_evidence", "quote": "동일 계열의 P-CAB 약제에 대해 교과서", "reason": "r"},                       # strength 누락
+            {"p": 2, "category": "class_evidence", "strength": "strong", "quote": "동일 계열의 P-CAB 약제에 대해 교과서", "reason": "r"},
+            {"p": 3, "category": "class_evidence", "strength": "엉뚱", "quote": "동일 계열의 P-CAB 약제에 대해 교과서", "reason": "r"}]},
+            {"in": 10, "out": 10})
+    reps = _reports(3)
+    res = ai.run_analysis("질문", reps, llm=llm)
+    by_report = {h["report_id"]: h["top_strength"] for h in res["hits"]}
+    assert by_report == {1: "weak", 2: "strong", 3: "weak"}                                   # 누락·이상 값 = weak
+    assert res["hits"][0]["report_id"] == 2                                                   # 강한 근거 보고서가 맨 앞
+    assert res["strength_counts"] == {"strong": 1, "moderate": 0, "weak": 2}
+    assert res["strength_reports"] == {"strong": 1, "moderate": 0, "weak": 2}
