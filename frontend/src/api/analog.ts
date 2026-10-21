@@ -287,7 +287,7 @@ export interface AnalogAiHit {
   post_url: string | null; file_name: string | null; items: AnalogAiItem[];
 }
 export interface AnalogAiResult {
-  question: string; interpretation: string; terms: string[]; model: string;
+  question: string; interpretation: string; terms: string[]; stems?: string[]; model: string;
   scope: { reports: number; reports_with_candidates: number; passages_found: number; passages_judged: number; truncated: boolean };
   hits: AnalogAiHit[]; by_category: AnalogAiCategory[]; category_labels: Record<string, string>;
   dropped_unverified: number; limitations: string[];

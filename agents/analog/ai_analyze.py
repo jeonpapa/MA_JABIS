@@ -36,13 +36,13 @@ from agents.analog.store import _connect, ensure_schema
 
 logger = logging.getLogger(__name__)
 
-ANALYSIS_VERSION = 1
+ANALYSIS_VERSION = 2
 MODEL = os.environ.get("ANALOG_AI_MODEL", "gpt-4.1")
 PRICE_IN_PER_M = float(os.environ.get("ANALOG_AI_PRICE_IN", "2.0"))      # USD / 1M input tokens
 PRICE_OUT_PER_M = float(os.environ.get("ANALOG_AI_PRICE_OUT", "8.0"))    # USD / 1M output tokens
 MAX_REPORTS = int(os.environ.get("ANALOG_AI_MAX_REPORTS", "150"))
-MAX_PASSAGES = int(os.environ.get("ANALOG_AI_MAX_PASSAGES", "240"))
-PER_REPORT_PASSAGES = 6
+MAX_PASSAGES = int(os.environ.get("ANALOG_AI_MAX_PASSAGES", "600"))
+PER_REPORT_PASSAGES = 8
 PASSAGE_CHARS = 650
 BATCH = 10
 RUN_COST_CAP_USD = float(os.environ.get("ANALOG_AI_RUN_COST_CAP", "1.5"))
@@ -116,15 +116,19 @@ def split_passages(body: str, max_chars: int = PASSAGE_CHARS) -> list[str]:
     return out
 
 
-def candidate_passages(body: str, terms: list[str], limit: int = PER_REPORT_PASSAGES) -> list[dict]:
-    """terms 가 하나라도 들어간 문단. 일치 표현이 많은 순으로 limit 개, 본문 순서로 반환."""
+def candidate_passages(body: str, terms: list[str], limit: int = PER_REPORT_PASSAGES,
+                       stems: list[str] | None = None) -> list[dict]:
+    """terms(구체 표현) 또는 stems(넓은 어근)가 하나라도 든 문단. 점수 = 구체 표현×3 + 어근, 높은 순으로 limit 개, 본문 순서로 반환.
+    어근은 후보를 넓히기 위한 것이고 최종 해당 여부는 판정 단계가 정한다."""
     cterms = [(_compact(t), t) for t in terms if len(_compact(t)) >= 2]
+    cstems = [(_compact(t), t) for t in (stems or []) if len(_compact(t)) >= 2]
     scored = []
     for idx, p in enumerate(split_passages(body)):
         cp = _compact(p)
         hit = [t for c, t in cterms if c in cp]
-        if hit:
-            scored.append((len(hit), idx, p, hit))
+        shit = [t for c, t in cstems if c in cp]
+        if hit or shit:
+            scored.append((3 * len(hit) + len(shit), idx, p, hit + shit))
     scored.sort(key=lambda x: (-x[0], x[1]))
     keep = sorted(scored[:limit], key=lambda x: x[1])
     return [{"pos": idx, "text": p, "score": sc, "matched": hit} for sc, idx, p, hit in keep]
@@ -189,7 +193,8 @@ _PLAN_SYSTEM = """너는 한국 약제급여평가위원회(약평위) 평가결
 사용자의 질문을 '보고서 본문(한국어, 영문 병기 포함)에서 문구를 찾아 판정하는 작업'으로 분해하라.
 JSON 으로만 답한다:
 {"interpretation":"질문을 한 문장으로 다시 쓴 것",
- "terms":["본문에 실제로 나올 법한 짧은 표현 8~25개. 한국어·영어, 동의어·표기 변형 포함, 각 2~20자"],
+ "terms":["본문에 실제로 나올 법한 짧은 표현 10~25개. 한국어·영어, 동의어·표기 변형·활용형 포함(예: '동일 계열','같은 계열','동일한 계열','계열 약제'), 각 2~20자"],
+ "stems":["후보 문단을 넓게 잡기 위한 핵심 어근 2~6개. 각 2~8자(예: '계열','기전','class'). 너무 흔한 말('약제','보고서','급여')은 제외"],
  "categories":[{"key":"영문소문자_언더스코어","label":"한국어 2~14자","definition":"한 문장 정의"}]}
 - categories 는 질문이 분류를 요구하면 2~5개, 아니면 1개(질문에 맞는 이름)만 둔다.
 - terms 는 너무 흔한 단어(예: '약제', '보고서')를 넣지 마라.
@@ -204,6 +209,12 @@ def plan(question: str, llm: LLM) -> tuple[dict, dict]:
         if 2 <= len(t) <= 30 and t not in terms:
             terms.append(t)
     terms = terms[:30]
+    stems = []
+    for t in data.get("stems") or []:
+        t = str(t).strip()
+        if 2 <= len(t) <= 10 and t not in stems and t not in terms:
+            stems.append(t)
+    stems = stems[:6]
     cats, seen = [], set()
     for c in data.get("categories") or []:
         key = re.sub(r"[^a-z0-9_]", "", str(c.get("key", "")).lower())[:30]
@@ -214,7 +225,7 @@ def plan(question: str, llm: LLM) -> tuple[dict, dict]:
     cats = cats[:5]
     if len(terms) < 3 or not cats:
         raise AnalysisError("질문을 분석 가능한 형태로 바꾸지 못했습니다. 찾으려는 표현이나 대상을 더 구체적으로 적어 주세요.", "PLAN_FAILED")
-    return {"interpretation": str(data.get("interpretation", ""))[:300], "terms": terms, "categories": cats}, usage
+    return {"interpretation": str(data.get("interpretation", ""))[:300], "terms": terms, "stems": stems, "categories": cats}, usage
 
 
 # ── ③ 판정 ─────────────────────────────────────────────────────────────────
@@ -291,7 +302,7 @@ def run_analysis(question: str, reports: list[dict], llm: LLM = call_llm,
     cands: list[dict] = []
     reports_with = 0
     for i, r in enumerate(reports):
-        cp = candidate_passages(r.get("body_text") or "", pl["terms"])
+        cp = candidate_passages(r.get("body_text") or "", pl["terms"], stems=pl["stems"])
         if cp:
             reports_with += 1
         for c in cp:
@@ -317,7 +328,7 @@ def run_analysis(question: str, reports: list[dict], llm: LLM = call_llm,
         return _judge_batch(question, pl["interpretation"], pl["categories"], b, llm)
 
     if batches:
-        with ThreadPoolExecutor(max_workers=3) as ex:
+        with ThreadPoolExecutor(max_workers=4) as ex:
             for kept, usage, dr in ex.map(work, batches):
                 with lock:
                     hits.extend(kept); dropped += dr
@@ -343,7 +354,7 @@ def run_analysis(question: str, reports: list[dict], llm: LLM = call_llm,
         by_cat.append({"key": c["key"], "label": c["label"], "definition": c["definition"],
                        "reports": len(rep_ids), "quotes": sum(1 for h in hits if h["category"] == c["key"])})
     return {
-        "question": question, "interpretation": pl["interpretation"], "terms": pl["terms"],
+        "question": question, "interpretation": pl["interpretation"], "terms": pl["terms"], "stems": pl["stems"],
         "categories": pl["categories"], "model": MODEL, "version": ANALYSIS_VERSION,
         "scope": {"reports": len(reports), "reports_with_candidates": reports_with, "passages_found": found,
                   "passages_judged": len(cands), "truncated": truncated},
@@ -351,7 +362,7 @@ def run_analysis(question: str, reports: list[dict], llm: LLM = call_llm,
         "dropped_unverified": dropped,
         "tokens": {"in": tok_in, "out": tok_out}, "cost_usd": _cost(tok_in, tok_out),
         "limitations": [
-            "표현 후보는 위 '찾은 표현'이 들어간 문단에서만 고릅니다. 다른 말로 쓴 같은 뜻의 문장은 놓칠 수 있습니다.",
+            "후보 문단은 위 '찾은 표현'(어근 포함)이 들어간 곳에서만 고릅니다. 전혀 다른 말로 쓴 같은 뜻의 문장은 놓칠 수 있습니다.",
             "AI 판정은 참고용입니다. 인용 문장은 원문에 실제 있는 것만 남겼지만 분류의 타당성은 사람이 확인해 주세요.",
             "신청가·재정영향 등 비공개 수치는 보고서에 없어 분석하지 않습니다.",
         ] + (["후보 문단이 많아 일치 표현이 많은 순서로 상위만 판정했습니다."] if truncated else []),
@@ -564,7 +575,7 @@ def build_xlsx(result: dict) -> bytes:
     ws.title = "요약"
     s = result["scope"]
     rows = [["항목", "내용"], ["질문", result["question"]], ["AI의 질문 해석", result["interpretation"]],
-            ["찾은 표현", ", ".join(result["terms"])],
+            ["찾은 표현", ", ".join(result["terms"] + [s_ + " (어근)" for s_ in result.get("stems", [])])],
             ["분석 범위", f"검색 결과 {s['reports']}건 중 후보 문단이 있는 보고서 {s['reports_with_candidates']}건, 판정한 문단 {s['passages_judged']}개"],
             ["근거가 확인된 보고서", f"{len(result['hits'])}건"],
             ["원문 검증에서 버린 인용", f"{result['dropped_unverified']}건"], ["모델", result["model"]]]

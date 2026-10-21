@@ -14,7 +14,7 @@ BODY = ("▢ 효능 효과 - 판상 건선 치료\n"
 def fake_llm(system, user, max_tokens):
     if "분석을 설계한다" in system:
         return ({"interpretation": "같은 계열의 근거를 준용한 표현을 찾는다",
-                 "terms": ["동일 계열", "같은 계열", "계열 약제", "class effect", "기전이 동일"],
+                 "terms": ["동일 계열", "같은 계열", "계열 약제", "class effect", "기전이 동일"], "stems": ["계열", "기전"],
                  "categories": [{"key": "class_evidence", "label": "계열 근거 준용", "definition": "같은 계열 근거를 신청품에 적용"}]},
                 {"in": 300, "out": 120})
     # 판정: 문단 1번은 유효 인용, 2번은 원문에 없는 인용(환각), 3번은 없는 분류, 99번은 범위 밖
@@ -189,3 +189,22 @@ def test_cache_hit_by_another_user_gives_own_readable_job_and_no_usage(tmp_path,
     assert job["status"] == "done" and job["result"]["hits"]
     assert ai.get_job(other["job_id"], "a@x.com") is None               # 복사본은 b 소유
     assert ai.usage_today("b@x.com")["used"] == 0
+
+
+def test_stems_widen_candidates_without_loosening_the_judge():
+    body = "신청품은 새로운 계열 약제로 대체약제 가중평균금액에 비율을 곱한 금액임. 무관한 문단입니다."
+    assert ai.candidate_passages(body, ["동일 계열", "class effect"]) == []                  # 구체 표현만으로는 놓친다
+    c = ai.candidate_passages(body, ["동일 계열", "class effect"], stems=["계열"])           # 어근이 후보로 건져 올린다
+    assert len(c) == 1 and c[0]["score"] == 1
+    both = "동일 계열 약제와 계열 기반 평가임. 별개 문단. 계열만 언급."
+    s_specific = ai.candidate_passages("동일 계열 약제가 있음", ["동일 계열"], stems=["계열"])[0]["score"]
+    s_stem_only = ai.candidate_passages("새로운 계열 약제가 있음", ["동일 계열"], stems=["계열"])[0]["score"]
+    assert s_specific > s_stem_only                                                         # 구체 표현 일치가 더 높은 우선순위
+
+
+def test_plan_parses_stems_and_drops_duplicates_of_terms():
+    def llm(system, user, mt):
+        return ({"interpretation": "x", "terms": ["동일 계열", "같은 계열", "계열 약제"], "stems": ["계열", "동일 계열", "기전", "가"],
+                 "categories": [{"key": "a", "label": "라벨", "definition": "d"}]}, {"in": 1, "out": 1})
+    pl, _ = ai.plan("질문", llm)
+    assert pl["stems"] == ["계열", "기전"]

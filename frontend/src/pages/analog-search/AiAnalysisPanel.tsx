@@ -132,10 +132,10 @@ export default function AiAnalysisPanel({ reportIds, onOpen }: Props) {
                   {result.dropped_unverified > 0 && <span className="text-gray-400"> · 원문 검증에서 버린 인용 {result.dropped_unverified}건</span>}
                 </p>
                 <button type="button" onClick={() => setShowTerms(v => !v)} className="text-[11px] text-gray-500 underline decoration-dotted mt-1">
-                  {showTerms ? '찾은 표현 숨기기' : `찾은 표현 ${result.terms.length}개 보기`}
+                  {showTerms ? '찾은 표현 숨기기' : `찾은 표현 ${result.terms.length + (result.stems?.length ?? 0)}개 보기`}
                 </button>
                 {showTerms && (
-                  <div className="flex flex-wrap gap-1.5 mt-2">{result.terms.map(t => <span key={t} className="text-[11px] bg-white border border-gray-200 rounded-full px-2 py-0.5 text-gray-600">{t}</span>)}</div>
+                  <div className="flex flex-wrap gap-1.5 mt-2">{result.terms.map(t => <span key={t} className="text-[11px] bg-white border border-gray-200 rounded-full px-2 py-0.5 text-gray-600">{t}</span>)}{(result.stems ?? []).map(t => <span key={'s' + t} title="후보를 넓게 잡는 어근" className="text-[11px] bg-teal-50 border border-teal-200 rounded-full px-2 py-0.5 text-teal-700">{t} (어근)</span>)}</div>
                 )}
               </div>
 
