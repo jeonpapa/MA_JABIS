@@ -6818,6 +6818,77 @@ def analog_brief():
         return jsonify({"error": str(e)}), 500
 
 
+# ── 등재 아날로그 AI 질문형 분석 ─────────────────────────────────────────────
+# 화면에 보이는 검색 결과(report_ids)를 범위로, 질문에 해당하는 표현을 본문에서 찾아 분류·인용한다.
+# 한도: 사용자별 일일 횟수 · 팀 일일 비용 · 1회 비용 상한 (agents/analog/ai_analyze.py).
+def _ai_owner() -> tuple[str, bool]:
+    u = request.user  # type: ignore[attr-defined]
+    return u["sub"], u.get("role") == "admin"
+
+
+@app.get("/api/analog/ai-analyze/limits")
+@require_auth()
+def analog_ai_limits():
+    try:
+        from agents.analog import ai_analyze as _ai
+        owner, _ = _ai_owner()
+        return jsonify(_ai.usage_today(owner))
+    except Exception as e:
+        logger.error("analog ai limits 실패: %s", e, exc_info=True)
+        return jsonify({"error": "한도를 불러오지 못했습니다."}), 500
+
+
+@app.post("/api/analog/ai-analyze")
+@require_auth()
+def analog_ai_analyze():
+    """질문 + 현재 검색 결과 id 목록 → 분석 작업 등록(비동기). 같은 질문·같은 범위는 이전 결과 재사용."""
+    from agents.analog import ai_analyze as _ai
+    try:
+        owner, _ = _ai_owner()
+        body = request.get_json(silent=True) or {}
+        out = _ai.submit(owner, body.get("question") or "", body.get("report_ids") or [])
+        return jsonify(out), 202 if out["status"] == "running" else 200
+    except _ai.AnalysisError as e:
+        status = 429 if e.code in ("USER_DAILY", "TEAM_COST_CAP", "BUSY", "ALREADY_RUNNING") else 400
+        return jsonify({"error": str(e), "code": e.code}), status
+    except Exception as e:
+        logger.error("analog ai analyze 실패: %s", e, exc_info=True)
+        return jsonify({"error": "분석을 시작하지 못했습니다."}), 500
+
+
+@app.get("/api/analog/ai-analyze/<job_id>")
+@require_auth()
+def analog_ai_job(job_id: str):
+    try:
+        from agents.analog import ai_analyze as _ai
+        owner, admin = _ai_owner()
+        job = _ai.get_job(job_id, owner, admin)
+        if not job:
+            return jsonify({"error": "not found"}), 404
+        return jsonify(job)
+    except Exception as e:
+        logger.error("analog ai job 실패: %s", e, exc_info=True)
+        return jsonify({"error": "분석 상태를 불러오지 못했습니다."}), 500
+
+
+@app.get("/api/analog/ai-analyze/<job_id>/export.xlsx")
+@require_auth()
+def analog_ai_export(job_id: str):
+    try:
+        import io as _io
+        from agents.analog import ai_analyze as _ai
+        owner, admin = _ai_owner()
+        job = _ai.get_job(job_id, owner, admin)
+        if not job or job["status"] != "done":
+            return jsonify({"error": "완료된 분석만 내려받을 수 있습니다."}), 404
+        data = _ai.build_xlsx(job["result"])
+        return send_file(_io.BytesIO(data), as_attachment=True, download_name=f"analog-ai-{job_id}.xlsx",
+                         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    except Exception as e:
+        logger.error("analog ai export 실패: %s", e, exc_info=True)
+        return jsonify({"error": "엑셀을 만들지 못했습니다."}), 500
+
+
 @app.post("/api/analog/search-feedback")
 @require_auth()
 def analog_search_feedback_add():

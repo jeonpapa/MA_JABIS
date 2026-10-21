@@ -1,6 +1,6 @@
 // 약제 등재 아날로그 검색 (Listing Analog Search)
 // DREC Raw PDF 651건 — 질환분류·효과지표·정책의도·타임라인 포함
-import { api } from './client';
+import { api, getToken, clearAuth, ApiError } from './client';
 
 export interface AnalogFacetValue { value: string; count: number; }
 export type AnalogFacets = Record<string, AnalogFacetValue[]>;
@@ -276,4 +276,50 @@ export function conceptChipLabel(c: { concept_id: string; canonical_ko?: string 
   const en = (c.canonical_en ?? '').trim();
   const norm = (s: string) => s.toLowerCase().replace(/\s+/g, '');
   return { label, title: en && !norm(label).includes(norm(en)) ? en : undefined };
+}
+
+
+// ── AI 질문형 분석 (현재 검색 결과 범위) ─────────────────────────────────────────
+export interface AnalogAiCategory { key: string; label: string; definition: string; reports: number; quotes: number; }
+export interface AnalogAiItem { category: string; quote: string; reason: string; pos: number; }
+export interface AnalogAiHit {
+  report_id: number; brand_name: string | null; session_date: string | null; review_result: string | null;
+  post_url: string | null; file_name: string | null; items: AnalogAiItem[];
+}
+export interface AnalogAiResult {
+  question: string; interpretation: string; terms: string[]; model: string;
+  scope: { reports: number; reports_with_candidates: number; passages_found: number; passages_judged: number; truncated: boolean };
+  hits: AnalogAiHit[]; by_category: AnalogAiCategory[]; category_labels: Record<string, string>;
+  dropped_unverified: number; limitations: string[];
+}
+export interface AnalogAiJob {
+  job_id: string; status: 'running' | 'done' | 'failed'; question: string; scope_count: number;
+  progress: { stage: 'plan' | 'candidates' | 'judge'; done: number; total: number } | null;
+  error: string | null; error_code: string | null; result?: AnalogAiResult;
+}
+export interface AnalogAiLimits {
+  used: number; limit: number; remaining: number; max_reports: number; running: number; max_running: number; model: string;
+}
+
+export const startAnalogAiAnalysis = (question: string, reportIds: number[]) =>
+  api.post<{ job_id: string; status: 'running' | 'done'; cached: boolean }>('/api/analog/ai-analyze', { question, report_ids: reportIds });
+export const fetchAnalogAiJob = (id: string) => api.get<AnalogAiJob>('/api/analog/ai-analyze/' + encodeURIComponent(id));
+export const fetchAnalogAiLimits = () => api.get<AnalogAiLimits>('/api/analog/ai-analyze/limits');
+
+export async function downloadAnalogAiExcel(id: string): Promise<void> {
+  const token = getToken();
+  const res = await fetch('/api/analog/ai-analyze/' + encodeURIComponent(id) + '/export.xlsx',
+    { headers: token ? { Authorization: 'Bearer ' + token } : {} });
+  if (res.status === 401) clearAuth();
+  if (!res.ok) {
+    let msg = res.status === 401 ? '로그인이 만료되었습니다. 다시 로그인해 주세요.' : '엑셀 다운로드 실패 (HTTP ' + res.status + ')';
+    try { const d = await res.json(); if (typeof d?.error === 'string') msg = d.error; } catch { /* 본문 없음 */ }
+    throw new ApiError(msg, res.status);
+  }
+  const blob = await res.blob();
+  if (!blob.size) throw new Error('다운로드 파일이 비어 있습니다. 다시 시도해 주세요.');
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  try { a.href = url; a.download = 'analog-ai-' + id + '.xlsx'; document.body.appendChild(a); a.click(); }
+  finally { a.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
 }

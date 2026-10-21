@@ -1,3 +1,4 @@
+import AiAnalysisPanel from './AiAnalysisPanel';
 import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
 import MiniMarkdown from '@/components/ui/MiniMarkdown';
 import {
@@ -833,6 +834,9 @@ export default function AnalogSearchPage() {
             )}
           </div>
         </div>
+
+        {/* AI 질문형 분석 — 현재 검색 결과 범위 */}
+        {results.length > 0 && <AiAnalysisPanel reportIds={results.map(r => r.id)} onOpen={openDetail} />}
 
         {/* 브리프 */}
         {brief && (
