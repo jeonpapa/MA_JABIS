@@ -491,6 +491,78 @@ def list_outbox(limit: int = 200, *, db_path: str | Path | None = None) -> list[
     return [_row_to_dict(r) for r in rows]
 
 
+# ── 에이전트 처리 계획(proposal) ────────────────────────────────────────────
+# 정기 루틴이 새 요청을 읽고 처리 계획을 제출한다. 계획 승인은 Joseph 이 대화에서 하고, 구현·완료 처리는 그 뒤 별도 세션이 한다.
+# 이 역할(request_agent)은 '조회 + 계획 제출' 만 가능하다 — claim/resolve/상태 임의 변경은 못 한다.
+PROPOSAL_EVENT = "agent_proposal"
+PROPOSAL_FIELD_LIMITS = {"summary": 600, "plan": 4000, "risks": 1500, "effort": 40, "approval_needed": 600}
+
+
+def list_pending_proposals(limit: int = 50, *, db_path: str | Path | None = None) -> list[dict]:
+    """계획이 아직 없는 새 요청(status open) — 최신 접수 순이 아니라 오래된 순으로 처리한다.
+
+    요청자 이메일·본문은 그대로 포함한다(처리 계획을 쓰려면 필요). context 는 저장 시 이미 레닥션돼 있다.
+    """
+    ensure_service_request_tables(db_path)
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM service_request WHERE status='open' AND id NOT IN "
+            "(SELECT request_id FROM service_request_event WHERE event_type=?) ORDER BY id ASC LIMIT ?",
+            (PROPOSAL_EVENT, int(limit)),
+        ).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+def add_proposal(
+    request_id: int,
+    actor_email: str,
+    *,
+    summary: str,
+    plan: str,
+    risks: str = "",
+    effort: str = "",
+    approval_needed: str = "",
+    needs_data_change: bool = False,
+    needs_deploy: bool = True,
+    db_path: str | Path | None = None,
+) -> dict | tuple[None, str]:
+    """처리 계획 제출 — status open 에서만, 요청당 1회. open → in_review + event=agent_proposal(append-only).
+
+    계획 텍스트에 자격증명 흔적이 있으면 거부한다(레닥션 계약). 길이는 필드별로 자른다.
+    """
+    ensure_service_request_tables(db_path)
+    summary, plan = (summary or "").strip(), (plan or "").strip()
+    if not summary or not plan:
+        return (None, "summary and plan required")
+    fields = {
+        "summary": summary, "plan": plan, "risks": (risks or "").strip(), "effort": (effort or "").strip(),
+        "approval_needed": (approval_needed or "").strip(),
+    }
+    blob = " ".join(fields.values()).lower()
+    if any(tok in blob for tok in ("password=", "passwd=", "bearer ", "api_key=", "secret=", "authorization:")):
+        return (None, "credential-like text")
+    payload = {k: v[:PROPOSAL_FIELD_LIMITS[k]] for k, v in fields.items()}
+    payload["needs_data_change"] = bool(needs_data_change)
+    payload["needs_deploy"] = bool(needs_deploy)
+    with _connect(db_path) as conn:
+        row = _fetch_row(conn, request_id)
+        if row is None:
+            return (None, "not found")
+        if row["status"] != "open":
+            return (None, "not open")
+        dup = conn.execute("SELECT 1 FROM service_request_event WHERE request_id=? AND event_type=? LIMIT 1",
+                           (request_id, PROPOSAL_EVENT)).fetchone()
+        if dup:
+            return (None, "proposal exists")
+        now = _now()
+        conn.execute("UPDATE service_request SET status='in_review', updated_at=? WHERE id=?", (now, request_id))
+        _add_event(conn, request_id, actor_email, PROPOSAL_EVENT, from_status="open", to_status="in_review",
+                   note=payload["summary"][:200], payload=payload)
+        conn.commit()
+        row = _fetch_row(conn, request_id)
+    return _row_to_dict(row)
+
+
 def count_outbox(db_path: str | Path | None = None) -> int:
     """outbox 대기 건수 — status='sent' COUNT (대쉬보드 배지/배너용 경량 조회)."""
     ensure_service_request_tables(db_path)

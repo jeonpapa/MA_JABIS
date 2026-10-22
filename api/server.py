@@ -6978,6 +6978,38 @@ def _service_requests_unavailable():
     return jsonify({"error": "service_requests 모듈 미탑재", "code": "UNAVAILABLE"}), 503
 
 
+# ── 개선 요청 처리 루틴(request_agent) — 조회 + 처리 계획 제출만 (최소 권한) ──────────────
+# 계획 승인은 Joseph(대화)이 하고, claim·구현·resolve·배포는 승인 뒤 별도 세션이 한다. 이 역할은 그 어느 것도 못 한다.
+@app.get("/api/agent/service-requests/pending")
+@require_auth(role="request_agent")
+def agent_service_requests_pending():
+    if _service_requests_store is None:
+        return _service_requests_unavailable()
+    items = _service_requests_store.list_pending_proposals(limit=min(int(request.args.get("limit", "20")), 50))
+    keep = ("id", "owner_email", "page_path", "page_label", "source_url", "request_type", "priority",
+            "title", "body", "expected_outcome", "context", "created_at")
+    return jsonify({"requests": [{k: it.get(k) for k in keep} for it in items]})
+
+
+@app.post("/api/agent/service-requests/<int:request_id>/proposal")
+@require_auth(role="request_agent")
+def agent_service_request_proposal(request_id: int):
+    if _service_requests_store is None:
+        return _service_requests_unavailable()
+    body = request.get_json(silent=True) or {}
+    actor = request.user["sub"]  # type: ignore[attr-defined]
+    result = _service_requests_store.add_proposal(
+        request_id, actor,
+        summary=body.get("summary") or "", plan=body.get("plan") or "", risks=body.get("risks") or "",
+        effort=body.get("effort") or "", approval_needed=body.get("approval_needed") or "",
+        needs_data_change=bool(body.get("needs_data_change")), needs_deploy=body.get("needs_deploy", True) is not False)
+    if isinstance(result, tuple):
+        msg = result[1]
+        code = {"not found": 404, "not open": 409, "proposal exists": 409}.get(msg, 400)
+        return jsonify({"error": msg, "code": "PROPOSAL_REJECTED"}), code
+    return jsonify({"ok": True, "id": result["id"], "status": result["status"]})
+
+
 @app.post("/api/service-requests")
 @require_auth()
 def service_request_create():
