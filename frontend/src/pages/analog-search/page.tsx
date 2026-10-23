@@ -91,6 +91,18 @@ function parseJsonArr(s: string | null | undefined): unknown[] {
   try { const v = JSON.parse(s); return Array.isArray(v) ? v : []; } catch { return []; }
 }
 
+// 허가일이 빈 이유 — 빈칸이 "아직 못 했다"와 "찾아봤는데 없다"로 구분되도록. 어느 쪽도 '미허가' 를 뜻하지 않는다.
+const PERMIT_GAP: Record<string, { label: string; tip: string }> = {
+  api_zero: { label: 'API 기록 없음', tip: '식약처 공개 API에서 이 약제의 허가 기록이 확인되지 않았습니다. 급여 등재가 오래전 끝난 약제는 허가 취하·만료로 조회되지 않는 경우가 많습니다(추정). 미허가를 뜻하지 않습니다.' },
+  no_key: { label: '조회 키 없음', tip: '건강보험 급여로 등재된 적이 없어 약가 파일(정식 제품명·보험코드)과 연결할 수 없어 식약처 조회를 하지 못했습니다. 허가 여부를 뜻하지 않습니다.' },
+  hold: { label: '확인 필요', tip: '이름이 비슷한 다른 제형의 허가 기록이 있으나 같은 제품인지 확신할 수 없어 채우지 않았습니다. 보고서 원문 확인이 필요합니다.' },
+};
+function PermitGap({ note }: { note?: string | null }) {
+  const g = note ? PERMIT_GAP[note] : null;
+  if (!g) return <span className="text-gray-300" title="식약처 API에서 확인되지 않았거나 원문에 없음">—</span>;
+  return <span className="text-[11px] text-gray-400 border-b border-dotted border-gray-300 cursor-help" title={g.tip}>{g.label}</span>;
+}
+
 function Timeline({ r }: { r: AnalogReport }) {
   const events: { date: string; label: string; type: string }[] = [];
   const permit = _normDate(r.mfds_permit_date);
@@ -933,7 +945,7 @@ export default function AnalogSearchPage() {
                       ) : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-3 py-2.5 tabular-nums whitespace-nowrap text-gray-600">
-                      {r.mfds_permit_date ? r.mfds_permit_date.replace(/-/g, '.') : <span className="text-gray-300" title="식약처 API에서 확인되지 않았거나 원문에 없음">—</span>}
+                      {r.mfds_permit_date ? r.mfds_permit_date.replace(/-/g, '.') : <PermitGap note={r.mfds_permit_note} />}
                     </td>
                     <td className="px-3 py-2.5 tabular-nums whitespace-nowrap text-gray-600">
                       {r.first_reimbursement_date ? r.first_reimbursement_date.replace(/-/g, '.') : <span className="text-gray-300" title="국내 약가목록에서 확인되지 않음(비급여·미등재 포함)">—</span>}

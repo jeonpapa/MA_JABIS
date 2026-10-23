@@ -107,6 +107,8 @@ export interface AnalogReport {
   policy_drivers: string[];                // 기존 호환
   // 허가↔급여 갭
   mfds_permit_date: string | null;
+  /** 허가일이 비어 있는 이유(api_zero=식약처 API 기록 없음 · no_key=급여 미등재라 조회 키 없음 · hold=다른 제형과 혼동 우려로 보류). 허가일이 있으면 null */
+  mfds_permit_note?: 'api_zero' | 'no_key' | 'hold' | null;
   mfds_approval_date: string | null;
   mfds_effect_text?: string | null;        // detail 에서만
   coverage_gap_type: string | null;

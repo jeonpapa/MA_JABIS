@@ -206,6 +206,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS analog_fts USING fts5(
 
 # 신규 컬럼 목록 (기존 설치 마이그레이션용)
 _NEW_COLS: list[tuple[str, str]] = [
+    ("mfds_permit_note", "TEXT"),    # 허가일이 빈 이유 코드(api_zero|no_key|hold). 값이 있으면 허가일은 비어 있다. 빈칸 ≠ 미허가 — 화면 표시용 설명
     ("report_effect_text", "TEXT"),   # 약평위 보고서 1페이지 '효능·효과' 원문(식약처 mfds_effect_text 와 별개 원천)
     ("brand_name_raw", "TEXT"),
     ("dosage", "TEXT"),
