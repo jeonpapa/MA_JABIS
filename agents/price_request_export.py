@@ -175,7 +175,7 @@ def generate_xlsx(data):
     if scope == "a8":
         extra = [("prezzo_pubblico", "IT 소비자가 참조 (EUR, 계산 미사용)", 37), ("per_unit_local", "최소단위 현지가", 22), ("unit_strength_mg", "최소단위 총함량 (mg)", 25),
                  ("exchange_rate", "적용환율 (원/현지통화 1)", 27), ("exchange_rate_from", "환율 기간 시작", 19), ("exchange_rate_to", "환율 기간 종료", 19),
-                 ("factory_ratio", "공장도가 산출비율", 22), ("factory_price_krw", "최소단위 공장도가 (원)", 27),
+                 ("ex_factory_price", "공식 공장도가 (원포장, 현지통화, VAT 제외)", 40), ("factory_ratio", "공장도가 산출비율", 22), ("factory_price_krw", "최소단위 공장도가 (원)", 27),
                  ("vat_rate", "한국 A8 VAT 비율", 21), ("distribution_margin", "한국 A8 유통거래폭", 23),
                  ("adjusted_price_krw", "최소단위 A8 조정가 (원)", 28), ("adjusted_price_krw_normalized", "제형 내 보정 조정가 (원)", 29),
                  ("reference_strength_mg", "보정 기준함량 (mg)", 24), ("dose_norm_note", "제형·보정 주의", 42)]

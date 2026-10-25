@@ -175,10 +175,12 @@ A8_adj_per_unit_KRW =
 |-----------|-------------|-----------|
 | IT `it_aifa` **Class H 행** / `it_aifa_tnf` | `aifa_exfactory` (행 선언) | **1.0** (이미 ex-factory — 유일한 오버라이드) |
 | IT `it_aifa` **Class A 행** | `None` (행 선언, raw_data.price_kind="prezzo al pubblico") | **0.93** (IT 국가 기본 — 공중가) |
-| CH `ch_compendium` | `compendium` | **0.73** (CH 국가 기본) |
+| CH `ch_compendium` | `compendium` | **공식 공장도가(SL FAP) 우선**, 없을 때만 0.73 (CH 국가 기본, 추정) |
 | FR `fr_bdpm` / `fr_vidal` | `vidal` | **0.77** (FR 국가 기본) |
 | US `us_micromedex` | `redbook_wac` | **0.74** (US 국가 기본, WAC) |
 | 그 외 | `None` | 국가 기본 |
+
+**2026-10-23 스위스 공식 공장도가 (개선 요청 #3, 사용자 결정)**: CH 는 BAG SL 공개 API(`agents/scrapers/ch_sl.py`, `GET epl.bag.admin.ch/api/sl/public/medicinal-products?search=<상표>&page=1`)가 팩별 Fabrikabgabepreis(`exFactoryPrice`, VAT 제외)를 공개한다. 판매가(`retailPrice`)가 저장된 Publikumspreis 와 일치하는 팩이 하나로 특정될 때만 `raw_data.ex_factory_price`(원포장 CHF) 와 SL 팩 구성(`pack_count`, 예: Keytruda 100mg/4ml = "2 Stk")을 채우고, 계산기는 고정 비율 대신 `FAP / pack_count` 를 쓴다(`calculate_adjusted_price(exfactory_price=…)`, 비율은 FAP/판매가로 역산 표기). 불일치·모호·조회 실패는 기존 0.73 추정 유지(임의 보정 금지). 윈레바이어 45mg: 추정 4,640 CHF → 실제 5,895.82 CHF. 저장 행 정정은 `scripts/repair_ch_exfactory.py`(dry-run 기본, compare-and-set, undo JSON). 출처 링크 slug 는 제품명 기반(`product_slug`) — 과거 모든 제품에 `keytruda` 고정.
 
 **2026-10-06 주석 (사용자 결정)**: 이전 문서는 `ch_compendium`/`fr_vidal` → 0.65 라고 적었으나, 그 키는 스크레이퍼의 `SOURCE_TYPE`(`"compendium"`/`"vidal"`) 과 한 번도 일치한 적이 없어 **0.65 는 발효된 적 없는 과거의 문서상 의도**였다. 실제로 저장·표시된 모든 CH/FR 조정가는 0.73/0.77 로 계산됐다(예: FR Vidal Keytruda #1504 factory_price_krw 2,379,302 = 2,000.74 × 1544.43 × 0.77). 결정: **코드가 현재 시점의 진실이고 문서는 과거다. 저장된 값은 재계산하지 않는다.** 죽은 항목은 `SOURCE_OVERRIDES` 에서 삭제했고(0.65 를 살리지 않음), `tests/test_foreign_factory_ratio_effective.py` 가 스크레이퍼 선언 `SOURCE_TYPE` 으로 실효 비율을 고정해 다음 drift(오버라이드 키 ≠ 스크레이퍼 선언)를 잡는다. 0.65 가 필요하다고 판단되면 그때 키를 스크레이퍼 선언값에 맞춰 새로 넣고 이 표·테스트·Welireg/Keytruda baseline 을 함께 갱신한다.
 

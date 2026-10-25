@@ -29,6 +29,7 @@ from playwright.async_api import Page
 
 from .base import BaseScraper
 from ._proxy import proxy_from_env, requests_proxies
+from .ch_sl import fetch_sl_packs, match_pack, pack_unit_count, sl_search_url
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,15 @@ REQUESTS_HEADERS = {
     "Accept-Language": "de-CH,de;q=0.9,en;q=0.8",
     "Referer": SEARCH_PAGE_URL,
 }
+
+
+def product_slug(description: str) -> str:
+    """제품 설명 → compendium URL slug ("WINREVAIR Trockensub 45 mg c Solv" → "winrevair-trockensub-45-mg-c-solv").
+
+    2026-10 개선 요청 #3: 과거에는 모든 제품에 slug="keytruda" 를 박아 윈레바이어 링크가 .../keytruda 로 저장됐다
+    (compendium 은 MNR 로 페이지를 찾아 열리긴 하지만 출처 표기가 틀렸다)."""
+    slug = re.sub(r"[^a-z0-9]+", "-", (description or "").lower()).strip("-")
+    return slug or "product"
 
 
 class ChCompendiumScraper(BaseScraper):
@@ -200,7 +210,7 @@ class ChCompendiumScraper(BaseScraper):
             "dosage_form":     "",
             "package_unit":    "",
             "local_price":     price,
-            "source_url":      PRODUCT_URL_TMPL.format(mnr=mnr, slug="keytruda"),
+            "source_url":      PRODUCT_URL_TMPL.format(mnr=mnr, slug=product_slug(description)),
             "extra": {
                 "mnr":        mnr,
                 "company":    company,
@@ -258,9 +268,37 @@ class ChCompendiumScraper(BaseScraper):
             if parsed:
                 results.append(parsed)
 
+        self._attach_sl_exfactory(results, query)
+
         if not results:
             logger.info("[CH] '%s' 결과 없음 (MSD 필터 적용)", query)
         return results
+
+    def _attach_sl_exfactory(self, results: list[dict], query: str) -> None:
+        """BAG SL 공개 API 의 실제 공장도가(FAP)를 붙인다 — 판매가가 일치하는 팩이 하나로 특정될 때만.
+
+        붙으면 extra.ex_factory_price(원포장, CHF, VAT 제외) 와 pack_count 가 채워지고, 계산기는 추정 비율(0.73) 대신
+        이 값을 쓴다. 조회 실패·불일치·모호하면 아무것도 붙이지 않는다(기존 추정 경로 유지, 임의 보정 없음)."""
+        if not results:
+            return
+        try:
+            packs = fetch_sl_packs(query.split("/")[0].strip(), session=self._session)
+        except Exception as e:  # 방어: 어떤 실패도 가격 수집을 막지 않는다
+            logger.warning("[CH] SL 공장도가 조회 예외: %s", e)
+            return
+        for item in results:
+            hit = match_pack(packs, item.get("local_price"), strength=item.get("dosage_strength"))
+            if not hit:
+                continue
+            extra = item.setdefault("extra", {})
+            extra["ex_factory_price"] = float(hit["ex_factory_price"])
+            extra["ex_factory_source"] = "BAG SL (Fabrikabgabepreis, VAT 제외)"
+            extra["ex_factory_url"] = sl_search_url(hit.get("trademark") or query)
+            extra["sl_pack_size"] = hit.get("pack_size")
+            extra["sl_gtin"] = hit.get("gtin")
+            n = pack_unit_count(hit.get("pack_size"))
+            if n:
+                item["pack_count"] = n
 
     async def refresh(self, _page: Page) -> None:
         """Compendium은 매번 실시간 조회 — 캐시 없음."""

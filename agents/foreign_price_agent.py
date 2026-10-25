@@ -182,6 +182,23 @@ def resolve_item_source_type(row: dict, class_default: Optional[str]) -> Optiona
     return class_default
 
 
+# 공식 공장도가(원포장, 현지통화, VAT 제외)를 행에 담아 주는 국가 — 고정 비율 추정 대신 이 값을 쓴다.
+# 2026-10 개선 요청 #3: 스위스는 BAG SL 이 팩별 FAP 를 공개하므로 판매가×0.73 추정을 쓰지 않는다.
+OFFICIAL_EXFACTORY_COUNTRIES = {"CH"}
+
+
+def official_exfactory_price(country: str, row: dict) -> Optional[float]:
+    """행(extra 또는 raw_data)에 담긴 공식 공장도가. 해당 국가가 아니거나 없거나 0 이하면 None(→ 기존 추정 비율)."""
+    if country not in OFFICIAL_EXFACTORY_COUNTRIES:
+        return None
+    val = _item_extra(row).get("ex_factory_price")
+    try:
+        val = float(val)
+    except (TypeError, ValueError):
+        return None
+    return val if val > 0 else None
+
+
 _IT_CSV_LABEL_BY_CLASS = {"A": "AIFA Lista Classe A (Prezzo al pubblico)", "H": "AIFA Lista Classe H (Prezzo Ex-factory)"}
 
 
@@ -447,6 +464,7 @@ class ForeignPriceAgent:
                     exchange_rate=rate_info["rate"],
                     pack_count=pack_count,
                     source_type=item_source_type,
+                    exfactory_price=official_exfactory_price(country, item),
                 )
                 item.update({
                     "exchange_rate": rate_info["rate"],
@@ -1190,6 +1208,7 @@ class ForeignPriceAgent:
                     exchange_rate=row["exchange_rate"],
                     pack_count=pack_count,
                     source_type=src_type,
+                    exfactory_price=official_exfactory_price(country, row),
                 )
                 row["factory_ratio"] = calc.get("factory_ratio")
                 row["factory_ratio_label"] = calc.get("factory_ratio_label", "")

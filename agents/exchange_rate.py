@@ -480,10 +480,13 @@ class PriceCalculator:
         exchange_rate: float,
         pack_count: int = None,
         source_type: str = None,
+        exfactory_price: float = None,
     ) -> dict:
         """A8 조정가 계산. 반환 `adjusted_price_krw` 는 per-unit KRW.
 
         pack_count: listed_price 가 pack 가격이면 tablet/vial 수. None/1 이면 per-unit 취급.
+        exfactory_price: **공식 공장도가**(원포장, 현지통화, VAT 제외) — 있으면 고정 비율 추정 대신 이 값을 쓴다
+          (스위스 SL FAP). factory_ratio 는 실제 값/판매가로 역산해 표시한다. 없거나 0 이하면 무시.
         """
         # JPY per-100 → per-1 (저장된 레거시 행 923.21 호환) — 단일 정규화 지점 per_unit_rate
         exchange_rate = per_unit_rate(self.CURRENCY.get(country), exchange_rate)
@@ -494,7 +497,12 @@ class PriceCalculator:
             per_unit_listed = listed_price
             pack_count = 1
 
-        ratio = self.resolve_factory_ratio(country, source_type)
+        actual_fap = None
+        if isinstance(exfactory_price, (int, float)) and exfactory_price > 0 and listed_price:
+            actual_fap = float(exfactory_price)
+            ratio = actual_fap / float(listed_price)     # 실제 공장도가 / 저장 가격(판매가)
+        else:
+            ratio = self.resolve_factory_ratio(country, source_type)
         if ratio is None:
             raise ValueError(
                 f"factory_ratio 정의 없음: country={country} source_type={source_type}"
@@ -505,11 +513,12 @@ class PriceCalculator:
         per_unit_vat_krw     = per_unit_factory_krw * (1 + self.KR_VAT)
         per_unit_adj_krw     = per_unit_vat_krw * (1 + self.KR_DIST_MARGIN)
 
-        ratio_label = (
-            f"source:{source_type}={ratio}"
-            if source_type and source_type in self.SOURCE_OVERRIDES
-            else f"{country} factory_ratio={ratio}"
-        )
+        if actual_fap is not None:
+            ratio_label = f"{country} 공식 공장도가 {actual_fap:g}/판매가 {listed_price:g}={ratio:.4f}"
+        elif source_type and source_type in self.SOURCE_OVERRIDES:
+            ratio_label = f"source:{source_type}={ratio}"
+        else:
+            ratio_label = f"{country} factory_ratio={ratio}"
 
         return {
             "listed_price":        listed_price,
