@@ -32,15 +32,15 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures" / "it_aifa"
 
 # (국가, 행의 raw_data/extra, 클래스 기본 SOURCE_TYPE, 실효 ratio)
 EFFECTIVE = [
-    ("IT", {"aifa_class": "H", "price_kind": "ex-factory", "source_type": "aifa_exfactory"}, "aifa_exfactory", 1.0),
+    ("IT", {"aifa_class": "H", "price_kind": "ex-factory", "source_type": "aifa_exfactory"}, "aifa_exfactory", 0.93),   # 공장도가 × 0.93 (별첨5)
     ("IT", {"aifa_class": "A", "price_kind": "prezzo al pubblico", "source_type": None}, "aifa_exfactory", 0.93),   # 공중가 → 국가 기본
-    ("IT", {"channel": "tnf_determina", "price_kind": "ex-factory", "source_type": "aifa_exfactory"}, "aifa_exfactory", 1.0),
+    ("IT", {"channel": "tnf_determina", "price_kind": "ex-factory", "source_type": "aifa_exfactory"}, "aifa_exfactory", 0.93),   # 공장도가 × 0.93 (별첨5)
     ("UK", {"company": "MSD", "source_type": None}, None, 0.73),
-    ("CH", {"source_type": "compendium"}, "compendium", 0.73),
+    ("CH", {"source_type": "compendium"}, "compendium", 0.65),   # SL 공장도가 없을 때 대체 (별첨5 각주2)
     ("FR", {"source_type": "vidal"}, "vidal", 0.77),
     ("US", {"source_type": "redbook_wac"}, "redbook_wac", 0.74),
     ("JP", {"company": "ＭＳＤ"}, None, 0.79),              # 행에 선언 없음 → 클래스 기본(없음) → 국가 기본
-    ("IT", {}, "aifa_exfactory", 1.0),                     # 행에 선언 없음(레거시) → 클래스 기본 유지
+    ("IT", {}, "aifa_exfactory", 0.93),                     # 행에 선언 없음(레거시) → 클래스 기본 유지
 ]
 
 
@@ -186,8 +186,8 @@ def test_search_one_country_applies_class_a_country_default_and_class_h_override
     assert a_row["pack_count"] == 28
     # 6931.68/28 × 1544.43 × 0.93 × 1.10 × 1.0869 ≈ 425,122 (이전 1.0 이면 457,120 — +7.5%)
     assert a_row["adjusted_price_krw"] == A_EXPECTED and a_row["adjusted_price_krw"] < A_STORED_AS_EXFACTORY * 0.94
-    assert h_row["factory_ratio"] == 1.0 and h_row["factory_ratio_label"] == "source:aifa_exfactory=1.0"
-    assert h_row["adjusted_price_krw"] == H_EXPECTED == 304_691
+    assert h_row["factory_ratio"] == 0.93 and h_row["factory_ratio_label"] == "IT factory_ratio=0.93"   # 공장도가에도 × 0.93 (별첨5, 2026-10-26)
+    assert h_row["adjusted_price_krw"] == H_EXPECTED == 283_363
 
 
 def test_get_cached_results_recomputes_stored_class_a_rows_with_country_default(monkeypatch, tmp_path):
@@ -211,7 +211,7 @@ def test_get_cached_results_recomputes_stored_class_a_rows_with_country_default(
     assert a["factory_ratio"] == 0.93 and a["adjusted_price_krw"] == A_EXPECTED and a["source_type"] is None
     assert a["adjusted_price_krw"] < A_STORED_AS_EXFACTORY * 0.94
     assert a["source_label"] == "AIFA Lista Classe A (Prezzo al pubblico)"
-    assert h["factory_ratio"] == 1.0 and h["adjusted_price_krw"] == H_EXPECTED == 304_691
+    assert h["factory_ratio"] == 0.93 and h["adjusted_price_krw"] == H_EXPECTED == 283_363
     assert h["source_label"] == "AIFA Lista Classe H (Prezzo Ex-factory)"
     with sqlite3.connect(agent.db.db_path) as c:
         stored = c.execute("SELECT adjusted_price_krw, source_label FROM foreign_drug_prices WHERE id=?", (ida,)).fetchone()
@@ -219,7 +219,7 @@ def test_get_cached_results_recomputes_stored_class_a_rows_with_country_default(
 
 
 def test_keytruda_tnf_rows_keep_ex_factory_ratio():
-    """Keytruda baseline(IT TNF #1495/#1496) 보호 — TNF 행의 raw_data 는 ex-factory 를 선언하므로 1.0 그대로."""
+    """Keytruda baseline(IT TNF #1495/#1496) 보호 — TNF 행은 ex-factory 에도 × 0.93 (별첨5, 2026-10-26)."""
     row = {"country": "IT", "raw_data": json.dumps({"channel": "tnf_determina", "price_kind": "ex-factory", "source_type": "aifa_exfactory"})}
     src = fpa.resolve_item_source_type(row, ItAifaTnfScraper.SOURCE_TYPE)
-    assert PriceCalculator().calculate_adjusted_price("IT", 3798.34, 1544.43, pack_count=1, source_type=src)["adjusted_price_krw"] == 7_013_654
+    assert PriceCalculator().calculate_adjusted_price("IT", 3798.34, 1544.43, pack_count=1, source_type=src)["adjusted_price_krw"] == 6_522_698

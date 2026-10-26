@@ -173,15 +173,15 @@ def test_jp_per_vial_with_per100_jpy_rate_is_pinned():
 
 
 def test_it_tnf_one_and_two_vial_packs_pin_per_vial():
-    """IT TrovaNorme ex-factory(ratio 1.0): 1 flaconcino 와 2 flaconcini 의 per-vial 가 같아야 한다."""
+    """IT TrovaNorme ex-factory(공장도가 × 0.93): 1 flaconcino 와 2 flaconcini 의 per-vial 가 같아야 한다."""
     a = _agent()
     for row, pc in ((IT_1495, 1), (IT_1496, 2)):
         for fresh in (True, False):
             r = _price(a, row, fresh=fresh)
             assert r["pack_count"] == pc, (row["id"], fresh, r["pack_count"])
-            assert r["factory_ratio"] == 1.0
-            assert _close(r["adjusted_price_krw"], 7_013_654), (row["id"], r["adjusted_price_krw"])
-            assert _close(r["daily_cost_krw"], 667_967), (row["id"], r["daily_cost_krw"])
+            assert r["factory_ratio"] == 0.93      # 공장도가 × 0.93 (별첨5)
+            assert _close(r["adjusted_price_krw"], 6_522_698), (row["id"], r["adjusted_price_krw"])
+            assert _close(r["daily_cost_krw"], 621_209), (row["id"], r["daily_cost_krw"])
             assert r["total_pkg_mg"] == 100.0 * pc
 
 

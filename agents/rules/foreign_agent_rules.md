@@ -173,12 +173,23 @@ A8_adj_per_unit_KRW =
 ### source-specific 오버라이드 (PriceCalculator.SOURCE_OVERRIDES) — **코드가 적용하는 실효값**
 | 스크레이퍼 | SOURCE_TYPE | 실효 ratio |
 |-----------|-------------|-----------|
-| IT `it_aifa` **Class H 행** / `it_aifa_tnf` | `aifa_exfactory` (행 선언) | **1.0** (이미 ex-factory — 유일한 오버라이드) |
+| IT `it_aifa` **Class H 행** / `it_aifa_tnf` | `aifa_exfactory` (행 선언) | **0.93** (2026-10-26: 공장도가에도 × 0.93 — 별첨5. 이전 1.0 오버라이드 삭제) |
 | IT `it_aifa` **Class A 행** | `None` (행 선언, raw_data.price_kind="prezzo al pubblico") | **0.93** (IT 국가 기본 — 공중가) |
-| CH `ch_compendium` | `compendium` | **공식 공장도가(SL FAP) 우선**, 없을 때만 0.73 (CH 국가 기본, 추정) |
+| CH `ch_compendium` | `compendium` | **SL 공장도가(FAP) × 0.73**(`exfactory_price` 경로). SL 에 가격이 없을 때만 Compendium 약가 × **0.65**(별첨5 각주2) |
 | FR `fr_bdpm` / `fr_vidal` | `vidal` | **0.77** (FR 국가 기본) |
 | US `us_micromedex` | `redbook_wac` | **0.74** (US 국가 기본, WAC) |
 | 그 외 | `None` | 국가 기본 |
+
+**2026-10-26 별첨5 원문 대조 (사용자 승인, 심평원 규정 별첨5 「외국 조정가격 산출 기준 및 방법」 + `agents/price_adjustment.py`)**:
+- 산식: {[(공장도가 × 환율) × (1+VAT 10%)] × (1+유통거래폭)}, 원 미만 절사. 환율 = 접수 전월 포함 36개월 평균 매매기준율.
+- **DE**: Rote Liste **AVP/UVP** 에서 별도 산식으로 공장도가 역산 — `[(AVP/1.19 − 8.35)/1.03 − 0.7]/1.0315 × 0.93`(포장 단위 AVP 에 적용,
+  `price_adjustment.germany_exfactory_local`). 고정 0.6955 폐기(약 €198 에서만 맞았다 — 고가약은 약 0.735). AVP ≤ 고정 수수료면 산식 불가 → 국가 기본으로 대체하고 라벨에 남긴다.
+  Rote Liste 표 열은 `AVP (EB)/FB | AVP/UVP`; **기준 가격은 AVP/UVP**(사용자 결정), EB/FB 는 raw_data 참고. 파서: `de_rote_liste.parse_packungsangaben`.
+- **CH**: `SL 공장도가(FAP) × 0.73`. 이전(판매가 × 0.73, 이후 FAP × 1.0)은 둘 다 틀렸다. SL 가격 부재 시 Compendium × 0.65.
+- **IT**: Codifa/AIFA/TrovaNorme **공장도가 × 0.93**. Classe A 공중가는 기준 가격이 아니다(공장도가를 TrovaNorme 결정문에서 읽는다).
+- **FR**: 별첨5 = BdM_IT(Assurance Maladie)의 공장도가(Prix Fabricant HT) × 0.77, 약가 미확인 시 Vidal × 0.65. **미적용** — BdM_IT(codage.ext.cnamts.fr)가
+  한국·일본(Fly) 망에서 연결되지 않는다(2026-10-26 점검: DNS 는 되나 80/443 시간초과, 프랑스 출구 프록시 502). 접속 경로가 확보될 때까지 BDPM 공중가 × 0.77 유지.
+- 미구현 메모: 저가약 유통거래폭 10.41%(고가약 기준 내복외용제 475원/주사제 4,750원 이상), 최대포장·최고가 선택 규칙(③).
 
 **2026-10-23 스위스 공식 공장도가 (개선 요청 #3, 사용자 결정)**: CH 는 BAG SL 공개 API(`agents/scrapers/ch_sl.py`, `GET epl.bag.admin.ch/api/sl/public/medicinal-products?search=<상표>&page=1`)가 팩별 Fabrikabgabepreis(`exFactoryPrice`, VAT 제외)를 공개한다. 판매가(`retailPrice`)가 저장된 Publikumspreis 와 일치하는 팩이 하나로 특정될 때만 `raw_data.ex_factory_price`(원포장 CHF) 와 SL 팩 구성(`pack_count`, 예: Keytruda 100mg/4ml = "2 Stk")을 채우고, 계산기는 고정 비율 대신 `FAP / pack_count` 를 쓴다(`calculate_adjusted_price(exfactory_price=…)`, 비율은 FAP/판매가로 역산 표기). 불일치·모호·조회 실패는 기존 0.73 추정 유지(임의 보정 금지). 윈레바이어 45mg: 추정 4,640 CHF → 실제 5,895.82 CHF. 저장 행 정정은 `scripts/repair_ch_exfactory.py`(dry-run 기본, compare-and-set, undo JSON). 출처 링크 slug 는 제품명 기반(`product_slug`) — 과거 모든 제품에 `keytruda` 고정.
 

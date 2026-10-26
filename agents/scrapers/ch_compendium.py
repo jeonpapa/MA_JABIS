@@ -15,7 +15,7 @@
   - SL 상태 (Spezialitätenliste 수재 여부)
 
 HIRA 조정가 공식:
-  source_type="compendium" → factory_ratio = 0.65
+  source_type="compendium" → SL 공장도가 없을 때만 Compendium × 0.65 (별첨5 각주2)
   (PriceCalculator.calculate_factory_price 참조)
 """
 
@@ -62,7 +62,7 @@ class ChCompendiumScraper(BaseScraper):
     COUNTRY       = "CH"
     CURRENCY      = "CHF"
     SOURCE_LABEL  = "compendium.ch (Publikumspreis, SL)"
-    SOURCE_TYPE   = "compendium"    # PriceCalculator 오버라이드 없음 → CH 기본 ratio 0.73 (2026-10: 0.65 는 발효된 적 없음)
+    SOURCE_TYPE   = "compendium"    # SL 공장도가(extra.ex_factory_price)가 있으면 공장도가×0.73, 없으면 Compendium×0.65 (별첨5, 2026-10-26)
     REQUIRES_LOGIN = False
     PROXY_ENV_KEYS = ("CH_COMPENDIUM_PROXY", "FOREIGN_PROXY")   # Cloudflare 간헐 차단 — residential proxy(설정 프로브가 확인)
 

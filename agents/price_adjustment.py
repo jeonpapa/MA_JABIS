@@ -102,6 +102,19 @@ def calculate_one(
     )
 
 
+def germany_exfactory_local(avp: float) -> float:
+    """독일 공장도 출하가(현지통화, EUR) — 별첨5 독일 별도 산식. 입력은 **포장 단위** Rote Liste 약국판매가(AVP).
+
+      공장도 = [(AVP/1.19 - 8.35)/1.03 - 0.7]/1.0315 × 0.93
+      (부가세 19%, 약국마진 3%+€8.35, 도매마진 3.15%+€0.70, 환급률 = 공장도가의 7%)
+    고정 수수료가 있어 비율이 가격에 따라 달라진다(€100 → 0.66, €1,000 → 0.73, 고가 → 0.735).
+    결과가 0 이하면 0 (저가 포장에서 고정 수수료가 가격을 넘는 경우 — 호출측이 미확정으로 다룬다)."""
+    step1 = (avp / 1.19) - 8.35
+    step2 = step1 / 1.03
+    step3 = (step2 - 0.7) / 1.0315
+    return max(step3 * 0.93, 0.0)
+
+
 def _calculate_germany(unit_local: float, fx: float, margin: float) -> AdjustmentResult:
     """
     Germany 독립 수식 (Excel H22):

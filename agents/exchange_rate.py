@@ -429,6 +429,11 @@ class ExchangeRateFetcher:
         return result
 
 
+def per_unit_listed_de(avp: float) -> float:
+    from agents.price_adjustment import germany_exfactory_local
+    return round(germany_exfactory_local(float(avp)), 2)
+
+
 class PriceCalculator:
     """A8 조정가 계산기 — 한국 재정영향분석 표준 (per-tablet/per-vial KRW).
 
@@ -459,10 +464,15 @@ class PriceCalculator:
 
     # source-specific 오버라이드 (공시가 체계가 다른 경우). 키는 스크레이퍼의 SOURCE_TYPE 과 **정확히** 같아야 한다 —
     # tests/test_foreign_factory_ratio_effective.py 가 스크레이퍼 선언값으로 실효 비율을 고정한다.
+    # 2026-10-26: 별첨5 원문 확인 — 0.65 는 '약가 미확인 시 대체'로만 쓰인다. CH "compendium" 만 복원(위), FR "vidal" 은 FR 단계에서 결정.
     # 2026-10: "ch_compendium"/"fr_vidal" 0.65 항목 삭제 — 스크레이퍼 SOURCE_TYPE 은 "compendium"/"vidal" 이라 한 번도
     # 발효된 적 없고 실효 비율은 CH 0.73 / FR 0.77(국가 기본) 이었다. 사용자 결정: 코드가 현재 시점의 진실, 저장값 재계산 없음.
     SOURCE_OVERRIDES = {
-        "aifa_exfactory": 1.0,    # IT Class H / TrovaNorme: 이미 ex-factory
+        # 2026-10-26: IT 의 "aifa_exfactory": 1.0 오버라이드 삭제 — 별첨5 는 Codifa/AIFA 공장도가에도 × 0.93 을 적용한다
+        # (사용자 승인: TrovaNorme 공장도가 × 0.93). 이제 IT 는 소스와 관계없이 국가 기본 0.93.
+        # 별첨5 각주2: CH 는 SL 공장도가 × 0.73 이 원칙(행에 ex_factory_price 가 있을 때 — exfactory_price 경로).
+        # SL 에서 약가가 확인되지 않는 경우에만 Compendium 약가 × 0.65 (2026-10-26 사용자 승인, 이전 결정 0.73 대체).
+        "compendium": 0.65,
     }
 
     CURRENCY = COUNTRY_CURRENCY
@@ -485,8 +495,9 @@ class PriceCalculator:
         """A8 조정가 계산. 반환 `adjusted_price_krw` 는 per-unit KRW.
 
         pack_count: listed_price 가 pack 가격이면 tablet/vial 수. None/1 이면 per-unit 취급.
-        exfactory_price: **공식 공장도가**(원포장, 현지통화, VAT 제외) — 있으면 고정 비율 추정 대신 이 값을 쓴다
-          (스위스 SL FAP). factory_ratio 는 실제 값/판매가로 역산해 표시한다. 없거나 0 이하면 무시.
+        exfactory_price: **공식 공장도가**(원포장, 현지통화, VAT 제외) — 있으면 저장 가격(공중가·판매가) 대신 이 값에
+          국가 비율(별첨5: CH 0.73 / FR 0.77 = 리베이트 반영)을 곱한다. factory_ratio 는 (공장도가×국가비율)/저장가격으로
+          역산해 표시한다. 없거나 0 이하면 무시(→ 저장 가격에 source_type 비율).
         """
         # JPY per-100 → per-1 (저장된 레거시 행 923.21 호환) — 단일 정규화 지점 per_unit_rate
         exchange_rate = per_unit_rate(self.CURRENCY.get(country), exchange_rate)
@@ -498,9 +509,25 @@ class PriceCalculator:
             pack_count = 1
 
         actual_fap = None
-        if isinstance(exfactory_price, (int, float)) and exfactory_price > 0 and listed_price:
+        fap_rebate = None
+        de_formula = False
+        de_fallback = False
+        if isinstance(exfactory_price, (int, float)) and exfactory_price > 0 and listed_price \
+                and self.FACTORY_RATIO.get(country) is not None:
             actual_fap = float(exfactory_price)
-            ratio = actual_fap / float(listed_price)     # 실제 공장도가 / 저장 가격(판매가)
+            fap_rebate = self.FACTORY_RATIO[country]
+            ratio = actual_fap * fap_rebate / float(listed_price)   # (공장도가×국가비율) / 저장 가격
+        elif country == "DE" and listed_price:
+            # 별첨5 독일 별도 산식 — 포장 단위 AVP 에서 공장도가를 역산 (고정 수수료 때문에 비율이 가격에 따라 변한다)
+            from agents.price_adjustment import germany_exfactory_local
+            de_exf = germany_exfactory_local(float(listed_price))
+            if de_exf > 0:
+                ratio = de_exf / float(listed_price)
+                de_formula = True
+            else:
+                # 약국판매가가 고정 수수료(약 €10) 이하라 산식이 성립하지 않는다 — 기존 국가 비율로 대체하고 라벨에 남긴다
+                ratio = self.resolve_factory_ratio(country, source_type)
+                de_fallback = True
         else:
             ratio = self.resolve_factory_ratio(country, source_type)
         if ratio is None:
@@ -514,7 +541,12 @@ class PriceCalculator:
         per_unit_adj_krw     = per_unit_vat_krw * (1 + self.KR_DIST_MARGIN)
 
         if actual_fap is not None:
-            ratio_label = f"{country} 공식 공장도가 {actual_fap:g}/판매가 {listed_price:g}={ratio:.4f}"
+            ratio_label = (f"{country} 공식 공장도가 {actual_fap:g} × {fap_rebate} (별첨5) / 저장가 {listed_price:g}"
+                           f" = {ratio:.4f}")
+        elif de_fallback:
+            ratio_label = f"DE 산식 불가(AVP {listed_price:g} 가 고정 수수료 이하) → 국가 기본 {ratio}"
+        elif de_formula:
+            ratio_label = f"DE 별첨5 산식(AVP {listed_price:g} → 공장도가 {per_unit_listed_de(listed_price):g}) = {ratio:.4f}"
         elif source_type and source_type in self.SOURCE_OVERRIDES:
             ratio_label = f"source:{source_type}={ratio}"
         else:

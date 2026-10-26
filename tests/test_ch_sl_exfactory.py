@@ -31,29 +31,29 @@ SL_SAMPLE = {"items": [
 ]}
 
 
-def test_calculator_uses_actual_fap_not_ratio():
+def test_calculator_uses_fap_times_country_ratio():
+    """별첨5: 스위스 = SL 공장도가 × 0.73 (리베이트 반영). 판매가에 비율을 곱하지 않는다."""
     c = PriceCalculator()
     r = c.calculate_adjusted_price("CH", 6356.9, 1673.54, pack_count=1, source_type="compendium", exfactory_price=5895.82)
-    assert r["factory_price_krw"] == int(5895.82 * 1673.54)
-    assert abs(r["factory_ratio"] - 5895.82 / 6356.9) < 1e-9
-    assert "공식 공장도가" in r["factory_ratio_label"]
+    assert r["factory_price_krw"] == int(5895.82 * 0.73 * 1673.54)
+    assert abs(r["factory_ratio"] - 5895.82 * 0.73 / 6356.9) < 1e-9
+    assert "공식 공장도가" in r["factory_ratio_label"] and "0.73" in r["factory_ratio_label"]
     est = c.calculate_adjusted_price("CH", 6356.9, 1673.54, pack_count=1, source_type="compendium")
-    assert est["factory_ratio"] == 0.73            # FAP 없으면 기존 추정 유지
-    assert r["factory_price_krw"] > est["factory_price_krw"]
+    assert est["factory_ratio"] == 0.65            # FAP 없으면 Compendium × 0.65 (별첨5 각주2)
 
 
 def test_calculator_divides_pack_for_fap():
     c = PriceCalculator()
     r = c.calculate_adjusted_price("CH", 4294.1, 1673.54, pack_count=2, source_type="compendium", exfactory_price=3933.27)
-    assert r["factory_price_krw"] == int(3933.27 / 2 * 1673.54)
-    assert r["factory_price"] == round(3933.27 / 2, 4)
+    assert r["factory_price_krw"] == int(3933.27 / 2 * 0.73 * 1673.54)
+    assert r["factory_price"] == round(3933.27 / 2 * 0.73, 4)
 
 
 def test_calculator_ignores_nonpositive_fap():
     c = PriceCalculator()
     for bad in (0, -5, None):
         r = c.calculate_adjusted_price("CH", 100.0, 1700.0, source_type="compendium", exfactory_price=bad)
-        assert r["factory_ratio"] == 0.73
+        assert r["factory_ratio"] == 0.65
 
 
 def test_official_exfactory_only_for_ch_and_valid():
@@ -173,7 +173,7 @@ def test_repair_derive_scales_and_sets_pack_count():
     entry = {"fap": 3933.27, "sl_pack_size": "2 Stk", "gtin": "C", "sl_pack_count": 2, "fap_url": "u"}
     new = m.derive(row, entry)
     assert new["pack_count"] == 2 and new["pack_count_source"] == "scraper"
-    assert new["factory_price_krw"] == int(3933.27 / 2 * 1673.54)
+    assert new["factory_price_krw"] == int(3933.27 / 2 * 0.73 * 1673.54)
     assert json.loads(new["raw_data"])["ex_factory_price"] == 3933.27
     assert json.loads(new["raw_data"])["source_type"] == "compendium"        # 기존 raw_data 보존
     ratio = new["adjusted_price_krw"] / row["adjusted_price_krw"]

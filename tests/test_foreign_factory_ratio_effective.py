@@ -34,9 +34,9 @@ EFFECTIVE = [
     ("DE", DeRoteListeScraper, 0.6955),
     ("FR", FrBdpmScraper, 0.77),            # "vidal" — 오버라이드 없음(과거 문서의 0.65 는 발효된 적 없음)
     ("FR", FrVidalScraper, 0.77),
-    ("IT", ItAifaScraper, 1.0),             # "aifa_exfactory" — 이미 ex-factory
-    ("IT", ItAifaTnfScraper, 1.0),
-    ("CH", ChCompendiumScraper, 0.73),      # "compendium" — 오버라이드 없음(과거 문서의 0.65 는 발효된 적 없음)
+    ("IT", ItAifaScraper, 0.93),            # "aifa_exfactory" — 오버라이드 삭제: 공장도가에도 × 0.93 (별첨5, 2026-10-26)
+    ("IT", ItAifaTnfScraper, 0.93),
+    ("CH", ChCompendiumScraper, 0.65),      # "compendium" — SL 공장도가가 없을 때의 대체(별첨5 각주2: Compendium × 0.65)
     ("JP", JpMhlwScraper, 0.79),
     ("CA", CaOntarioScraper, 0.81),
 ]
@@ -64,7 +64,7 @@ def test_keytruda_fr_ch_rows_use_country_default_ratio():
     assert fr["factory_ratio"] == 0.77 and fr["factory_price_krw"] == 2_379_302
     assert fr["factory_ratio_label"] == "FR factory_ratio=0.77"
     ch = c.calculate_adjusted_price("CH", 31.75, 1700.0, pack_count=1, source_type=ChCompendiumScraper.SOURCE_TYPE)
-    assert ch["factory_ratio"] == 0.73
+    assert ch["factory_ratio"] == 0.65          # SL 공장도가 없음 → Compendium × 0.65 (별첨5 각주2)
 
 
 if __name__ == "__main__":

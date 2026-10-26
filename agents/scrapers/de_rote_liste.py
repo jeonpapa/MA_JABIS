@@ -30,7 +30,7 @@
 주의:
   - DocCheck는 의료전문가용 인증 서비스. MSD 임직원 계정 필요.
   - 로그인 미설정 시 local_price=None (비급여 처리)
-  - 가격 단위: AVP (EB)/FB = Erstattungsbetrag/Festbetrag (급여 기준가)
+  - 가격 단위: **AVP/UVP(목록가)** 를 기준 가격으로 사용 (2026-10-26 사용자 결정). AVP (EB)/FB = Erstattungsbetrag/Festbetrag 는 참고로만 보존
 """
 
 import json
@@ -70,10 +70,57 @@ HEADERS = {
 }
 
 
+# ── Packungsangaben 가격표 파서 (2026-10-26) ────────────────────────────────────────────
+# 로그인 후 표 열: [포장] [N1/N2/N3] PZN | AVP (EB)/FB | AVP/UVP. 값 예: "EB 2.456,22 €" / "4.434,18 €".
+# 별첨5(심평원) 는 독일 가격을 'Rote Liste(약국판매가)' 로 쓰고 조정가 산식으로 공장도가를 역산한다 → 사용자 결정:
+# **AVP/UVP(목록가) 를 기준 가격**으로 쓰고, EB/FB(협상·고정 상환액 기준가)는 참고로 보존한다. 한 열만 있으면 추측하지 않는다.
+_DE_NUM = r"\d{1,3}(?:\.\d{3})*,\d{2}"
+_PACK_ROW = re.compile(
+    rf"(?P<pack>\d+\s*[A-Za-zÄÖÜäöü\.\- ]+?(?:\d[\d,\.]*\s*(?:mg|ml|µg|g)(?:/\s*(?:\d+\s*)?m[lL])?(?:\s*KIT)?)?)\s+"
+    rf"(?:(?P<n>N[123])\s+)?(?P<pzn>\d{{8}})\s+"
+    rf"(?P<c1>(?:(?:EB|FB)\s+)?{_DE_NUM}\s*€)?\s*(?P<c2>(?:(?:EB|FB)\s+)?{_DE_NUM}\s*€)?",
+)
+
+
+def _de_to_float(txt: str) -> float:
+    return float(re.search(_DE_NUM, txt).group(0).replace(".", "").replace(",", "."))
+
+
+def parse_packungsangaben(text: str) -> list[dict]:
+    """상세 페이지 텍스트의 PACKUNGSANGABEN 표 → [{pack, n, pzn, avp_eb_fb, eb_label, avp_uvp}].
+
+    - 두 값이 모두 있으면 앞=AVP (EB)/FB, 뒤=AVP/UVP.
+    - 값이 하나뿐이고 EB/FB 표시가 있으면 EB/FB 만(AVP/UVP 는 None — 추측하지 않는다).
+    - 값이 하나뿐이고 표시가 없으면 AVP/UVP.
+    """
+    i = text.find("PACKUNGSANGABEN")
+    seg = text[i:] if i >= 0 else text
+    seg = re.sub(r"\s+", " ", seg)
+    rows = []
+    for m in _PACK_ROW.finditer(seg):
+        c1, c2 = m.group("c1"), m.group("c2")
+        eb = uvp = None
+        label = None
+        if c1 and c2:
+            eb, uvp = _de_to_float(c1), _de_to_float(c2)
+            label = "EB" if c1.strip().startswith("EB") else ("FB" if c1.strip().startswith("FB") else None)
+        elif c1 or c2:
+            only = c1 or c2
+            if re.match(r"\s*(EB|FB)\b", only):
+                eb, label = _de_to_float(only), only.strip()[:2]
+            else:
+                uvp = _de_to_float(only)
+        if eb is None and uvp is None:
+            continue
+        rows.append({"pack": m.group("pack").strip(), "n": m.group("n"), "pzn": m.group("pzn"),
+                     "avp_eb_fb": eb, "eb_label": label, "avp_uvp": uvp})
+    return rows
+
+
 class DeRoteListeScraper(BaseScraper):
     COUNTRY        = "DE"
     CURRENCY       = "EUR"
-    SOURCE_LABEL   = "Rote Liste (AVP, DocCheck)"
+    SOURCE_LABEL   = "Rote Liste (AVP/UVP, DocCheck)"
     REQUIRES_LOGIN = True
 
     def __init__(self, cache_dir: Path = None, msd_only: bool = False, **kwargs):
@@ -388,7 +435,16 @@ class DeRoteListeScraper(BaseScraper):
             except ValueError:
                 continue
 
-        if all_prices:
+        parsed_rows = parse_packungsangaben(text)
+        uvp_rows = [r for r in parsed_rows if r["avp_uvp"] is not None]
+        if uvp_rows:
+            # 사용자 결정(2026-10-26): AVP/UVP 가 기준 가격. 첫 행(최소 포장)을 쓰되 모든 포장을 보존한다.
+            price = uvp_rows[0]["avp_uvp"]
+            pzn = uvp_rows[0]["pzn"] or pzn
+            dosage = uvp_rows[0]["pack"] or dosage
+            all_prices = [{"dosage_strength": r["pack"], "pack_size": r["n"], "pzn": r["pzn"], "price": r["avp_uvp"],
+                           "avp_eb_fb": r["avp_eb_fb"], "price_column": "AVP/UVP"} for r in parsed_rows]
+        elif all_prices:
             price = all_prices[0]["price"]
             dosage = all_prices[0]["dosage_strength"] or dosage
             pzn    = all_prices[0]["pzn"] or pzn
