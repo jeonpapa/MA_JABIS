@@ -187,9 +187,17 @@ A8_adj_per_unit_KRW =
   Rote Liste 표 열은 `AVP (EB)/FB | AVP/UVP`; **기준 가격은 AVP/UVP**(사용자 결정), EB/FB 는 raw_data 참고. 파서: `de_rote_liste.parse_packungsangaben`.
 - **CH**: `SL 공장도가(FAP) × 0.73`. 이전(판매가 × 0.73, 이후 FAP × 1.0)은 둘 다 틀렸다. SL 가격 부재 시 Compendium × 0.65.
 - **IT**: Codifa/AIFA/TrovaNorme **공장도가 × 0.93**. Classe A 공중가는 기준 가격이 아니다(공장도가를 TrovaNorme 결정문에서 읽는다).
-- **FR**: 별첨5 = BdM_IT(Assurance Maladie)의 공장도가(Prix Fabricant HT) × 0.77, 약가 미확인 시 Vidal × 0.65. **미적용** — BdM_IT(codage.ext.cnamts.fr)가
-  한국·일본(Fly) 망에서 연결되지 않는다(2026-10-26 점검: DNS 는 되나 80/443 시간초과, 프랑스 출구 프록시 502). 접속 경로가 확보될 때까지 BDPM 공중가 × 0.77 유지.
-- 미구현 메모: 저가약 유통거래폭 10.41%(고가약 기준 내복외용제 475원/주사제 4,750원 이상), 최대포장·최고가 선택 규칙(③).
+- **FR**: 별첨5 = BdM_IT(Assurance Maladie)의 공장도가(PFHT) × 0.77, 약가 미확인 시 Vidal × 0.65.
+  BdM_IT(codage.ext.cnamts.fr)는 2026-10 중순부터 전 세계에서 응답하지 않는다(2026-10-27 외부 점검: 파리 포함 13개국 80/443 시간초과,
+  ameli.fr 본사이트는 정상. 2026-01 에도 같은 장애). **대체 자료원 = 관보(Journal officiel) 「Avis relatif aux prix de spécialités
+  pharmaceutiques」 의 PFHT** — BdM_IT 와 같은 CEPS 공식 가격(공중가 PPTTC 가 BDPM 과 일치함을 확인). 병원 전용(liste en sus)은
+  L.162-16-6 공시의 UCD 별 tarif de responsabilité HT(= Vidal 'Prix et tarif de responsabilité (HT) par UCD', 프리비미스 480mg 293.23×28
+  = PFHT 8,210.44 로 일치 확인). 저장: `scripts/insert_fr_jo_pfht.py`(local_price=PFHT, source_type=None → 0.77).
+  접근: Légifrance 웹은 스크립트 요청에 Cloudflare 403 — 브라우저는 자동 통과. 비브라우저 공식 경로 = DILA JORF 오픈데이터
+  (echanges.dila.gouv.fr/OPENDATA/JORF/, Mac·Fly 접속 확인) 또는 Légifrance PISTE API(계정 필요). 자동 수집기는 미구현.
+  PFHT 공시가 없는 행(예: 프리비미스 주사)은 BDPM 공중가 × 0.77 을 유지한다(추정 — 라벨로 구분).
+- **의도적 미반영(사용자 결정 2026-10-26)**: 저가약 유통거래폭 10.41%(고가약 기준 내복외용제 475원/주사제 4,750원 이상) — 8.69% 고정 유지. 구현하지 말 것.
+- 미구현 메모: 최대포장·최고가 선택 규칙(③).
 
 **2026-10-23 스위스 공식 공장도가 (개선 요청 #3, 사용자 결정)**: CH 는 BAG SL 공개 API(`agents/scrapers/ch_sl.py`, `GET epl.bag.admin.ch/api/sl/public/medicinal-products?search=<상표>&page=1`)가 팩별 Fabrikabgabepreis(`exFactoryPrice`, VAT 제외)를 공개한다. 판매가(`retailPrice`)가 저장된 Publikumspreis 와 일치하는 팩이 하나로 특정될 때만 `raw_data.ex_factory_price`(원포장 CHF) 와 SL 팩 구성(`pack_count`, 예: Keytruda 100mg/4ml = "2 Stk")을 채우고, 계산기는 고정 비율 대신 `FAP / pack_count` 를 쓴다(`calculate_adjusted_price(exfactory_price=…)`, 비율은 FAP/판매가로 역산 표기). 불일치·모호·조회 실패는 기존 0.73 추정 유지(임의 보정 금지). 윈레바이어 45mg: 추정 4,640 CHF → 실제 5,895.82 CHF. 저장 행 정정은 `scripts/repair_ch_exfactory.py`(dry-run 기본, compare-and-set, undo JSON). 출처 링크 slug 는 제품명 기반(`product_slug`) — 과거 모든 제품에 `keytruda` 고정.
 

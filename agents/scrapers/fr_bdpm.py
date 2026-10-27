@@ -11,7 +11,7 @@
 
 배경:
   프랑스 처방약 가격 체계:
-  - PFHT (Prix Fabricant Hors Taxe)     : 비공개 (CEPS 협상)
+  - PFHT (Prix Fabricant Hors Taxe)     : BDPM 파일에는 없음. 관보(JO) 가격 공시·BdM_IT 에 공개 (2026-10-27 정정 — "비공개" 아님)
   - PPC  (Prix Public Communautaire)    : 공개 소비자가 (PFHT + 유통마진 + TVA 2.1/5.5/10%)
   - PPH  (Prix Public Hospitalier)      : 병원 공급가 — 대부분 항암제가 이 범주이나 공개되지 않음
   - CIS_CIP 파일의 컬럼 10 = 약국 소매가 (honoraires 제외)
