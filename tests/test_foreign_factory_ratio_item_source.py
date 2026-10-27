@@ -37,7 +37,8 @@ EFFECTIVE = [
     ("IT", {"channel": "tnf_determina", "price_kind": "ex-factory", "source_type": "aifa_exfactory"}, "aifa_exfactory", 0.93),   # 공장도가 × 0.93 (별첨5)
     ("UK", {"company": "MSD", "source_type": None}, None, 0.73),
     ("CH", {"source_type": "compendium"}, "compendium", 0.65),   # SL 공장도가 없을 때 대체 (별첨5 각주2)
-    ("FR", {"source_type": "vidal"}, "vidal", 0.77),
+    ("FR", {"source_type": "vidal"}, "vidal", 0.65),     # 공중가 = 공장도가 미확인 대체 Vidal × 0.65 (별첨5 각주1)
+    ("FR", {"source_type": None, "price_basis": "ucd"}, "vidal", 0.77),   # UCD HT 단가·관보 PFHT → 0.77
     ("US", {"source_type": "redbook_wac"}, "redbook_wac", 0.74),
     ("JP", {"company": "ＭＳＤ"}, None, 0.79),              # 행에 선언 없음 → 클래스 기본(없음) → 국가 기본
     ("IT", {}, "aifa_exfactory", 0.93),                     # 행에 선언 없음(레거시) → 클래스 기본 유지
@@ -180,12 +181,9 @@ def test_search_one_country_applies_class_a_country_default_and_class_h_override
              raw_data=json.dumps({"aifa_class": "H", "price_kind": "ex-factory", "source_type": "aifa_exfactory"}))
     agent = _agent(monkeypatch, tmp_path, [_rec(), h])
     saved = asyncio.run(agent.search_one_country("letermovir", "IT"))
-    a_row = next(r for r in saved if r["form_type"] == "oral")
+    # 2026-10-26 사용자 결정 + 별첨5: IT 는 공장도가 × 0.93 만 — Classe A 공중가 행은 A8 수집에서 제외된다.
+    assert not [r for r in saved if r["form_type"] == "oral"], "Classe A 공중가(Prezzo al pubblico) 행은 저장하지 않는다"
     h_row = next(r for r in saved if r["form_type"] == "injection")
-    assert a_row["factory_ratio"] == 0.93 and a_row["factory_ratio_label"] == "IT factory_ratio=0.93" and a_row["source_type"] is None
-    assert a_row["pack_count"] == 28
-    # 6931.68/28 × 1544.43 × 0.93 × 1.10 × 1.0869 ≈ 425,122 (이전 1.0 이면 457,120 — +7.5%)
-    assert a_row["adjusted_price_krw"] == A_EXPECTED and a_row["adjusted_price_krw"] < A_STORED_AS_EXFACTORY * 0.94
     assert h_row["factory_ratio"] == 0.93 and h_row["factory_ratio_label"] == "IT factory_ratio=0.93"   # 공장도가에도 × 0.93 (별첨5, 2026-10-26)
     assert h_row["adjusted_price_krw"] == H_EXPECTED == 283_363
 

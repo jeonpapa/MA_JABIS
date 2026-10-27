@@ -1,5 +1,7 @@
 # ForeignPriceAgent 규칙
 
+> 업무 기준(자료원·가격 단계·별첨5 산식·행 생성기·업로드 검증·품질 체크리스트)은 **`docs/foreign_price/README.md`**. 이 파일은 구현 세부와 감사 이력이다.
+
 ## 역할
 국가별 스크레이퍼를 실행하고 환율 계산 후 DB에 저장.
 
@@ -176,7 +178,8 @@ A8_adj_per_unit_KRW =
 | IT `it_aifa` **Class H 행** / `it_aifa_tnf` | `aifa_exfactory` (행 선언) | **0.93** (2026-10-26: 공장도가에도 × 0.93 — 별첨5. 이전 1.0 오버라이드 삭제) |
 | IT `it_aifa` **Class A 행** | `None` (행 선언, raw_data.price_kind="prezzo al pubblico") | **0.93** (IT 국가 기본 — 공중가) |
 | CH `ch_compendium` | `compendium` | **SL 공장도가(FAP) × 0.73**(`exfactory_price` 경로). SL 에 가격이 없을 때만 Compendium 약가 × **0.65**(별첨5 각주2) |
-| FR `fr_bdpm` / `fr_vidal` | `vidal` | **0.77** (FR 국가 기본) |
+| FR 관보 PFHT·Vidal UCD HT 행 | `None` (행 선언) | **0.77** (FR 국가 기본) |
+| FR `fr_bdpm` / `fr_vidal` 공중가 행 | `vidal` | **0.65** (공장도가 미확인 대체 — 별첨5 각주1, 2026-10-27) |
 | US `us_micromedex` | `redbook_wac` | **0.74** (US 국가 기본, WAC) |
 | 그 외 | `None` | 국가 기본 |
 
@@ -195,7 +198,7 @@ A8_adj_per_unit_KRW =
   = PFHT 8,210.44 로 일치 확인). 저장: `scripts/insert_fr_jo_pfht.py`(local_price=PFHT, source_type=None → 0.77).
   접근: Légifrance 웹은 스크립트 요청에 Cloudflare 403 — 브라우저는 자동 통과. 비브라우저 공식 경로 = DILA JORF 오픈데이터
   (echanges.dila.gouv.fr/OPENDATA/JORF/, Mac·Fly 접속 확인) 또는 Légifrance PISTE API(계정 필요). 자동 수집기는 미구현.
-  PFHT 공시가 없는 행(예: 프리비미스 주사)은 BDPM 공중가 × 0.77 을 유지한다(추정 — 라벨로 구분).
+  PFHT 를 확인하지 못한 공적 급여 행은 공중가(BDPM/Vidal) × 0.65(별첨5 각주1, `source_type="vidal"`, 2026-10-27).
 - **의도적 미반영(사용자 결정 2026-10-26)**: 저가약 유통거래폭 10.41%(고가약 기준 내복외용제 475원/주사제 4,750원 이상) — 8.69% 고정 유지. 구현하지 말 것.
 - 미구현 메모: 최대포장·최고가 선택 규칙(③).
 

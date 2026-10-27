@@ -32,8 +32,8 @@ EFFECTIVE = [
     ("US", UsMicromedexScraper, 0.74),      # "redbook_wac" — 오버라이드 없음 → 국가 기본
     ("UK", UkMimsScraper, 0.73),
     ("DE", DeRoteListeScraper, 0.6955),
-    ("FR", FrBdpmScraper, 0.77),            # "vidal" — 오버라이드 없음(과거 문서의 0.65 는 발효된 적 없음)
-    ("FR", FrVidalScraper, 0.77),
+    ("FR", FrBdpmScraper, 0.65),            # "vidal" = 공중가 → 공장도가 미확인 대체 × 0.65 (별첨5 각주1, 2026-10-27)
+    ("FR", FrVidalScraper, 0.65),           # 클래스 기본(공중가). UCD HT 단가 행은 행 단위 None → 0.77
     ("IT", ItAifaScraper, 0.93),            # "aifa_exfactory" — 오버라이드 삭제: 공장도가에도 × 0.93 (별첨5, 2026-10-26)
     ("IT", ItAifaTnfScraper, 0.93),
     ("CH", ChCompendiumScraper, 0.65),      # "compendium" — SL 공장도가가 없을 때의 대체(별첨5 각주2: Compendium × 0.65)
@@ -60,9 +60,12 @@ def test_every_override_key_is_a_declared_source_type():
 def test_keytruda_fr_ch_rows_use_country_default_ratio():
     """실제 DB 의 FR Vidal 행(#1504)·CH compendium 행이 쓰는 비율 — 저장 factory_price_krw 와 일치(2379302 = ×0.77)."""
     c = PriceCalculator()
-    fr = c.calculate_adjusted_price("FR", 2000.74, 1544.43, pack_count=1, source_type=FrVidalScraper.SOURCE_TYPE)
+    # Keytruda FR = UCD 단가(HT, 관보 tarif de responsabilité) → 행 단위 source_type=None → FR 기본 0.77
+    fr = c.calculate_adjusted_price("FR", 2000.74, 1544.43, pack_count=1, source_type=None)
     assert fr["factory_ratio"] == 0.77 and fr["factory_price_krw"] == 2_379_302
     assert fr["factory_ratio_label"] == "FR factory_ratio=0.77"
+    pub = c.calculate_adjusted_price("FR", 2000.74, 1544.43, pack_count=1, source_type=FrVidalScraper.SOURCE_TYPE)
+    assert pub["factory_ratio"] == 0.65                     # 공중가 행(vidal)은 대체 비율
     ch = c.calculate_adjusted_price("CH", 31.75, 1700.0, pack_count=1, source_type=ChCompendiumScraper.SOURCE_TYPE)
     assert ch["factory_ratio"] == 0.65          # SL 공장도가 없음 → Compendium × 0.65 (별첨5 각주2)
 

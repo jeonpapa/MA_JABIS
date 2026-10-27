@@ -44,7 +44,8 @@ def build_row(src, e, now):
     for k in ("price_note", "price_including_dispensing_fee", "taux_remboursement"):
         raw.pop(k, None)
     raw.update({
-        "price_tier": "ex_factory", "price_tier_original": "PFHT (prix fabricant hors taxe)", "vat_status": "excluded",
+        "price_tier": "ex_factory", "price_tier_original": e.get("price_tier_original") or "PFHT (prix fabricant hors taxe)",
+        "vat_status": "excluded", "ucd13": e.get("ucd13"),
         "pfht": price, "ppttc_reference": e.get("ppttc"), "cip13": e.get("cip13") or raw.get("cip13"),
         "jo_ref": e.get("jo_ref"), "publication_date": e.get("jo_date"), "effective_date": e.get("effective_date"),
         "evidence_ref": e.get("evidence_ref"), "source_type": None, "replaces_row_id": src["id"],

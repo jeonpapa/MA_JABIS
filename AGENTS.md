@@ -70,7 +70,7 @@
 | Rule Compliance (메모리 ↔ 런타임 감사) | `agents/rules/rule_compliance_rules.md` |
 | 스크레이퍼 공통 | `agents/rules/scraper_rules.md` |
 | 국내 약가 (HIRA Excel) | `agents/rules/domestic_agent_rules.md` |
-| 해외 약가 | `agents/rules/foreign_agent_rules.md` |
+| 해외 약가 | **`docs/foreign_price/README.md`** (업무 기준: 자료원·산식·업로드·품질) + `agents/rules/foreign_agent_rules.md` |
 | HIRA 급여 SOP | `agents/rules/hira_agent_rules.md` |
 | 해외 허가 (적응증 단위) + Cross-national reimbursement | `agents/rules/foreign_approval_agent_rules.md` |
 | MFDS 공식 승인일 파이프라인 | `agents/rules/kr_mfds_approval_agent_rules.md` |

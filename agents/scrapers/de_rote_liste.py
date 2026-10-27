@@ -70,51 +70,9 @@ HEADERS = {
 }
 
 
-# ── Packungsangaben 가격표 파서 (2026-10-26) ────────────────────────────────────────────
-# 로그인 후 표 열: [포장] [N1/N2/N3] PZN | AVP (EB)/FB | AVP/UVP. 값 예: "EB 2.456,22 €" / "4.434,18 €".
-# 별첨5(심평원) 는 독일 가격을 'Rote Liste(약국판매가)' 로 쓰고 조정가 산식으로 공장도가를 역산한다 → 사용자 결정:
-# **AVP/UVP(목록가) 를 기준 가격**으로 쓰고, EB/FB(협상·고정 상환액 기준가)는 참고로 보존한다. 한 열만 있으면 추측하지 않는다.
-_DE_NUM = r"\d{1,3}(?:\.\d{3})*,\d{2}"
-_PACK_ROW = re.compile(
-    rf"(?P<pack>\d+\s*[A-Za-zÄÖÜäöü\.\- ]+?(?:\d[\d,\.]*\s*(?:mg|ml|µg|g)(?:/\s*(?:\d+\s*)?m[lL])?(?:\s*KIT)?)?)\s+"
-    rf"(?:(?P<n>N[123])\s+)?(?P<pzn>\d{{8}})\s+"
-    rf"(?P<c1>(?:(?:EB|FB)\s+)?{_DE_NUM}\s*€)?\s*(?P<c2>(?:(?:EB|FB)\s+)?{_DE_NUM}\s*€)?",
+from agents.foreign_sources.de_rote_liste_table import (  # noqa: E402 — 공용 파서(Aside 워커 스크립트와 동일)
+    parse_packungsangaben, pack_count as _pack_count, preisstand as _preisstand,
 )
-
-
-def _de_to_float(txt: str) -> float:
-    return float(re.search(_DE_NUM, txt).group(0).replace(".", "").replace(",", "."))
-
-
-def parse_packungsangaben(text: str) -> list[dict]:
-    """상세 페이지 텍스트의 PACKUNGSANGABEN 표 → [{pack, n, pzn, avp_eb_fb, eb_label, avp_uvp}].
-
-    - 두 값이 모두 있으면 앞=AVP (EB)/FB, 뒤=AVP/UVP.
-    - 값이 하나뿐이고 EB/FB 표시가 있으면 EB/FB 만(AVP/UVP 는 None — 추측하지 않는다).
-    - 값이 하나뿐이고 표시가 없으면 AVP/UVP.
-    """
-    i = text.find("PACKUNGSANGABEN")
-    seg = text[i:] if i >= 0 else text
-    seg = re.sub(r"\s+", " ", seg)
-    rows = []
-    for m in _PACK_ROW.finditer(seg):
-        c1, c2 = m.group("c1"), m.group("c2")
-        eb = uvp = None
-        label = None
-        if c1 and c2:
-            eb, uvp = _de_to_float(c1), _de_to_float(c2)
-            label = "EB" if c1.strip().startswith("EB") else ("FB" if c1.strip().startswith("FB") else None)
-        elif c1 or c2:
-            only = c1 or c2
-            if re.match(r"\s*(EB|FB)\b", only):
-                eb, label = _de_to_float(only), only.strip()[:2]
-            else:
-                uvp = _de_to_float(only)
-        if eb is None and uvp is None:
-            continue
-        rows.append({"pack": m.group("pack").strip(), "n": m.group("n"), "pzn": m.group("pzn"),
-                     "avp_eb_fb": eb, "eb_label": label, "avp_uvp": uvp})
-    return rows
 
 
 class DeRoteListeScraper(BaseScraper):
@@ -443,22 +401,13 @@ class DeRoteListeScraper(BaseScraper):
             pzn = uvp_rows[0]["pzn"] or pzn
             dosage = uvp_rows[0]["pack"] or dosage
             all_prices = [{"dosage_strength": r["pack"], "pack_size": r["n"], "pzn": r["pzn"], "price": r["avp_uvp"],
-                           "avp_eb_fb": r["avp_eb_fb"], "price_column": "AVP/UVP"} for r in parsed_rows]
-        elif all_prices:
-            price = all_prices[0]["price"]
-            dosage = all_prices[0]["dosage_strength"] or dosage
-            pzn    = all_prices[0]["pzn"] or pzn
+                           "avp_eb_fb": r["avp_eb_fb"], "price_column": "AVP/UVP"} for r in parsed_rows if r["avp_uvp"] is not None]
+
         else:
-            # 폴백: 단순 유로 가격 패턴 — 독일식 천단위 구분자 보존
-            euro_prices = re.findall(rf"({DE_NUMBER})\s*€", text)
-            for ep in euro_prices:
-                try:
-                    p = float(ep.replace(".", "").replace(",", "."))
-                    if 0.01 <= p <= 2_000_000:
-                        price = p
-                        break
-                except ValueError:
-                    continue
+            # 2026-10-26: AVP/UVP 를 표에서 못 읽으면 가격을 만들지 않는다. 이전 폴백(첫 행·첫 € 값)은 AVP (EB)/FB 를
+            # 집어 왔다 — 틀린 단계의 값보다 빈 칸이 낫다(가격 미확정으로 남기고 화면 확인).
+            price = None
+            all_prices = []
 
         if login_wall and price is None:
             logger.info("[DE] DocCheck 로그인 필요 (가격 벽): %s", url)
@@ -475,6 +424,7 @@ class DeRoteListeScraper(BaseScraper):
                 "company":      company,
                 "all_prices":   all_prices,
                 "login_wall":   login_wall,
+                "price_as_of":  _preisstand(text),   # Preisstand = 자료 기준일(개별 가격 시행일 아님)
                 "source_type":  None,
             },
         }
@@ -502,11 +452,35 @@ class DeRoteListeScraper(BaseScraper):
 
             item = self._extract_detail(link["url"])
             if item:
-                results.append(item)
-                if item["local_price"] is not None:
+                expanded = self._expand_packs(item)
+                results.extend(expanded)
+                if any(r["local_price"] is not None for r in expanded):
                     break
 
         return results
+
+    @staticmethod
+    def _expand_packs(item: dict) -> list[dict]:
+        """Packungsangaben 의 포장마다 행 하나 — local_price=AVP/UVP(포장 가격), pack_count=포장 수량, EB/FB 는 참고.
+        AVP/UVP 가 없는 포장(EB 만 표시)은 가격을 만들지 않는다(추측 금지). 표를 못 읽었으면 원래 행 그대로."""
+        packs = [p for p in (item.get("extra", {}).get("all_prices") or []) if p.get("price_column") == "AVP/UVP"]
+        if not packs:
+            return [item]
+        out = []
+        for p in packs:
+            row = {**item, "extra": {k: v for k, v in item["extra"].items() if k != "all_prices"}}
+            row["package_unit"] = p.get("dosage_strength") or ""
+            row["local_price"] = p.get("price")
+            n = _pack_count(p.get("dosage_strength") or "")
+            if n:
+                row["pack_count"] = n
+            row["extra"].update({
+                "pzn": p.get("pzn"), "price_column": "AVP/UVP", "avp_eb_fb_reference": p.get("avp_eb_fb"),
+                "price_tier": "pharmacy_retail", "price_tier_original": "AVP/UVP (Rote Liste Packungsangaben)",
+                "vat_status": "included", "source_type": None,
+            })
+            out.append(row)
+        return out
 
     async def refresh(self, _page=None) -> None:
         logger.info("[DE] Rote Liste 실시간 조회 방식")

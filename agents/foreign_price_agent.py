@@ -182,6 +182,13 @@ def resolve_item_source_type(row: dict, class_default: Optional[str]) -> Optiona
     return class_default
 
 
+def is_it_public_price(row: dict) -> bool:
+    """IT CSV Classe A 공중가 행(공장도가 아님). raw/extra 의 price_kind 또는 aifa_class 로 판정."""
+    ex = _item_extra(row)
+    kind = str(ex.get("price_kind") or "").lower()
+    return "pubblico" in kind or (ex.get("aifa_class") == "A" and "ex-factory" not in kind)
+
+
 # 공식 공장도가(원포장, 현지통화, VAT 제외)를 행에 담아 주는 국가 — 고정 비율 추정 대신 이 값을 쓴다.
 # 2026-10 개선 요청 #3: 스위스는 BAG SL 이 팩별 FAP 를 공개하므로 판매가×0.73 추정을 쓰지 않는다.
 OFFICIAL_EXFACTORY_COUNTRIES = {"CH"}
@@ -227,6 +234,12 @@ def a8_aggregate_eligibility(country: str, row: dict,
     """
     if row.get("adjusted_price_krw") is None:
         return False, "no_adjusted_price"
+    # 2026-10-26 별첨5: 기준 가격 단계가 아닌 저장 행(IT Classe A 공중가, DE AVP (EB)/FB)은 카드에 남기되 A8 집계에서 뺀다.
+    if country == "IT" and is_it_public_price(row):
+        return False, "it_public_price_not_ex_factory"
+    if country == "DE" and "EB" in str(_item_extra(row).get("price_tier_original") or "") \
+            and "UVP" not in str(_item_extra(row).get("price_tier_original") or ""):
+        return False, "de_eb_not_avp_uvp"
     src = row.get("pack_count_source")
     form = (row.get("form_type") or "unknown").lower()
     if country in PACK_PRICING_COUNTRIES and src == "default" and form != "injection":
@@ -388,6 +401,14 @@ class ForeignPriceAgent:
             except Exception as e:
                 logger.warning("[IT] TrovaNorme 채널 실패: %s", e)
                 channel_errors.append(("tnf", e))
+            # 2026-10-26 사용자 결정 + 별첨5: IT 는 공장도가(Prezzo ex-factory) × 0.93 만. CSV Classe A 공중가(Prezzo al pubblico)
+            # 행은 공장도가가 아니므로 A8 계산에 넣지 않는다(빈 칸이 틀린 값보다 낫다). 결정문(TrovaNorme)에서 공장도가를 확인한다.
+            dropped = [r for r in raw_results if is_it_public_price(r)]
+            if dropped:
+                raw_results = [r for r in raw_results if not is_it_public_price(r)]
+                logger.info("[IT] Classe A 공중가 %d건 제외 — TrovaNorme 공장도가 필요", len(dropped))
+                channel_errors.append(("aifa_classe_a", RuntimeError(
+                    f"IT Classe A 공중가 {len(dropped)}건 제외(공장도가 아님) — TrovaNorme 결정문 공장도가 확인 필요")))
 
         # FR: Vidal 채널을 기존 BDPM 과 **병행** (둘 다 source_type=vidal → FR 기본 ratio 0.77).
         # 병원용 주사제(keytruda 등)는 BDPM 공시가가 없고 Vidal UCD(HT) 에만 공개 → 큐레이션 URL 맵으로 안정 조회.

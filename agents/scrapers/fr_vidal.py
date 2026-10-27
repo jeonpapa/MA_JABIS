@@ -77,7 +77,7 @@ class FrVidalScraper(BaseScraper):
     COUNTRY        = "FR"
     CURRENCY       = "EUR"
     SOURCE_LABEL   = "VIDAL.fr"
-    SOURCE_TYPE    = "vidal"      # PriceCalculator 오버라이드 없음 → FR 기본 ratio 0.77 (2026-10: 0.65 는 발효된 적 없음)
+    SOURCE_TYPE    = "vidal"      # 공중가 행 = Vidal × 0.65(별첨5 각주1). UCD HT 단가 행은 행 단위 source_type=None → 0.77
     REQUIRES_LOGIN = True
     LOGIN_OPTIONAL = True         # 자격증명 없으면 비로그인 모드(_login_requests → False) — 큐레이션 UCD 페이지는 공개
 
@@ -362,7 +362,9 @@ class FrVidalScraper(BaseScraper):
                 "remboursement":   remboursement or "확인 불가",
                 "company":         company,
                 "login_required":  login_required,
-                "source_type":     self.SOURCE_TYPE,
+                # UCD HT 단가 = 관보 tarif de responsabilité HT(공장도가 성격, 2026-10-27 관보와 일치 확인) → 국가 기본 0.77.
+                # 그 외(공중가 'Prix') → "vidal" → 0.65.
+                "source_type":     None if price_basis == "ucd" else self.SOURCE_TYPE,
                 "price_basis":     price_basis,
             },
         }

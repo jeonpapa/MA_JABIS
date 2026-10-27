@@ -473,6 +473,9 @@ class PriceCalculator:
         # 별첨5 각주2: CH 는 SL 공장도가 × 0.73 이 원칙(행에 ex_factory_price 가 있을 때 — exfactory_price 경로).
         # SL 에서 약가가 확인되지 않는 경우에만 Compendium 약가 × 0.65 (2026-10-26 사용자 승인, 이전 결정 0.73 대체).
         "compendium": 0.65,
+        # 별첨5 각주1: FR 은 공장도가(PFHT, BdM_IT/관보) × 0.77 이 원칙. 공적 급여되나 약가(공장도가)가 확인되지 않을 때만
+        # Vidal(공중가) × 0.65. "vidal" = 공중가 행(BDPM PPTTC·Vidal 'Prix'). 공장도가·UCD HT 단가 행은 source_type=None → 0.77.
+        "vidal": 0.65,
     }
 
     CURRENCY = COUNTRY_CURRENCY

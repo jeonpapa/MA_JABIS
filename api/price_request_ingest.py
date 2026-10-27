@@ -113,6 +113,32 @@ def prepare_a8(raw, cc, query, rid, agent):
         raise ValueError("unsupported source_type for country")
     if cc == "IT":
         source_type = "aifa_exfactory"
+    # ── 별첨5 국가별 기준 가격 단계 (docs/foreign_price/README.md, 2026-10-27) ──────────────────────────────
+    tier, vat, tier_text = r["price_tier"], r["vat_status"], (r.get("price_tier_original") or "")
+    extra_in = raw.get("extra") or {}
+    if cc == "DE":
+        # Rote Liste AVP/UVP 만. AVP (EB)/FB(협상 상환액·고정액)는 기준 가격이 아니다 — extra.avp_eb_fb_reference 로만.
+        if "UVP" not in tier_text.upper():
+            raise ValueError("DE requires Rote Liste AVP/UVP (price_tier_original must name AVP/UVP; EB/FB is reference only)")
+        source_type = None                     # 계산기: 별첨5 독일 산식(포장 AVP 기준)
+    elif cc == "FR":
+        if tier == "ex_factory":
+            if vat != "excluded":
+                raise ValueError("FR ex-factory (PFHT / UCD tarif HT) must be VAT excluded")
+            source_type = None                 # PFHT × 0.77
+        else:
+            source_type = "vidal"              # 공장도가 미확인 대체: 공중가 × 0.65 (별첨5 각주1)
+    elif cc == "CH":
+        has_fap = isinstance(extra_in, dict) and isinstance(extra_in.get("ex_factory_price"), (int, float)) \
+            and not isinstance(extra_in.get("ex_factory_price"), bool) and extra_in["ex_factory_price"] > 0
+        if tier == "ex_factory":
+            if vat != "excluded":
+                raise ValueError("CH SL ex-factory (FAP) must be VAT excluded")
+            source_type = None                 # SL FAP × 0.73
+        elif not has_fap:
+            source_type = "compendium"         # SL 약가 미확인 대체: Compendium × 0.65 (별첨5 각주2)
+        else:
+            source_type = "compendium"         # 판매가 + extra.ex_factory_price → 계산기가 FAP × 0.73 사용
     if raw.get("form_type") not in ("oral", "injection", "unknown"):
         raise ValueError("form_type required")
     observed = r.pop("observed_at")
@@ -135,7 +161,9 @@ def prepare_a8(raw, cc, query, rid, agent):
         extra["fx_error_class"] = type(exc).__name__
         r["raw_data"] = json.dumps(extra, ensure_ascii=False, allow_nan=False)
     if rate:
-        calc = agent.calculator.calculate_adjusted_price(country=cc, listed_price=r["local_price"], exchange_rate=rate["rate"], pack_count=r["pack_count"], source_type=source_type)
+        from agents.foreign_price_agent import official_exfactory_price
+        calc = agent.calculator.calculate_adjusted_price(country=cc, listed_price=r["local_price"], exchange_rate=rate["rate"], pack_count=r["pack_count"], source_type=source_type,
+                                                         exfactory_price=official_exfactory_price(cc, {"extra": extra}))
         for key in ("factory_price_krw", "vat_rate", "distribution_margin", "adjusted_price_krw", "pack_count"):
             r[key] = calc[key]
         r.update(exchange_rate=rate["rate"], exchange_rate_from=rate["from_month"], exchange_rate_to=rate["to_month"])
