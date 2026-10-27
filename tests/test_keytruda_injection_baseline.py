@@ -91,7 +91,8 @@ IT_1496 = {
     "package_unit": "2", "local_price": 7596.68, "pack_count": 2,
 }
 
-SOURCE_TYPE = {"UK": None, "FR": "vidal", "JP": None, "IT": "aifa_exfactory"}
+# Keytruda FR = UCD tarif HT(관보, 공장도가 성격) → 행 단위 None → 0.77. 공중가(vidal)는 0.65 (2026-10-27)
+SOURCE_TYPE = {"UK": None, "FR": None, "JP": None, "IT": "aifa_exfactory"}
 TOL = 0.001   # ±0.1% — int 절사 외 편차 없음
 
 

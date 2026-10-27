@@ -143,7 +143,8 @@ def test_cached_results_do_not_apply_stored_concentration_factor(tmp_path):
     a = A.__new__(A)
     a.db = DrugPriceDB(db)
     a.calculator = PriceCalculator()
-    a._build_scraper = lambda country: type("S", (), {"SOURCE_TYPE": "vidal"})()
+    # Keytruda FR = UCD tarif HT(공장도가 성격) → source_type None → 0.77. ("vidal" 은 공중가 대체 0.65, 2026-10-27)
+    a._build_scraper = lambda country: type("S", (), {"SOURCE_TYPE": None})()
     row = a.get_cached_results("keytruda")["FR"][0]
     assert row["adjusted_price_krw"] == 2_844_669
     assert row["adjusted_price_krw_normalized"] == 2_844_669 and row["dose_norm_factor"] is None
