@@ -7,6 +7,7 @@ import MarketSharePage from '@/pages/market-share/page';
 import CompetitorTrendsPage from '@/pages/competitor-trends/page';
 import DailyMailingPage from '@/pages/daily-mailing/page';
 import ReimbursementStatusPage from '@/pages/reimbursement-status/page';
+import ReimbursementCriteriaPage from '@/pages/reimbursement-criteria/page';
 import PolicyIntelligencePage from '@/pages/policy-intelligence/page';
 import AnalogSearchPage from '@/pages/analog-search/page';
 import StakeholderSignalsPage from '@/pages/stakeholder-signals/page';
@@ -38,6 +39,7 @@ const routes: RouteObject[] = [
   { path: '/competitor-trends', element: <CompetitorTrendsPage /> },
   { path: '/daily-mailing', element: <DailyMailingPage /> },
   { path: '/reimbursement-status', element: <ReimbursementStatusPage /> },
+  { path: '/reimbursement-criteria', element: <ReimbursementCriteriaPage /> },
   { path: '/policy-intelligence', element: <PolicyIntelligencePage /> },
   { path: '/analog-search', element: <AnalogSearchPage /> },
   { path: '/stakeholder-signals', element: <StakeholderSignalsPage /> },

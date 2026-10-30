@@ -30,6 +30,7 @@ export const allNavItems: NavItem[] = [
   { path: '/international-pricing', label: '해외 약가', icon: 'ri-global-line', group: '가격' },
   { path: '/regimen-cost', label: '요법 비용', icon: 'ri-bar-chart-box-line', group: '가격' },
   { path: '/reimbursement-status', label: '급여 현황', icon: 'ri-article-line', group: '급여·정책' },
+  { path: '/reimbursement-criteria', label: '급여 기준', icon: 'ri-scales-3-line', group: '급여·정책' },
   { path: '/policy-intelligence', label: '정책 인텔리전스', icon: 'ri-government-line', group: '급여·정책' },
   { path: '/stakeholder-signals', label: '정책 발언', icon: 'ri-user-voice-line', group: '급여·정책' },
   { path: '/analog-search', label: '등재 아날로그', icon: 'ri-search-eye-line', group: '급여·정책' },

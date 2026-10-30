@@ -32,6 +32,15 @@ if [ -f seed/onco_regimen/onco_regimens.json ]; then
         echo "[start] onco regimen seed 실패 — 부팅 계속 (수동: python scripts/seed_onco_regimens.py --apply --if-empty)"
 fi
 
+# 심평원 급여 기준(항암 공고·일반약제 세부사항·KCD-9) 시드 — 이미지 seed/hira_criteria/ → 급여 기준 파생 테이블만 적재.
+# 기존 운영 테이블은 읽지도 쓰지도 않음. 멱등: DB 의 시드 버전이 이미지의 것과 같으면 건너뜀. 한 트랜잭션(실패 시 롤백),
+# 적용 전 기존 파생 테이블 백업(/app/data/hira_criteria/backup/)·undo JSON 기록. 실패해도 부팅을 막지 않음.
+# 수동 점검: python scripts/seed_hira_criteria.py --status / (dry-run) python scripts/seed_hira_criteria.py
+if [ -f seed/hira_criteria/hira_criteria_seed.sqlite.gz ]; then
+    python scripts/seed_hira_criteria.py --apply --if-changed || \
+        echo "[start] hira criteria seed 실패 — 부팅 계속 (수동: python scripts/seed_hira_criteria.py --apply)"
+fi
+
 # 부팅 1회 — 헤르메스 git 위원회 데이터를 즉시 반영 (배포 직후 최신화, 멱등).
 # 실패해도 부팅을 막지 않음 (스케줄러가 매일 02:00 재시도).
 echo "[start] Reimbursement 데이터 sync (부팅 1회)..."

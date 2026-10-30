@@ -67,3 +67,9 @@ data/secrets/
 
 # Stakeholder & Verbatim 런타임 데이터 — 언론 원문(HTML/TXT)·인물 사진·sync 상태. 저작권/개인정보상 볼륨 전용, git 금지
 data/stakeholder/
+
+# 심평원 급여기준 DB — 원문·변환 캐시·스테이징(대용량, 재생성 가능). md/ 는 추적
+data/hira_criteria/raw/
+data/hira_criteria/cache/
+data/hira_criteria/staging/
+data/hira_criteria/reports/

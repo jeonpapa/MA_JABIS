@@ -52,6 +52,11 @@ app.register_blueprint(build_auth_blueprint(users_db))
 # Durable Aside queue: accepting a request never launches a browser in Flask.
 from api.price_request_routes import build_price_request_blueprint
 app.register_blueprint(build_price_request_blueprint(db.db_path, foreign_agent))
+try:  # 급여 기준 화면 (심평원 항암 공고·일반약제 고시·KCD) — agents/rules/hira_criteria_rules.md
+    from api.hira_criteria_routes import build_hira_criteria_blueprint
+    app.register_blueprint(build_hira_criteria_blueprint())
+except Exception as _hc_e:  # pragma: no cover
+    logging.getLogger(__name__).warning("급여 기준 엔드포인트 비활성 (%s)", _hc_e)
 try:  # Stakeholder & Verbatim (sv_*) — 모듈 미탑재 시 해당 엔드포인트만 비활성 (service_requests 선례)
     from api.stakeholder_routes import build_stakeholder_blueprint
     app.register_blueprint(build_stakeholder_blueprint())
@@ -1657,6 +1662,7 @@ def serve_dashboard(filename: str):
 # ──────────────────────────────────────────────────────────────────────────────
 
 _SPA_DIR = BASE_DIR / "frontend" / "out"
+
 
 
 @app.get("/")
