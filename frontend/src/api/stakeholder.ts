@@ -175,7 +175,14 @@ export interface SVStatementRow {
   summary_text?: string | null;
   quotes_count?: number | null;
   source?: SVStatementSource | null;
+  /** 국정감사 관련 발언(행사명·요약·해석·직책 문구 기준, 서버 판정) — 개선 요청 #4 */
+  is_audit?: boolean | null;
+  /** 발언자 소속 또는 발언 내용에 나오는 기관(보건복지부·심평원·공단) */
+  related_orgs?: string[] | null;
 }
+
+/** 정책 발언 화면 기관 필터 — 서버 ORG_PATTERNS 와 같은 키 */
+export const SV_ORGS = ['보건복지부', '심평원', '공단'] as const;
 
 export interface SVQuote {
   quote_id: string;

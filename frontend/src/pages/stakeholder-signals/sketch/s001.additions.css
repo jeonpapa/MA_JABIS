@@ -48,3 +48,6 @@
   /* 스케치 결함 보정: 94% 폭 드로어가 right:-470px 로는 화면 밖으로 다 나가지 않아 닫힌 채 표를 가린다 */
   .sx1 .drawer:not(.open) { right: -100%; }
 }
+
+/* 개선 요청 #4: 국정감사·기관 필터 줄 */
+.sxbase .tabs.svx-filter { margin-top: 8px; }

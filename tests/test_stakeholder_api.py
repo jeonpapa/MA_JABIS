@@ -834,3 +834,27 @@ def test_blueprint_registered_on_server():
     rules = {r.rule for r in s.app.url_map.iter_rules()}
     assert {"/api/stakeholder/overview", "/api/admin/stakeholder/proposals", "/api/agent/stakeholder/registry",
             "/api/stakeholder/sources/<source_id>/excerpt"} <= rules
+
+
+# ── 개선 요청 #4 (1단계): 국정감사 표시·관련 기관 ─────────────────────────────────────────
+def test_audit_and_related_org_helpers():
+    st = {"event_title": "국회 보건복지위원회 국정감사", "summary_text": "심평원 약제 사후평가 지적", "analysis_text": None,
+          "speaker_role_at_event": "국회의원", "policy_status": None}
+    assert sr.is_audit_statement(st)
+    assert sr.is_audit_statement({"event_title": "약가 토론회", "summary_text": "국감에서 지적된 사항"})
+    assert not sr.is_audit_statement({"event_title": "약가 토론회", "summary_text": "신약 보상 강화"})
+    # 발언자는 의원이지만 내용에 심평원·공단이 나오면 관련 기관
+    assert sr.related_orgs(st, None, ["건보공단 재정 우려"]) == ["심평원", "공단"]
+    # 발언자 소속만으로도 관련 기관
+    assert sr.related_orgs({"speaker_role_at_event": "보건복지부 보험약제과장"}, None, []) == ["보건복지부"]
+    assert sr.related_orgs({"speaker_role_at_event": "가상부 과장"}, "가상부", ["가상 내용"]) == []
+
+
+def test_statements_audit_and_related_org_params(env):
+    g = lambda qs: env.c.get(f"/api/stakeholder/statements?{qs}", headers=H("user"))
+    items = g("").get_json()["items"]
+    assert all(isinstance(i["is_audit"], bool) and isinstance(i["related_orgs"], list) for i in items)
+    assert g("audit=1").get_json()["items"] == [i for i in items if i["is_audit"]]
+    for org in ("보건복지부", "심평원", "공단"):
+        assert g(f"related_org={org}").get_json()["items"] == [i for i in items if org in i["related_orgs"]]
+    assert g("related_org=외계기관").status_code == 400

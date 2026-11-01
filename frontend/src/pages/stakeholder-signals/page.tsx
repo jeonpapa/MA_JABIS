@@ -3,6 +3,7 @@ import {
   fetchOverview,
   fetchStatements,
   headlineQuoteOf,
+  SV_ORGS,
   TOPIC_ORDER,
   type SVOverview,
   type SVStatementRow,
@@ -72,6 +73,9 @@ export default function StakeholderSignalsPage() {
   const [stError, setStError] = useState(false);
   const [evidenceCount, setEvidenceCount] = useState<number | null>(null);
   const [topic, setTopic] = useState('all');
+  // 개선 요청 #4 (1단계): 국정감사만 보기 + 관련 기관(보건복지부·심평원·공단) 보기
+  const [auditOnly, setAuditOnly] = useState(false);
+  const [org, setOrg] = useState<string>('all');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
 
@@ -91,18 +95,24 @@ export default function StakeholderSignalsPage() {
   }, [tick]);
 
   const all = useMemo(() => rows ?? [], [rows]);
-  const grouped = useMemo(() => groupRows(all), [all]);
+  // 표에만 적용하는 필터(헤드라인·지표는 전체 기준 유지)
+  const tableRows = useMemo(
+    () => all.filter(r => (!auditOnly || r.is_audit) && (org === 'all' || (r.related_orgs ?? []).includes(org))),
+    [all, auditOnly, org],
+  );
+  const auditCount = useMemo(() => all.filter(r => r.is_audit).length, [all]);
+  const grouped = useMemo(() => groupRows(tableRows), [tableRows]);
   const visible = useMemo(() => {
     if (topic === 'all') return grouped;
     // 주제 탭: 그 주제의 발언 블록을 대표로, 행의 주제 칸은 같은 (행사×발언자) 의 교차 주제 전체
     const topicsByKey = new Map(grouped.map(g => [g.key, g.topics]));
-    return all
+    return tableRows
       .filter(r => r.topic === topic)
       .map(r => {
         const k = `${r.event?.event_id ?? r.statement_id}::${r.speaker_name ?? ''}`;
         return { key: r.statement_id, row: r, topics: topicsByKey.get(k) ?? [topic] };
       });
-  }, [all, grouped, topic]);
+  }, [tableRows, grouped, topic]);
 
   const closeDrawer = useCallback(() => setSelectedId(null), []);
 
@@ -285,6 +295,29 @@ export default function StakeholderSignalsPage() {
             </button>
           ))}
         </div>
+        <div className="tabs svx-filter" role="group" aria-label="국정감사·기관 보기">
+          <button
+            type="button"
+            aria-pressed={auditOnly}
+            className={`tab${auditOnly ? ' active' : ''}`}
+            onClick={() => setAuditOnly(v => !v)}
+            title="행사명·발언 요약·해석·직책에 '국정감사'가 나오는 발언만"
+          >
+            국정감사만{rows ? ` (${auditCount})` : ''}
+          </button>
+          {['all', ...SV_ORGS].map(o => (
+            <button
+              key={o}
+              type="button"
+              aria-pressed={org === o}
+              className={`tab${org === o ? ' active' : ''}`}
+              onClick={() => setOrg(o)}
+              title={o === 'all' ? '모든 기관' : `${o} 소속 발언자이거나 발언 내용에 ${o}이(가) 나오는 발언`}
+            >
+              {o === 'all' ? '기관 전체' : o}
+            </button>
+          ))}
+        </div>
         <div className="legend" aria-label="증거등급 범례">
           <b>증거등급</b>
           <span>
@@ -317,7 +350,13 @@ export default function StakeholderSignalsPage() {
             </div>
           )}
           {rows && visible.length === 0 && (
-            <div className="row row-msg">{all.length === 0 ? '아직 동기화된 발언이 없습니다.' : '이 주제에 해당하는 발언이 없습니다.'}</div>
+            <div className="row row-msg">
+              {all.length === 0
+                ? '아직 동기화된 발언이 없습니다.'
+                : auditOnly || org !== 'all'
+                  ? '선택한 조건(국정감사·기관)에 해당하는 발언이 없습니다. 국정감사 발언은 외부 수집(Hermes)으로 추가됩니다.'
+                  : '이 주제에 해당하는 발언이 없습니다.'}
+            </div>
           )}
           {visible.map(({ key, row, topics }) => {
             const hq = headlineQuoteOf(row);
@@ -339,7 +378,14 @@ export default function StakeholderSignalsPage() {
               >
                 <div className="date">{fmtDot(row.event?.event_date)}</div>
                 <div className="org">{topicText(topics)}</div>
-                <div>{row.event?.title || '—'}</div>
+                <div>
+                  {row.is_audit && (
+                    <i className="svx-chip" title="국정감사 관련 발언">
+                      국감
+                    </i>
+                  )}
+                  {row.event?.title || '—'}
+                </div>
                 <div className="person">
                   <PersonAvatar name={row.person?.name ?? row.speaker_name} personId={row.person?.person_id} hasPhoto={row.person?.photo} />
                   <span>

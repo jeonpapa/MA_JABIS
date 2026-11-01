@@ -38,6 +38,22 @@ ORG_PATTERNS: dict[str, re.Pattern] = {
     "심평원": re.compile(r"건강보험심사평가원|심사평가원|심평원|HIRA", re.I),
     "공단": re.compile(r"국민건강보험공단|건강보험공단|건보공단|NHIS|(?<![가-힣])공단", re.I),
 }
+# 개선 요청 #4 (2026-10-31, 1단계): 국정감사 표시·기관별 보기. 국감 여부는 행사명·발언 요약/해석·직책 문구로만 판정(추정 없음).
+AUDIT_RE = re.compile(r"국정\s*감사|국감")
+
+
+def is_audit_statement(st: dict) -> bool:
+    return any(AUDIT_RE.search(st.get(k) or "") for k in ("event_title", "summary_text", "analysis_text",
+                                                          "speaker_role_at_event", "policy_status"))
+
+
+def related_orgs(st: dict, person_org: str | None, quote_texts: list[str]) -> list[str]:
+    """발언자 소속(직책·인물 기관) 또는 발언 내용(요약·해석·인용)에 나오는 기관. ORG_PATTERNS 순서 유지."""
+    speaker = [st.get("speaker_role_at_event"), person_org]
+    content = [st.get("summary_text"), st.get("analysis_text"), *quote_texts]
+    return [org for org, pat in ORG_PATTERNS.items() if any(pat.search(x) for x in speaker + content if x)]
+
+
 _LOCATOR_RE = re.compile(r"(?P<path>[^:\s]+)(?::(?P<a>\d+)(?:-(?P<b>\d+))?)?")
 _SPEAKER_SPLIT = re.compile(r"[·,，/]")
 PHOTO_UPLOAD_SLACK = 64 * 1024        # multipart 경계·헤더 여유
@@ -214,12 +230,24 @@ class _Index:
                                 "locator_match": q.get("locator_match")} if q else None),
             "summary_text": st.get("summary_text"),
             "quotes_count": len(self.quotes_by_stmt.get(st["statement_id"], [])),
+            "is_audit": is_audit_statement(st),
+            "related_orgs": self.related_orgs(st),
             "source": ({"source_id": src["source_id"], "publisher_title": src.get("title"), "url": src.get("url"),
                         "publication_date": src.get("publication_date"),
                         "integrity_status": src.get("integrity_status")} if src else None),
         }
 
-    def matches(self, st: dict, *, org: str | None, grade: str | None) -> bool:
+    def related_orgs(self, st: dict) -> list[str]:
+        p = self.person_of(st.get("person_id"), st.get("speaker_name"))
+        quotes = [q.get("quote_text") or "" for q in self.quotes_by_stmt.get(st["statement_id"], [])]
+        return related_orgs(st, p.get("organization") if p else None, quotes)
+
+    def matches(self, st: dict, *, org: str | None, grade: str | None, audit: bool = False,
+                related_org: str | None = None) -> bool:
+        if audit and not is_audit_statement(st):
+            return False
+        if related_org and related_org not in self.related_orgs(st):
+            return False
         if grade and not grade_matches(st.get("evidence_grade"), grade):
             return False
         if org:
@@ -510,7 +538,12 @@ def build_stakeholder_blueprint(db_path: str | Path | None = None, *, root: str 
                                         q=request.args.get("q") or None,
                                         date_from=request.args.get("from") or None,
                                         date_to=request.args.get("to") or None, conn=c)
-        rows = [idx.statement_row(st) for st in sts if idx.matches(st, org=org, grade=grade)]
+        audit = (request.args.get("audit") or "").lower() in ("1", "true", "yes")
+        related_org = (request.args.get("related_org") or "").strip() or None
+        if related_org and related_org not in ORG_PATTERNS:
+            raise BadRequest(f"related_org 는 {', '.join(ORG_PATTERNS)} 중 하나여야 합니다.", "BAD_ORG")
+        rows = [idx.statement_row(st) for st in sts
+                if idx.matches(st, org=org, grade=grade, audit=audit, related_org=related_org)]
         return _user_json({"items": rows[:limit] if limit else rows})
 
     @bp.get("/api/stakeholder/statements/<statement_id>")
