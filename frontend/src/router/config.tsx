@@ -13,6 +13,7 @@ import AnalogSearchPage from '@/pages/analog-search/page';
 import StakeholderSignalsPage from '@/pages/stakeholder-signals/page';
 import StakeholderWorkbenchPage from '@/pages/stakeholder-signals/workbench';
 import MyRequestsPage from '@/pages/service-requests/mine';
+import AnalysisRequestsPage from '@/pages/analysis-requests/page';
 import LoginPage from '@/pages/login/page';
 import NotFound from '@/pages/NotFound';
 // admin — 각 페이지가 fetchMe() 로 role 셀프 가드 (v2 패턴)
@@ -45,6 +46,7 @@ const routes: RouteObject[] = [
   { path: '/stakeholder-signals', element: <StakeholderSignalsPage /> },
   { path: '/stakeholder-signals/workbench', element: <StakeholderWorkbenchPage /> },
   { path: '/my-requests', element: <MyRequestsPage /> },
+  { path: '/analysis-requests', element: <AnalysisRequestsPage /> },
   { path: '/admin/market-share', element: <AdminMarketSharePage /> },
   { path: '/admin/msd-pipeline', element: <AdminMsdPipelinePage /> },
   { path: '/admin/competitor-trends', element: <AdminCompetitorTrendsPage /> },

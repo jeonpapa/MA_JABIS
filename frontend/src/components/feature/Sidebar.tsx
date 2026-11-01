@@ -37,6 +37,7 @@ export const allNavItems: NavItem[] = [
   { path: '/market-share', label: '시장점유율', icon: 'ri-pie-chart-2-line', group: '시장' },
   { path: '/competitor-trends', label: '경쟁사 동향', icon: 'ri-radar-line', group: '시장' },
   { path: '/daily-mailing', label: '데일리 메일링', icon: 'ri-mail-line', group: '시장' },
+  { path: '/analysis-requests', label: '분석 요청', icon: 'ri-flask-line', group: '지원' },
   { path: '/my-requests', label: '내 개선 요청', icon: 'ri-feedback-line', group: '지원' },
 ];
 

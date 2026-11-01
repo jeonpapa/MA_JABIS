@@ -255,4 +255,7 @@ def build_price_request_blueprint(db_path, foreign_agent):
                 raise Conflict("dashboard changed after verification; email blocked")
         return jsonify(request=store.notification(rid, actor(), lease(), b.get("phase"), b.get("receipt")))
 
+    # 분석 요청(A안, 2026-11-02) — server.py 를 건드리지 않도록 여기서 중첩 등록한다. URL 은 /api/analysis-requests…
+    from api.analysis_request_routes import build_analysis_request_blueprint
+    bp.register_blueprint(build_analysis_request_blueprint(db_path))
     return bp
