@@ -197,10 +197,20 @@ def de_price_basis_warning(row: dict) -> Optional[str]:
     판정: extra.price_column == 'AVP/UVP', 또는 price_tier_original 에 UVP 만 있고 EB/FB 가 없음."""
     ex = _item_extra(row)
     col = str(ex.get("price_column") or "").upper()
-    tier = str(ex.get("price_tier_original") or row.get("price_tier_original") or "").upper()
-    if col == "AVP/UVP" or ("UVP" in tier and "EB" not in tier and "FB" not in tier):
-        return DE_UVP_FALLBACK_NOTE
-    return None
+    if col:
+        return DE_UVP_FALLBACK_NOTE if col == "AVP/UVP" else None
+    return DE_UVP_FALLBACK_NOTE if de_tier_is_uvp(ex.get("price_tier_original") or row.get("price_tier_original")) else None
+
+
+def de_tier_is_uvp(tier_text) -> bool:
+    """price_tier_original 이 AVP/UVP 가격을 가리키는지. 대체 표기('AVP/UVP … AVP (EB)/FB 미표시 — 대체')는 EB 글자를
+    포함하므로 'AVP/UVP' 로 시작하거나 '대체' 가 있으면 UVP, 그 외 EB/FB 가 있으면 EB, UVP 만 있으면 UVP."""
+    t = str(tier_text or "").strip().upper()
+    if t.startswith("AVP/UVP") or "대체" in t:
+        return True
+    if "EB" in t or "FB" in t:
+        return False
+    return "UVP" in t
 
 
 # 공식 공장도가(원포장, 현지통화, VAT 제외)를 행에 담아 주는 국가 — 고정 비율 추정 대신 이 값을 쓴다.

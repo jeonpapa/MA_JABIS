@@ -235,3 +235,12 @@ def test_a8_aggregate_excludes_non_reference_tiers():
     de_uvp = {**de_eb, "raw_data": json.dumps({"price_tier_original": "AVP/UVP (Rote Liste Packungsangaben)"})}
     assert a8_aggregate_eligibility("DE", de_uvp)[0] is True                 # 대체도 집계에는 포함
     assert "대체" in de_price_basis_warning(de_uvp)
+
+
+def test_de_tier_text_detection():
+    from agents.foreign_price_agent import de_tier_is_uvp
+    assert de_tier_is_uvp("AVP/UVP (Rote Liste; AVP (EB)/FB 미표시 — 대체)") is True     # 대체 표기는 EB 글자를 포함
+    assert de_tier_is_uvp("AVP/UVP (Rote Liste Packungsangaben)") is True
+    assert de_tier_is_uvp("AVP (EB)/FB — EB (Erstattungsbetrag)") is False
+    assert de_tier_is_uvp("AVP (EB)/FB — FB (Rote Liste Packungsangaben)") is False
+    assert de_tier_is_uvp("Rote Liste") is False

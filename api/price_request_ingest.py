@@ -118,9 +118,10 @@ def prepare_a8(raw, cc, query, rid, agent):
     extra_in = raw.get("extra") or {}
     if cc == "DE":
         # 2026-11-02 사용자 결정: 기준 = Rote Liste **AVP (EB)/FB**. EB/FB 칸이 비어 있을 때만 AVP/UVP 를 쓰고 대체로 표시한다.
+        from agents.foreign_price_agent import de_tier_is_uvp
         up = tier_text.upper()
-        uses_eb = "EB" in up or "FB" in up
-        uses_uvp = "UVP" in up and not uses_eb
+        uses_uvp = de_tier_is_uvp(tier_text)
+        uses_eb = not uses_uvp and ("EB" in up or "FB" in up)
         if not (uses_eb or uses_uvp):
             raise ValueError("DE requires Rote Liste AVP (EB)/FB (or AVP/UVP only when EB/FB is not shown)")
         if uses_uvp:
@@ -156,8 +157,8 @@ def prepare_a8(raw, cc, query, rid, agent):
     extra = {**extra, **metadata, "observed_at": observed, "price_request_id": rid, "source_type": source_type}
     if cc == "DE":
         from agents.foreign_price_agent import de_price_basis_warning
+        extra["price_column"] = "AVP/UVP" if uses_uvp else "AVP (EB)/FB"
         warn = de_price_basis_warning({"extra": extra})
-        extra["price_column"] = "AVP/UVP" if warn else "AVP (EB)/FB"
         if warn:
             extra["price_basis_warning"] = warn
     r.update(query_name=query, searched_at=datetime.now().isoformat(timespec="microseconds"),
