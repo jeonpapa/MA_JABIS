@@ -32,6 +32,7 @@ if str(ROOT) not in sys.path:
 from agents.exchange_rate import PriceCalculator  # noqa: E402
 
 SOURCE_LABEL = "Rote Liste (AVP/UVP; DocCheck)"
+SOURCE_LABEL_EB = "Rote Liste (AVP (EB)/FB; DocCheck)"
 
 
 def build_row(src: sqlite3.Row, e: dict, now: str, eur_fallback: dict) -> tuple[dict, dict]:
@@ -40,7 +41,9 @@ def build_row(src: sqlite3.Row, e: dict, now: str, eur_fallback: dict) -> tuple[
     old_adj = row.get("adjusted_price_krw")
     pack = int(e.get("pack_count") or row.get("pack_count") or 1)
     rate = row.get("exchange_rate") or eur_fallback["exchange_rate"]
-    price = float(e["avp_uvp"])
+    # 2026-11-02: price_column="AVP (EB)/FB"(기준) 또는 "AVP/UVP"(EB 미표시 대체). 기본은 계획의 값으로 판단.
+    col = e.get("price_column") or ("AVP (EB)/FB" if e.get("use_eb") else "AVP/UVP")
+    price = float(e["avp_eb_fb"] if col == "AVP (EB)/FB" else e["avp_uvp"])
     calc = PriceCalculator().calculate_adjusted_price("DE", price, rate, pack_count=pack, source_type=None)
 
     raw = {}
@@ -53,12 +56,15 @@ def build_row(src: sqlite3.Row, e: dict, now: str, eur_fallback: dict) -> tuple[
         raw.pop(k, None)
     raw.update({
         "pzn": e.get("pzn") or old_pzn, "pack_text": e.get("pack_text"),
-        "price_tier": "pharmacy_retail", "price_tier_original": "AVP/UVP (Rote Liste Packungsangaben)",
-        "price_column": "AVP/UVP", "avp_eb_fb_reference": e.get("avp_eb_fb"), "eb_label": e.get("eb_label"),
+        "price_tier": "pharmacy_retail",
+        "price_tier_original": (f"AVP (EB)/FB — {e.get('eb_label') or 'EB'} (Rote Liste Packungsangaben)" if col == "AVP (EB)/FB"
+                                else "AVP/UVP (Rote Liste; AVP (EB)/FB 미표시 — 대체)"),
+        "price_column": col, "avp_eb_fb_reference": e.get("avp_eb_fb") if col == "AVP/UVP" else None,
+        "avp_uvp_reference": e.get("avp_uvp") if col == "AVP (EB)/FB" else None, "eb_label": e.get("eb_label"),
         "price_as_of": e.get("preisstand"), "vat_status": "unknown",
         "vat_note": "원문 화면에 VAT 포함 여부 별도 미표시(약국판매가 — 별첨5 산식이 부가세 19% 를 역산)",
         "effective_date": None, "effective_date_note": "Preisstand 는 자료 기준일로 개별 가격 시행일 아님",
-        "selection_note": "사용자 결정(2026-10-26): AVP/UVP 를 기준 가격으로 사용. EB/FB 는 참고 보존.",
+        "selection_note": "사용자 결정(2026-11-02): AVP (EB)/FB 기준, EB/FB 미표시 포장만 AVP/UVP 대체(표시).",
         "evidence_ref": e.get("evidence_ref"), "source_type": None,
         "replaces_row_id": src["id"], "collected_via": "Aside browser (DocCheck login)",
     })
@@ -69,7 +75,7 @@ def build_row(src: sqlite3.Row, e: dict, now: str, eur_fallback: dict) -> tuple[
         "pack_count": pack, "pack_count_source": "scraper", "per_unit_local": calc["per_unit_listed"],
         "factory_price_krw": calc["factory_price_krw"], "adjusted_price_krw": calc["adjusted_price_krw"],
         "vat_rate": calc["vat_rate"], "distribution_margin": calc["distribution_margin"],
-        "source_label": SOURCE_LABEL, "source_url": e.get("source_url") or row.get("source_url"),
+        "source_label": SOURCE_LABEL_EB if col == "AVP (EB)/FB" else SOURCE_LABEL, "source_url": e.get("source_url") or row.get("source_url"),
         "form_type": e.get("form_type") or row.get("form_type"),
         "raw_data": json.dumps(raw, ensure_ascii=False),
     })

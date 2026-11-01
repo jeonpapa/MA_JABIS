@@ -55,20 +55,29 @@ def build_de(a) -> tuple[list, list]:
     for p in de_tbl.parse_packungsangaben(text):
         if a.pzn and p["pzn"] not in a.pzn:
             continue
-        if p["avp_uvp"] is None:
-            skipped.append(f"PZN {p['pzn']} {p['pack']}: AVP/UVP 없음(EB/FB 만) — 가격 미확정")
+        # 2026-11-02 사용자 결정: 기준 = AVP (EB)/FB. EB/FB 칸이 비어 있을 때만 AVP/UVP 대체(화면에 대체 표시).
+        fallback = p["avp_eb_fb"] is None
+        price = p["avp_uvp"] if fallback else p["avp_eb_fb"]
+        if price is None:
+            skipped.append(f"PZN {p['pzn']} {p['pack']}: 가격 칸이 모두 비어 있음 — 가격 미확정")
             continue
         n = de_tbl.pack_count(p["pack"])
         if not n:
             skipped.append(f"PZN {p['pzn']} {p['pack']}: 포장 수량을 읽지 못함 — 수동 확인")
             continue
+        extra = {"pzn": p["pzn"], "n_size": p["n"], "eb_label": p["eb_label"], "avp_uvp_reference": p["avp_uvp"],
+                 "price_as_of": stand, "effective_date_note": "Preisstand 는 자료 기준일 — 개별 가격 시행일 아님"}
+        if fallback:
+            extra["price_basis_warning"] = "AVP/UVP 대체 (Rote Liste에 AVP (EB)/FB 미표시)"
         rows.append(_base(
             a, product_name=a.product, dosage_strength=a.strength or _strength(p["pack"]),
-            dosage_form=a.dosage_form or "", package_unit=p["pack"], local_price=p["avp_uvp"], currency="EUR",
-            pack_count=n, price_tier="pharmacy_retail", price_tier_original="AVP/UVP (Rote Liste Packungsangaben)",
-            vat_status="included", source_url=a.url, source_label="Rote Liste (AVP/UVP; DocCheck)",
-            extra={"pzn": p["pzn"], "n_size": p["n"], "avp_eb_fb_reference": p["avp_eb_fb"], "eb_label": p["eb_label"],
-                   "price_as_of": stand, "effective_date_note": "Preisstand 는 자료 기준일 — 개별 가격 시행일 아님"},
+            dosage_form=a.dosage_form or "", package_unit=p["pack"], local_price=price, currency="EUR",
+            pack_count=n, price_tier="pharmacy_retail",
+            price_tier_original=("AVP/UVP (Rote Liste; AVP (EB)/FB 미표시 — 대체)" if fallback
+                                 else f"AVP (EB)/FB — {p['eb_label'] or 'EB'} (Rote Liste Packungsangaben)"),
+            vat_status="included", source_url=a.url,
+            source_label="Rote Liste (AVP/UVP 대체; DocCheck)" if fallback else "Rote Liste (AVP (EB)/FB; DocCheck)",
+            extra=extra,
         ))
     return rows, skipped
 

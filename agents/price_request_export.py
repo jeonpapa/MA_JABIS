@@ -148,6 +148,9 @@ def generate_xlsx(data):
     for row in data.get("rows", []):
         m = _meta(row)
         m["country_name"] = LABELS.get(m.get("country"), m.get("country"))
+        if m.get("country") == "DE" and not m.get("price_basis_warning") and m.get("local_price") is not None:
+            from agents.foreign_price_agent import de_price_basis_warning
+            m["price_basis_warning"] = de_price_basis_warning(m)
         tier = m.get("price_tier")
         m["tier_label"] = TIERS.get(tier, tier)
         m["vat_label"] = VAT.get(m.get("vat_status"), m.get("vat_status"))
@@ -171,7 +174,8 @@ def generate_xlsx(data):
               ("form_type", "제형 분류", 16), ("route", "투여경로/분류", 19), ("dosage_strength", "함량·규격 원문", 48),
               ("dosage_form", "제형 원문", 32), ("package_unit", "포장 원문", 28), ("pack_count", "포장 내 최소단위 수량", 23),
               ("local_price", "원포장 가격 (현지통화)", 26), ("currency", "통화", 12),
-              ("tier_label", "원가격 단계", 20), ("price_tier_original", "가격 필드 원문", 34), ("vat_label", "원가격 VAT", 16)]
+              ("tier_label", "원가격 단계", 20), ("price_tier_original", "가격 필드 원문", 34), ("vat_label", "원가격 VAT", 16),
+              ("price_basis_warning", "가격 기준 주의 (대체 사용)", 34)]
     if scope == "a8":
         extra = [("prezzo_pubblico", "IT 소비자가 참조 (EUR, 계산 미사용)", 37), ("per_unit_local", "최소단위 현지가", 22), ("unit_strength_mg", "최소단위 총함량 (mg)", 25),
                  ("exchange_rate", "적용환율 (원/현지통화 1)", 27), ("exchange_rate_from", "환율 기간 시작", 19), ("exchange_rate_to", "환율 기간 종료", 19),

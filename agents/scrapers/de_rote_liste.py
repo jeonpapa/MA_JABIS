@@ -30,7 +30,7 @@
 주의:
   - DocCheck는 의료전문가용 인증 서비스. MSD 임직원 계정 필요.
   - 로그인 미설정 시 local_price=None (비급여 처리)
-  - 가격 단위: **AVP/UVP(목록가)** 를 기준 가격으로 사용 (2026-10-26 사용자 결정). AVP (EB)/FB = Erstattungsbetrag/Festbetrag 는 참고로만 보존
+  - 가격 단위: **AVP (EB)/FB** 기준(2026-11-02 사용자 결정). EB/FB 미표시 포장만 AVP/UVP 대체 + 화면 표시
 """
 
 import json
@@ -78,7 +78,7 @@ from agents.foreign_sources.de_rote_liste_table import (  # noqa: E402 — 공�
 class DeRoteListeScraper(BaseScraper):
     COUNTRY        = "DE"
     CURRENCY       = "EUR"
-    SOURCE_LABEL   = "Rote Liste (AVP/UVP, DocCheck)"
+    SOURCE_LABEL   = "Rote Liste (AVP (EB)/FB, DocCheck)"
     REQUIRES_LOGIN = True
 
     def __init__(self, cache_dir: Path = None, msd_only: bool = False, **kwargs):
@@ -394,15 +394,17 @@ class DeRoteListeScraper(BaseScraper):
                 continue
 
         parsed_rows = parse_packungsangaben(text)
-        uvp_rows = [r for r in parsed_rows if r["avp_uvp"] is not None]
-        if uvp_rows:
-            # 사용자 결정(2026-10-26): AVP/UVP 가 기준 가격. 첫 행(최소 포장)을 쓰되 모든 포장을 보존한다.
-            price = uvp_rows[0]["avp_uvp"]
-            pzn = uvp_rows[0]["pzn"] or pzn
-            dosage = uvp_rows[0]["pack"] or dosage
-            all_prices = [{"dosage_strength": r["pack"], "pack_size": r["n"], "pzn": r["pzn"], "price": r["avp_uvp"],
-                           "avp_eb_fb": r["avp_eb_fb"], "price_column": "AVP/UVP"} for r in parsed_rows if r["avp_uvp"] is not None]
-
+        priced_rows = [r for r in parsed_rows if r["avp_eb_fb"] is not None or r["avp_uvp"] is not None]
+        if priced_rows:
+            # 2026-11-02 사용자 결정: 기준 = AVP (EB)/FB. EB/FB 가 없는 포장만 AVP/UVP 대체(표시).
+            def _pick(r):
+                return (r["avp_eb_fb"], "AVP (EB)/FB") if r["avp_eb_fb"] is not None else (r["avp_uvp"], "AVP/UVP")
+            price = _pick(priced_rows[0])[0]
+            pzn = priced_rows[0]["pzn"] or pzn
+            dosage = priced_rows[0]["pack"] or dosage
+            all_prices = [{"dosage_strength": r["pack"], "pack_size": r["n"], "pzn": r["pzn"], "price": _pick(r)[0],
+                           "price_column": _pick(r)[1], "avp_eb_fb": r["avp_eb_fb"], "eb_label": r["eb_label"],
+                           "avp_uvp": r["avp_uvp"]} for r in priced_rows]
         else:
             # 2026-10-26: AVP/UVP 를 표에서 못 읽으면 가격을 만들지 않는다. 이전 폴백(첫 행·첫 € 값)은 AVP (EB)/FB 를
             # 집어 왔다 — 틀린 단계의 값보다 빈 칸이 낫다(가격 미확정으로 남기고 화면 확인).
@@ -461,9 +463,9 @@ class DeRoteListeScraper(BaseScraper):
 
     @staticmethod
     def _expand_packs(item: dict) -> list[dict]:
-        """Packungsangaben 의 포장마다 행 하나 — local_price=AVP/UVP(포장 가격), pack_count=포장 수량, EB/FB 는 참고.
-        AVP/UVP 가 없는 포장(EB 만 표시)은 가격을 만들지 않는다(추측 금지). 표를 못 읽었으면 원래 행 그대로."""
-        packs = [p for p in (item.get("extra", {}).get("all_prices") or []) if p.get("price_column") == "AVP/UVP"]
+        """Packungsangaben 의 포장마다 행 하나 — local_price = AVP (EB)/FB(기준), 없으면 AVP/UVP(대체·표시).
+        pack_count = 포장 수량. 표를 못 읽었으면 원래 행 그대로."""
+        packs = [p for p in (item.get("extra", {}).get("all_prices") or []) if p.get("price_column")]
         if not packs:
             return [item]
         out = []
@@ -474,11 +476,17 @@ class DeRoteListeScraper(BaseScraper):
             n = _pack_count(p.get("dosage_strength") or "")
             if n:
                 row["pack_count"] = n
+            fallback = p.get("price_column") == "AVP/UVP"
             row["extra"].update({
-                "pzn": p.get("pzn"), "price_column": "AVP/UVP", "avp_eb_fb_reference": p.get("avp_eb_fb"),
-                "price_tier": "pharmacy_retail", "price_tier_original": "AVP/UVP (Rote Liste Packungsangaben)",
+                "pzn": p.get("pzn"), "price_column": p.get("price_column"), "eb_label": p.get("eb_label"),
+                "avp_uvp_reference": p.get("avp_uvp"),
+                "price_tier": "pharmacy_retail",
+                "price_tier_original": ("AVP/UVP (Rote Liste; AVP (EB)/FB 미표시 — 대체)" if fallback
+                                        else f"AVP (EB)/FB — {p.get('eb_label') or 'EB'} (Rote Liste Packungsangaben)"),
                 "vat_status": "included", "source_type": None,
             })
+            if fallback:
+                row["extra"]["price_basis_warning"] = "AVP/UVP 대체 (Rote Liste에 AVP (EB)/FB 미표시)"
             out.append(row)
         return out
 

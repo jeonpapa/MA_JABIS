@@ -189,6 +189,20 @@ def is_it_public_price(row: dict) -> bool:
     return "pubblico" in kind or (ex.get("aifa_class") == "A" and "ex-factory" not in kind)
 
 
+DE_UVP_FALLBACK_NOTE = "AVP/UVP 대체 (Rote Liste에 AVP (EB)/FB 미표시)"
+
+
+def de_price_basis_warning(row: dict) -> Optional[str]:
+    """독일 행이 AVP/UVP 를 대체로 쓴 경우 화면 표시 문구, EB/FB 기준이면 None (2026-11-02 사용자 결정).
+    판정: extra.price_column == 'AVP/UVP', 또는 price_tier_original 에 UVP 만 있고 EB/FB 가 없음."""
+    ex = _item_extra(row)
+    col = str(ex.get("price_column") or "").upper()
+    tier = str(ex.get("price_tier_original") or row.get("price_tier_original") or "").upper()
+    if col == "AVP/UVP" or ("UVP" in tier and "EB" not in tier and "FB" not in tier):
+        return DE_UVP_FALLBACK_NOTE
+    return None
+
+
 # 공식 공장도가(원포장, 현지통화, VAT 제외)를 행에 담아 주는 국가 — 고정 비율 추정 대신 이 값을 쓴다.
 # 2026-10 개선 요청 #3: 스위스는 BAG SL 이 팩별 FAP 를 공개하므로 판매가×0.73 추정을 쓰지 않는다.
 OFFICIAL_EXFACTORY_COUNTRIES = {"CH"}
@@ -234,12 +248,10 @@ def a8_aggregate_eligibility(country: str, row: dict,
     """
     if row.get("adjusted_price_krw") is None:
         return False, "no_adjusted_price"
-    # 2026-10-26 별첨5: 기준 가격 단계가 아닌 저장 행(IT Classe A 공중가, DE AVP (EB)/FB)은 카드에 남기되 A8 집계에서 뺀다.
+    # 2026-10-26 별첨5: 기준 가격 단계가 아닌 저장 행(IT Classe A 공중가)은 카드에 남기되 A8 집계에서 뺀다.
+    # DE 는 2026-11-02 부터 AVP (EB)/FB 가 기준, EB/FB 미표시 시 AVP/UVP 대체(집계 포함, 화면에 대체 표시).
     if country == "IT" and is_it_public_price(row):
         return False, "it_public_price_not_ex_factory"
-    if country == "DE" and "EB" in str(_item_extra(row).get("price_tier_original") or "") \
-            and "UVP" not in str(_item_extra(row).get("price_tier_original") or ""):
-        return False, "de_eb_not_avp_uvp"
     src = row.get("pack_count_source")
     form = (row.get("form_type") or "unknown").lower()
     if country in PACK_PRICING_COUNTRIES and src == "default" and form != "injection":
@@ -1273,6 +1285,8 @@ class ForeignPriceAgent:
                 row["dosing_schedule_label"] = dosing["schedule_label"] if dosing else None
             # A8 집계 안전망 — 팩가가 per-unit 으로 저장된 미확인 행(pack_count_source=default) 은 평균에서 뺀다
             row["a8_aggregate_eligible"], row["a8_exclude_reason"] = a8_aggregate_eligibility(country, row)
+            # 가격 기준 경고(화면·엑셀 표시) — DE AVP/UVP 대체
+            row["price_basis_warning"] = de_price_basis_warning(row) if country == "DE" and row.get("local_price") is not None else None
 
             by_country.setdefault(country, []).append(row)
 

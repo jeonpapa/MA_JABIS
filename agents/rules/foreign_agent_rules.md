@@ -183,9 +183,11 @@ A8_adj_per_unit_KRW =
 | US `us_micromedex` | `redbook_wac` | **0.74** (US 국가 기본, WAC) |
 | 그 외 | `None` | 국가 기본 |
 
+**2026-11-02 독일 기준 변경 (사용자 결정)**: DE 기준 가격은 Rote Liste **AVP (EB)/FB**. EB/FB 칸이 비어 있는 포장만 AVP/UVP 를 대체로 쓰고 `price_basis_warning`("AVP/UVP 대체 …")을 대시보드 카드·엑셀에 표시한다(A8 집계에는 포함). 업로드 검증은 EB/FB 표기를 기준으로 받고, EB 가 표시된 포장의 UVP 업로드를 거부한다. 10-26 의 "AVP/UVP 기준"은 폐기.
+
 **2026-10-26 별첨5 원문 대조 (사용자 승인, 심평원 규정 별첨5 「외국 조정가격 산출 기준 및 방법」 + `agents/price_adjustment.py`)**:
 - 산식: {[(공장도가 × 환율) × (1+VAT 10%)] × (1+유통거래폭)}, 원 미만 절사. 환율 = 접수 전월 포함 36개월 평균 매매기준율.
-- **DE**: Rote Liste **AVP/UVP** 에서 별도 산식으로 공장도가 역산 — `[(AVP/1.19 − 8.35)/1.03 − 0.7]/1.0315 × 0.93`(포장 단위 AVP 에 적용,
+- **DE**: Rote Liste 약국판매가(**AVP (EB)/FB**, 11-02 변경)에서 별도 산식으로 공장도가 역산 — `[(AVP/1.19 − 8.35)/1.03 − 0.7]/1.0315 × 0.93`(포장 단위 AVP 에 적용,
   `price_adjustment.germany_exfactory_local`). 고정 0.6955 폐기(약 €198 에서만 맞았다 — 고가약은 약 0.735). AVP ≤ 고정 수수료면 산식 불가 → 국가 기본으로 대체하고 라벨에 남긴다.
   Rote Liste 표 열은 `AVP (EB)/FB | AVP/UVP`; **기준 가격은 AVP/UVP**(사용자 결정), EB/FB 는 raw_data 참고. 파서: `de_rote_liste.parse_packungsangaben`.
 - **CH**: `SL 공장도가(FAP) × 0.73`. 이전(판매가 × 0.73, 이후 FAP × 1.0)은 둘 다 틀렸다. SL 가격 부재 시 Compendium × 0.65.

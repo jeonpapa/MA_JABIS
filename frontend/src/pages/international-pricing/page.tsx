@@ -690,6 +690,11 @@ export default function InternationalPricingPage() {
                                   ) : (
                                     <p className={`text-sm font-semibold mb-1 ${textSub}`}>가격 미공개</p>
                                   )}
+                                  {cell.priceBasisWarning && (
+                                    <p className="text-xs mb-1 font-semibold text-amber-600" title="기준 가격(AVP (EB)/FB)이 Rote Liste에 표시되지 않아 AVP/UVP를 대신 사용했습니다">
+                                      ⚠ {cell.priceBasisWarning}
+                                    </p>
+                                  )}
                                   {(cell.dosageStrength || cell.packCount) && <p className={`text-xs truncate ${textSub}`} title={cell.dosageStrength ? `원문: ${cell.dosageStrength}` : undefined}>{packLine(cell)}</p>}
                                   {cell.doseNormFactor != null && cell.doseNormFactor !== 1 && cell.adjustedPriceKrwNormalized != null ? (
                                     <>

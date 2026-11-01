@@ -96,12 +96,19 @@ def _run(args, tmp_path, text=None, name="in.txt"):
 
 
 def test_rows_de(tmp_path):
+    """2026-11-02: 기준 = AVP (EB)/FB. EB/FB 가 비어 있는 포장만 AVP/UVP 대체(+표시)."""
+    txt = DE_TXT + "\n30 Btl. 20 mg\tN1\t19471564\t537,04 €"           # EB 칸 없이 AVP/UVP 하나만
     d = _run(["de", "--text", str(tmp_path / "in.txt"), "--url", "https://www.rote-liste.de/rle/detail/1", "--product", "PREVYMIS",
-              "--ingredient", "letermovir", "--form", "oral"], tmp_path, DE_TXT)
-    assert d["status"] == "priced" and len(d["rows"]) == 3                     # EB 만 있는 포장은 만들지 않는다
+              "--ingredient", "letermovir", "--form", "oral"], tmp_path, txt)
+    assert d["status"] == "priced" and len(d["rows"]) == 5
     r = d["rows"][0]
-    assert r["local_price"] == 5758.22 and r["pack_count"] == 28 and r["currency"] == "EUR"
-    assert "UVP" in r["price_tier_original"] and r["extra"]["avp_eb_fb_reference"] == 4719.49
+    assert r["local_price"] == 4719.49 and r["pack_count"] == 28 and r["currency"] == "EUR"
+    assert "EB" in r["price_tier_original"] and r["extra"]["avp_uvp_reference"] == 5758.22
+    assert "price_basis_warning" not in r["extra"]
+    eb_only = d["rows"][3]                                                   # EB 만 표시된 포장 → EB 사용
+    assert eb_only["local_price"] == 10.50 and "price_basis_warning" not in eb_only["extra"]
+    uvp = d["rows"][4]                                                       # EB 미표시 → UVP 대체 + 표시
+    assert uvp["local_price"] == 537.04 and "UVP" in uvp["price_tier_original"] and "대체" in uvp["extra"]["price_basis_warning"]
 
 
 def test_rows_fr(tmp_path):
@@ -180,13 +187,19 @@ def _prep(row, cc):
     return out, agent.calculator.calls[-1]
 
 
-def test_ingest_de_requires_uvp():
-    with pytest.raises(ValueError):
-        _prep(_row(currency="EUR", price_tier="pharmacy_retail", vat_status="included",
-                   price_tier_original="AVP (EB)/FB — EB (Erstattungsbetrag)"), "DE")
-    out, call = _prep(_row(currency="EUR", price_tier="pharmacy_retail", vat_status="included",
-                           price_tier_original="AVP/UVP (Rote Liste Packungsangaben)", local_price=11458.02), "DE")
-    assert call["source_type"] is None and 0.73 < out["factory_price_krw"] / (11458.02 / 28 * 1600) < 0.74   # 별첨5 독일 산식
+def test_ingest_de_eb_basis_and_uvp_fallback():
+    eb = dict(currency="EUR", price_tier="pharmacy_retail", vat_status="included", local_price=9380.56,
+              price_tier_original="AVP (EB)/FB — EB (Rote Liste Packungsangaben)")
+    out, call = _prep(_row(**eb), "DE")
+    assert call["source_type"] is None and 0.73 < out["factory_price_krw"] / (9380.56 / 28 * 1600) < 0.74   # 별첨5 독일 산식
+    assert "price_basis_warning" not in json.loads(out["raw_data"])
+    uvp = dict(eb, local_price=11458.02, price_tier_original="AVP/UVP (Rote Liste; AVP (EB)/FB 미표시 — 대체)")
+    out, _ = _prep(_row(**uvp), "DE")                                        # EB 가 없을 때만 UVP 허용, 대체 표시
+    assert "대체" in json.loads(out["raw_data"])["price_basis_warning"]
+    with pytest.raises(ValueError):                                          # EB 가 표시돼 있는데 UVP 를 올리면 거부
+        _prep(_row(**uvp, extra={"avp_eb_fb_reference": 9380.56}), "DE")
+    with pytest.raises(ValueError):                                          # 가격 열 표기가 없으면 거부
+        _prep(_row(**dict(eb, price_tier_original="Rote Liste")), "DE")
 
 
 def test_ingest_fr_tier_decides_ratio():
@@ -215,8 +228,10 @@ def test_a8_aggregate_excludes_non_reference_tiers():
     assert a8_aggregate_eligibility("IT", it_pub, check_injection_unit=False) == (False, "it_public_price_not_ex_factory")
     it_exf = {**it_pub, "raw_data": json.dumps({"price_kind": "Prezzo ex-factory (IVA esclusa)"})}
     assert a8_aggregate_eligibility("IT", it_exf, check_injection_unit=False)[0] is True
+    from agents.foreign_price_agent import de_price_basis_warning
     de_eb = {"adjusted_price_krw": 1, "pack_count_source": "scraper", "form_type": "oral",
              "raw_data": json.dumps({"price_tier_original": "AVP (EB)/FB — EB (Erstattungsbetrag)"})}
-    assert a8_aggregate_eligibility("DE", de_eb) == (False, "de_eb_not_avp_uvp")
+    assert a8_aggregate_eligibility("DE", de_eb)[0] is True and de_price_basis_warning(de_eb) is None
     de_uvp = {**de_eb, "raw_data": json.dumps({"price_tier_original": "AVP/UVP (Rote Liste Packungsangaben)"})}
-    assert a8_aggregate_eligibility("DE", de_uvp)[0] is True
+    assert a8_aggregate_eligibility("DE", de_uvp)[0] is True                 # 대체도 집계에는 포함
+    assert "대체" in de_price_basis_warning(de_uvp)

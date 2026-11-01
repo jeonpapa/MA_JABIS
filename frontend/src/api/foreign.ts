@@ -150,6 +150,8 @@ export interface A8Pricing {
   /** A8 min/avg 집계 포함 여부 (서버 판정). false 면 a8ExcludeReason 에 사유 — 예: pack_count_unverified(팩가가 단위가로 저장) */
   a8AggregateEligible: boolean;
   a8ExcludeReason?: string;
+  /** 가격 기준 대체 경고 — 예: 'AVP/UVP 대체 (Rote Liste에 AVP (EB)/FB 미표시)' */
+  priceBasisWarning?: string;
   searchedAt: string;
   /** 해당 국가 캐시 행 수 (대표 1건 외 변형 수) */
   variantCount: number;
@@ -303,6 +305,8 @@ interface RawPricingEntry {
   pack_count_source?: string | null;
   a8_aggregate_eligible?: boolean | null;
   a8_exclude_reason?: string | null;
+  /** 가격 기준 대체 경고(서버) — DE: AVP (EB)/FB 미표시로 AVP/UVP 사용 */
+  price_basis_warning?: string | null;
   // 조정가 산출 중간값 (서버 get_cached_results 가 PriceCalculator 로 재계산해 내려줌)
   exchange_rate?: number | null;
   exchange_rate_from?: string | null;
@@ -543,6 +547,7 @@ function mapPricingEntry(raw: RawPricingEntry, variantCount: number): A8Pricing 
     // 서버가 판정하지 않은(구 응답) 행은 포함 — 제외는 서버 판정이 있을 때만
     a8AggregateEligible: raw.a8_aggregate_eligible !== false,
     a8ExcludeReason: raw.a8_exclude_reason ?? undefined,
+    priceBasisWarning: raw.price_basis_warning ?? undefined,
     searchedAt: toIsoDate(raw.searched_at),
     variantCount,
     calc,

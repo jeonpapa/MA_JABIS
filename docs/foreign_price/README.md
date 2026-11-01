@@ -2,7 +2,7 @@
 
 > 해외약가 조사·계산·업로드·정정을 누가 하든 **같은 자료원, 같은 가격 단계, 같은 산식**으로 하기 위한 기준 문서.
 > 코드·루틴·사람 모두 이 문서를 따른다. 규칙을 바꾸면 이 문서, 코드, 테스트를 **함께** 바꾼다.
-> 최종 개정 2026-10-27. 근거: 심평원 「약제의 요양급여대상여부 등의 평가기준 및 절차 등에 관한 규정」 [별첨5] 외국 조정가격 산출 기준 및 방법(2022.12.23 신설, 규정 제527호 2025.3.5 시행본 기준).
+> 최종 개정 2026-11-02. 근거: 심평원 「약제의 요양급여대상여부 등의 평가기준 및 절차 등에 관한 규정」 [별첨5] 외국 조정가격 산출 기준 및 방법(2022.12.23 신설, 규정 제527호 2025.3.5 시행본 기준).
 
 ## 1. 범위와 대원칙
 
@@ -28,7 +28,7 @@
 |---|---|---|---|---|
 | 미국 US | Micromedex RED BOOK | **WAC** (AWP 금지) | WAC × **0.74** | 없음 — 미확정 |
 | 영국 UK | MIMS (NHS List Price) | NHS 정가 | × **0.73** | MIMS 권한 제한 시 NHSBSA dm+d "NHS Indicative Price"(VAT 제외, 출처 라벨 명시). BNF 는 영국 밖 403 |
-| 독일 DE | Rote Liste (DocCheck 로그인) | **AVP/UVP** (포장 가격, VAT 포함). AVP (EB)/FB 는 참고값으로만 | 별도 산식 `[(AVP/1.19 − 8.35)/1.03 − 0.7]/1.0315 × 0.93` (부가세 19%, 약국마진 3%+€8.35, 도매마진 3.15%+€0.70, 환급률 공장도가의 7%) — 실효 비율 €100≈0.66, €1,000≈0.73, 고가≈0.735 | 없음. AVP/UVP 가 없으면(EB 만 표시) 미확정 |
+| 독일 DE | Rote Liste (DocCheck 로그인) | **AVP (EB)/FB** (포장 가격, VAT 포함). EB/FB 칸이 비어 있는 포장만 **AVP/UVP 대체** — 대시보드·엑셀에 "AVP/UVP 대체" 표시 | 별도 산식 `[(AVP/1.19 − 8.35)/1.03 − 0.7]/1.0315 × 0.93` (부가세 19%, 약국마진 3%+€8.35, 도매마진 3.15%+€0.70, 환급률 공장도가의 7%) — 실효 비율 €100≈0.66, €1,000≈0.73, 고가≈0.735 | EB/FB 미표시 → AVP/UVP(대체 표시). 둘 다 없으면 미확정 |
 | 프랑스 FR | BdM_IT(Assurance Maladie) PFHT — **현재 접속 불가** → **관보(Journal officiel) 가격 공시 PFHT** | **PFHT**(세금 제외 공장도가). 병원 전용(liste en sus)은 관보 L.162-16-6 의 **UCD 별 tarif de responsabilité HT**(= Vidal "Prix et tarif de responsabilité (HT) par UCD") | PFHT × **0.77** | 공적 급여되나 공장도가 미확인: Vidal/BDPM 공중가 × **0.65** (`source_type="vidal"`) |
 | 이탈리아 IT | AIFA TrovaNorme 결정문(DET PRES/UPR 등) | **Prezzo ex-factory (IVA esclusa)** | × **0.93** (공장도가에도 적용) | Classe A 공중가(Prezzo al pubblico)는 쓰지 않는다 — 미확정 |
 | 스위스 CH | BAG Spezialitätenliste(SL) 공개 API | **FAP**(Fabrikabgabepreis, VAT 제외) | FAP × **0.73** | SL 에 약가가 없을 때만 Compendium 판매가 × **0.65** |
@@ -36,7 +36,7 @@
 | 캐나다 CA | Ontario Drug Benefit Formulary / PMPRB | 단가(공장도가) | × **0.81** | 없음 |
 
 ### 국가별 실무 메모
-- **DE**: 상세 페이지 하단 `PACKUNGSANGABEN` 표 열은 `포장 | N | PZN | AVP (EB)/FB | AVP/UVP`. 포장별로 행을 만든다(28정·1바이알·2 KIT 등). `Preisstand`는 자료 기준일이지 가격 시행일이 아니다(→ `extra.price_as_of`, `effective_date=null`). DocCheck 는 좌석·세션 서비스 — 조회 후 로그아웃. 이 PC 네트워크에서 DocCheck(195.82.66.x)가 막힌 적이 있다(2026-10-19) — 다른 사이트가 정상이면 DE 를 failed 로 사유 기록.
+- **DE**: 상세 페이지 하단 `PACKUNGSANGABEN` 표 열은 `포장 | N | PZN | AVP (EB)/FB | AVP/UVP`. 포장별로 행을 만든다(28정·1바이알·2 KIT 등). 기준은 **AVP (EB)/FB**(2026-11-02 사용자 결정 — 10-26 의 AVP/UVP 기준을 뒤집음). AVP/UVP 는 `extra.avp_uvp_reference`로 보존하고, EB/FB 가 없는 포장에서만 가격으로 쓰며 `price_basis_warning`으로 화면에 표시한다. `Preisstand`는 자료 기준일이지 가격 시행일이 아니다(→ `extra.price_as_of`, `effective_date=null`). DocCheck 는 좌석·세션 서비스 — 조회 후 로그아웃. 이 PC 네트워크에서 DocCheck(195.82.66.x)가 막힌 적이 있다(2026-10-19) — 다른 사이트가 정상이면 DE 를 failed 로 사유 기록.
 - **FR**: BdM_IT(`codage.ext.cnamts.fr`)는 2026-10 중순부터 파리 포함 전 세계에서 응답 없음(2026-10-27 외부 점검 13개국, ameli.fr 은 정상, 2026-01 에도 같은 장애). 같은 CEPS 공식 가격이 관보 「Avis relatif aux prix de spécialités pharmaceutiques」에 실린다. Légifrance 는 **브라우저로** 연다(스크립트 요청은 Cloudflare 403, 브라우저는 수 초 후 자동 통과). 검색: `https://www.legifrance.gouv.fr/search/jorf?tab_selection=jorf&searchField=ALL&query=<상표>&sortValue=PUBLI_DATE_DESC` → 가장 최근 "Avis relatif aux prix…". 공시 PPTTC 가 BDPM 현재 공중가와 같으면 그 공시가 현재 유효하다. 시행일은 공시 문구(`à compter du …`, `…jour suivant la publication`, `Date d'effet` 열)로 정한다. BDPM 파일에는 PFHT 가 없다. 공장도가는 고가약에서 공중가의 약 96%(마진 상한제).
 - **IT**: TrovaNorme API `tnf-service/ricerca/?determinaTNFSource=true&parola=<상표>` → `determina/tnf/pubblicate/<id>` → `allegato/<id>` PDF. AIC별 최신 유효 결정문. Fly 서버에서 이 호스트 DNS 실패가 있었다(2026-10-26) — 브라우저 fetch 는 정상.
 - **CH**: `GET https://epl.bag.admin.ch/api/sl/public/medicinal-products?search=<상표>&page=1&size=25` (page 는 1부터). 포장 수량은 `packSize`("2 Stk")에서 — 키트루다 100mg/4ml 은 SL 에서 **2바이알 1팩**. `lastPriceChange`가 가격 변경일. Compendium 은 Fly IP 를 간헐 차단.
@@ -71,7 +71,7 @@
 |---|---|---|
 | IT | `price_tier=ex_factory`, `vat_status=excluded` 필수 | × 0.93 |
 | US | `price_tier_original=WAC`, `source_type=redbook_wac` 필수 | × 0.74 |
-| DE | `price_tier_original` 에 **UVP** 필수(EB/FB 거부) | 별첨5 독일 산식 |
+| DE | `price_tier_original` 에 **EB/FB** 표기(기준) 또는 UVP(대체 — `extra.avp_eb_fb_reference` 가 있으면 거부) | 별첨5 독일 산식. UVP 대체 행은 `price_basis_warning` |
 | FR | `ex_factory` 이면 `excluded` 필수 → PFHT × 0.77. 그 외 단계는 공중가 대체 → × 0.65 | |
 | CH | `ex_factory` 이면 `excluded` 필수 → FAP × 0.73. 판매가 + `extra.ex_factory_price` → FAP × 0.73. 판매가만 → × 0.65 | |
 
@@ -80,7 +80,7 @@
 ## 6. 품질 체크리스트 (업로드 전 매번)
 
 - [ ] 제품·성분·제형·투여경로·함량이 요청과 일치 (IV ↔ SC, 정제 ↔ 과립 대체 금지)
-- [ ] `local_price` = 해당 국가 1순위 가격 필드(§3), 원포장 기준, 현지통화
+- [ ] `local_price` = 해당 국가 1순위 가격 필드(§3), 원포장 기준, 현지통화 (DE 는 AVP (EB)/FB — 없을 때만 AVP/UVP 대체 표시)
 - [ ] `pack_count` = 화면의 실제 정·바이알·포 수 (DE `28 Filmtbl.`, CH `2 Stk`, FR `B/28`·`2 flacons`)
 - [ ] `price_tier`·`vat_status`·`price_tier_original` 이 원문과 일치
 - [ ] 관찰일(`observed_at`) · 가격 시행일(`effective_date`) · 자료 기준일(Preisstand 등)을 섞지 않음
@@ -92,7 +92,7 @@
 
 - 사전 승인 → **볼륨 스냅샷**(`flyctl volumes snapshots create vol_vjy1qzd09257m9mv`) → dry-run → 적용 → 서버 읽기 경로(`ForeignPriceAgent.get_cached_results`)로 확인.
 - 원칙: 기존 행은 지우지 않는다. 가격 단계를 바꿀 때는 **새 행 추가**(최신 `searched_at`이 화면에 쓰이고 이전 행은 이력), 같은 단계의 메타 보강은 **compare-and-set 갱신**. 모든 스크립트는 undo JSON 을 DB 옆에 남긴다.
-- 스크립트: `scripts/repair_ch_exfactory.py`(CH SL FAP·링크), `scripts/insert_de_avp_uvp.py`(DE AVP/UVP), `scripts/insert_it_tnf_exfactory.py`(IT 공장도가), `scripts/insert_fr_jo_pfht.py`(FR 관보 PFHT).
+- 스크립트: `scripts/repair_ch_exfactory.py`(CH SL FAP·링크), `scripts/insert_de_avp_uvp.py`(DE 가격 열 교체 — EB/FB 또는 UVP 대체), `scripts/insert_it_tnf_exfactory.py`(IT 공장도가), `scripts/insert_fr_jo_pfht.py`(FR 관보 PFHT).
 - 이미 발송한 메일·요청별 보관 스냅샷(Excel)은 바꾸지 않는다 — 필요하면 재요청.
 
 ## 8. 알려진 접근 이슈
@@ -114,8 +114,9 @@
 | 2026-10-18 | 국가 1개씩 순차 조사(병렬 금지) |
 | 2026-10-19 | UK dm+d 대체 출처 허용 |
 | 2026-10-23 | CH 출처 링크 slug 를 제품별로(키트루다 고정 버그) |
-| 2026-10-26 | 별첨5 원문 대조: CH SL FAP × 0.73(대체 Compendium × 0.65), DE AVP/UVP + 독일 산식(0.6955 폐기), IT 공장도가 × 0.93(1.0 폐기, Classe A 공중가 제외) |
+| 2026-10-26 | 별첨5 원문 대조: CH SL FAP × 0.73(대체 Compendium × 0.65), DE AVP/UVP(→ 11-02 EB/FB 로 변경) + 독일 산식(0.6955 폐기), IT 공장도가 × 0.93(1.0 폐기, Classe A 공중가 제외) |
 | 2026-10-26 | 저가약 유통거래폭 10.41% 반영 안 함 |
+| 2026-11-02 | DE 기준을 **AVP (EB)/FB** 로 변경(EB 미표시 시 AVP/UVP 대체 + 화면 표시) |
 | 2026-10-27 | FR: BdM_IT 접속 불가 → 관보 PFHT × 0.77, 공장도가 미확인 시 공중가 × 0.65. 행 생성기·업로드 검증 도입 |
 
 ## 10. 열린 항목

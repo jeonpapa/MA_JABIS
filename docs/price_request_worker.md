@@ -58,7 +58,7 @@ node scripts/price_request_client.mjs heartbeat REQUEST_ID --state SESSION_TMP/l
 - 공식 출처 우선, 제품·INN·회사·제형·투여경로·함량·포장을 일치시킨다. IV와 SC를 대체하지 않는다.
 - 공단 추가국가는 스킬의 국가별 출처로 조사. 과거 스킬의 숫자를 재사용하지 않는다.
 - 공개 목록파일/로컬 스크레이퍼를 사용할 수 있으나 **서버에서 기존 live scrape를 호출하지 않는다**. 로컬 결과를 직접 확인하고 증빙을 남긴다.
-- A8 국가별 표준 원가격(2026-10-27, README §3): US RED BOOK **WAC**, UK MIMS NHS 정가(권한 제한 시 dm+d), DE Rote Liste **AVP/UVP**(EB/FB 는 참고), FR **관보 PFHT**(병원 전용은 UCD tarif HT; BdM_IT 접속 불가), IT TrovaNorme **Prezzo ex-factory**, CH **BAG SL FAP**, JP MHLW 단가, CA Ontario 단가. DE·FR·CH 행은 `python3 scripts/a8_rows.py de|fr|ch …` 로 만든다(손 JSON 금지). 가격단계를 다른 단계로 대체하지 않는다.
+- A8 국가별 표준 원가격(2026-10-27, README §3): US RED BOOK **WAC**, UK MIMS NHS 정가(권한 제한 시 dm+d), DE Rote Liste **AVP (EB)/FB**(EB/FB 미표시 포장만 AVP/UVP 대체 — 화면 표시), FR **관보 PFHT**(병원 전용은 UCD tarif HT; BdM_IT 접속 불가), IT TrovaNorme **Prezzo ex-factory**, CH **BAG SL FAP**, JP MHLW 단가, CA Ontario 단가. DE·FR·CH 행은 `python3 scripts/a8_rows.py de|fr|ch …` 로 만든다(손 JSON 금지). 가격단계를 다른 단계로 대체하지 않는다.
 - Micromedex/DocCheck는 조회 후 로그아웃. MIMS 권한 제한은 Aside나 주거 IP로 해결된다고 가정하지 않는다.
 - JP/CH도 일반 IP에서 차단이 없어지는지 실제로 확인한다. 접속성 보장은 없다.
 - IT: `agents/scrapers/it_aifa_tnf.py`의 공개 API/PDF 경로를 쓴다. DET PRES/UPR 등에 있는 `Prezzo ex-factory (IVA esclusa)`만 local_price. 소비자가는 증빙의 별도 값. AIC별 최신 유효 결정문, 정정 및 시행일 확인. 주사 포장 수량은 vial 수이지 mL가 아니다.

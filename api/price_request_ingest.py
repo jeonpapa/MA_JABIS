@@ -117,10 +117,17 @@ def prepare_a8(raw, cc, query, rid, agent):
     tier, vat, tier_text = r["price_tier"], r["vat_status"], (r.get("price_tier_original") or "")
     extra_in = raw.get("extra") or {}
     if cc == "DE":
-        # Rote Liste AVP/UVP 만. AVP (EB)/FB(협상 상환액·고정액)는 기준 가격이 아니다 — extra.avp_eb_fb_reference 로만.
-        if "UVP" not in tier_text.upper():
-            raise ValueError("DE requires Rote Liste AVP/UVP (price_tier_original must name AVP/UVP; EB/FB is reference only)")
-        source_type = None                     # 계산기: 별첨5 독일 산식(포장 AVP 기준)
+        # 2026-11-02 사용자 결정: 기준 = Rote Liste **AVP (EB)/FB**. EB/FB 칸이 비어 있을 때만 AVP/UVP 를 쓰고 대체로 표시한다.
+        up = tier_text.upper()
+        uses_eb = "EB" in up or "FB" in up
+        uses_uvp = "UVP" in up and not uses_eb
+        if not (uses_eb or uses_uvp):
+            raise ValueError("DE requires Rote Liste AVP (EB)/FB (or AVP/UVP only when EB/FB is not shown)")
+        if uses_uvp:
+            eb_ref = extra_in.get("avp_eb_fb_reference") if isinstance(extra_in, dict) else None
+            if isinstance(eb_ref, (int, float)) and not isinstance(eb_ref, bool) and eb_ref > 0:
+                raise ValueError("DE: AVP (EB)/FB is shown for this pack — upload the EB/FB price, not AVP/UVP")
+        source_type = None                     # 계산기: 별첨5 독일 산식(포장 약국판매가 기준)
     elif cc == "FR":
         if tier == "ex_factory":
             if vat != "excluded":
@@ -147,6 +154,12 @@ def prepare_a8(raw, cc, query, rid, agent):
     if not isinstance(extra, dict):
         raise ValueError("extra must be an object")
     extra = {**extra, **metadata, "observed_at": observed, "price_request_id": rid, "source_type": source_type}
+    if cc == "DE":
+        from agents.foreign_price_agent import de_price_basis_warning
+        warn = de_price_basis_warning({"extra": extra})
+        extra["price_column"] = "AVP/UVP" if warn else "AVP (EB)/FB"
+        if warn:
+            extra["price_basis_warning"] = warn
     r.update(query_name=query, searched_at=datetime.now().isoformat(timespec="microseconds"),
              raw_data=json.dumps(extra, ensure_ascii=False, allow_nan=False),
              form_type=raw["form_type"], pack_count_source="scraper", source_type=source_type)
