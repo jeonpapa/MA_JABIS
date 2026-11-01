@@ -26,7 +26,7 @@ function tone(status: string): string {
   if (status === 'needs_info') return 'bg-[#F59E0B]/15 text-[#F59E0B]';
   if (status === 'processing') return 'bg-[#3B82F6]/10 text-[#60A5FA]';
   if (status === 'cancelled') return 'bg-[#1E2530] text-[#8B9BB4]';
-  return 'bg-[#1E2530] text-[#C9D3E3]';
+  return 'bg-[#1E2530] text-[#C9D4E3]';
 }
 
 function fmt(s?: string | null): string {
@@ -147,7 +147,7 @@ export default function AnalysisRequestsPage() {
                 </button>
               ))}
             </div>
-            <label className="mt-3 flex items-center gap-2 text-xs text-[#C9D3E3]">
+            <label className="mt-3 flex items-center gap-2 text-xs text-[#C9D4E3]">
               <input type="checkbox" checked={shareTeam} onChange={e => setShareTeam(e.target.checked)} />
               완료 결과를 팀 전체에 공개 (해제하면 나와 관리자만 봄)
             </label>
@@ -237,7 +237,7 @@ export default function AnalysisRequestsPage() {
                 <>
                   <div>
                     <h3 className="text-sm font-bold text-white mb-2">결과</h3>
-                    <p className="text-sm text-[#E6EDF7] whitespace-pre-wrap leading-relaxed">{selected.result_summary}</p>
+                    <p className="text-sm text-white whitespace-pre-wrap leading-relaxed">{selected.result_summary}</p>
                   </div>
                   {selected.files.length > 0 && (
                     <div>
@@ -255,25 +255,25 @@ export default function AnalysisRequestsPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <h4 className="text-xs font-semibold text-[#8B9BB4] mb-1">방법</h4>
-                      <p className="text-xs text-[#C9D3E3] whitespace-pre-wrap leading-relaxed">{selected.result_method}</p>
+                      <p className="text-xs text-[#C9D4E3] whitespace-pre-wrap leading-relaxed">{selected.result_method}</p>
                     </div>
                     <div>
                       <h4 className="text-xs font-semibold text-[#8B9BB4] mb-1">데이터 기준일</h4>
-                      <p className="text-xs text-[#C9D3E3]">{selected.result_data_as_of}</p>
+                      <p className="text-xs text-[#C9D4E3]">{selected.result_data_as_of}</p>
                       <h4 className="text-xs font-semibold text-[#8B9BB4] mt-3 mb-1">사용한 데이터·출처</h4>
-                      <ul className="text-xs text-[#C9D3E3] list-disc pl-4 space-y-0.5">{selected.result_sources.map((s, i) => <li key={i}>{sourceText(s)}</li>)}</ul>
+                      <ul className="text-xs text-[#C9D4E3] list-disc pl-4 space-y-0.5">{selected.result_sources.map((s, i) => <li key={i}>{sourceText(s)}</li>)}</ul>
                     </div>
                   </div>
                   {selected.result_assumptions.length > 0 && (
                     <div>
                       <h4 className="text-xs font-semibold text-[#8B9BB4] mb-1">적용한 가정</h4>
-                      <ul className="text-xs text-[#C9D3E3] list-disc pl-4 space-y-0.5">{selected.result_assumptions.map((s, i) => <li key={i}>{sourceText(s)}</li>)}</ul>
+                      <ul className="text-xs text-[#C9D4E3] list-disc pl-4 space-y-0.5">{selected.result_assumptions.map((s, i) => <li key={i}>{sourceText(s)}</li>)}</ul>
                     </div>
                   )}
                   {selected.result_limitations && (
                     <div className="rounded-xl border border-[#1E2530] bg-[#0D1117] p-3">
                       <h4 className="text-xs font-semibold text-[#F59E0B] mb-1">한계·주의</h4>
-                      <p className="text-xs text-[#C9D3E3] whitespace-pre-wrap leading-relaxed">{selected.result_limitations}</p>
+                      <p className="text-xs text-[#C9D4E3] whitespace-pre-wrap leading-relaxed">{selected.result_limitations}</p>
                     </div>
                   )}
                   <p className="text-[11px] text-[#4A5568]">분석 담당(Aside)이 작성한 결과입니다. 의사결정에 쓰기 전 가정과 출처를 확인하세요.</p>
