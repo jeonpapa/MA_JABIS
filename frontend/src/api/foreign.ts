@@ -93,6 +93,30 @@ export interface ForeignDrugListItem {
   lastSearchedAt: string;  // YYYY-MM-DD
   countryCount: number;
   hasPrice: boolean;
+  /** 국가코드(US/DE…) → 현재 상태. priced=가격 있음, unpriced=캐시만·가격 미확정. 없는 국가는 미수집. */
+  countryStatus: Record<string, { status: 'priced' | 'unpriced'; checkedAt: string | null }>;
+  /** 이력상 출처·가격단계 변경(basis) / 같은 기준 실제 가격 변동(price) 이 있었던 국가 수 */
+  changeCounts: { basis: number; price: number };
+  /** 확인일이 30일을 넘긴 국가코드 */
+  staleCountries: string[];
+}
+
+/** 변경 이력 — GET /api/foreign/price-history (현재 행 + 보관 세션). 비교는 현지 통화 원가격 기준. */
+export type PriceChangeKind = 'first' | 'same' | 'relabel' | 'packs' | 'basis' | 'price' | 'unpriced';
+export interface PriceHistoryRow {
+  id: number; searched_at: string; product_name: string | null; dosage_strength: string | null;
+  package_unit: string | null; pack_count: number | null; local_price: number | null; currency: string | null;
+  source_label: string | null; source_url: string | null; formulation_key: string | null;
+  formulation_label: string | null; adjusted_price_krw: number | null; archived: boolean;
+  per_unit_local: number | null;
+  /** 결과 메일로 확정된 값 표시 — 요청자·이메일은 서버가 내보내지 않는다 */
+  confirmed: { captured_at: string; emailed: boolean; notified_at: string | null }[];
+}
+export interface PriceHistorySession { searched_at: string; kind: PriceChangeKind; rows: PriceHistoryRow[] }
+export interface PriceHistory { query: string; countries: Record<string, PriceHistorySession[]> }
+
+export async function fetchForeignPriceHistory(query: string): Promise<PriceHistory> {
+  return api.get<PriceHistory>(`/api/foreign/price-history?q=${encodeURIComponent(query.trim().toLowerCase())}`);
 }
 
 export type FormType = 'oral' | 'injection' | 'unknown';
@@ -282,6 +306,9 @@ interface RawForeignDrug {
   last_searched_at: string;
   country_count: number;
   has_price: number;
+  countries?: { country: string; status: 'priced' | 'unpriced'; checked_at: string | null }[];
+  change_counts?: { basis: number; price: number };
+  stale_countries?: string[];
 }
 
 interface RawPricingEntry {
@@ -597,6 +624,9 @@ export async function fetchForeignDrugList(): Promise<ForeignDrugListItem[]> {
     lastSearchedAt: toIsoDate(r.last_searched_at),
     countryCount: r.country_count,
     hasPrice: r.has_price > 0,
+    countryStatus: Object.fromEntries((r.countries || []).map(c => [c.country, { status: c.status, checkedAt: c.checked_at }])),
+    changeCounts: r.change_counts || { basis: 0, price: 0 },
+    staleCountries: r.stale_countries || [],
   }));
 }
 

@@ -9,6 +9,8 @@ export interface PriceRequestPanelHandle { submit: (countries?: string[], target
 interface Props {
   scope: PriceScope; query?: string; identity?: PriceIdentity; isDark?: boolean; targetRequestId?: string;
   onResultsChanged?: (request: PriceRequest) => void;
+  /** 요청 목록·국가 카탈로그를 화면(제품 카드 '조사 중' 배지, 제품별 '요청 기록' 탭)과 공유 */
+  onSnapshot?: (requests: PriceRequest[], catalog: PriceCatalog | null) => void;
 }
 const validEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && value.toLowerCase() !== 'admin@marketintel.kr';
 const refreshStatuses = new Set(['verified', 'completed', 'partial_completed', 'blocked']);
@@ -26,7 +28,7 @@ function WorkerNotice({ worker, error }: { worker: PriceWorkerStatus | null; err
       <span><b>자동 조사가 현재 멈춰 있습니다.</b> {worker.state === 'never' ? '조사 담당 워커가 아직 연결되지 않았습니다.' : `마지막 큐 확인 ${timeOnly(worker.last_seen_at)}.`} 요청은 저장되며, 처리가 재개되면 접수 순서대로 조사합니다{worker.open_requests > 0 ? ` (현재 대기 ${worker.open_requests}건)` : ''}. 급한 건은 관리자에게 알려 주세요.</span></div>);
 }
 
-const PriceRequestPanel = forwardRef<PriceRequestPanelHandle, Props>(function PriceRequestPanel({ scope, query = '', identity, isDark = false, targetRequestId = '', onResultsChanged }, ref) {
+const PriceRequestPanel = forwardRef<PriceRequestPanelHandle, Props>(function PriceRequestPanel({ scope, query = '', identity, isDark = false, targetRequestId = '', onResultsChanged, onSnapshot }, ref) {
   const [queryText, setQueryText] = useState(query);
   const [email, setEmail] = useState(() => {
     try { const value = localStorage.getItem(USER_KEY)?.trim() || ''; return validEmail(value) ? value : ''; } catch { return ''; }
@@ -53,7 +55,10 @@ const PriceRequestPanel = forwardRef<PriceRequestPanelHandle, Props>(function Pr
   const callbackRef = useRef(onResultsChanged);
   const seenRef = useRef(new Map<string, string>());
   callbackRef.current = onResultsChanged;
+  const snapshotRef = useRef(onSnapshot);
+  snapshotRef.current = onSnapshot;
   useEffect(() => { setQueryText(query); }, [query]);
+  useEffect(() => { snapshotRef.current?.(requests, catalog); }, [requests, catalog]);
   const loadCatalog = useCallback(async () => {
     setCatalogError('');
     try { setCatalog(await fetchPriceCatalog()); }

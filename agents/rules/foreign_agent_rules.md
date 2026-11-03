@@ -328,3 +328,9 @@ daily_cost_krw = daily_dose_mg × (adjusted_price_krw / unit_mg)
 
 → `tests/test_welireg_excel_baseline.py` 에서 자동 검증. PriceCalculator 변경 시 반드시 통과 확인.
 - QualityGuard 는 이 공식으로 국가별 편차를 검사 (1개국만 10× 차이 나면 플래그).
+
+## 가격 변경 이력 (2026-11-03, 사용자 승인 개선안)
+- `compact_foreign_prices` 는 과거 세션을 **지우지 않고** `foreign_drug_prices_archive` 로 옮긴다(컬럼은 자동 동기화, `archived_at` 추가). 현재가 조회(`get_foreign_prices`)는 그대로 현재 테이블만 본다. 제품 삭제 시 보관 행도 함께 지운다.
+- 화면 '변경 이력'(`GET /api/foreign/price-history?q=`)은 현재+보관 행을 국가별 세션(분 단위)으로 묶고, 직전 가격 세션 대비 유형을 붙인다: `price`(같은 출처·단계에서 가격 변동) / `basis`(출처·가격 단계 변경 — 인하·인상으로 읽지 않음) / `packs`(포장 구성만 변경) / `relabel`(가격 동일·표기 변경) / `same` / `first` / `unpriced`. 비교는 현지 통화 원가격 — 원화 조정가는 환율·산식 변경이 섞여 쓰지 않는다.
+- 결과 메일로 확정된 값은 `price_request_price_snapshots` 로 행마다 표시하되 요청자·이메일은 내보내지 않는다.
+- 목록(`/api/foreign/drugs`)은 국가별 상태(priced/unpriced, 확인일), `change_counts`(basis/price 국가 수), `stale_countries`(확인 30일 초과)를 준다. 회귀: `tests/test_foreign_price_history.py`.

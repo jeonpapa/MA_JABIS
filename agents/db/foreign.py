@@ -6,6 +6,78 @@ from datetime import datetime
 
 from .drug_aliases import aliases, canonical, display_name
 
+# 확인일이 이보다 오래되면 화면에 '오래됨' 으로 표시한다 (2026-11-03 사용자 승인 개선안).
+FOREIGN_STALE_DAYS = 30
+_ARCHIVE_TABLE = "foreign_drug_prices_archive"
+
+
+def _session_bucket(ts) -> str:
+    """같은 스크레이프의 채널별 타임스탬프 차이(수십 ms)를 한 세션으로 묶는다 — 분 단위."""
+    return str(ts or "")[:16]
+
+
+def _norm_label(label) -> str:
+    return " ".join(str(label or "").lower().split())
+
+
+def classify_price_sessions(rows: list[dict]) -> dict[str, list[dict]]:
+    """국가별 수집 세션을 시간순으로 묶고, 직전 '가격 있는' 세션 대비 변경 유형을 붙인다.
+
+    kind:
+      first    — 첫 가격 세션
+      same     — 가격·출처 표기 모두 동일 (재확인)
+      relabel  — 가격 동일, 출처/단계 표기만 바뀜
+      packs    — 겹치는 제형의 가격은 같고 포장/제형 구성만 추가·제외
+      basis    — 가격이 바뀌었고 출처/가격 단계 표기도 바뀜 → 직접 비교 불가 (가격 인하로 읽지 않음)
+      price    — 같은 출처·단계에서 가격이 바뀜 (실제 가격 변동)
+      unpriced — 이 세션에 가격이 없음 (수집 실패·미확정). 비교 기준에서 제외.
+    비교는 현지 통화 원가격(local_price) 기준 — 원화 조정가는 환율·산식 변경이 섞여 쓰지 않는다.
+    """
+    by_country: dict[str, dict[str, list[dict]]] = {}
+    for r in rows:
+        cc = r.get("country")
+        if not cc:
+            continue
+        by_country.setdefault(cc, {}).setdefault(_session_bucket(r.get("searched_at")), []).append(r)
+
+    out: dict[str, list[dict]] = {}
+    for cc, sessions in by_country.items():
+        prev_sig = None
+        prev_labels = None
+        events = []
+        for bucket in sorted(sessions):
+            srows = sessions[bucket]
+            priced = [r for r in srows if r.get("local_price") is not None]
+            sig: dict[str, list] = {}
+            for r in priced:
+                sig.setdefault(r.get("formulation_key") or "_", []).append(round(float(r["local_price"]), 2))
+            sig = {k: sorted(v) for k, v in sig.items()}
+            labels = frozenset(_norm_label(r.get("source_label")) for r in priced)
+            if not priced:
+                kind = "unpriced"
+            elif prev_sig is None:
+                kind = "first"
+            else:
+                common = set(sig) & set(prev_sig)
+                changed = [k for k in common if sig[k] != prev_sig[k]]
+                added_or_removed = set(sig) ^ set(prev_sig)
+                if changed:
+                    kind = "basis" if labels != prev_labels else "price"
+                elif added_or_removed:
+                    kind = "packs"
+                else:
+                    kind = "same" if labels == prev_labels else "relabel"
+            if priced:
+                prev_sig, prev_labels = sig, labels
+            events.append({
+                "bucket": bucket,
+                "searched_at": max(str(r.get("searched_at") or "") for r in srows),
+                "kind": kind,
+                "rows": srows,
+            })
+        out[cc] = events
+    return out
+
 
 class _ForeignMixin:
     _FOREIGN_OPTIONAL_COLS = (
@@ -65,7 +137,7 @@ class _ForeignMixin:
         return cur.lastrowid
 
     def compact_foreign_prices(self, query_name: str) -> int:
-        """동일 약제(alias 포함)에 대해 **국가별 '최신 1세션'만 남기고** 과거 누적 행 삭제.
+        """동일 약제(alias 포함)에 대해 **국가별 '최신 1세션'만 남기고** 과거 누적 행을 보관 테이블로 옮긴다.
 
         append-only 모델이라 재검색·백필마다 행이 쌓이므로, 검색 직후 호출해
         국가당 최신 세션만 유지한다 (한 번의 스크레이프는 국가별로 동일 searched_at 공유).
@@ -74,7 +146,7 @@ class _ForeignMixin:
         없으면 MAX(searched_at). 실패 재검색(local_price=None)이 과거 확보 실가격을
         지우지 않도록 보존한다 (cache-db-first 원칙, get_foreign_prices 노출 로직과 일치).
 
-        반환: 삭제된 행 수.
+        반환: 현재 테이블에서 빠진(보관으로 옮긴) 행 수. 2026-11-03 이전에는 삭제했다.
         """
         names = aliases(query_name)
         placeholders = ",".join(["?"] * len(names))
@@ -95,16 +167,41 @@ class _ForeignMixin:
                 if r["country"] and r["keep_ts"]
             }
             deleted = 0
+            cols = self._ensure_price_archive(conn)
+            col_sql = ",".join(cols)
+            archived_at = datetime.now().isoformat(timespec="seconds")
             for country, keep_ts in keep.items():
-                cur = conn.execute(
-                    f"""DELETE FROM foreign_drug_prices
-                        WHERE LOWER(query_name) IN ({placeholders})
+                where = f"""LOWER(query_name) IN ({placeholders})
                           AND country = ?
-                          AND searched_at <> ?""",
-                    (*names, country, keep_ts),
+                          AND searched_at <> ?"""
+                params = (*names, country, keep_ts)
+                # 2026-11-03: 과거 세션은 지우지 않고 보관 테이블로 옮긴다 — 화면 '변경 이력' 의 원천.
+                conn.execute(
+                    f"INSERT INTO {_ARCHIVE_TABLE} ({col_sql}, archived_at) "
+                    f"SELECT {col_sql}, ? FROM foreign_drug_prices WHERE {where}",
+                    (archived_at, *params),
                 )
+                cur = conn.execute(f"DELETE FROM foreign_drug_prices WHERE {where}", params)
                 deleted += cur.rowcount
         return deleted
+
+    def _ensure_price_archive(self, conn) -> list[str]:
+        """보관 테이블을 현재 foreign_drug_prices 컬럼과 맞춘다(없으면 생성, 늘어난 컬럼은 추가). 컬럼 목록 반환."""
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(foreign_drug_prices)").fetchall()]
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (_ARCHIVE_TABLE,)
+        ).fetchone()
+        if not exists:
+            conn.execute(f"CREATE TABLE {_ARCHIVE_TABLE} AS SELECT * FROM foreign_drug_prices WHERE 0")
+            conn.execute(f"ALTER TABLE {_ARCHIVE_TABLE} ADD COLUMN archived_at TEXT")
+            conn.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_fdp_archive_qc ON {_ARCHIVE_TABLE}(query_name, country)"
+            )
+        have = {r[1] for r in conn.execute(f"PRAGMA table_info({_ARCHIVE_TABLE})").fetchall()}
+        for c in cols:
+            if c not in have:
+                conn.execute(f'ALTER TABLE {_ARCHIVE_TABLE} ADD COLUMN "{c}"')
+        return cols
 
     def update_foreign_dose_norm(self, row_id: int, fields: dict) -> None:
         """검색 후처리(제형 매칭 + 제형 내 표시단위 보정) 결과를 기존 행에 반영.
@@ -191,7 +288,7 @@ class _ForeignMixin:
             rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
 
-    def get_foreign_drug_list(self) -> list[dict]:
+    def get_foreign_drug_list(self, today: datetime | None = None) -> list[dict]:
         """지금까지 검색된 모든 약제 목록 (검색 히스토리 사이드바용).
 
         반환: [{"query_name", "last_searched_at", "country_count", "has_price"}]
@@ -202,11 +299,14 @@ class _ForeignMixin:
                 query_name,
                 country,
                 searched_at,
-                local_price
+                local_price,
+                source_label,
+                formulation_key
             FROM foreign_drug_prices
         """
         with self._connect() as conn:
             rows = [dict(r) for r in conn.execute(sql).fetchall()]
+            archived = self._archived_rows(conn, None)
 
         buckets: dict[str, dict] = {}
         for r in rows:
@@ -229,8 +329,36 @@ class _ForeignMixin:
             if r.get("local_price") is not None:
                 b["has_price"] = 1
 
+        # 국가별 현재 상태(가격 있음/미확정, 확인일) + 변경 이력 요약 — 가로 제품 카드용 (2026-11-03)
+        today = (today or datetime.now()).date()
+        by_canon_rows: dict[str, list[dict]] = {}
+        for r in rows:
+            by_canon_rows.setdefault(canonical(r.get("query_name") or ""), []).append(r)
+        by_canon_hist: dict[str, list[dict]] = {k: list(v) for k, v in by_canon_rows.items()}
+        for r in archived:
+            by_canon_hist.setdefault(canonical(r.get("query_name") or ""), []).append(r)
+
         out = []
-        for b in buckets.values():
+        for canon_key, b in buckets.items():
+            live = by_canon_rows.get(canon_key, [])
+            countries = []
+            stale = []
+            for cc in sorted(b["countries"]):
+                crow = [r for r in live if r.get("country") == cc]
+                checked = max((str(r.get("searched_at") or "") for r in crow), default="")
+                priced = any(r.get("local_price") is not None for r in crow)
+                countries.append({"country": cc, "status": "priced" if priced else "unpriced",
+                                  "checked_at": checked[:10] or None})
+                try:
+                    if checked and (today - datetime.fromisoformat(checked[:10]).date()).days > FOREIGN_STALE_DAYS:
+                        stale.append(cc)
+                except ValueError:
+                    pass
+            events = classify_price_sessions(by_canon_hist.get(canon_key, []))
+            change_counts = {
+                "basis": sum(1 for ev in events.values() if any(e["kind"] == "basis" for e in ev)),
+                "price": sum(1 for ev in events.values() if any(e["kind"] == "price" for e in ev)),
+            }
             out.append({
                 "query_name": b["query_name"],
                 "canonical": b["canonical"],
@@ -238,9 +366,75 @@ class _ForeignMixin:
                 "last_searched_at": b["last_searched_at"],
                 "country_count": len(b["countries"]),
                 "has_price": b["has_price"],
+                "countries": countries,
+                "change_counts": change_counts,
+                "stale_countries": stale,
             })
         out.sort(key=lambda x: x["last_searched_at"] or "", reverse=True)
         return out
+
+    def _archived_rows(self, conn, names: list[str] | None) -> list[dict]:
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (_ARCHIVE_TABLE,)).fetchone():
+            return []
+        if names is None:
+            return [dict(r) for r in conn.execute(f"SELECT * FROM {_ARCHIVE_TABLE}").fetchall()]
+        ph = ",".join(["?"] * len(names))
+        return [dict(r) for r in conn.execute(
+            f"SELECT * FROM {_ARCHIVE_TABLE} WHERE LOWER(query_name) IN ({ph})", tuple(names)).fetchall()]
+
+    def get_foreign_price_history(self, query_name: str) -> dict:
+        """제품(alias 포함)의 국가별 가격 수집 이력 — 현재 행 + 보관 행, 세션 단위 변경 유형 포함.
+
+        결과 메일로 확정된 값(price_request_price_snapshots)은 행마다 표시한다. 요청자·이메일은 내보내지 않는다.
+        """
+        names = aliases(query_name)
+        ph = ",".join(["?"] * len(names))
+        with self._connect() as conn:
+            live = [dict(r) for r in conn.execute(
+                f"SELECT * FROM foreign_drug_prices WHERE LOWER(query_name) IN ({ph})", tuple(names)).fetchall()]
+            for r in live:
+                r["archived"] = False
+            arch = self._archived_rows(conn, names)
+            for r in arch:
+                r["archived"] = True
+            rows = live + arch
+            confirmed: dict[int, list[dict]] = {}
+            ids = [r["id"] for r in rows if r.get("id") is not None]
+            if ids:
+                try:
+                    for chunk_start in range(0, len(ids), 500):
+                        chunk = ids[chunk_start:chunk_start + 500]
+                        q = ",".join(["?"] * len(chunk))
+                        for s in conn.execute(
+                            f"""SELECT s.row_id, s.captured_at, r.notification_status, r.notified_at
+                                FROM price_request_price_snapshots s
+                                JOIN price_requests r ON r.id = s.request_id
+                                WHERE s.row_id IN ({q})""", tuple(chunk)).fetchall():
+                            confirmed.setdefault(s[0], []).append({
+                                "captured_at": s[1],
+                                "emailed": s[2] == "sent",
+                                "notified_at": s[3] if s[2] == "sent" else None,
+                            })
+                except Exception:  # 요청 테이블이 없는 DB(테스트·구버전)
+                    confirmed = {}
+        keep = ("id", "searched_at", "product_name", "dosage_strength", "package_unit", "pack_count",
+                "local_price", "currency", "source_label", "source_url", "formulation_key",
+                "formulation_label", "adjusted_price_krw", "archived")
+        events = classify_price_sessions(rows)
+        countries = {}
+        for cc, evs in events.items():
+            countries[cc] = []
+            for e in evs:
+                out_rows = []
+                for r in e["rows"]:
+                    item = {k: r.get(k) for k in keep}
+                    pc = r.get("pack_count")
+                    lp = r.get("local_price")
+                    item["per_unit_local"] = (round(lp / pc, 4) if (lp is not None and pc and pc > 0) else lp)
+                    item["confirmed"] = confirmed.get(r.get("id"), [])
+                    out_rows.append(item)
+                countries[cc].append({"searched_at": e["searched_at"], "kind": e["kind"], "rows": out_rows})
+        return {"query": query_name, "countries": countries}
 
     def delete_foreign_drug(self, query_name: str) -> int:
         """query_name 에 해당하는 모든 해외 약가 레코드 삭제. alias 전부 함께 제거."""
@@ -251,7 +445,13 @@ class _ForeignMixin:
                 f"DELETE FROM foreign_drug_prices WHERE LOWER(query_name) IN ({placeholders})",
                 tuple(names),
             )
-            return cur.rowcount
+            n = cur.rowcount
+            # 사용자가 이력을 지우면 보관된 과거 세션도 함께 지운다(복구 불가 안내와 일치).
+            if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (_ARCHIVE_TABLE,)).fetchone():
+                conn.execute(
+                    f"DELETE FROM {_ARCHIVE_TABLE} WHERE LOWER(query_name) IN ({placeholders})", tuple(names)
+                )
+            return n
 
     def get_foreign_search_history(self, query_name: str, country: str = None) -> list[dict]:
         """특정 약제의 해외 약가 검색 이력 (시간순). alias 전부 포함."""

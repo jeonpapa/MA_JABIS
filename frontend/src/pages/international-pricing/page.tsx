@@ -17,9 +17,12 @@ import type { ForeignReportFormat } from '@/api/foreign';
 import PriceRequestPanel from './PriceRequestPanel';
 import type { PriceRequestPanelHandle } from './PriceRequestPanel';
 import OecdPrices from './OecdPrices';
+import ProductStrip from './ProductStrip';
+import PriceHistoryTab from './PriceHistoryTab';
+import RequestHistoryCard from './RequestHistoryCard';
 import Term from '@/components/ui/Term';
-import { downloadPriceHistory } from '@/api/priceRequests';
-import type { PriceScope } from '@/api/priceRequests';
+import { downloadPriceHistory, downloadPriceRequest } from '@/api/priceRequests';
+import type { PriceCatalog, PriceRequest, PriceScope } from '@/api/priceRequests';
 import type {
   A8Pricing,
   Candidate,
@@ -153,6 +156,14 @@ export default function InternationalPricingPage() {
   const [appliedActual, setAppliedActual] = useState('');        // 국내 신청가 실제가
   const [reportBusy, setReportBusy] = useState(false);
   const [reportErr, setReportErr] = useState('');
+  // 2026-11-03 개선안: 가로 제품 스트립 + '새 조사' 서랍 + 상세 탭(현재 가격 / 변경 이력 / 요청 기록)
+  const [newOpen, setNewOpen] = useState<boolean>(() => !!deepLink.requestId);
+  const [detailTab, setDetailTab] = useState<'current' | 'history' | 'requests'>('current');
+  const [requestsSnap, setRequestsSnap] = useState<PriceRequest[]>([]);
+  const [catalogSnap, setCatalogSnap] = useState<PriceCatalog | null>(null);
+  const [reqDlBusy, setReqDlBusy] = useState<Record<string, boolean>>({});
+  const [reqDlErr, setReqDlErr] = useState<Record<string, string>>({});
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // ── 데이터 로딩 (캐시/DB 조회 전용 — 라이브 스크레이프는 명시적 버튼 뒤에만) ──
   const history = useApi<ForeignDrugListItem[]>(fetchForeignDrugList, []);
@@ -191,6 +202,8 @@ export default function InternationalPricingPage() {
     setNewSearchQuery('');
     setSearchDropdown(false);
     setShowCalcLogic(false);
+    setDetailTab('current');
+    setMenuOpen(false);
   };
   const handleSelectHistory = (d: ForeignDrugListItem) =>
     handleSelect({ query: d.queryName, canonical: d.canonical, countryCount: d.countryCount });
@@ -245,10 +258,32 @@ export default function InternationalPricingPage() {
 
   // 수집은 Aside 큐로만 접수. 캐시 표시·조정가 계산 경로는 그대로 유지한다.
   const runLiveSearch = () => {
-    if (selected) requestPanelRef.current?.submit(undefined, selected);
+    if (selected) { setNewOpen(true); requestPanelRef.current?.submit(undefined, selected); }
   };
   const researchCountry = (countryKey: string) => {
-    if (selected) requestPanelRef.current?.submit([PRICING_COUNTRY_CODE[countryKey] ?? countryKey], selected);
+    if (selected) { setNewOpen(true); requestPanelRef.current?.submit([PRICING_COUNTRY_CODE[countryKey] ?? countryKey], selected); }
+  };
+
+  // 요청 ↔ 제품 매칭: 요청 query('keytruda / pembrolizumab', 'prevymis/letermovir')의 토큰이 제품 이름·성분·별칭 중 하나와 같으면 같은 제품.
+  const OPEN_REQUEST = new Set(['queued', 'processing', 'awaiting_verification']);
+  const requestMatches = (r: PriceRequest, d: { queryName: string; canonical: string; aliases?: string[] }) => {
+    const names = new Set([d.queryName, d.canonical, ...(d.aliases || [])].map(x => x.toLowerCase().trim()).filter(Boolean));
+    const q = r.query.toLowerCase().trim();
+    return names.has(q) || q.split('/').map(x => x.trim()).some(tok => names.has(tok));
+  };
+  const a8Requests = requestsSnap.filter(r => r.scope === 'a8');
+  const activeQueries = new Set(historyItems.filter(d => a8Requests.some(r => OPEN_REQUEST.has(r.status) && requestMatches(r, d))).map(d => d.queryName.toLowerCase()));
+  const activeRequestCount = a8Requests.filter(r => OPEN_REQUEST.has(r.status)).length;
+  const selectedItem = selected ? historyItems.find(d => d.queryName.toLowerCase() === selected.query.toLowerCase()) ?? null : null;
+  const selectedRequests = selected
+    ? a8Requests.filter(r => requestMatches(r, selectedItem ?? { queryName: selected.query, canonical: selected.canonical }))
+    : [];
+  const downloadRequestResult = async (id: string) => {
+    if (reqDlBusy[id]) return;
+    setReqDlBusy(prev => ({ ...prev, [id]: true })); setReqDlErr(prev => ({ ...prev, [id]: '' }));
+    try { await downloadPriceRequest(id); }
+    catch (error) { setReqDlErr(prev => ({ ...prev, [id]: error instanceof Error ? error.message : String(error) })); }
+    finally { setReqDlBusy(prev => ({ ...prev, [id]: false })); }
   };
 
   // ── 스타일 토큰 (readdy 디자인 유지) ──
@@ -374,76 +409,18 @@ export default function InternationalPricingPage() {
             {value === 'a8' ? 'A8' : '공단 추가국가 (A8 외 29개국)'}
           </button>)}
         </div>
-        <PriceRequestPanel ref={requestPanelRef} targetRequestId={deepLink.requestId} scope={scope} query={selected?.query ?? ''} identity={selected?.identity} isDark={isDark}
-          onResultsChanged={request => {
-            history.reload();
-            if (request.scope === 'a8' && selected) pricing.reload();
-            setResultRevision(v => v + 1);
-          }} />
-        {scope === 'oecd' ? <OecdPrices query={selected?.query ?? ''} revision={resultRevision} isDark={isDark} /> : <>
-
-        {/* History */}
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <span className={`w-4 h-4 flex items-center justify-center ${textSub}`}><i className="ri-history-line text-sm"></i></span>
-            <p className={`text-xs font-semibold uppercase tracking-wider ${textSub}`}>기존 검색 이력</p>
-            <span className={`text-xs px-2 py-0.5 rounded-full ${pillBg} ${pillText}`}>{historyItems.length}건</span>
-            {history.loading && <span className={`w-3.5 h-3.5 flex items-center justify-center ${textMuted}`}><i className="ri-loader-4-line text-xs animate-spin"></i></span>}
+        {scope === 'a8' && (
+          <ProductStrip items={historyItems} selectedQuery={selected?.query ?? null} onSelect={handleSelectHistory}
+            activeQueries={activeQueries} activeRequestCount={activeRequestCount} loading={history.loading}
+            onNew={() => setNewOpen(v => !v)} newOpen={newOpen} isDark={isDark} />
+        )}
+        {scope === 'a8' && history.error && (
+          <div className={`rounded-2xl border px-5 py-4 ${cardBg} ${cardBorder}`}>
+            <p className={`text-sm ${textSub}`}>제품 목록 로딩 실패: {history.error}</p>
+            <button onClick={history.reload} className={`text-xs mt-2 font-medium cursor-pointer ${accentColor}`}>다시 시도</button>
           </div>
-          {history.error ? (
-            <div className={`rounded-2xl border px-5 py-4 ${cardBg} ${cardBorder}`}>
-              <p className={`text-sm ${textSub}`}>검색 이력 로딩 실패: {history.error}</p>
-              <button onClick={history.reload} className={`text-xs mt-2 font-medium cursor-pointer ${accentColor}`}>다시 시도</button>
-            </div>
-          ) : !history.loading && historyItems.length === 0 ? (
-            <div className={`rounded-2xl border px-5 py-4 ${cardBg} ${cardBorder}`}>
-              <p className={`text-sm ${textMuted}`}>검색 이력이 없습니다 — 신규 검색으로 시작하세요</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-4 gap-3">
-              {historyItems.map(drug => (
-                // 카드 자체는 비대화형 컨테이너 — '열기' 버튼·Excel·삭제는 서로 중첩되지 않는 형제 버튼 (a11y 이름 혼선·오클릭 방지)
-                <div key={drug.id}
-                  className={`relative text-left p-4 rounded-2xl border transition-all group ${selected?.query === drug.queryName ? accentBg + ' ' + accentBorder : historyCard + ' ' + historyCardHover}`}>
-                  <button type="button" onClick={() => handleSelectHistory(drug)}
-                    aria-label={`${displayName(drug.queryName)} 해외약가 열기`}
-                    aria-current={selected?.query === drug.queryName ? 'true' : undefined}
-                    className="block w-full text-left cursor-pointer rounded-xl pr-7 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-sm font-bold truncate ${selected?.query === drug.queryName ? accentColor : textMain} transition-colors`}>{displayName(drug.queryName)}</p>
-                      <p className={`${textSub} text-xs mt-0.5 truncate`}>{drug.canonical}</p>
-                    </div>
-                    {selected?.query === drug.queryName && <span aria-hidden="true" className={`w-5 h-5 flex items-center justify-center flex-shrink-0 ml-2 ${accentColor}`}><i className="ri-checkbox-circle-fill text-sm"></i></span>}
-                  </div>
-                  <div className="space-y-1.5">
-                    <div className="flex items-center gap-1.5"><span aria-hidden="true" className={`w-3.5 h-3.5 flex items-center justify-center ${textMuted}`}><i className="ri-calendar-line text-xs"></i></span><span className={`text-xs ${textMuted}`}>{drug.lastSearchedAt}</span></div>
-                    <div className="flex items-center gap-1.5"><span aria-hidden="true" className={`w-3.5 h-3.5 flex items-center justify-center ${textMuted}`}><i className="ri-global-line text-xs"></i></span><span className={`text-xs truncate ${textMuted}`}>{drug.countryCount}개국 가격 캐시</span></div>
-                  </div>
-                  </button>
-                  <button type="button" onClick={e => handleDeleteHistory(e, drug)} disabled={deleting === drug.queryName}
-                    aria-label={`${displayName(drug.queryName)} 검색 이력 삭제 (가격·HTA·허가 캐시 전부, 확인 후 삭제)`}
-                    title="검색 이력 삭제 (가격·HTA·허가 캐시 전부)"
-                    className={`absolute top-2.5 right-2.5 w-7 h-7 flex items-center justify-center rounded-lg transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400 ${isDark ? 'text-[#8B9BB4] hover:text-red-400 hover:bg-red-400/10' : 'text-gray-400 hover:text-red-500 hover:bg-red-50'}`}>
-                    <i aria-hidden="true" className={`text-sm ${deleting === drug.queryName ? 'ri-loader-4-line animate-spin' : 'ri-delete-bin-line'}`}></i>
-                  </button>
-                  <div className="space-y-1.5 mt-1.5">
-                    <button type="button" disabled={historyDownloadBusy[drug.queryName]} aria-busy={!!historyDownloadBusy[drug.queryName]}
-                      aria-label={displayName(drug.queryName) + ' 현재 저장 캐시 Excel 다운로드'}
-                      onClick={e => { e.stopPropagation(); void handleDownloadHistory(drug.queryName); }}
-                      className={'rounded-lg border px-3 py-1.5 text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed ' + accentColor}>
-                      {historyDownloadBusy[drug.queryName] ? '다운로드 중…' : 'Excel 다운로드'}
-                    </button>
-                    <p className={'text-xs ' + textSub}>현재 저장 캐시 기준 · 요청 당시 스냅샷 아님</p>
-                    {historyDownloadErrors[drug.queryName] && <p role="alert" className="text-xs text-red-500 break-words">다운로드 실패: {historyDownloadErrors[drug.queryName]}</p>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* New Search */}
+        )}
+        {scope === 'a8' && newOpen && (
         <div className={`rounded-2xl border p-5 ${searchBg} ${cardBorder}`}>
           <div className="flex items-center gap-2 mb-3">
             <span className={`w-4 h-4 flex items-center justify-center ${accentColor}`}><i className="ri-search-2-line text-sm"></i></span>
@@ -503,6 +480,18 @@ export default function InternationalPricingPage() {
             </button>
           </div>
         </div>
+        )}
+        {/* 조사 요청 — A8 탭에서는 '새 조사' 서랍 안. 닫혀 있어도 마운트 유지(상태 갱신·재조사 요청 ref) */}
+        <div hidden={scope === 'a8' && !newOpen}>
+        <PriceRequestPanel ref={requestPanelRef} targetRequestId={deepLink.requestId} scope={scope} query={selected?.query ?? ''} identity={selected?.identity} isDark={isDark}
+          onResultsChanged={request => {
+            history.reload();
+            if (request.scope === 'a8' && selected) pricing.reload();
+            setResultRevision(v => v + 1);
+          }}
+          onSnapshot={(items, cat) => { setRequestsSnap(items); setCatalogSnap(cat); }} />
+        </div>
+        {scope === 'oecd' ? <OecdPrices query={selected?.query ?? ''} revision={resultRevision} isDark={isDark} /> : <>
 
         {/* Detail Panel */}
         {selected ? (
@@ -517,10 +506,76 @@ export default function InternationalPricingPage() {
                     {selected.countryCount != null && (
                       <div className="flex items-center gap-1.5"><span className={`w-3.5 h-3.5 flex items-center justify-center ${textMuted}`}><i className="ri-global-line text-xs"></i></span><span className={`text-xs ${textMuted}`}>{selected.countryCount}개국 캐시</span></div>
                     )}
+                    {summary && summary.minKrw > 0 && (
+                      <div className="flex items-baseline gap-1.5" title="별첨5 산식·36개월 평균 환율 기준 표시가 조정가(기밀 할인 미반영)">
+                        <span className={`text-xs ${textMuted}`}>A8 최저{activeGroup ? ` (${activeGroup.label})` : ''}</span>
+                        <span className={`text-sm font-bold tabular-nums ${textMain}`}>{formatKrw(summary.minKrw)}</span>
+                        <span className={`text-xs ${textSub}`}>{countryLabel(summary.minCountryKey)}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
+                <div className="flex items-center gap-2 flex-shrink-0 relative">
+                  <button type="button" onClick={runLiveSearch}
+                    className={`text-xs font-medium px-3 py-1.5 rounded-lg border cursor-pointer ${cardBorder} ${textMain}`}>재조사 요청</button>
+                  <button type="button" disabled={!!historyDownloadBusy[selected.query] || !selectedItem}
+                    onClick={() => void handleDownloadHistory(selected.query)}
+                    title="현재 저장 캐시 기준 · 요청 당시 스냅샷 아님"
+                    className={`text-xs font-medium px-3 py-1.5 rounded-lg border cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${cardBorder} ${textMain}`}>
+                    {historyDownloadBusy[selected.query] ? '다운로드 중…' : 'Excel'}</button>
+                  <button type="button" aria-label="더보기" aria-expanded={menuOpen} onClick={() => setMenuOpen(v => !v)}
+                    className={`w-8 h-8 rounded-lg border flex items-center justify-center cursor-pointer ${cardBorder} ${textSub}`}><i className="ri-more-2-fill"></i></button>
+                  {menuOpen && (
+                    <div className={`absolute right-0 top-10 z-20 w-56 rounded-xl border p-1 ${dropdownBg}`}>
+                      <button type="button" disabled={!selectedItem || deleting === selectedItem?.queryName}
+                        onClick={e => { setMenuOpen(false); if (selectedItem) void handleDeleteHistory(e, selectedItem); }}
+                        className="w-full text-left text-xs px-3 py-2 rounded-lg text-red-500 hover:bg-red-500/10 disabled:opacity-40">
+                        <i className="ri-delete-bin-line mr-1"></i>검색 이력 삭제 (가격·HTA·허가 캐시 전부)</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+              {historyDownloadErrors[selected.query] && <p role="alert" className="text-xs text-red-500 mt-2">다운로드 실패: {historyDownloadErrors[selected.query]}</p>}
+              <div role="tablist" aria-label="제품 상세" className={`flex gap-5 mt-4 -mb-4 border-b ${divider}`}>
+                {([['current', '현재 가격', summary ? `${summary.includedKeys.length}/8` : ''],
+                  ['history', '변경 이력', selectedItem && (selectedItem.changeCounts.basis + selectedItem.changeCounts.price) > 0
+                    ? `${selectedItem.changeCounts.price ? `가격 변동 ${selectedItem.changeCounts.price} · ` : ''}기준 변경 ${selectedItem.changeCounts.basis}` : ''],
+                  ['requests', '요청 기록', String(selectedRequests.length)]] as const).map(([k, label, badge]) => (
+                  <button key={k} type="button" role="tab" aria-selected={detailTab === k} onClick={() => setDetailTab(k)}
+                    className={`text-sm pb-2.5 -mb-px border-b-2 cursor-pointer whitespace-nowrap ${detailTab === k ? `border-teal-500 font-semibold ${textMain}` : `border-transparent ${textSub}`}`}>
+                    {label}{badge && <span className={`ml-1.5 text-[11px] font-normal ${textMuted}`}>{badge}</span>}
+                  </button>
+                ))}
               </div>
             </div>
+
+            {detailTab === 'history' ? (
+              <div className={`rounded-2xl border p-5 ${cardBg} ${cardBorder}`}>
+                <PriceHistoryTab query={selected.query} formulationKey={activeGroup?.key ?? null} formulationLabel={activeGroup?.label ?? null}
+                  isDark={isDark} revision={resultRevision} />
+                {formulations.length > 1 && (
+                  <div className="flex gap-2 flex-wrap items-center mt-3">
+                    <span className={`text-xs font-semibold mr-1 ${textSub}`}>제형</span>
+                    {formulations.map(f => (
+                      <button key={f.key} onClick={() => setPickedForm(f.key)}
+                        className={`text-xs px-3 py-1.5 rounded-lg border cursor-pointer whitespace-nowrap ${activeFormKey === f.key ? 'bg-teal-600 text-white border-teal-600' : `${cardBg} ${cardBorder} ${textSub}`}`}>{f.label}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : detailTab === 'requests' ? (
+              <div className={`rounded-2xl border p-5 space-y-3 ${cardBg} ${cardBorder}`}>
+                {selectedRequests.length === 0
+                  ? <p className={`text-sm ${textSub}`}>이 제품의 조사 요청 기록이 없습니다. '재조사 요청'을 누르면 국가별 진행 상태와 결과 메일 발송 시점이 여기에 쌓입니다.</p>
+                  : selectedRequests.map(r => (
+                    <RequestHistoryCard key={r.id} request={r} catalog={catalogSnap?.[r.scope] ?? []}
+                      highlighted={r.id === deepLink.requestId} defaultOpen={r.id === deepLink.requestId}
+                      downloadBusy={!!reqDlBusy[r.id]} downloadError={reqDlErr[r.id] || ''}
+                      onDownload={() => { void downloadRequestResult(r.id); }} />
+                  ))}
+                <p className={`text-[11px] ${textMuted}`}>관리자가 아니면 내가 접수한 요청만 보입니다.</p>
+              </div>
+            ) : (<>
 
             {pricing.loading && !pricing.data ? <TabLoading label="A8 국가 캐시 가격 로딩 중…" />
               : pricing.error ? <TabError message={pricing.error} onRetry={pricing.reload} />
@@ -826,12 +881,13 @@ export default function InternationalPricingPage() {
                     </div>
                   </div>
                 )}
+            </>)}
           </div>
         ) : (
           <div className={`rounded-2xl border py-16 text-center ${emptyCenter} ${cardBorder}`}>
             <span className={`w-12 h-12 flex items-center justify-center mx-auto mb-3 ${textMuted}`}><i className="ri-global-line text-4xl"></i></span>
-            <p className={`text-sm mb-1 ${textSub}`}>검색 이력에서 제품을 선택하거나</p>
-            <p className={`text-xs ${textMuted}`}>신규 검색으로 성분명 또는 제품명을 입력하세요</p>
+            <p className={`text-sm mb-1 ${textSub}`}>위 제품 파일에서 제품을 선택하거나</p>
+            <p className={`text-xs ${textMuted}`}>'새 조사'로 성분명 또는 제품명을 검색·요청하세요</p>
           </div>
         )}
         </>}

@@ -155,6 +155,16 @@ def build_price_request_blueprint(db_path, foreign_agent):
                 "snapshot_kind": "current_cache", "missing_row_ids": []}
         return excel_response(data)
 
+    @bp.get("/api/foreign/price-history")
+    @require_auth()
+    @guarded
+    def foreign_price_history():
+        """제품의 국가별 가격 수집 이력(현재+보관 세션, 변경 유형 포함). 읽기 전용 — 2026-11-03."""
+        q = request.args.get("q", "").strip().lower()
+        if not q or len(q) > 160:
+            raise ValueError("query q required")
+        return jsonify(foreign_agent.db.get_foreign_price_history(q))
+
     @bp.get("/api/oecd/prices")
     @require_auth()
     @guarded
