@@ -30,8 +30,9 @@ Aside 루틴 ── queue → claim(lease 60분, heartbeat) → 분석
    - 계산은 스크립트로 하고(손 계산 금지), 판단이 들어간 기준(대체약제·투약 단위·기간·필터)은 전부 `assumptions`에 적는다.
    - 해외약가는 `docs/foreign_price/README.md`, 등재 아날로그는 기존 규칙(허가 정보 출처, 빈 칸은 빈 칸)을 따른다.
    - 틀린 값보다 빈 칸: 계산 불가 항목은 사유와 함께 남기고 0·추정값을 만들지 않는다.
-6. 결과 파일(선택, 최대 5개, 각 8MB, xlsx·csv·pdf·png·docx): `file ID --state … --path 결과.xlsx`. 엑셀에는 결과 시트 + 방법·가정 시트를 둔다.
-7. `complete ID --state … --file result.json`:
+6. **레드팀 리뷰(필수, 2026-11-03 사용자 결정)** — `.agents/skills/redteam-review/SKILL.md`를 따른다. 패널: MA 시니어·MA 리더십(반영 비중 높음) + 심평원·공단(플래그 필수). 루틴 실행 시간이 부족하면 단일 패스 모드로 하고 "레드팀(단일 패스)"로 표시. 공단·심평원 플래그는 반영하지 않아도 전부 남긴다(엑셀 `레드팀` 시트 + `limitations` 끝 `[레드팀 플래그] …`).
+7. 결과 파일(선택, 최대 5개, 각 8MB, xlsx·csv·pdf·png·docx): `file ID --state … --path 결과.xlsx`. 엑셀에는 결과 시트 + 방법·가정 시트 + `레드팀` 시트를 둔다.
+8. `complete ID --state … --file result.json`:
    ```json
    {"summary": "핵심 답(숫자 포함, 결론 먼저)", "method": "연결한 표와 계산식",
     "data_as_of": "원본 DB 2026-11-02 · IQVIA ~2025Q4 · HIRA 고시 2026.11.01",
@@ -39,8 +40,8 @@ Aside 루틴 ── queue → claim(lease 60분, heartbeat) → 분석
     "assumptions": ["2026 심의는 2025Q4 점유율 사용"], "limitations": "RSA 대체약제는 표시가 기준이라 비율 과소"}
    ```
    `sources` 없으면 서버가 거부한다.
-8. 처리 불가: `fail ID --state … --file reason.json` (`{"reason": "무엇이 없어서/왜 불가한지 + 가능한 대안"}`).
-9. 끝나면 lease 파일 삭제. 실제 처리 결과만 보고하고 검증되지 않은 완료를 주장하지 않는다.
+9. 처리 불가: `fail ID --state … --file reason.json` (`{"reason": "무엇이 없어서/왜 불가한지 + 가능한 대안"}`).
+10. 끝나면 lease 파일 삭제. 실제 처리 결과만 보고하고 검증되지 않은 완료를 주장하지 않는다.
 
 ## 3. 품질 체크리스트 (complete 전)
 - [ ] 질문에 직접 답했는가(요약 첫 문장에 결론·숫자)
@@ -49,6 +50,7 @@ Aside 루틴 ── queue → claim(lease 60분, heartbeat) → 분석
 - [ ] 데이터 기준일과 한계를 적었는가
 - [ ] 첨부 엑셀 숫자와 요약 숫자가 일치하는가
 - [ ] 다른 사용자 개인정보·자격증명·내부 비밀값이 결과에 없는가
+- [ ] 레드팀 리뷰를 거쳤는가(4인 패널, MA 채택 비중 기록, 공단·심평원 플래그 전부 표시)
 
 ## 4. 범위 밖 (fail 또는 다른 창구)
 - 대시보드 기능 변경 요청 → "개선 요청"
