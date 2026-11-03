@@ -247,6 +247,50 @@ def display_source_label(row: dict) -> Optional[str]:
     return label
 
 
+# 포장 문구에 수량이 없는(Red Book 'ea') 키트의 바이알 수 — 공식 라벨로 확인한 값만 둔다.
+# Winrevair: FDA 라벨 Table 7(How Supplied) — 0006-5087-01 = 45 mg 바이알 2개, 0006-5088-01 = 60 mg 바이알 2개.
+# Merck 가격표 WAC 도 2-vial 키트 $30,596.36 = 1-vial $15,298.18 × 2. (2026-11-03 확인)
+LABEL_PACK_COUNTS: dict[tuple[str, str], int] = {
+    ("US", "00006-5087-01"): 2,
+    ("US", "00006-5088-01"): 2,
+}
+
+
+def _row_code(item: dict) -> str | None:
+    """행의 공식 제품 코드(NDC 등) — item.ndc 또는 raw_data(JSON 문자열/딕트)의 ndc/code_value."""
+    if item.get("ndc"):
+        return str(item["ndc"])
+    raw = item.get("raw_data")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except Exception:
+            return None
+    if isinstance(raw, dict):
+        code = raw.get("ndc") or raw.get("code_value")
+        return str(code) if code else None
+    return None
+
+
+def flag_injection_pack_multiples(rows: list[dict]) -> None:
+    """같은 국가·제형에서 주사 행의 포장 수가 미확인(default=1)인데 가격이 다른 포장의 정수배(≥2)면
+    다(多)바이알 키트를 1 바이알로 잘못 본 것일 수 있다 — 평균에서 빼고 사유를 남긴다 (2026-11-03, Winrevair US 2-vial 키트).
+    카드 숫자는 남긴다."""
+    priced = [r for r in rows if (r.get("local_price") or 0) > 0]
+    for r in priced:
+        if (r.get("form_type") or "").lower() != "injection" or r.get("pack_count_source") != "default":
+            continue
+        for s in priced:
+            if s is r or s.get("formulation_key") != r.get("formulation_key"):
+                continue
+            if (s.get("pack_count") or 1) != (r.get("pack_count") or 1):
+                continue
+            k = r["local_price"] / s["local_price"]
+            if round(k) >= 2 and abs(k - round(k)) <= 0.005 * round(k):
+                r["a8_aggregate_eligible"], r["a8_exclude_reason"] = False, "pack_count_unverified"
+                break
+
+
 def a8_aggregate_eligibility(country: str, row: dict,
                               check_injection_unit: bool = True) -> tuple[bool, Optional[str]]:
     """A8 min/avg 집계(UI 요약·리포트) 포함 여부 — (eligible, exclude_reason).
@@ -567,6 +611,7 @@ class ForeignPriceAgent:
              (id 없음) 이거나 저장 시 source='scraper' 였던 행만. **DB 행의 pack_count 는 에이전트
              산물이라 그대로 믿지 않고 다시 결정한다** (과거 default=1 이 영구화되는 것 방지).
           2) `per_unit` — JP/CA 는 per-unit 가격 체계 → 항상 1.
+          2b) `label`   — 포장 문구에 수량이 없는 키트의 공식 라벨 확인 값(LABEL_PACK_COUNTS, 제품 코드 기준).
           3) `parsed`   — 포장 문구의 수량 단서 (`_extract_unit_count`, form-aware). injection 도
              "in vial, 2"·"2 flaconcini"·"4 ml 2s" 같은 단서를 읽는다. **mg ratio 는 쓰지 않는다**
              (injection 은 농도×volume/농도 = volume 이라 pack count 가 아님 — CLAUDE.md 절대 금지).
@@ -586,6 +631,11 @@ class ForeignPriceAgent:
         if country in PER_UNIT_COUNTRIES:
             item["pack_count_source"] = "per_unit"
             return 1
+
+        label_pc = LABEL_PACK_COUNTS.get((country, _row_code(item) or ""))
+        if label_pc:
+            item["pack_count_source"] = "label"
+            return label_pc
 
         parsed = self._extract_unit_count(
             form_type,
@@ -1299,6 +1349,10 @@ class ForeignPriceAgent:
             row["price_basis_warning"] = de_price_basis_warning(row) if country == "DE" and row.get("local_price") is not None else None
 
             by_country.setdefault(country, []).append(row)
+
+        # 다바이알 키트 오인 안전망 — 주사 default 행이 같은 제형 다른 포장 가격의 정수배면 평균에서 뺀다
+        for _rows in by_country.values():
+            flag_injection_pack_multiples(_rows)
 
         # 제형 배정 lazy — formulation_key 미설정 priced 행이 있으면 1회 배정·영구 저장
         # (캐시-DB-first). 이미 전부 배정됐으면 LLM/재배정 skip(저장값 재사용).

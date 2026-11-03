@@ -334,3 +334,8 @@ daily_cost_krw = daily_dose_mg × (adjusted_price_krw / unit_mg)
 - 화면 '변경 이력'(`GET /api/foreign/price-history?q=`)은 현재+보관 행을 국가별 세션(분 단위)으로 묶고, 직전 가격 세션 대비 유형을 붙인다: `price`(같은 출처·단계에서 가격 변동) / `basis`(출처·가격 단계 변경 — 인하·인상으로 읽지 않음) / `packs`(포장 구성만 변경) / `relabel`(가격 동일·표기 변경) / `same` / `first` / `unpriced`. 비교는 현지 통화 원가격 — 원화 조정가는 환율·산식 변경이 섞여 쓰지 않는다.
 - 결과 메일로 확정된 값은 `price_request_price_snapshots` 로 행마다 표시하되 요청자·이메일은 내보내지 않는다.
 - 목록(`/api/foreign/drugs`)은 국가별 상태(priced/unpriced, 확인일), `change_counts`(basis/price 국가 수), `stale_countries`(확인 30일 초과)를 준다. 회귀: `tests/test_foreign_price_history.py`.
+
+## 다바이알 키트 포장 수 (2026-11-03, Winrevair US)
+- Red Book 은 키트를 `ea` 로만 적어 바이알 수 단서가 없다 → default 1 → 2-vial 키트 WAC 가 1 바이알 가격으로 잡혀 A8 최고·평균이 부풀었다(45mg 평균 13,993,348 → 정정 후 약 10,822,514).
+- 공식 라벨로 확인한 키트만 `LABEL_PACK_COUNTS`(국가, 제품코드)에 둔다 → `pack_count_source=label`. 추정·mg 비율로 채우지 않는다.
+- 안전망 `flag_injection_pack_multiples`: 주사 default 행이 같은 제형 다른 포장 가격의 정수배(≥2)면 A8 집계에서 제외(`pack_count_unverified`), 카드 숫자는 유지. 회귀: `tests/test_us_kit_pack_count.py`.
