@@ -215,9 +215,19 @@ def de_rows_from_scraper_items(items):
                  "price_as_of": ex.get("price_as_of"), "server_collected": True}
         if not fallback:
             extra["avp_eb_fb_reference"] = price
+        import re as _re
+        # 수집기 표기 정리 — 업로드 검증(필수 텍스트 칸) 통과용. 가격·포장·단계는 손대지 않는다.
+        pname = _re.sub(r"\s+", " ", _re.sub(r"[▼®™]", "", it.get("product_name") or "")).strip()
+        ingr = _re.split(r"\s+Rote Liste|\s+Fachinformation|&#", it.get("ingredient") or "")[0].strip()
+        m_str = _re.search(r"\d+(?:[.,]\d+)?\s*(?:mg|g|µg|mcg)\b", pname, _re.I)
+        strength = m_str.group(0) if m_str else (it.get("dosage_strength") or "")
+        form = (it.get("dosage_form") or "").strip()
+        if not form:
+            m_form = _re.search(r"\d\s*(?:mg|g|µg|mcg)\s+(.+)$", pname, _re.I)
+            form = (m_form.group(1).strip() if m_form else "") or "Rote Liste Packungsangaben"
         rows.append({
-            "product_name": it.get("product_name") or "", "ingredient": it.get("ingredient") or "",
-            "dosage_strength": it.get("dosage_strength") or "", "dosage_form": it.get("dosage_form") or "",
+            "product_name": pname, "ingredient": ingr or pname,
+            "dosage_strength": strength, "dosage_form": form,
             "package_unit": it.get("package_unit") or "", "source_url": it.get("source_url") or "",
             "source_label": "Rote Liste (AVP (EB)/FB; DocCheck, 서버 수집)" if not fallback
                             else "Rote Liste (AVP/UVP 대체; DocCheck, 서버 수집)",

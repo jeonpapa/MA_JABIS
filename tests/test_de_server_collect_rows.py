@@ -23,3 +23,13 @@ def test_eb_rows_map_to_upload_format_and_pass_common_checks():
 def test_uvp_fallback_row_has_no_eb_reference():
     rows, _ = de_rows_from_scraper_items([_item(17831.08, 90, column="AVP/UVP", tier_text="AVP/UVP (Rote Liste; AVP (EB)/FB 미표시 — 대체)")])
     assert "avp_eb_fb_reference" not in rows[0]["extra"] and "대체" in rows[0]["source_label"]
+
+
+def test_scraper_noise_is_cleaned_for_upload():
+    it = _item(4570.97, 90)
+    it.update(product_name="▼                        WELIREG® 40 mg Filmtabletten", dosage_form="", dosage_strength="90 Filmtbl.",
+              ingredient="Belzutifan Rote Liste Eintrag Fachinformation Inhaltssuche &#")
+    r = de_rows_from_scraper_items([it])[0][0]
+    assert r["product_name"] == "WELIREG 40 mg Filmtabletten"
+    assert r["ingredient"] == "Belzutifan" and r["dosage_strength"] == "40 mg" and r["dosage_form"] == "Filmtabletten"
+    common(r, "DE")
