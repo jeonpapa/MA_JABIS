@@ -197,3 +197,33 @@ def prepare_a8(raw, cc, query, rid, agent):
     from agents.foreign_dose_normalize import process_formulations
     process_formulations(query, [r])
     return r
+
+
+def de_rows_from_scraper_items(items):
+    """서버 Rote Liste 수집기 포장 행 → 워커 upload 형식(2026-11-06). 가격·포장 수량이 없는 포장은 skipped 로."""
+    from datetime import timezone as _tz
+    observed = datetime.now(_tz.utc).isoformat()
+    rows, skipped = [], []
+    for it in items:
+        ex = it.get("extra") or {}
+        price, pc = it.get("local_price"), it.get("pack_count")
+        if not price or not pc:
+            skipped.append({"package_unit": it.get("package_unit"), "reason": "가격 또는 포장 수량 미확인"})
+            continue
+        fallback = ex.get("price_column") == "AVP/UVP"
+        extra = {"pzn": ex.get("pzn"), "eb_label": ex.get("eb_label"), "avp_uvp_reference": ex.get("avp_uvp_reference"),
+                 "price_as_of": ex.get("price_as_of"), "server_collected": True}
+        if not fallback:
+            extra["avp_eb_fb_reference"] = price
+        rows.append({
+            "product_name": it.get("product_name") or "", "ingredient": it.get("ingredient") or "",
+            "dosage_strength": it.get("dosage_strength") or "", "dosage_form": it.get("dosage_form") or "",
+            "package_unit": it.get("package_unit") or "", "source_url": it.get("source_url") or "",
+            "source_label": "Rote Liste (AVP (EB)/FB; DocCheck, 서버 수집)" if not fallback
+                            else "Rote Liste (AVP/UVP 대체; DocCheck, 서버 수집)",
+            "evidence_ref": f"server-scrape:rote_liste:PZN {ex.get('pzn') or '-'}",
+            "price_tier_original": ex.get("price_tier_original") or "", "price_tier": ex.get("price_tier") or "pharmacy_retail",
+            "vat_status": ex.get("vat_status") or "included", "currency": "EUR", "local_price": price,
+            "pack_count": int(pc), "observed_at": observed, "effective_date": None, "extra": extra,
+        })
+    return rows, skipped

@@ -34,7 +34,7 @@ async function http(endpoint, method = 'GET', body, token, lease) {
   return value;
 }
 async function main() {
-  if (!['queue', 'claim', 'heartbeat', 'upload', 'readback', 'verify', 'notify', 'tasks', 'task-claim', 'task-resolve'].includes(command)) throw new Error('Commands: queue | claim ID | heartbeat ID | upload ID CC | readback ID | verify ID | notify ID | tasks | task-claim N | task-resolve N --file JSONFILE. Mutations require --state TEMPFILE; upload/verify/notify also --file JSONFILE. task-resolve JSON: {"status":"closed|blocked|triaged","resolution":"..."}.');
+  if (!['queue', 'claim', 'heartbeat', 'upload', 'readback', 'verify', 'notify', 'tasks', 'task-claim', 'task-resolve', 'server-collect'].includes(command)) throw new Error('Commands: queue | claim ID | heartbeat ID | upload ID CC | readback ID | verify ID | notify ID | tasks | task-claim N | task-resolve N --file JSONFILE | server-collect ID DE --out JSONFILE. Mutations require --state TEMPFILE; upload/verify/notify also --file JSONFILE. task-resolve JSON: {"status":"closed|blocked|triaged","resolution":"..."}.');
   const email = get('PRICE_AGENT_EMAIL'), password = get('PRICE_AGENT_PASSWORD');
   if (!email || !password) throw new Error('Setup required: PRICE_AGENT_EMAIL and PRICE_AGENT_PASSWORD in config/.env');
   const login = await http('/api/auth/login', 'POST', {email, password});
@@ -69,6 +69,23 @@ async function main() {
   if (state.request_id !== rid) throw new Error('Lease belongs to a different request');
   if (command === 'readback') return http(endpoint + '/readback', 'GET', undefined, token, state.lease_token);
   if (command === 'heartbeat') return http(endpoint + '/heartbeat', 'POST', {}, token, state.lease_token);
+  if (command === 'server-collect') {
+    // 2026-11-06: 브라우저 DocCheck 가 막힐 때만. 서버 Rote Liste 수집기 결과(저장 안 됨)를 --out 파일에 쓴다 → 확인 후 upload.
+    const cc = pos[1]; if (cc !== 'DE') throw new Error('server-collect supports DE only');
+    const out = flag('--out'); if (!out) throw new Error('--out JSONFILE required');
+    await http(endpoint + '/server-collect/' + cc, 'POST', {}, token, state.lease_token);
+    const deadline = Date.now() + 8 * 60 * 1000;
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 15000));
+      const job = await http(endpoint + '/server-collect/' + cc, 'GET', undefined, token, state.lease_token);
+      if (job.status === 'done') {
+        await fs.writeFile(out, JSON.stringify({status: 'priced', rows: job.rows}, null, 2), {mode: 0o600});
+        return {status: 'done', rows: job.rows.length, skipped: job.skipped, out};
+      }
+      if (job.status === 'error') throw new Error('server collect failed: ' + job.error);
+    }
+    throw new Error('server collect still running after 8 minutes — retry later with the same command');
+  }
   const file = flag('--file');
   if (!file) throw new Error('--file JSONFILE required');
   const payload = JSON.parse(await fs.readFile(file, 'utf8'));

@@ -9,7 +9,7 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request, send_file
 from io import BytesIO
 from api.auth import require_auth
-from api.price_request_ingest import prepare_a8, prepare_oecd
+from api.price_request_ingest import prepare_a8, prepare_oecd, de_rows_from_scraper_items
 from agents.price_request_catalog import CATALOG
 from agents.price_request_store import PriceRequestStore, Conflict, dump
 
@@ -201,6 +201,63 @@ def build_price_request_blueprint(db_path, foreign_agent):
         r = worker_detail(rid)
         rows, ids, missing = readback(r)
         return jsonify(request=r, results=rows, visible_row_ids=ids, missing_row_ids=missing)
+
+    # ── 독일 서버 수집 (2026-11-06 사용자 결정) ─────────────────────────────────────────────────────────────
+    # 워커 브라우저에서 DocCheck/Rote Liste 가 막히면(이 PC 네트워크 차단 이력) 운영 서버의 Rote Liste 수집기를 돌린다.
+    # 이 API 는 저장하지 않는다 — 업로드용 행을 돌려줄 뿐이고, 워커가 확인 후 기존 upload 로 올린다(같은 검증 경로).
+    # lease 필수, DE 만 허용. 수집은 백그라운드 스레드(로그인 포함 수십 초) → POST 로 시작, GET 으로 결과 조회.
+    _collect_jobs: dict = {}
+
+    def _run_de_collect(query, job):
+        import asyncio
+        scraper = None
+        try:
+            scraper = foreign_agent._build_scraper("DE")
+
+            async def go():
+                await scraper._login_playwright()
+                try:
+                    return await scraper.search(query)
+                finally:
+                    try:
+                        await scraper.logout()          # 좌석 제한 — 조회 후 로그아웃
+                    except Exception:
+                        pass
+            items = asyncio.run(go())
+            rows, skipped = de_rows_from_scraper_items(items or [])
+            job.update(status="done", rows=rows, skipped=skipped, finished_at=datetime.utcnow().isoformat() + "Z")
+        except Exception as e:  # 자격증명·네트워크·파싱 실패는 사유만 남긴다(비밀값 미포함)
+            job.update(status="error", error=f"{type(e).__name__}: {str(e)[:300]}", finished_at=datetime.utcnow().isoformat() + "Z")
+
+    @bp.post("/api/price-agent/requests/<rid>/server-collect/<cc>")
+    @require_auth(role="price_agent")
+    @guarded
+    def server_collect_start(rid, cc):
+        import threading
+        r = worker_detail(rid)
+        if cc != "DE":
+            raise ValueError("server collection is allowed for DE only")
+        if cc not in r["countries"]:
+            raise ValueError("country not requested")
+        store.touch_worker(actor(), "server-collect")
+        key = (rid, cc)
+        job = _collect_jobs.get(key)
+        if job and job["status"] == "running":
+            return jsonify(job), 202
+        job = {"status": "running", "query": r["query"], "started_at": datetime.utcnow().isoformat() + "Z"}
+        _collect_jobs[key] = job
+        threading.Thread(target=_run_de_collect, args=(r["query"], job), daemon=True).start()
+        return jsonify(job), 202
+
+    @bp.get("/api/price-agent/requests/<rid>/server-collect/<cc>")
+    @require_auth(role="price_agent")
+    @guarded
+    def server_collect_result(rid, cc):
+        worker_detail(rid)
+        job = _collect_jobs.get((rid, cc))
+        if not job:
+            raise KeyError(rid)
+        return jsonify(job)
 
     @bp.put("/api/price-agent/requests/<rid>/countries/<cc>")
     @require_auth(role="price_agent")
