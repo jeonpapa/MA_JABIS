@@ -72,6 +72,7 @@
 | 국내 약가 (HIRA Excel) | `agents/rules/domestic_agent_rules.md` |
 | 해외 약가 | **`docs/foreign_price/README.md`** (업무 기준: 자료원·산식·업로드·품질) + `agents/rules/foreign_agent_rules.md` |
 | HIRA 급여 SOP | `agents/rules/hira_agent_rules.md` |
+| **심평원 급여기준 DB (항암 공고·일반약제 고시·KCD)** | `agents/rules/hira_criteria_rules.md` |
 | 해외 허가 (적응증 단위) + Cross-national reimbursement | `agents/rules/foreign_approval_agent_rules.md` |
 | MFDS 공식 승인일 파이프라인 | `agents/rules/kr_mfds_approval_agent_rules.md` |
 | MFDS 공공데이터 API 통합 (특허/허가) | `agents/rules/mfds_api_integration_rules.md` |
@@ -90,6 +91,7 @@
 - **LLM 판단 애매 시**: 단독 결정 대신 `ReviewAgent` 다수결
 - **배포 순서**: 기능 완성 → 로컬 검증 → 웹 배포 (역순 금지)
 - **Keytruda baseline**: 모든 신규 스크레이퍼/구조화 로직은 Keytruda 로 최종 검증
+- **보고서 레드팀 리뷰 필수** (2026-11-03 사용자 결정): 사용자·대시보드에 내는 모든 보고서는 `.agents/skills/redteam-review/SKILL.md` 절차를 거친다. 패널 = MA 시니어·MA 리더십(반영 비중 높음) + 심평원·공단(필수). 공단·심평원 플래그는 미반영이어도 보고서에 표로 남긴다
 
 ## 5. 절대 금지
 
