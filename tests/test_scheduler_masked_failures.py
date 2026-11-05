@@ -50,7 +50,7 @@ def _fake_reimb_modules(monkeypatch, *, url_fails: bool):
     rr = types.ModuleType("agents.reimb_reports")
     rr.backfill_blobs = lambda: {}
     rr.load_reports_manifest = lambda source=None: {"reports": []}
-    rr.sync_reports = lambda manifest: {"reports_in_manifest": 0, "ingested": [], "skipped": 0, "errors": []}
+    rr.sync_reports = lambda manifest, prune_missing=False: {"reports_in_manifest": 0, "ingested": [], "skipped": 0, "errors": []}
     _install_fake_module(monkeypatch, "agents.ingest.reimb_committee_import", imp)
     _install_fake_module(monkeypatch, "agents.reimb_reports", rr)
 
