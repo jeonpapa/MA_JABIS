@@ -725,11 +725,11 @@ def ingest_from_url(url: str, meta: dict) -> dict:
 
 
 def sync_reports(source: "str | Path | dict | None" = None) -> dict:
-    """매니페스트 기반 보고서 git-sync. 각 항목 file_hash 가 DB 에 없으면 download+ingest.
+    """매니페스트 기반 보고서 git-sync. 신규 PDF는 적재하고 기존 PDF는 메타를 조정한다.
 
     반환에 manifest_hash 포함 (스케줄러 해시게이트용). 멱등·무재다운로드(file_hash dedup).
-    항목마다 ① file_hash 가 있으면 skip ② 검증(validate_manifest_entry) — 실패면 다운로드·LLM 없이 errors
-    ③ ingest. 한 항목의 오류·예외는 errors 에 모으고 다른 항목은 계속한다.
+    항목마다 ① 검증(validate_manifest_entry) ② 기존 file_hash 는 다운로드·LLM 없이 메타 upsert
+    ③ 신규 file_hash 만 ingest. 한 항목의 오류·예외는 errors 에 모으고 다른 항목은 계속한다.
     """
     ensure_schema()
     manifest = load_reports_manifest(source)
@@ -737,23 +737,39 @@ def sync_reports(source: "str | Path | dict | None" = None) -> dict:
         json.dumps(manifest, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
     entries = manifest.get("reports", [])
 
+    metadata_fields = ("file_name", "title", "committee", "committee_scope",
+                       "report_type", "year", "cycle", "session_date")
     with _connect() as conn:
-        existing = {r["file_hash"] for r in conn.execute(
-            "SELECT file_hash FROM reimb_reports").fetchall()}
+        existing = {r["file_hash"]: dict(r) for r in conn.execute(
+            "SELECT file_hash, pdf_path, file_name, title, committee, committee_scope, "
+            "report_type, year, cycle, session_date FROM reimb_reports").fetchall()}
 
-    ingested, skipped, errors, warnings = [], 0, [], []
+    ingested, metadata_updated, skipped, errors, warnings = [], [], 0, [], []
     for e in entries:
         if not isinstance(e, dict):
             errors.append({"file": None, "url": None, "error": f"항목이 객체가 아님: {e!r}"[:200]})
             continue
         fh = e.get("file_hash")
-        if fh and fh in existing:
-            skipped += 1
-            continue
         meta, err = validate_manifest_entry(e)
         if err:
             logger.warning("[reimb_reports] 매니페스트 항목 거절(다운로드 안 함) %s: %s", e.get("file_name"), err)
             errors.append({"file": e.get("file_name"), "url": e.get("url"), "error": f"매니페스트 메타 오류: {err}"})
+            continue
+        if fh and fh in existing:
+            row = existing[fh]
+            changed = row.get("pdf_path") != e["url"] or any(
+                row.get(field) != meta.get(field) for field in metadata_fields)
+            if changed:
+                with _connect() as conn:
+                    conn.execute(
+                        """UPDATE reimb_reports SET pdf_path=?, file_name=?, title=?, committee=?, committee_scope=?,
+                           report_type=?, year=?, cycle=?, session_date=? WHERE file_hash=?""",
+                        (e["url"], *(meta.get(field) for field in metadata_fields), fh),
+                    )
+                    conn.commit()
+                metadata_updated.append(meta.get("file_name"))
+            else:
+                skipped += 1
             continue
         try:
             res = ingest_from_url(e["url"], meta)
@@ -772,4 +788,5 @@ def sync_reports(source: "str | Path | dict | None" = None) -> dict:
         else:
             errors.append({"file": e.get("file_name"), "url": e.get("url"), "error": res.get("error")})
     return {"manifest_hash": m_hash, "reports_in_manifest": len(entries),
-            "ingested": ingested, "skipped": skipped, "errors": errors, "warnings": warnings}
+            "ingested": ingested, "metadata_updated": metadata_updated,
+            "skipped": skipped, "errors": errors, "warnings": warnings}

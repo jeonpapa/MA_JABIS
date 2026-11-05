@@ -607,16 +607,19 @@ def _reimb_reports_sync() -> dict:
         manifest = rr.load_reports_manifest(None)
     m_hash = _hl.sha256(_j.dumps(manifest, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
     if m_hash == prev_rhash:
-        logger.info("보고서 sync: 매니페스트 변경 없음 (hash %s) — skip", m_hash[:12])
-        return {"counts": {"changed": 0}, "fallback": fallback, "errors": []}
+        # DB 볼륨 복구와 기존 PDF의 session_date 등 메타 정정을 보장한다. sync_reports 는
+        # file_hash 기존 행을 다운로드·LLM 없이 조정하므로 같은 매니페스트를 다시 봐도 저비용·멱등이다.
+        logger.info("보고서 sync: 매니페스트 변경 없음 (hash %s) — DB 메타 reconcile", m_hash[:12])
     rres = rr.sync_reports(manifest)
     rhash_file.parent.mkdir(parents=True, exist_ok=True)
     rhash_file.write_text(m_hash)
     for w in rres.get("warnings") or []:   # 매니페스트 file_hash ≠ PDF — 적재는 됐고, 매니페스트가 바뀔 때만 재다운로드라 과제 아님(로그)
         logger.warning("보고서 sync 경고 %s: %s", w.get("file"), w.get("warning"))
-    logger.info("보고서 sync 완료: 매니페스트 %d · 신규적재 %d · skip %d · 오류 %d · hash %s",
-                rres["reports_in_manifest"], len(rres["ingested"]), rres["skipped"], len(rres["errors"]), m_hash[:12])
+    logger.info("보고서 sync 완료: 매니페스트 %d · 신규적재 %d · 메타교정 %d · skip %d · 오류 %d · hash %s",
+                rres["reports_in_manifest"], len(rres["ingested"]), len(rres.get("metadata_updated") or []),
+                rres["skipped"], len(rres["errors"]), m_hash[:12])
     return {"counts": {"manifest": rres["reports_in_manifest"], "ingested": len(rres["ingested"]),
+                       "metadata_updated": len(rres.get("metadata_updated") or []),
                        "skipped": rres["skipped"], "warnings": len(rres.get("warnings") or [])},
             "fallback": fallback,
             "errors": [(f"{e.get('file') or e.get('url')}: {e.get('error')}" if isinstance(e, dict) else str(e))[:200]

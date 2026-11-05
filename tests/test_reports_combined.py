@@ -163,6 +163,21 @@ def test_combined_entry_is_stored_with_null_committee_and_scope_marker(rdb, stub
     assert listed[COMBINED["file_name"]]["committee_scope"] == "combined"
 
 
+def test_existing_pdf_hash_reconciles_changed_manifest_metadata_without_download(rdb, stubs):
+    """PDF 내용이 같아도 회차일 등 매니페스트 메타 정정은 기존 DB 행에 반영한다."""
+    rr.sync_reports({"schema_version": 1, "reports": [EVAL_ONLY]})
+    corrected = {**EVAL_ONLY, "session_date": "2026-06-03", "title": "교정된 결과 리뷰 제목"}
+    stubs["download"].clear(); stubs["llm"].clear()
+
+    res = rr.sync_reports({"schema_version": 1, "reports": [corrected]})
+
+    assert res["metadata_updated"] == [EVAL_ONLY["file_name"]]
+    assert res["skipped"] == 0 and res["ingested"] == []
+    assert stubs["download"] == [] and stubs["llm"] == []
+    row = _rows(rdb)[0]
+    assert row["session_date"] == "2026-06-03"
+
+
 def test_manifest_hash_mismatch_is_reported_as_warning(rdb, stubs):
     """매니페스트 file_hash ≠ 실제 PDF sha1 이면 적재는 되지만(내용 hash 로 dedup) 매니페스트 변경 때마다 재다운로드 → 경고."""
     res = rr.sync_reports({"schema_version": 1, "reports": [{**EVAL_ONLY, "file_hash": "f" * 40}]})
