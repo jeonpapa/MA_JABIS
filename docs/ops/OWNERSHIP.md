@@ -63,13 +63,13 @@ Aside 와 Hermes 가 같은 과제를 집지 않는다.
 | 해외 급여 `reimbursement_xnational_sync` | 1·4·7·10월 1일 02:00 | NICE/PBAC/CMS/中医協 | 국가 카드 급여 축 | `reimbursement_xnational` | 런북 `reimbursement_xnational_sync` | — |
 | 뉴스 `competitor_news_weekly`/`_daily` | 월 03:30 / 매일 06:30 | 공개 뉴스 | 뉴스 아카이브 | `news_archive` | 런북 `news_weekly_crawl`/`news_daily_fetch` | `NAVER_API_CLIENT_ID/SECRET` |
 | 동향 승격 `competitor_trend_promote` | 매일 07:00 | 뉴스 아카이브 | 경쟁사 동향 카드 | `competitor_trends` | 런북 `competitor_trend_promote` | — |
-| Access Insight `access_insight_fresh_signals` | 월 04:00 | 공개 매체 | 신호 | `access_insight_signals` | 런북(분리) | — |
+| Access Insight `access_insight_fresh_signals` | 월 04:00 | 공개 매체 (키워드: 추적 약제 + 암질심·암질환심의위원회·중증(암)질환심의위원회·약제급여평가위원회) | 신호 + **암질심 자동 후보**(2026-11-05~, `origin='news_auto'`, 1회 최대 10건, MFDS 확인 또는 매체 2곳, 비항암 ATC 제외) | `access_insight_signals`, 잡 counts `candidates_added` | 런북(분리) | `NAVER_API_CLIENT_ID/SECRET`, `OPENAI_API_KEY`(`AMJILSIM_CANDIDATE_MODEL`, 기본 gpt-4.1-mini), `MFDS_PATENT_API_KEY` |
 | NHIS 협상 `nhis_negotiation_sync` | 월 02:30 | NHIS 공개자료 | 파이프라인 보드 | `nhis_negotiations` | 런북 `nhis_negotiation_sync` | — |
 | 약평위 아날로그 `drec_analog_sync` | 월 04:30 | HIRA 약평위 공개 게시판(평가결과 PDF) | 등재 아날로그 | `analog_reports`·`yakpyungwi_meta`·`data/drec_incoming/` | 런북 없음(다음 주 자동 재시도, 반복 실패는 Hermes) | `OPENAI_API_KEY`·`MFDS_PATENT_API_KEY`(보강) |
 | 위원회 sync `reimb_data_sync` | 매일 02:00 + 부팅 | git raw: AccessRoutineAnalystic `agents/ingest/committee_results.json`·`reports_manifest.json` | 위원회 보드·보고서 | 잡 + `committee_*` | 잡 실패면 런북 `reimb_data_sync`, 소스 미갱신이면 **Hermes** | `REIMB_DATA_URL`, `REIMB_DATA_TOKEN`, `REPORTS_DATA_URL` |
 | 정책 사이드카 `policy_intel_analysis_sync` | 매일 02:10 + 부팅 | AccessRoutineAnalystic `policy_intelligence/analysis/` | Policy Intelligence | `policy_intelligence`(analysis) | 런북 `policy_intel_analysis_sync` | `POLICY_ANALYSIS_URL`, `POLICY_ANALYSIS_TOKEN` |
 | Stakeholder sync `stakeholder_data_sync` | 02:20·08:20 | kr-drug-pricing-nhi-finance-intelligence `main` | Stakeholder Signals·감사 | 잡 + `stakeholder_*` | transient 런북 / `:config` 는 Hermes→사람 | `STAKEHOLDER_SYNC_REPO`, `STAKEHOLDER_SYNC_TOKEN` |
-| 메일 `daily_mailing_dispatch`·`_top_news`·`_health` | 10분 / 06:40 / 09:30 | 구독 + Hermes 번들(`DAILY_MAILING_RUNS_URL`) | 메일링 칸반 | `daily_mailing_health` 원장 | `not_generated`·`send_failed`·`ready_to_send` 런북, `held`·`error`·`expired`·`gmail_token_invalid` 은 Hermes | Gmail OAuth 토큰, `OPENAI_API_KEY`, `DAILY_MAILING_RUNS_TOKEN`, `DAILY_MAILING_SCOPES_TOKEN` |
+| 메일 `daily_mailing_dispatch`·`_top_news`·`_health`·`_scope_export`·`_runs_sync` | 10분 / 06:40 / 09:30 / 15분 / 20분 (2026-10-27~ sender=hermes: dispatch·top_news no-op, 발송은 Hermes) | 구독 + Hermes 번들(`runs/<날짜>/`) | 메일링 칸반 | `daily_mailing_health` 원장 | `not_generated`·`send_failed`·`ready_to_send` 런북, `held`·`error`·`expired`·`gmail_token_invalid` 은 Hermes | Gmail OAuth 토큰, `OPENAI_API_KEY`, `DAILY_MAILING_RUNS_TOKEN`, `DAILY_MAILING_SCOPES_TOKEN` |
 | Home 브랜드 `home_brand_related_refresh` | 월 05:00 | Naver 연관검색어 | 후보 대기 | `human_backlog` | 승인은 admin(Hermes 가 요청) | — |
 | 관측 `rule_compliance_audit`·`quality_guard_review` | 05:30 / 06:00 | 코드·메모리 | `quality_guard/*.md` | `rule_compliance`·`quality_guard` 원장 | 런북 있는 RC 는 server, 나머지 Hermes | — |
 | 관측 `foreign_config_probe` | 07:40 | 환경 키 이름·scrapling | — | `scheduler_job:foreign_config_probe:config:*` | **Aside** 몫(아래) | 키 이름만 확인 |
@@ -94,11 +94,18 @@ Aside 와 Hermes 가 같은 과제를 집지 않는다.
 | 위원회 보고서(트랙 B, HIRA 분석) | D-2 / D+1 / 월간 | PDF + `agents/ingest/reports_manifest.json` 커밋 | 보고서 모달 | `committee_reports` | — | 같음 |
 | Policy Intelligence(KRPIA) | 메일 수신 시 | `python -m agents.policy_intelligence_ingest` → prod 볼륨 `/app/data/policy_intelligence/` 업로드 + `policy_intelligence/analysis/*.json` 커밋 | Policy Intelligence | `policy_intelligence`(ingest `ran_at`) | 새 topic 은 `data_gaps` 만 | GitHub push, prod 볼륨 업로드 권한(파일럿 방식), KRPIA 메일 수신함 |
 | Stakeholder 모니터링·감사 | 07:00 모니터링 / 07:40 감사 | kr-drug-pricing-nhi-finance-intelligence `monitoring-runs/`·`audit-runs/`·`sources/`·manifest·정본 MD 커밋; `GET /api/agent/stakeholder/registry`, `POST /api/agent/stakeholder/proposals` | Stakeholder Signals, `/admin/stakeholder-audit` | `stakeholder_monitoring_run`, `stakeholder_audit_run`, `stakeholder_source_integrity`, `stakeholder_quote_provenance`, `stakeholder_proposal_backlog` | 승인·반려는 admin | GitHub push(kr-drug-…), `MA_AGENT_EMAIL/PASSWORD`(agent) |
-| Daily Mailing 큐레이션 | 구독 일정 | run 번들 → `DAILY_MAILING_RUNS_URL` 저장소, scope export 수신 | 메일링 칸반·발송 | `daily_mailing_health`(held·error·expired), 메일 잡 | Gmail 토큰 재발급은 사람 | GitHub push(번들 저장소) |
+| Daily Mailing 큐레이션·작성·최종승인·**발송** (2026-10-27~) | 구독 일정(평일 08:00 전) | scopes/ pull → run 번들 `daily_mailing/runs/<YYYY-MM-DD>/<sub>_<run>.json` 커밋(발송 시 `delivery_status=sent`+`gmail_message_id`) | 메일링 칸반·발송 | `daily_mailing_health`(held·error·expired), 메일 잡 | Gmail 토큰 재발급은 사람 | GitHub push(번들 저장소) |
 | 경쟁사 동향 큐레이션 | 주간 | (채널 미정) 현재는 서버 `competitor_trend_promote` + admin 편집 `/admin/competitor-trends` | 동향 카드 | `competitor_trends` | 채널 확정 필요(아래 G5) | — |
 | 원장 사고 처리 | 10분(디스패처) | `scripts/agent_dispatcher.py --owner hermes,server` → `/api/agent/*` | `/admin/agent-tasks` | `activity.last_claimed_at`, `waiting_by_owner` | 런북 없음·한도 초과 → `blocked` → admin | `MA_API_BASE`, `MA_AGENT_EMAIL`, `MA_AGENT_PASSWORD` |
 | QG/RC 개선·known_debt | 매일 05:30/06:00 산출 | 원장 improvement(디스패처는 집지 않음) | `/admin/agent-tasks` | `quality_guard`·`rule_compliance`·`known_debt` | 코드 변경은 사용자 승인 PR(메인 repo) | — |
+| 급여 현황 보드 카드 갱신 | 신선도 07:45 (`pipeline_stale_cards`, improvement) | `committee_results.json` drugs/events·expected_next_session 커밋 → 02:00 sync. 자동 후보는 같은 브랜드로 쓰면 importer 가 그 행을 승격(`news_auto_promoted`) | 급여 현황 보드 | `pipeline_stale_cards`(60일 초과 카드 수; 공단 최근 확인·협상 완료·이벤트 없는 자동 후보 제외) | 변화 없는 장기 대기 → WITHDRAWN 기록 또는 admin 에 유지 여부 요청 | GitHub push(AccessRoutineAnalystic) |
 | 사람 몫 적체 정리 | 신선도 07:45 | 원장 improvement(`*:backlog`) | — | `market_share`, `analog_reports`, `reimbursement_checklist_coverage`, `human_backlog`, `stakeholder_proposal_backlog` | admin 에게 구체 요청(과제 첫 줄의 조치) | — |
+
+### 2-4. 암질심 자동 후보 정책 (2026-11-05 사용자 결정)
+
+- 암질심 기사에 거명된 미등록 항암 약제는 **자동으로 보드에 후보 추가**(`agents/amjilsim_tracker/candidate_discovery.py`). 큐 이벤트는 만들지 않는다 — 상정·결과는 헤르메스 정본이 단일 소스.
+- 상정되지 않거나 이후 논의가 없으면 **갱신하지 않는다**: 위원회 이벤트가 없는 자동 후보는 카드 stale 경고·`pipeline_stale_cards` 과제에서 제외(카드에 '자동 후보 · 첫 발견 날짜' 표시).
+- **공단 연동 차단**: 공단 미매칭 행으로 약제를 만들지 않고(기존과 동일), 승격 전 자동 후보(`origin='news_auto'`)는 공단 매칭 대상에서도 뺀다.
 
 ## 3. 알려진 공백 — Hermes 액션 아이템
 

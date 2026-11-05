@@ -1,5 +1,12 @@
 # 헤르메스 Daily Mailing 작업 지시서 (핸드오프)
-> ⚠️ **RETIRED 2026-09-18** — 생성·발송은 프로덕션 서버(`agents/daily_mailing/dispatch.py` + `engine.py`)로 이전. 설계: `docs/superpowers/specs/2026-09-18-daily-mailing-service-design.md`. 이 문서는 이력용.
+> ✅ **REACTIVATED 2026-10-27** — 사용자 결정: 헤르메스가 큐레이션·작성·내부 최종승인·Gmail 발송을 맡는다.
+> 스위치 `config/settings.json` → `daily_mailing.sender = "hermes"` (env `DAILY_MAILING_SENDER` 우선, 롤백 = `server`). `agents/daily_mailing/sender.py`.
+> 대시보드 잡: `daily_mailing_scope_export`(15분, scopes/ 발행) · `daily_mailing_runs_sync`(20분, runs/<YYYY-MM-DD>/<sub>_<run>.json 최근 3일 적재).
+> 서버 자체 생성·발송(`daily_mailing_dispatch`·`daily_mailing_top_news`)은 no-op. 헬스(09:30): run 없음 `not_received`, 발송 증빙 없음 `not_sent`.
+> **발송 증빙 계약**: payload `delivery_status="sent"` + `gmail_message_id`(+ `sent_at`) 가 있어야 칸반에 발송으로 기록된다. draft 생성·runner 성공은 발송 아님.
+> run_id 는 대시보드에서 `hermes_<sub>_<run_id>` 로 저장되고, 같은 구독·날짜는 가장 최신 generated_at run 만 남는다.
+>
+> (이력) 2026-09-18~10-26 에는 생성·발송을 프로덕션 서버(`dispatch.py` + `engine.py`)가 맡았다. 설계: `docs/superpowers/specs/2026-09-18-daily-mailing-service-design.md`.
 
 > 대상: 외부 GPT-5.5 에이전트 "헤르메스". 대쉬보드는 **모니터링 스콥만** 정하고, 헤르메스가
 > 그 스콥으로 **매일 메일을 검토·작성·발송**한다. (정책 인텔리전스 헤르메스 모델과 동일 구조:

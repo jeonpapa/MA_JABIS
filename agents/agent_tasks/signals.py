@@ -51,6 +51,8 @@ JOB_RUNBOOK: dict[str, str | None] = {
     "stakeholder_data_sync": "stakeholder_data_sync",   # 02:20·08:20 — 토큰 부재는 :config 1건, 그 외 재실행(동기 런북)
     "daily_mailing_dispatch": "daily_mailing_dispatch",
     "daily_mailing_top_news": "daily_mailing_top_news",
+    "daily_mailing_scope_export": None,   # sender=hermes 스콥 발행 — 실패 = 토큰/권한 문제(사람). 다음 15분 tick 이 자동 재시도
+    "daily_mailing_runs_sync": None,      # sender=hermes 번들 동기화 — 실패 = 토큰/번들 형식 문제(Hermes·사람). 다음 20분 tick 재시도
     "daily_mailing_health": None,
     "nhis_negotiation_sync": "nhis_negotiation_sync",
     "drec_analog_sync": None,   # 실패 = HIRA 게시판 구조 변경·PDF 형식 변화 등 판단 필요 → Hermes(사람). 일시 접속 실패는 다음 주 자동 재시도
@@ -84,6 +86,8 @@ HEALTH_RUNBOOK: dict[str, str | None] = {
     "error": None,
     "expired": None,
     "gmail_token_invalid": None,
+    "not_received": None,   # sender=hermes: 헤르메스 번들 미수신 — Hermes 가 원인 확인
+    "not_sent": None,       # sender=hermes: 번들은 왔으나 발송 증빙(sent) 없음 — Hermes 가 보류 사유 해소
 }
 HIGH_PRIORITY_PROBLEMS = {"gmail_token_invalid", "error"}
 # 날짜 없이 1건만 유지하는 헬스 문제(설정 문제) — 매일 새 과제가 아니라 사람이 닫을 때까지 하나

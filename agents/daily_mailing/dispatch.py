@@ -476,7 +476,12 @@ def health_check(deps: DispatchDeps) -> dict:
     """오늘 이미 발송 시각이 지난 구독 중 미생성·보류·발송실패·오류·만료·발송대기 정체 + Gmail 토큰 상태.
 
     관리자 반려(held+rejected)는 problems 가 아닌 `rejected` 로 따로 알린다.
+
+    sender=hermes(2026-10-27): run 은 헤르메스 번들 동기화로 들어온다. run 이 없으면 `not_received`,
+    있는데 발송 증빙(sent)이 없으면 `not_sent`. 서버 Gmail 토큰은 발송에 쓰지 않으므로 점검하지 않는다.
     """
+    from .sender import hermes_sends
+    hermes = hermes_sends()
     now = _now(deps)
     run_date = now.date().isoformat()
     runs = {r["subscription_id"]: r for r in list_runs_for_date(run_date, db_path=deps.db_path)}
@@ -487,7 +492,11 @@ def health_check(deps: DispatchDeps) -> dict:
             continue
         run = runs.get(sub["id"])
         if run is None:
-            problems.append({"subscription_id": sub["id"], "name": sub["name"], "problem": "not_generated"})
+            problems.append({"subscription_id": sub["id"], "name": sub["name"],
+                             "problem": "not_received" if hermes else "not_generated"})
+        elif hermes and run.get("delivery_status") != "sent":
+            problems.append({"subscription_id": sub["id"], "name": sub["name"], "problem": "not_sent",
+                             "detail": f"헤르메스 run {run.get('run_id')} 상태: {run.get('delivery_status')}"})
         elif _is_admin_rejected(run):
             rejected.append({"subscription_id": sub["id"], "name": sub["name"], "approved_by": run.get("approved_by")})
         elif run.get("delivery_status") in PROBLEM_STATUSES:
@@ -496,11 +505,13 @@ def health_check(deps: DispatchDeps) -> dict:
         elif _stuck_ready(run, now):
             problems.append({"subscription_id": sub["id"], "name": sub["name"],
                              "problem": "ready_to_send", "detail": STUCK_READY_DETAIL})
-    try:
-        gmail_ok = bool(deps.gmail_ready())
-    except Exception:
-        gmail_ok = False
-    if not gmail_ok:
-        problems.append({"subscription_id": None, "name": "-", "problem": "gmail_token_invalid"})
+    gmail_ok: bool | None = None
+    if not hermes:
+        try:
+            gmail_ok = bool(deps.gmail_ready())
+        except Exception:
+            gmail_ok = False
+        if not gmail_ok:
+            problems.append({"subscription_id": None, "name": "-", "problem": "gmail_token_invalid"})
     return {"run_date": run_date, "checked_at": now.isoformat(), "ok": not problems,
             "problems": problems, "rejected": rejected, "gmail_ready": gmail_ok}

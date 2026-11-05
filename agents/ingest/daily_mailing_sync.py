@@ -20,7 +20,7 @@ import os
 import re
 import sqlite3
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -51,8 +51,130 @@ def _http_get(url: str, token: str | None = None) -> bytes:
     return urllib.request.urlopen(_build_request(url, token), timeout=30).read()
 
 
+_DATE_DIR = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+GITHUB_TREE_URL = "https://api.github.com/repos/jeonpapa/AccessRoutineAnalystic/git/trees/main?recursive=1"
+RUNS_PREFIX = "daily_mailing/runs/"
+DEFAULT_LOOKBACK_DAYS = 3
+# 원격 blob sha 캐시 — 같은 프로세스(스케줄러) 안에서 바뀌지 않은 번들은 다시 받지 않는다(20분 주기 · API 호출 절약).
+_SEEN_BLOB_SHA: dict[str, str] = {}
+
+
 def _iter_bundles_local(source_dir: Path) -> dict[str, bytes]:
-    return {p.name: p.read_bytes() for p in sorted(source_dir.glob("*.json")) if p.name != "runs_index.json"}
+    """평면 레이아웃(`<run>.json`)은 key=파일명, 날짜 폴더 레이아웃(`<YYYY-MM-DD>/<sub>_<run>.json`)은 key=`날짜/파일명`."""
+    out = {p.name: p.read_bytes() for p in sorted(source_dir.glob("*.json")) if p.name != "runs_index.json"}
+    for p in sorted(source_dir.glob("*/*.json")):
+        if _DATE_DIR.match(p.parent.name):
+            out[f"{p.parent.name}/{p.name}"] = p.read_bytes()
+    return out
+
+
+def _split_key(key: str) -> tuple[str | None, str]:
+    """`날짜/파일명` → (날짜, 파일명). 평면 키는 (None, 파일명)."""
+    if "/" in key:
+        day, name = key.split("/", 1)
+        if _DATE_DIR.match(day):
+            return day, name
+    return None, key
+
+
+def _iter_bundles_dated_remote(token: str, *, lookback_days: int = DEFAULT_LOOKBACK_DAYS,
+                               today: str | None = None) -> dict[str, bytes]:
+    """헤르메스 현행 레이아웃 `daily_mailing/runs/<YYYY-MM-DD>/<sub>_<run>.json` (2026-10 확인) — 최근 N일만.
+
+    트리 1회 조회로 경로·blob sha 를 얻고, sha 가 바뀐 파일만 내려받는다.
+    """
+    tree = json.loads(_http_get(GITHUB_TREE_URL, token).decode("utf-8"))
+    kst_today = datetime.fromisoformat(today).date() if today else datetime.now(timezone(timedelta(hours=9))).date()
+    cutoff = (kst_today - timedelta(days=max(lookback_days, 0))).isoformat()
+    out: dict[str, bytes] = {}
+    for node in tree.get("tree") or []:
+        path = node.get("path") or ""
+        if node.get("type") != "blob" or not path.startswith(RUNS_PREFIX):
+            continue
+        rest = path[len(RUNS_PREFIX):]
+        day, name = _split_key(rest)
+        if day is None or day < cutoff or not _is_safe_name(name):
+            continue
+        sha = node.get("sha") or ""
+        if sha and _SEEN_BLOB_SHA.get(path) == sha:
+            continue
+        out[f"{day}/{name}"] = _http_get(f"{GITHUB_API_BASE}/{day}/{name}?ref=main", token)
+        if sha:
+            _SEEN_BLOB_SHA[path] = sha
+    return out
+
+
+def _normalize_dated_bundle(bundle: dict, payload: dict, run_date: str) -> dict:
+    """헤르메스 run 번들(날짜 폴더) → 대시보드 run 계약.
+
+    - run_id: 헤르메스 run_id 는 구독 간 시각만 다르다 → `hermes_<sub>_<run_id>` 로 네임스페이스(결정적 → 멱등).
+    - run_date: 폴더 날짜(KST 실행일). 헬스체크·칸반이 날짜로 찾는다.
+    - owner_email·recipients·dashboard_scope: payload 에 없으면 `dashboard_scope_snapshot` 에서 채운다.
+    """
+    p = dict(payload)
+    sub = p.get("subscription_id", bundle.get("subscription_id"))
+    try:
+        sub = int(sub)
+    except (TypeError, ValueError):
+        pass
+    p["subscription_id"] = sub
+    rid = str(p.get("run_id") or bundle.get("run_id") or "")
+    if not rid.startswith("hermes_"):
+        p["run_id"] = f"hermes_{sub}_{rid}"
+    p["run_date"] = p.get("run_date") or p.get("run_date_kst") or run_date
+    snap = p.get("dashboard_scope") or p.get("dashboard_scope_snapshot") or {}
+    if isinstance(snap, dict):
+        p["dashboard_scope"] = snap
+        p["owner_email"] = p.get("owner_email") or snap.get("owner_email")
+        p["recipients"] = p.get("recipients") or snap.get("recipients")
+        p["keywords"] = p.get("keywords") or snap.get("keywords")
+    if bundle.get("is_test"):
+        p["is_test"] = True
+    return p
+
+
+def _supersede_older_hermes_run(payload: dict, db_path) -> bool:
+    """같은 구독·날짜의 다른 헤르메스 정규 run 이 있으면 더 최신(generated_at) 것만 남긴다.
+
+    Returns False = 이 번들이 더 오래됐다(건너뜀). 서버 자체 run(`hermes_` 아님)은 건드리지 않는다 —
+    그 경우 persist 가 DuplicateRegularRunError 로 건너뛰게 둔다.
+    """
+    sub, day, rid = payload.get("subscription_id"), payload.get("run_date"), str(payload.get("run_id"))
+    if sub is None or not day or payload.get("is_test"):
+        return True
+    try:
+        with sqlite3.connect(str(db_path)) as conn:
+            rows = conn.execute(
+                "SELECT run_id, generated_at FROM daily_mailing_run WHERE subscription_id=? AND run_date=? "
+                "AND is_test=0 AND run_id<>? AND run_id LIKE 'hermes\\_%' ESCAPE '\\'",
+                (sub, day, rid),
+            ).fetchall()
+            new_dt = _parse_dt(payload.get("generated_at"))
+            for old_id, old_gen in rows:
+                old_dt = _parse_dt(old_gen)
+                if old_dt is not None and (new_dt is None or old_dt >= new_dt):
+                    return False
+            for old_id, _ in rows:
+                conn.execute("DELETE FROM daily_mailing_article WHERE run_id=?", (old_id,))
+                conn.execute("DELETE FROM daily_mailing_run WHERE run_id=?", (old_id,))
+            conn.commit()
+    except sqlite3.OperationalError:
+        return True   # 테이블 미생성(첫 적재) — persist 가 만든다
+    return True
+
+
+def _record_hermes_delivery(payload: dict, bundle: dict, db_path) -> bool:
+    """헤르메스가 실제 발송한 run 이면 sent_at·gmail_message_id 를 기록. 발송 증빙(message id) 없으면 기록하지 않는다."""
+    from agents.daily_mailing.run_store import update_run
+
+    result = payload.get("delivery_result")
+    msg_id = payload.get("gmail_message_id") or (result.get("gmail_message_id") if isinstance(result, dict) else None)
+    if payload.get("delivery_status") != "sent" or not msg_id:
+        return False
+    update_run(str(payload["run_id"]), db_path=db_path,
+               sent_at=str(payload.get("sent_at") or bundle.get("executed_at") or payload.get("generated_at") or ""),
+               gmail_message_id=str(msg_id))
+    return True
 
 
 def _iter_bundles_url(base_url: str, token: str | None = None) -> dict[str, bytes]:
@@ -133,7 +255,14 @@ def _clear_consumed_test_requests(db_path: str | Path,
 
 
 def sync_daily_mailing_runs(source_dir: str | Path | None = None,
-                            db_path: str | Path | None = None) -> dict[str, Any]:
+                            db_path: str | Path | None = None, *,
+                            lookback_days: int = DEFAULT_LOOKBACK_DAYS) -> dict[str, Any]:
+    """헤르메스 run 번들 → DB. 원격은 날짜 폴더 레이아웃(현행)을 우선, 없으면 구 `runs_index.json` 평면 레이아웃.
+
+    토큰: DAILY_MAILING_RUNS_TOKEN > DAILY_MAILING_SCOPES_TOKEN > GITHUB_TOKEN (비공개 repo — 토큰 없으면 실패 보고).
+    """
+    from agents.daily_mailing.storage import DuplicateRegularRunError
+
     db_path = db_path or DEFAULT_DB_PATH
     if source_dir is not None:
         try:
@@ -142,22 +271,34 @@ def sync_daily_mailing_runs(source_dir: str | Path | None = None,
             return {"imported": 0, "skipped": 0, "error": f"local read failed: {exc}"}
     else:
         base = os.environ.get("DAILY_MAILING_RUNS_URL") or GITHUB_RAW_BASE
-        token = os.environ.get("DAILY_MAILING_RUNS_TOKEN") or os.environ.get("GITHUB_TOKEN")
+        token = (os.environ.get("DAILY_MAILING_RUNS_TOKEN") or os.environ.get("DAILY_MAILING_SCOPES_TOKEN")
+                 or os.environ.get("GITHUB_TOKEN"))
         try:
-            bundles = _iter_bundles_url(base, token=token)
+            if token:
+                bundles = _iter_bundles_dated_remote(token, lookback_days=lookback_days)
+            else:
+                bundles = _iter_bundles_url(base, token=None)
         except Exception as exc:
             return {"imported": 0, "skipped": 0, "error": f"source fetch failed: {exc}"}
 
     imported, skipped, errors = 0, 0, []
+    duplicates: list[str] = []
+    sent_recorded = 0
     # {subscription_id: 가장 최신 [TEST] run generated_at} — 요청보다 최신인 run 만 플래그 소비.
     latest_test_run: dict[int, str] = {}
-    for name, data in bundles.items():
+    for key, data in bundles.items():
+        run_day, name = _split_key(key)
         if not _is_safe_name(name):
             skipped += 1
             continue
         try:
             bundle = json.loads(data.decode("utf-8"))
             payload = bundle.get("payload") or bundle
+            if run_day is not None:
+                payload = _normalize_dated_bundle(bundle, payload, run_day)
+                if not _supersede_older_hermes_run(payload, db_path):
+                    skipped += 1
+                    continue
             articles = bundle.get("articles") or payload.get("items") or []
             persist_daily_mailing_run(
                 payload,
@@ -169,6 +310,8 @@ def sync_daily_mailing_runs(source_dir: str | Path | None = None,
                 db_path=db_path,
             )
             imported += 1
+            if run_day is not None and _record_hermes_delivery(payload, bundle, db_path):
+                sent_recorded += 1
             # [TEST] run → 해당 구독의 test_request 플래그 소비 (핸드오프 §2-테스트 계약).
             is_test = bool(bundle.get("is_test") or payload.get("is_test"))
             sub_id = payload.get("subscription_id")
@@ -184,8 +327,12 @@ def sync_daily_mailing_runs(source_dir: str | Path | None = None,
                     # 구독별로 가장 최신 test run 의 generated_at 만 유지.
                     if prev is None or (gen_dt is not None and (prev_dt is None or gen_dt > prev_dt)):
                         latest_test_run[sid] = gen
+        except DuplicateRegularRunError as exc:
+            # 같은 구독·날짜에 서버 자체 run 이 이미 있다(전환 당일) — 덮어쓰지 않고 건너뛴다.
+            skipped += 1
+            duplicates.append(f"{key}: {exc}")
         except Exception as exc:
-            errors.append({"name": name, "error": str(exc)})
+            errors.append({"name": key, "error": str(exc)})
     cleared = _clear_consumed_test_requests(db_path, latest_test_run)
-    return {"imported": imported, "skipped": skipped, "errors": errors,
-            "test_requests_cleared": cleared}
+    return {"imported": imported, "skipped": skipped, "errors": errors, "duplicates": duplicates,
+            "sent_recorded": sent_recorded, "test_requests_cleared": cleared}

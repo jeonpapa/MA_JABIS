@@ -58,6 +58,15 @@ def _isolated_agent_task_db(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _daily_mailing_sender_server_by_default(monkeypatch):
+    """테스트 기본 = 서버 생성·발송 모드(기존 스위트 전제). 헤르메스 모드 테스트는 setenv 로 덮어쓴다.
+
+    운영 설정(config/settings.json daily_mailing.sender)이 바뀌어도 기존 dispatch/health 테스트가 흔들리지 않게 한다.
+    """
+    monkeypatch.setenv("DAILY_MAILING_SENDER", "server")
+
+
+@pytest.fixture(autouse=True)
 def _real_platform_db_is_readonly(monkeypatch):
     monkeypatch.setattr(sqlite3, "connect", _readonly_connect)
 

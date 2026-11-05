@@ -512,3 +512,15 @@ def test_daily_is_weekdays_only_and_monday_lookback_is_72h(tmp_path):
     assert rec.scopes[-1].lookback_hours == 24
     send_test(19, requester_email="me@msd.com", deps=_deps(db, rec, now=mon))   # 테스트 메일도 같은 규칙
     assert rec.scopes[-1].lookback_hours == 72
+
+
+def test_health_check_hermes_mode_reports_missing_and_unsent_runs(tmp_path, monkeypatch):
+    """sender=hermes: run 미수신 → not_received, 수신했지만 발송 증빙 없음 → not_sent, sent → 정상. 서버 Gmail 토큰은 안 본다."""
+    monkeypatch.setenv("DAILY_MAILING_SENDER", "hermes")
+    db = _db(tmp_path, {"id": 19}, {"id": 20}, {"id": 21})
+    _persist_run(db, "hermes_20_x", sub=20, delivery="no_send_quality_hold")
+    _persist_run(db, "hermes_21_x", sub=21, delivery="sent")
+    report = health_check(_deps(db, Recorder(), gmail_ready=False))
+    problems = {(p["subscription_id"], p["problem"]) for p in report["problems"]}
+    assert problems == {(19, "not_received"), (20, "not_sent")}
+    assert report["gmail_ready"] is None
