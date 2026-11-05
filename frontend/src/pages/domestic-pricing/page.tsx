@@ -14,6 +14,7 @@ import {
 } from '@/api/domestic';
 import PriceWaterfall from './components/PriceWaterfall';
 import AnalogueCompareModal from './components/AnalogueCompareModal';
+import type { DomesticAnalogue } from '@/api/domestic';
 
 const DOSAGE_CLAMP = 220;
 
@@ -25,6 +26,8 @@ export default function DomesticPricingPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedDrug, setSelectedDrug] = useState<DomesticProduct | null>(null);
   const [showModal, setShowModal] = useState(false);
+  // 검색으로 추가한 다른 성분 비교약제 (2026-11-03 개선 요청 5)
+  const [extraAnalogues, setExtraAnalogues] = useState<DomesticAnalogue[]>([]);
   const [selectedAnalogues, setSelectedAnalogues] = useState<string[]>([]);
   const [downloading, setDownloading] = useState(false);
   const [dosageExpanded, setDosageExpanded] = useState(false);
@@ -98,6 +101,7 @@ export default function DomesticPricingPage() {
   const handleSelect = (drug: DomesticProduct) => {
     setSelectedDrug(drug);
     setSelectedAnalogues([]);
+    setExtraAnalogues([]);
     setDosageExpanded(false);
     // 동일성분 비교약제(아날로그) 후보를 DB 에서 직접 조회해 병합 → 아날로그 선택 활성화.
     // 검색결과 내 동일성분(drug.analogues)과 union, 기준약제·중복(normalizedName) 제거.
@@ -124,7 +128,12 @@ export default function DomesticPricingPage() {
     }
   };
   const handleToggleAnalogue = (name: string) => {
-    setSelectedAnalogues(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]);
+    setSelectedAnalogues(prev => prev.includes(name) ? prev.filter(n => n !== name) : (prev.length >= 2 ? prev : [...prev, name]));
+  };
+  const handlePickAnalogue = (a: DomesticAnalogue) => {
+    const known = (selectedDrug?.analogues || []).some(x => x.name === a.name) || extraAnalogues.some(x => x.name === a.name);
+    if (!known) setExtraAnalogues(prev => [...prev, a]);
+    handleToggleAnalogue(a.name);
   };
   const toggleRefs = (key: string) => {
     setExpandedRefs(prev => {
@@ -198,10 +207,12 @@ export default function DomesticPricingPage() {
   const detailApproval = selectedDrug ? (selectedDrug.firstApprovalDate ?? (baseLive && !baseLive.is_failure ? baseLive.approval_date ?? null : null)) : null;
 
   const compareList = selectedDrug ? [
-    { name: selectedDrug.productName, price: selectedDrug.currentPrice, dailyCost: detailDaily, isBase: true },
-    ...(selectedDrug.analogues || []).filter(a => selectedAnalogues.includes(a.name)).map(a => ({
-      name: a.name, price: a.price, dailyCost: liveFill(a.normalizedName, a.dailyCost), isBase: false,
-    })),
+    { name: selectedDrug.productName, price: selectedDrug.currentPrice, dailyCost: detailDaily, isBase: true, dosingUnconfirmed: selectedDrug.dosingUnconfirmed },
+    ...[...(selectedDrug.analogues || []), ...extraAnalogues.filter(x => !(selectedDrug.analogues || []).some(y => y.name === x.name))]
+      .filter(a => selectedAnalogues.includes(a.name)).map(a => ({
+        name: a.name, price: a.price, dailyCost: liveFill(a.normalizedName, a.dailyCost), isBase: false,
+        dosingUnconfirmed: !!a.dosingUnconfirmed,
+      })),
   ] : [];
 
   const showEmptyPrompt = search.trim().length < 2;
@@ -455,9 +466,9 @@ export default function DomesticPricingPage() {
                       </div>
                       <div className="grid grid-cols-3 gap-2 pt-1">
                         {[
-                          { label: '일치료비', value: detailDaily ? `₩${detailDaily.toLocaleString()}` : '-' },
-                          { label: '월치료비', value: detailMonthly ? `₩${detailMonthly.toLocaleString()}` : '-' },
-                          { label: '연치료비', value: detailYearly ? `₩${detailYearly.toLocaleString()}` : '-' },
+                          { label: '일치료비', value: detailDaily ? `₩${detailDaily.toLocaleString()}` : selectedDrug.dosingUnconfirmed ? '용법 미확정' : '-' },
+                          { label: '월치료비', value: detailMonthly ? `₩${detailMonthly.toLocaleString()}` : selectedDrug.dosingUnconfirmed ? '용법 미확정' : '-' },
+                          { label: '연치료비', value: detailYearly ? `₩${detailYearly.toLocaleString()}` : selectedDrug.dosingUnconfirmed ? '용법 미확정' : '-' },
                         ].map((s, i) => (
                           <div key={i} className={`rounded-lg p-2 text-center ${miniStatBg}`}>
                             <p className={`text-xs mb-1 ${textMuted}`}>{s.label}</p>
@@ -465,6 +476,9 @@ export default function DomesticPricingPage() {
                           </div>
                         ))}
                       </div>
+                      {detailDaily == null && selectedDrug.dosingUnconfirmed && (
+                        <p className={`text-xs mt-2 leading-relaxed ${textMuted}`}>주사제 용법을 확정하지 못해 일치료비를 계산하지 않았습니다 (약가를 일치료비로 쓰지 않음). 대표 용법이 등록되면 바이알 수·주기 기준으로 계산됩니다.</p>
+                      )}
                       {/* 투약비 용법 가정 — 숫자만 보면 바이알 수·주기를 알 수 없다 */}
                       {detailDaily != null && (
                         <p className={`text-xs mt-2 leading-relaxed ${textMuted}`}>
@@ -492,7 +506,7 @@ export default function DomesticPricingPage() {
                     </div>
                     <div className="flex items-center gap-3">
                       <span className={`text-xs ${textSub}`}>동일성분 등재 품목: <span className={`font-semibold ${textMain}`}>{selectedDrug.sameIngredientCount}개</span></span>
-                      <button onClick={() => setShowModal(true)} disabled={(selectedDrug.analogues || []).length === 0}
+                      <button onClick={() => setShowModal(true)}
                         className={`flex items-center gap-1.5 border text-xs px-3 py-1.5 rounded-lg cursor-pointer transition-colors whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed ${isDark ? 'bg-[#1E2530] border-[#2A3545] text-[#8B9BB4] hover:text-white' : 'bg-gray-100 border-gray-300 text-gray-600 hover:text-gray-900'}`}>
                         <span className="w-4 h-4 flex items-center justify-center"><i className="ri-add-line text-sm"></i></span>아날로그 선택
                       </button>
@@ -517,7 +531,7 @@ export default function DomesticPricingPage() {
                                   )}
                                 </>
                               ) : (
-                                <p className={`text-xs ${textMuted}`}>{enrichingSet.size > 0 ? '조회 중...' : '정보 없음'}</p>
+                                <p className={`text-xs ${textMuted}`}>{item.dosingUnconfirmed ? '용법 미확정' : enrichingSet.size > 0 ? '조회 중...' : '정보 없음'}</p>
                               )}
                             </div>
                           </div>
@@ -527,7 +541,7 @@ export default function DomesticPricingPage() {
                   ) : (
                     <div className={`text-center py-8 ${textMuted}`}>
                       <span className="w-8 h-8 flex items-center justify-center mx-auto mb-2"><i className="ri-add-circle-line text-2xl"></i></span>
-                      <p className="text-sm">{(selectedDrug.analogues || []).length === 0 ? '검색 결과 내 비교 가능한 약제가 없습니다 (성분명으로 검색하면 후보가 늘어납니다)' : '아날로그 약제를 선택하여 비교하세요'}</p>
+                      <p className="text-sm">{(selectedDrug.analogues || []).length === 0 ? '같은 성분의 다른 품목이 없습니다 — \'아날로그 선택\'에서 다른 약제를 검색해 비교하세요' : '아날로그 약제를 선택하여 비교하세요'}</p>
                     </div>
                   )}
                 </div>
@@ -650,8 +664,9 @@ export default function DomesticPricingPage() {
 
       {selectedDrug && (
         <AnalogueCompareModal open={showModal} onClose={() => setShowModal(false)}
-          baseProduct={{ name: selectedDrug.productName, price: selectedDrug.currentPrice, dailyCost: detailDaily }}
-          analogues={selectedDrug.analogues || []} selected={selectedAnalogues} onToggle={handleToggleAnalogue} isDark={isDark} />
+          baseProduct={{ name: selectedDrug.productName, price: selectedDrug.currentPrice, dailyCost: detailDaily, insuranceCode: selectedDrug.insuranceCode }}
+          analogues={selectedDrug.analogues || []} extras={extraAnalogues} selected={selectedAnalogues}
+          onToggle={handleToggleAnalogue} onPick={handlePickAnalogue} isDark={isDark} />
       )}
     </div>
   );

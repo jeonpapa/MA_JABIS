@@ -177,6 +177,56 @@ def _normalize_brand(name: str) -> str:
     return s.strip()
 
 
+def _strength_suffix_key(rp: dict) -> str:
+    """제품명 suffix 의 '총량/용량'(예: 0.12g/2.4mL) → 'NNNmg' 키. 정제 '0.1289g/1정' 처럼 총량/용량이 아니면 ''
+    (표기만 다른 같은 정제가 갈라지지 않도록 — 분리는 주사·액제의 총량 표기에서만)."""
+    m = _VIAL_TOTAL_RE.search((rp.get("dosage_form") or "").strip())
+    if not m:
+        return ""
+    mg = float(m.group(1)) * (1000.0 if m.group(2).lower() == "g" else 1.0)
+    return f"{mg:g}mg"
+
+
+def _strength_split_keys(raw_products: list[dict]) -> dict:
+    """병합 키 안에 서로 다른 함량 suffix 가 2개 이상인 그룹만 함량별 키('정규화명|suffix')를 돌려준다.
+    suffix 없는 코드는 현재가가 가장 가까운 함량 쪽에 붙인다. 반환: insurance_code → group_key."""
+    groups: dict[str, list[dict]] = {}
+    for rp in raw_products:
+        nk = _normalize_brand(rp.get("product_name") or "")
+        if nk:
+            groups.setdefault(nk, []).append(rp)
+    out: dict = {}
+    for nk, rows in groups.items():
+        variants: dict[str, list[dict]] = {}
+        for rp in rows:
+            k = _strength_suffix_key(rp)
+            if k:
+                variants.setdefault(k, []).append(rp)
+        if len(variants) < 2:
+            continue
+        label = {k: (v[0].get("dosage_form") or k) for k, v in variants.items()}
+        for k, v in variants.items():
+            for rp in v:
+                out[rp["insurance_code"]] = f"{nk}|{label[k]}"
+        for rp in rows:
+            if _strength_suffix_key(rp):
+                continue
+            price = rp.get("current_price") or 0
+            best = min(variants, key=lambda k: abs((variants[k][0].get("current_price") or 0) - price))
+            out[rp["insurance_code"]] = f"{nk}|{label[best]}"
+    return out
+
+
+def _is_injection_product(p: dict) -> bool:
+    """국내 제품이 주사제인지 — 제품명 '…주', '…주사', '…주(', 프리필드/시린지/펜, 또는 suffix 가 mL 용량."""
+    name = p.get("product_name") or ""
+    base = re.sub(r"_\([^)]*\)\s*$", "", name)
+    base = re.sub(r"\([^)]*\)", "", base).strip()
+    if re.search(r"(주|주사|주사액|주사제)$", base) or re.search(r"프리필드|시린지|펜주|주사", base):
+        return True
+    return bool(re.search(r"\d\s*m[lL]\b|mL", p.get("dosage_form") or ""))
+
+
 def _parse_product(name: str) -> dict:
     """product_name_kr 에서 브랜드명·주성분·제형을 추출."""
     brand_m = _NAME_RE.search(name)
@@ -325,16 +375,25 @@ def price_changes():
     #    브랜드명+용량만 일치하면 (회사·코드·성분표기·제형 suffix 무시) 같은 제품으로 간주.
     #    예: '자누비아정100mg' / '자누비아정100밀리그램(인산시타글립틴일수화물)' /
     #        '자누비아정100밀리그램(시타글립틴인산염수화물)_(0.1289g/1정)' → 모두 '자누비아정100mg'
+    #    2026-11-03 (개선 요청 6): 함량이 제품명 suffix 에만 있는 주사제(임핀지주 0.12g / 0.5g)는 정규화 키가 같아
+    #    서로 다른 함량이 한 행으로 합쳐졌다(120mg 이름에 500mg 가격·이력). 같은 키 안에 서로 다른 함량 suffix 가
+    #    2개 이상이면 함량별로 나눈다. suffix 가 없는 옛 코드는 가격이 가장 가까운 함량 쪽에 붙인다.
+    split_keys = _strength_split_keys(raw_products)
     merge_map: dict = {}
     for rp in raw_products:
         norm_key = _normalize_brand(rp["product_name"])
         if not norm_key:  # 정규화 실패 — 원본 코드로 개별 유지
             merge_map[f"__single__::{rp['insurance_code']}"] = rp
             continue
-        if norm_key not in merge_map:
+        group_key = split_keys.get(rp["insurance_code"], norm_key)
+        if group_key != norm_key:
+            sfx = group_key.split("|", 1)[1]
+            rp["brand_name"] = f"{rp.get('brand_name') or norm_key} {sfx}"
+        if group_key not in merge_map:
             rp["normalized_name"] = norm_key
-            merge_map[norm_key] = rp
+            merge_map[group_key] = rp
             continue
+        norm_key = group_key
         # 병합
         existing = merge_map[norm_key]
         by_date: dict = {h["date"]: h for h in existing["price_history"]}
@@ -887,9 +946,14 @@ def _enrich_products(products: list[dict]) -> None:
         # 전혀 매칭되지 않은 경우 — heuristic fallback. 단 usage_text 가 적응증 텍스트면
         # daily_cost 산출 자체가 신뢰 불가 → unit price 보존하되 `usage_unverified` 마킹.
         _heuristic_used = False
+        # 2026-11-03 (개선 요청 6): 주사제는 용법을 확정하지 못하면 약가를 일치료비로 쓰지 않는다(빈 칸 + '용법 미확정').
+        dosing_unconfirmed = False
         if daily_cost is None and current_price > 0:
-            daily_cost = current_price
-            _heuristic_used = True
+            if _is_injection_product(p):
+                dosing_unconfirmed = True
+            else:
+                daily_cost = current_price
+                _heuristic_used = True
         if _heuristic_used and not usage_text:
             usage_text = "용법 미확정 · 1정/일 추정 — 정확한 용법은 조사 필요"
 
@@ -934,8 +998,10 @@ def _enrich_products(products: list[dict]) -> None:
             "direct" if (e and not donor_norm) else
             ("inherited_generic:" + donor_norm) if donor_norm else
             "default_heuristic" if _heuristic_used else
+            "dosing_unconfirmed" if dosing_unconfirmed else
             None
         )
+        p["dosing_unconfirmed"] = dosing_unconfirmed
         # BSA/체중 기반 dosing 산출 결과 expose (UI 가 표준 환자 기준 명시 가능)
         if bsa_calc:
             p["bsa_calc"] = {

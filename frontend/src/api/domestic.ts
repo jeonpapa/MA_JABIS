@@ -26,6 +26,8 @@ export interface DomesticAnalogue {
   normalizedName?: string;
   insuranceCode?: string;
   mergedCodes?: string[];
+  /** 주사제인데 용법 미확정 — 일치료비를 계산하지 않음 */
+  dosingUnconfirmed?: boolean;
 }
 
 export interface DomesticProduct {
@@ -73,6 +75,8 @@ export interface DomesticProduct {
   costRationale: string | null;
   /** 용법 미확정 — 1단위/일 추정(default_heuristic) 등 */
   costHeuristic: boolean;
+  /** 주사제 용법 미확정 — 서버가 약가를 일치료비로 쓰지 않음 (2026-11-03) */
+  dosingUnconfirmed: boolean;
 
   // 백엔드 소스 없음 — UI 는 '정보 없음' 고정 (날조 금지)
   evalCommitteeDoc: null;
@@ -116,6 +120,7 @@ interface RawProduct {
   enrichment_confidence?: string | null;
   dosing_assumption?: string | null;
   enrichment_source?: string | null;
+  dosing_unconfirmed?: boolean;
   bsa_calc?: { rationale?: string | null } | null;
   is_rsa?: 0 | 1 | null;
   rsa_type?: string | null;
@@ -204,6 +209,7 @@ function mapProduct(raw: RawProduct, allRaw: RawProduct[]): DomesticProduct {
       normalizedName: p.normalized_name,
       insuranceCode: p.insurance_code,
       mergedCodes: p.merged_codes ?? [p.insurance_code],
+      dosingUnconfirmed: !!p.dosing_unconfirmed,
     }));
 
   const permitDate = raw.mfds_permit?.permit_date ?? null;
@@ -251,6 +257,7 @@ function mapProduct(raw: RawProduct, allRaw: RawProduct[]): DomesticProduct {
     dosingAssumption: raw.dosing_assumption ?? null,
     costRationale: raw.bsa_calc?.rationale ?? null,
     costHeuristic: raw.enrichment_source === 'default_heuristic',
+    dosingUnconfirmed: !!raw.dosing_unconfirmed,
 
     evalCommitteeDoc: null,
   };
