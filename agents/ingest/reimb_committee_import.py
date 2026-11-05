@@ -769,6 +769,16 @@ def _upsert_drug(conn: sqlite3.Connection, d: dict) -> int:
             f"WHERE drug_id = ?",
             [vals[c] for c in set_cols] + [drug_id])
         return drug_id
+    # 암질심 자동 후보(origin='news_auto')가 같은 브랜드로 이미 있으면 새 행 대신 그 행을 헤르메스 정본 값으로 승격한다
+    # (표기·성분이 달라 UNIQUE(brand_kr, ingredient_inn) 가 안 걸려도 중복 카드가 생기지 않게). origin 은 'news_auto_promoted'.
+    from agents.amjilsim_tracker.candidate_discovery import find_auto_candidate
+    auto_id = find_auto_candidate(conn, d["brand_kr"])
+    if auto_id is not None:
+        conn.execute(
+            f"UPDATE amjilsim_drugs SET {', '.join(f'{c}=?' for c in cols)}, origin='news_auto_promoted' "
+            f"WHERE drug_id = ?",
+            [vals[c] for c in cols] + [auto_id])
+        return auto_id
     cur = conn.execute(
         f"INSERT INTO amjilsim_drugs ({', '.join(cols)}) "
         f"VALUES ({', '.join('?' for _ in cols)})",
@@ -999,6 +1009,11 @@ def run(source: "str | Path | dict | None" = None) -> dict:
                              (_json.dumps(sup["key_issues"], ensure_ascii=False), did))
         conn.commit()
 
+        # 2026-11-05 — 헤르메스 확인 기록·이벤트 정정 (payload 선택 키, 없으면 no-op)
+        verify_res = _apply_verifications(conn, payload.get("verifications") or {})
+        removal_res = _apply_event_removals(conn, payload.get("event_removals") or [])
+        conn.commit()
+
         # 등재 차수가 있는 브랜드: 새 이벤트를 규칙으로 차수에 연결(모든 차수가 끝난 뒤의 새 심의 = 새 차수, needs_review)
         rounds_synced = _sync_event_rounds(conn, drug_ids)
         conn.commit()
@@ -1016,9 +1031,102 @@ def run(source: "str | Path | dict | None" = None) -> dict:
             "events_added": events_added,
             "events_total": events_total,
             "rounds_synced": rounds_synced,
+            "verified_applied": verify_res["applied"],
+            "verified_unmatched": verify_res["unmatched"],
+            "events_removed": removal_res["removed"],
+            "event_removals_unmatched": removal_res["unmatched"],
         }
     finally:
         conn.close()
+
+
+# ── 확인 기록(verifications) · 이벤트 정정(event_removals) — 2026-11-05 ─────────────────
+# verifications: {brand_kr: {"verified_at": "YYYY-MM-DD", "source": "HIRA brdBltNo=11927 …", "note": "변화 없음"}}
+#   헤르메스가 최신 회차·공단 자료까지 확인했지만 새 결과가 없을 때 남긴다. 보드는 확인일이 60일 안이면 '오래된 카드' 로
+#   보지 않는다(공단 자료 확인과 같은 규칙). 브랜드는 정확히 일치 → 없으면 제형·함량을 뺀 brand core 일치(유일할 때만).
+# event_removals: [{"brand_kr", "committee": AMJILSIM|YAKPYUNGWI, "state", "queue_entry_date"|"session_date", "reason"}]
+#   잘못 들어간 큐 이벤트(초기 입력 placeholder·오기 날짜) 삭제. 정정은 삭제 + drugs[].events 에 올바른 이벤트 추가.
+#   여러 건이 맞으면 지우지 않고 unmatched 로 돌려준다(모호한 삭제 금지). 이미 지워졌으면 no-op(멱등).
+_ISO_DAY = __import__("re").compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _find_drug_id(conn: sqlite3.Connection, brand_kr: str):
+    row = conn.execute("SELECT drug_id FROM amjilsim_drugs WHERE brand_kr = ?", (brand_kr,)).fetchone()
+    if row:
+        return row["drug_id"]
+    from agents.amjilsim_tracker.candidate_discovery import brand_core
+    core = brand_core(brand_kr)
+    hits = [r["drug_id"] for r in conn.execute("SELECT drug_id, brand_kr FROM amjilsim_drugs") if brand_core(r["brand_kr"]) == core]
+    return hits[0] if len(hits) == 1 else None
+
+
+def _ensure_verify_columns(conn: sqlite3.Connection) -> None:
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(amjilsim_drugs)")}
+    for c in ("last_verified_at", "last_verified_source"):
+        if c not in cols:
+            conn.execute(f"ALTER TABLE amjilsim_drugs ADD COLUMN {c} TEXT")
+
+
+def _apply_verifications(conn: sqlite3.Connection, verifications: dict) -> dict:
+    out = {"applied": 0, "unmatched": []}
+    if not verifications:
+        return out
+    _ensure_verify_columns(conn)
+    for brand, v in verifications.items():
+        v = v if isinstance(v, dict) else {"verified_at": v}
+        day = str(v.get("verified_at") or "")[:10]
+        if not _ISO_DAY.match(day):
+            out["unmatched"].append(f"{brand}: verified_at 형식 오류 {v.get('verified_at')!r}")
+            continue
+        did = _find_drug_id(conn, brand)
+        if did is None:
+            out["unmatched"].append(f"{brand}: 약제 없음/모호")
+            continue
+        src = " · ".join(x for x in (str(v.get("source") or "").strip(), str(v.get("note") or "").strip()) if x)[:500]
+        # 더 오래된 확인일로 덮지 않는다
+        conn.execute("UPDATE amjilsim_drugs SET last_verified_at = ?, last_verified_source = ? "
+                     "WHERE drug_id = ? AND (last_verified_at IS NULL OR last_verified_at <= ?)", (day, src or None, did, day))
+        out["applied"] += 1
+    return out
+
+
+def _apply_event_removals(conn: sqlite3.Connection, removals: list) -> dict:
+    out = {"removed": 0, "unmatched": []}
+    for rm in removals:
+        if not isinstance(rm, dict) or not rm.get("brand_kr"):
+            out["unmatched"].append(f"형식 오류: {rm!r}"[:200])
+            continue
+        did = _find_drug_id(conn, rm["brand_kr"])
+        if did is None:
+            out["unmatched"].append(f"{rm['brand_kr']}: 약제 없음/모호")
+            continue
+        where, params = ["q.drug_id = ?"], [did]
+        if rm.get("committee"):
+            where.append("q.committee_type = ?"); params.append(rm["committee"])
+        if rm.get("state"):
+            where.append("q.queue_state = ?"); params.append(rm["state"])
+        if rm.get("queue_entry_date"):
+            where.append("q.queue_entry_date = ?"); params.append(rm["queue_entry_date"])
+        if rm.get("session_date"):
+            where.append("s.session_date = ?"); params.append(rm["session_date"])
+        if len(where) < 3:   # 브랜드만으로는 지우지 않는다 — 날짜/상태 중 최소 하나 더
+            out["unmatched"].append(f"{rm['brand_kr']}: 조건 부족(위원회·상태·날짜 중 2개 이상 필요)")
+            continue
+        ids = [r["id"] for r in conn.execute(
+            "SELECT q.id FROM amjilsim_drug_queue_status q LEFT JOIN amjilsim_sessions s ON s.session_id = q.session_id "
+            f"WHERE {' AND '.join(where)}", params)]
+        if len(ids) > 1:
+            out["unmatched"].append(f"{rm['brand_kr']}: {len(ids)}건 일치 — 모호해서 지우지 않음")
+            continue
+        if not ids:
+            continue   # 이미 지워짐(멱등)
+        has_links = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='reimb_round_events'").fetchone()
+        if has_links:
+            conn.execute("DELETE FROM reimb_round_events WHERE queue_id = ?", (ids[0],))
+        conn.execute("DELETE FROM amjilsim_drug_queue_status WHERE id = ?", (ids[0],))
+        logger.info("[reimb_import] 이벤트 삭제 %s #%s (%s)", rm["brand_kr"], ids[0], rm.get("reason") or "")
+        out["removed"] += 1
+    return out
 
 
 def _sync_event_rounds(conn: sqlite3.Connection, drug_ids) -> int:

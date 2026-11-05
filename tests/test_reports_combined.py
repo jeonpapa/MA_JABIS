@@ -301,3 +301,47 @@ def test_real_manifest_dry_run_ingests_combined_entry(rdb, stubs):
     assert res["errors"] == [] and combined[0]["file_name"] in res["ingested"]
     row = next(r for r in _rows(rdb) if r["file_name"] == combined[0]["file_name"])
     assert row["committee"] is None and row["committee_scope"] == "combined"
+
+
+def test_existing_report_follows_manifest_meta_change(rdb, stubs):
+    """2026-11-05: 결과 리뷰 session_date 를 회차일로 교정해도 file_hash skip 때문에 DB 가 안 바뀌던 문제 — 메타만 갱신한다."""
+    first = rr.sync_reports({"schema_version": 1, "reports": [EVAL_ONLY]})
+    assert len(first["ingested"]) == 1
+    with rr._connect() as conn:
+        fh, before = conn.execute("SELECT file_hash, session_date FROM reimb_reports").fetchone()
+    fixed = {**EVAL_ONLY, "file_hash": fh, "session_date": "2026-10-01"}
+    assert before != "2026-10-01"
+    res = rr.sync_reports({"schema_version": 1, "reports": [fixed]})
+    assert res["ingested"] == [] and res["skipped"] == 1
+    assert res["meta_updated"][0]["changes"]["session_date"] == [before, "2026-10-01"]
+    with rr._connect() as conn:
+        assert tuple(conn.execute("SELECT session_date, COUNT(*) FROM reimb_reports").fetchone()) == ("2026-10-01", 1)
+    again = rr.sync_reports({"schema_version": 1, "reports": [fixed]})
+    assert again["meta_updated"] == []          # 멱등
+
+
+def test_reports_missing_from_manifest_are_retired_not_deleted(rdb, stubs):
+    """2026-11-05: 헤르메스가 중복 결과 리뷰를 매니페스트에서 지워도 운영 행이 남던 문제 — git_sync 행만 숨긴다."""
+    rr.sync_reports({"schema_version": 1, "reports": [COMBINED, EVAL_ONLY]})
+    with rr._connect() as conn:
+        hashes = {r["file_name"]: r["file_hash"] for r in conn.execute("SELECT file_name, file_hash FROM reimb_reports")}
+    keep = {**COMBINED, "file_hash": hashes[COMBINED["file_name"]]}
+    # 절반 이상 빠지면(2건 중 1건) 비정상으로 보고 숨기지 않는다
+    res = rr.sync_reports({"schema_version": 1, "reports": [keep]}, prune_missing=True)
+    assert res["retired"] == [] and len(rr.list_reports()) == 2
+    # prune_missing=False(로컬 폴백)면 아예 보지 않는다
+    assert rr.sync_reports({"schema_version": 1, "reports": [keep]})["retired"] == []
+
+
+def test_retire_and_unretire_with_safety_ratio(rdb, stubs, monkeypatch):
+    entries = [{**EVAL_ONLY, "file_name": f"2026-06-0{i}_r{i}.pdf", "url": f"https://raw.example/r{i}.pdf",
+                "file_hash": None} for i in range(1, 6)]
+    for e in entries:
+        rr.sync_reports({"schema_version": 1, "reports": [e]})
+    with rr._connect() as conn:
+        fh = {r["file_name"]: r["file_hash"] for r in conn.execute("SELECT file_name, file_hash FROM reimb_reports")}
+    full = [{**e, "file_hash": fh[e["file_name"]]} for e in entries]
+    res = rr.sync_reports({"schema_version": 1, "reports": full[:4]}, prune_missing=True)
+    assert res["retired"] == [entries[4]["file_name"]] and len(rr.list_reports()) == 4
+    res = rr.sync_reports({"schema_version": 1, "reports": full}, prune_missing=True)   # 다시 넣으면 복귀
+    assert res["retired"] == [] and len(rr.list_reports()) == 5

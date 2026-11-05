@@ -458,6 +458,8 @@ def check_committee_reports(ctx: Ctx) -> Freshness:
     reports = [{"session_date": d, "committee": c, "committee_scope": sc, "report_type": t, "title": title}
                for d, c, sc, t, title in _rows(ctx, f"SELECT session_date, committee, {scope_col}, report_type, title "
                                                     "FROM reimb_reports WHERE session_date >= ? AND session_date < ? "
+                                                    + (" AND retired_at IS NULL " if any(r[1] == "retired_at" for r in _rows(ctx, "PRAGMA table_info(reimb_reports)")) else "")
+                                                    + 
                                                     "ORDER BY session_date", (r_since, r_until))]
     missing = [s for s in sessions
                if not any(report_covers_session(r, {"committee_type": s[2], "session_date": s[1]}) for r in reports)]
@@ -499,6 +501,38 @@ def check_pipeline_expected_sessions(ctx: Ctx) -> Freshness:
                   "런북 reimb_data_sync 는 같은 JSON 을 다시 적용할 뿐(해시 동일 → skip)이라 무효. 조치: 헤르메스/사람이 "
                   "committee_results.json 의 expected_next_session 을 다음 차수로 옮기거나 결과를 drugs/events 에 기록 → 02:00 sync 가 반영")
     return Freshness("pipeline_expected_sessions", bool(rows), oldest, cutoff, evidence, None, 2)
+
+
+# ── 7b' 보드 카드 갱신 정체 (2026-11-05, improvement — 담당 헤르메스) ─────────────
+# 급여 현황 보드는 '최근 갱신' 이 STALE_DAYS(60일) 넘은 카드를 화면에만 경고했고 원장 과제가 없어 아무도 고치지 않았다
+# (2026-11-05 실측: 57장 중 28장, 대부분 6/11 초기 입력 그대로 147일). 카드 판정은 reimb_pipeline.build_pipeline 하나로 —
+# 화면과 같은 규칙(공단 자료로 최근 확인된 카드·협상 완료·위원회 이벤트 없는 암질심 자동 후보는 제외)이다.
+PIPELINE_STALE_LIST_MAX = 12
+
+
+def check_pipeline_stale_cards(ctx: Ctx) -> Freshness:
+    from agents.reimb_pipeline import STALE_DAYS, build_pipeline
+    conn = _open(ctx.db_path)
+    try:
+        board = build_pipeline(conn, ctx.today.isoformat())
+    finally:
+        conn.close()
+    cards = [(st["id"], d) for st in board["stages"] for d in st["drugs"]]
+    stale = [(sid, d) for sid, d in cards if d.get("isStale")]
+    auto = sum(1 for _, d in cards if d.get("autoCandidate"))
+    stale.sort(key=lambda x: (not x[1].get("msdFlag"), -(x[1].get("staleDays") or 0)))
+    stage_kr = {"cancer": "암질심", "evaluation": "약평위", "nhis": "공단"}
+    listing = ", ".join(f"{'[MSD] ' if d.get('msdFlag') else ''}{d['name']}({stage_kr.get(sid, sid)} {d.get('staleDays')}일)"
+                        for sid, d in stale[:PIPELINE_STALE_LIST_MAX])
+    more = f" 외 {len(stale) - PIPELINE_STALE_LIST_MAX}장" if len(stale) > PIPELINE_STALE_LIST_MAX else ""
+    oldest = max((d.get("staleDays") or 0 for _, d in stale), default=None)
+    evidence = (f"보드 카드 {len(cards)}장 중 '최근 갱신' {STALE_DAYS}일 초과 {len(stale)}장"
+                + (f"(최장 {oldest}일): {listing}{more}. " if stale else ". ")
+                + f"제외: 공단 자료 또는 헤르메스 확인 기록(verifications)으로 {STALE_DAYS}일 안에 확인된 카드·협상 완료·위원회 이벤트 없는 암질심 자동 후보({auto}장). "
+                  "조치: 헤르메스가 각 카드의 최신 위원회·공단 상태를 committee_results.json(drugs/events·expected_next_session)에 "
+                  "반영하고, 확인했지만 새 결과가 없으면 verifications[브랜드] = {verified_at, source(HIRA brdBltNo 등), note} 를 남긴다 → "
+                  "02:00 reimb_data_sync. 잘못 들어간 이벤트는 event_removals 로 지운다(agents/ingest/REIMB_DATA_README.md)")
+    return Freshness("pipeline_stale_cards", bool(stale), str(len(stale)), "0", evidence, None, 2, kind="improvement")
 
 
 # ── 7c 급여 체크리스트 커버리지 (P1.6, improvement — 담당 사람) ─────────────
@@ -832,6 +866,7 @@ DOMAIN_CHECKS: dict[str, Callable[[Ctx], Freshness]] = {
     "committee_results": check_committee_results,
     "committee_reports": check_committee_reports,
     "pipeline_expected_sessions": check_pipeline_expected_sessions,
+    "pipeline_stale_cards": check_pipeline_stale_cards,
     "reimbursement_checklist_coverage": check_reimbursement_checklist_coverage,
     "reimbursement_checklist_mfds_gap": check_reimbursement_checklist_mfds_gap,
     "human_backlog": check_human_backlog,
@@ -905,6 +940,7 @@ HERMES_ACTIONS: dict[str, str] = {
     "committee_results": "committee_results.json 회차 결과 작성·커밋 필요 (최초 미반영 회차 {observed})",
     "committee_reports": "D+1 결과 리뷰 PDF + reports_manifest.json 발행 필요 (창 안 최신 보고서 {observed})",
     "pipeline_expected_sessions": "committee_results.json expected_next_session 갱신 필요 (최초 경과 차수 {observed})",
+    "pipeline_stale_cards": "급여 현황 보드 카드 갱신 필요 ({observed}장, 60일 초과) — committee_results.json 에 최신 결과 또는 verifications(확인일·출처) 반영",
     "committee_schedule": "다음 약평위·암질심 차수 일정 확보 → admin 입력 요청 (마지막 SCHEDULED {observed}, HIRA fetcher 미구현)",
     "analog_reports": "약평위 결과 아날로그 반영 확인 (마지막 {observed}) — 주간 잡 drec_analog_sync 결과·HIRA 게시 여부 확인",
     "market_share": "마켓셰어 분기 엑셀 업로드 요청 (마지막 {observed}) — admin /admin/market-share",

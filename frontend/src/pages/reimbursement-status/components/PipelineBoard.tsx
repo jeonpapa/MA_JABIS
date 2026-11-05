@@ -17,6 +17,7 @@ const STAGE_META: Record<PipelineStage['id'], { label: string; description: stri
 const ISSUE_HINT = '핵심 쟁점: 위원회 결과·사전 검토 보고서에서 정리한 이 약제의 심의 쟁점 수. 카드를 누르면 내용을 볼 수 있습니다.';
 const NHIS_OFFICIAL_HINT = '공단 공식: 국민건강보험공단 약가협상 공개자료와 매칭되어, 협상 상태·연월이 공단 공개자료 기준입니다.';
 const STALE_HINT = `최근 갱신: 이 약제의 심의·협상 기록이 마지막으로 바뀐 날. ${STALE_DAYS}일 넘게 바뀌지 않았고 공단 자료로도 최근 확인되지 않으면 경고합니다.`;
+const AUTO_CANDIDATE_HINT = '암질심 관련 기사에서 자동으로 추가된 후보입니다. 위원회 상정·논의 기록이 생기기 전까지는 갱신 경고 대상이 아닙니다.';
 
 const STATUS_BADGE: Record<PipelineDrug['status'], { label: string; dark: string; light: string }> = {
   completed:   { label: '협상 완료', dark: 'text-emerald-300 bg-emerald-400/10 border-emerald-400/30', light: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
@@ -86,6 +87,11 @@ function DrugCard({ drug, index, isDark, onClick }: {
           <span className={`ml-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded align-middle ${
             isDark ? 'bg-[#00E5CC]/15 text-[#00E5CC]' : 'bg-teal-50 text-teal-600'
           }`}>MSD</span>
+        )}
+        {drug.autoCandidate && (
+          <span title={AUTO_CANDIDATE_HINT} className={`ml-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded align-middle ${
+            isDark ? 'bg-amber-400/10 text-amber-300' : 'bg-amber-50 text-amber-700'
+          }`}>자동 후보</span>
         )}
       </h4>
 
@@ -157,9 +163,19 @@ function DrugCard({ drug, index, isDark, onClick }: {
             title={STALE_HINT + (drug.nhisCheckedAt ? ` (공단 자료 확인 ${drug.nhisCheckedAt})` : '')}
           >
             <i className={`${drug.isStale ? 'ri-error-warning-line' : 'ri-history-line'} text-[11px] mr-1`}></i>
-            최근 갱신 {drug.updatedDate ?? '기록 없음'}
+            {drug.autoCandidate
+              ? `첫 발견 ${drug.firstSeenAt ?? '기록 없음'} · 상정 확인 전`
+              : `최근 갱신 ${drug.updatedDate ?? '기록 없음'}`}
             {drug.isStale && drug.staleDays != null && ` · ${drug.staleDays}일 경과`}
           </span>
+          {drug.verifiedAt && !drug.autoCandidate && (
+            <span
+              className={`text-[10px] ${isDark ? 'text-emerald-300/80' : 'text-emerald-600'}`}
+              title={`최신 회차·공단 자료까지 확인한 날${drug.verifiedSource ? ` — ${drug.verifiedSource}` : ''}`}
+            >
+              <i className="ri-shield-check-line text-[11px] mr-1"></i>확인 {drug.verifiedAt}
+            </span>
+          )}
         </div>
         {drug.keyIssues.length > 0 && (
           <span

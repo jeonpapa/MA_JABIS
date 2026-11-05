@@ -51,7 +51,8 @@ VALID_TIERS = ("A", "B", "D")
 DEFAULT_LOOKBACK_DAYS = 8  # 주 1회 크롤 + 1일 오버랩 (멱등 INSERT 라 중복 무해)
 
 # 위원회 일반 키워드 — 약제명 없이도 위원회 기사에서 약물 거명을 잡는 보조축.
-COMMITTEE_KEYWORDS = ("암질심", "약제급여평가위원회")
+# 2026-11-05: 암질심 상정 후보 자동 발굴(candidate_discovery)용으로 정식 명칭 2종 추가 — 약칭만으로는 정식 명칭 기사를 놓친다.
+COMMITTEE_KEYWORDS = ("암질심", "암질환심의위원회", "중증(암)질환심의위원회", "약제급여평가위원회")
 
 
 @dataclass

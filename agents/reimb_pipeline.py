@@ -109,6 +109,7 @@ def list_meetings() -> list[dict]:
 
 
 STALE_DAYS = 60  # 카드 '최근 갱신' 이 이보다 오래되면 경고 (공단 자료로 최근 확인된 건 제외)
+AUTO_CANDIDATE_ORIGIN = "news_auto"  # agents.amjilsim_tracker.candidate_discovery.ORIGIN_NEWS_AUTO 와 동일
 
 _DECISIVE_STATES = ("APPROVED", "REJECTED_REQUEUE", "WITHDRAWN", "QUEUE_PROCESSED")
 
@@ -555,16 +556,20 @@ def _nhis_drug_dates(conn: sqlite3.Connection, drug_id: int,
 
 
 def _freshness(drug_id: int, queue_rows: list, conn: sqlite3.Connection, today: str,
-               round_id: Optional[int] = None) -> dict:
-    """카드 날짜 라벨 — '최근 갱신'(상태 기록이 마지막으로 바뀐 날)과 '공단 자료 확인'(NHIS 목록 재확인)을 분리."""
+               round_id: Optional[int] = None, verified_at: Optional[str] = None) -> dict:
+    """카드 날짜 라벨 — '최근 갱신'(상태 기록이 마지막으로 바뀐 날)과 '공단 자료 확인'(NHIS 목록 재확인)을 분리.
+
+    verified_at(2026-11-05): 헤르메스가 최신 회차·공단 자료까지 확인했지만 새 결과가 없다고 남긴 날
+    (committee_results.json verifications → amjilsim_drugs.last_verified_at). 공단 자료 확인과 같이 STALE_DAYS 안이면 stale 아님."""
     observed = [q["observed_at"] for q in queue_rows if q["observed_at"]]
     nhis_seen, nhis_checked = _nhis_drug_dates(conn, drug_id, round_id)
     updated = max([x for x in observed + [nhis_seen] if x], default=None)
     stale_days = _days_between(updated, today)
     checked_days = _days_between(nhis_checked, today)
-    is_stale = bool(stale_days is not None and stale_days > STALE_DAYS
-                    and not (checked_days is not None and checked_days <= STALE_DAYS))
-    return {"updatedDate": updated, "nhisCheckedAt": nhis_checked,
+    verified_days = _days_between(verified_at, today)
+    recently_checked = any(d is not None and d <= STALE_DAYS for d in (checked_days, verified_days))
+    is_stale = bool(stale_days is not None and stale_days > STALE_DAYS and not recently_checked)
+    return {"updatedDate": updated, "nhisCheckedAt": nhis_checked, "verifiedAt": verified_at,
             "staleDays": stale_days, "isStale": is_stale}
 
 
@@ -591,7 +596,14 @@ def _pipeline_drug_dict(drug: sqlite3.Row, queue_rows: list[sqlite3.Row],
     # 카드 수준 예상 상태: 타임라인의 미도래 위원회 단계 중 예상일이 있는 것의 성격 ('overdue' 가 하나라도 있으면 overdue)
     exp_statuses = [t.get("expectedStatus") for t in timeline if t.get("expectedStatus")]
     expected_status = ("overdue" if "overdue" in exp_statuses else exp_statuses[0] if exp_statuses else None)
-    fresh = _freshness(drug["drug_id"], queue_rows, conn, today, round_meta.get("roundId"))
+    fresh = _freshness(drug["drug_id"], queue_rows, conn, today, round_meta.get("roundId"),
+                       verified_at=_row_get(drug, "last_verified_at"))
+    # 암질심 자동 후보(origin='news_auto', 2026-11-05 결정): 위원회 이벤트가 생기기 전에는 '갱신 대상 아님' —
+    # 상정되지 않거나 논의가 없으면 그대로 둔다(stale 경고·신선도 과제 제외). 이벤트가 생기면 일반 카드와 같다.
+    origin = _row_get(drug, "origin")
+    auto_candidate = origin == AUTO_CANDIDATE_ORIGIN and not queue_rows
+    if auto_candidate:
+        fresh = {**fresh, "isStale": False}
     raw_issues = _key_issues(drug)
     item = {
         "id": drug["drug_id"],
@@ -628,8 +640,13 @@ def _pipeline_drug_dict(drug: sqlite3.Row, queue_rows: list[sqlite3.Row],
         # 최근 갱신 = 이 약제 상태 기록(큐 관측·공단 자료 변화)이 마지막으로 바뀐 날. 60일 초과 시 isStale.
         "updatedDate": fresh["updatedDate"],
         "nhisCheckedAt": fresh["nhisCheckedAt"],
+        "verifiedAt": fresh["verifiedAt"],
+        "verifiedSource": _row_get(drug, "last_verified_source"),
         "staleDays": fresh["staleDays"],
         "isStale": fresh["isStale"] and status != "completed",  # 협상 완료 건은 갱신 대상 아님
+        "origin": origin,
+        "autoCandidate": auto_candidate,
+        "firstSeenAt": _row_get(drug, "first_seen_at"),
         "nextStep": next_step_label(stage, status),
         "lastResult": last_result(drug, queue_rows),
         "history": _history(queue_rows, drug),
@@ -731,36 +748,41 @@ def get_pipeline(include_completed: bool = False) -> dict:
     등재 차수가 분할된 브랜드는 차수마다 카드 1장(roundLabel). 완료 제외도 차수 단위 — 키트루다 2025 차수가 끝났어도
     2026 차수가 진행 중이면 그 카드만 보인다. completedExcluded = 제외된 카드(차수) 수.
     """
-    today = date.today().isoformat()
+    with _connect() as conn:
+        return build_pipeline(conn, date.today().isoformat(), include_completed)
+
+
+def build_pipeline(conn: sqlite3.Connection, today: str, include_completed: bool = False) -> dict:
+    """get_pipeline 본체 — 연결·기준일을 받는다(신선도 판정기가 읽기 전용 DB·판정일로 같은 카드를 계산)."""
+    conn.row_factory = sqlite3.Row
     stages: dict[str, list[dict]] = {"cancer": [], "evaluation": [], "nhis": []}
     completed_count = 0
-    with _connect() as conn:
-        next_ids = _next_session_ids(conn, today)
-        drugs = conn.execute(
-            "SELECT * FROM amjilsim_drugs ORDER BY brand_kr"
-        ).fetchall()
-        all_rounds = list_rounds(conn)
-        rounds_by_drug: dict[int, list] = {}
-        for r in all_rounds:
-            rounds_by_drug.setdefault(r["drug_id"], []).append(r)
-        links = _event_links(conn)
-        combo_index = _combo_index(conn)
-        for drug in drugs:
-            rounds = rounds_by_drug.get(drug["drug_id"], [])
-            if not rounds:  # 가상 차수 — 기존 동작 그대로
-                if not include_completed and drug["negotiation_status"] == "AGREED":
-                    completed_count += 1
-                    continue
-            elif not include_completed:
-                n_done = sum(1 for r in rounds if r["negotiation_status"] == "AGREED")
-                completed_count += n_done
-                if n_done == len(rounds):
-                    continue
-            for card in drug_round_cards(conn, drug, today, next_ids, rounds, links, combo_index):
-                rnd = card["round"]
-                if rnd is not None and not include_completed and rnd["negotiation_status"] == "AGREED":
-                    continue
-                stages[card["stage"]].append(card["item"])
+    next_ids = _next_session_ids(conn, today)
+    drugs = conn.execute(
+        "SELECT * FROM amjilsim_drugs ORDER BY brand_kr"
+    ).fetchall()
+    all_rounds = list_rounds(conn)
+    rounds_by_drug: dict[int, list] = {}
+    for r in all_rounds:
+        rounds_by_drug.setdefault(r["drug_id"], []).append(r)
+    links = _event_links(conn)
+    combo_index = _combo_index(conn)
+    for drug in drugs:
+        rounds = rounds_by_drug.get(drug["drug_id"], [])
+        if not rounds:  # 가상 차수 — 기존 동작 그대로
+            if not include_completed and drug["negotiation_status"] == "AGREED":
+                completed_count += 1
+                continue
+        elif not include_completed:
+            n_done = sum(1 for r in rounds if r["negotiation_status"] == "AGREED")
+            completed_count += n_done
+            if n_done == len(rounds):
+                continue
+        for card in drug_round_cards(conn, drug, today, next_ids, rounds, links, combo_index):
+            rnd = card["round"]
+            if rnd is not None and not include_completed and rnd["negotiation_status"] == "AGREED":
+                continue
+            stages[card["stage"]].append(card["item"])
     return {
         "stages": [
             {"id": sid, "count": len(items), "drugs": items}
@@ -932,11 +954,12 @@ def _linked_report(conn: sqlite3.Connection, meeting: dict) -> Optional[dict]:
     두 위원회 어느 회차든 session_date ±COMBINED_LINK_WINDOW_DAYS. 같은 회차에 둘 다 있으면 위원회 지정 보고서가 먼저.
     """
     from agents.reimb_reports import report_covers_session, report_scope
-    has_scope = "committee_scope" in {r[1] for r in conn.execute("PRAGMA table_info(reimb_reports)")}
-    scope_col = "committee_scope" if has_scope else "NULL AS committee_scope"
+    rcols = {r[1] for r in conn.execute("PRAGMA table_info(reimb_reports)")}
+    scope_col = "committee_scope" if "committee_scope" in rcols else "NULL AS committee_scope"
+    not_retired = " AND retired_at IS NULL" if "retired_at" in rcols else ""   # 매니페스트에서 빠진 보고서 제외
     rows = conn.execute(
         f"""SELECT id, title, summary, highlights_json, committee, {scope_col}, session_date, year, cycle, analyzed
-            FROM reimb_reports WHERE report_type = 'post' ORDER BY analyzed DESC, id DESC""").fetchall()
+            FROM reimb_reports WHERE report_type = 'post'{not_retired} ORDER BY analyzed DESC, id DESC""").fetchall()
     candidates = [r for r in rows if report_covers_session(dict(r), meeting)]
     if not candidates:
         return None

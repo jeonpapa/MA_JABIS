@@ -188,6 +188,11 @@ export interface PipelineDrug {
   nhisCheckedAt?: string | null; // 'YYYY.MM.DD' — 공단 목록에서 마지막으로 확인한 날
   staleDays?: number | null;  // 최근 갱신 이후 경과일
   isStale?: boolean;          // STALE_DAYS 초과 (공단 자료로 최근 확인된 건 제외)
+  origin?: string | null;     // 'news_auto' = 암질심 기사 자동 후보, 'news_auto_promoted' = 헤르메스 정본으로 승격
+  autoCandidate?: boolean;    // 자동 후보 + 위원회 이벤트 없음 → 갱신 대상 아님(stale 제외)
+  firstSeenAt?: string | null; // 'YYYY.MM.DD' 보드에 처음 들어온 날
+  verifiedAt?: string | null;  // 'YYYY.MM.DD' 헤르메스가 최신 회차·공단 자료까지 확인(변화 없음 포함)한 날
+  verifiedSource?: string | null;
   nextStep?: string;          // '암질심 심의' | '약평위 심의' | '건보공단 협상' | '협상 완료'
   lastResult?: LastResult | null;
   history: DrugHistoryItem[];
@@ -238,6 +243,8 @@ function adaptDrug(d: RawPipelineDrug): PipelineDrug {
     updatedDate: fmtDot(d.updatedDate),
     nhisCheckedAt: fmtDot(d.nhisCheckedAt),
     reimbStartDate: fmtDot(d.reimbStartDate),
+    firstSeenAt: fmtDot(d.firstSeenAt ? d.firstSeenAt.slice(0, 10) : null),
+    verifiedAt: fmtDot(d.verifiedAt ? d.verifiedAt.slice(0, 10) : null),
     history: (d.history ?? []).map(h => ({
       ...h,
       date: fmtDot(h.date),

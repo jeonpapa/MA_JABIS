@@ -356,6 +356,7 @@ def list_reports() -> list[dict]:
         rows = conn.execute(
             "SELECT * FROM reimb_reports ORDER BY session_date DESC, id DESC"
         ).fetchall()
+        rows = [r for r in rows if not ("retired_at" in r.keys() and r["retired_at"])]   # 매니페스트에서 빠진 보고서 숨김
         sessions = _load_sessions(conn)
     out = []
     for r in rows:
@@ -724,7 +725,11 @@ def ingest_from_url(url: str, meta: dict) -> dict:
             "analyzed": bool(analyzed), "error": analysis_error}
 
 
-def sync_reports(source: "str | Path | dict | None" = None) -> dict:
+# 매니페스트가 권위인 메타 — 이미 적재된 보고서도 매니페스트가 바뀌면 이 컬럼들을 따라간다(title·요약은 LLM 분석 결과라 제외)
+_SYNCED_META_COLS = ("session_date", "committee", "committee_scope", "report_type", "year", "cycle")
+
+
+def sync_reports(source: "str | Path | dict | None" = None, *, prune_missing: bool = False) -> dict:
     """매니페스트 기반 보고서 git-sync. 각 항목 file_hash 가 DB 에 없으면 download+ingest.
 
     반환에 manifest_hash 포함 (스케줄러 해시게이트용). 멱등·무재다운로드(file_hash dedup).
@@ -738,16 +743,28 @@ def sync_reports(source: "str | Path | dict | None" = None) -> dict:
     entries = manifest.get("reports", [])
 
     with _connect() as conn:
-        existing = {r["file_hash"] for r in conn.execute(
-            "SELECT file_hash FROM reimb_reports").fetchall()}
+        existing = {r["file_hash"]: dict(r) for r in conn.execute(
+            f"SELECT file_hash, {', '.join(_SYNCED_META_COLS)} FROM reimb_reports").fetchall()}
 
-    ingested, skipped, errors, warnings = [], 0, [], []
+    ingested, skipped, errors, warnings, meta_updated = [], 0, [], [], []
     for e in entries:
         if not isinstance(e, dict):
             errors.append({"file": None, "url": None, "error": f"항목이 객체가 아님: {e!r}"[:200]})
             continue
         fh = e.get("file_hash")
         if fh and fh in existing:
+            # 이미 적재된 PDF — 매니페스트 메타(회차일·위원회·유형·연도·차수)만 바뀐 경우 반영한다(2026-11-05: 결과 리뷰
+            # session_date 를 회차일로 교정해도 file_hash skip 때문에 DB 가 영영 안 바뀌던 문제). 재다운로드·LLM 없음.
+            meta, err = normalize_report_meta(e)
+            if not err:
+                changes = {c: meta.get(c) for c in _SYNCED_META_COLS if meta.get(c) != existing[fh].get(c)}
+                if changes:
+                    with _connect() as conn:
+                        conn.execute(f"UPDATE reimb_reports SET {', '.join(f'{c}=?' for c in changes)} WHERE file_hash=?",
+                                     [*changes.values(), fh])
+                        conn.commit()
+                    meta_updated.append({"file": e.get("file_name"),
+                                         "changes": {c: [existing[fh].get(c), v] for c, v in changes.items()}})
             skipped += 1
             continue
         meta, err = validate_manifest_entry(e)
@@ -771,5 +788,33 @@ def sync_reports(source: "str | Path | dict | None" = None) -> dict:
             skipped += 1
         else:
             errors.append({"file": e.get("file_name"), "url": e.get("url"), "error": res.get("error")})
+    retired = _retire_missing(entries) if prune_missing else []
     return {"manifest_hash": m_hash, "reports_in_manifest": len(entries),
-            "ingested": ingested, "skipped": skipped, "errors": errors, "warnings": warnings}
+            "ingested": ingested, "skipped": skipped, "errors": errors, "warnings": warnings,
+            "meta_updated": meta_updated, "retired": retired}
+
+
+def _retire_missing(entries: list) -> list:
+    """매니페스트에서 빠진 git_sync 보고서를 목록에서 숨긴다(retired_at) — 2026-11-05: 헤르메스가 중복 결과 리뷰를 매니페스트에서
+    지워도 운영 행이 남던 문제. 행·PDF 는 지우지 않는다(되돌리기 가능: 매니페스트에 다시 넣으면 retired_at 해제).
+    inbox 등 다른 경로로 들어온 행은 건드리지 않는다. 안전장치: 매니페스트가 비었거나 기존 git_sync 행의 절반 이상이 빠지면
+    (잘못된 매니페스트·로컬 폴백 의심) 아무것도 숨기지 않는다."""
+    keep = {e.get("file_hash") for e in entries if isinstance(e, dict) and e.get("file_hash")}
+    with _connect() as conn:
+        if "retired_at" not in {r[1] for r in conn.execute("PRAGMA table_info(reimb_reports)")}:
+            conn.execute("ALTER TABLE reimb_reports ADD COLUMN retired_at TEXT")
+        rows = conn.execute("SELECT id, file_hash, file_name, retired_at FROM reimb_reports WHERE source = 'git_sync'").fetchall()
+        missing = [r for r in rows if r["file_hash"] not in keep]
+        if not keep or (rows and len(missing) * 2 >= len(rows)):
+            if missing:
+                logger.warning("[reimb_reports] 매니페스트에서 빠진 보고서 %d/%d — 비정상 비율이라 숨기지 않음", len(missing), len(rows))
+            return []
+        conn.execute("UPDATE reimb_reports SET retired_at = NULL WHERE source = 'git_sync' AND retired_at IS NOT NULL "
+                     f"AND file_hash IN ({','.join('?' * len(keep))})", list(keep))
+        out = []
+        for r in missing:
+            if r["retired_at"] is None:
+                conn.execute("UPDATE reimb_reports SET retired_at = datetime('now') WHERE id = ?", (r["id"],))
+                out.append(r["file_name"])
+        conn.commit()
+    return out

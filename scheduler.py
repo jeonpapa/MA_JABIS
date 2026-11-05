@@ -29,7 +29,8 @@ from agents.agent_tasks.jobs import guarded_job, resolve_db_path
 from agents.domestic_price_agent import DomesticPriceAgent
 from agents.dashboard_agent import DashboardAgent
 from agents.ingest.policy_analysis_sync import sync_analysis as _sync_policy_analysis
-from agents.ingest.daily_mailing_sync import sync_daily_mailing_runs as _sync_daily_mailing_runs  # noqa: F401  (헤르메스 버스 retire — 롤백용 보존)
+from agents.ingest.daily_mailing_sync import sync_daily_mailing_runs as _sync_daily_mailing_runs
+from agents.daily_mailing.sender import hermes_sends as _dm_hermes_sends
 from agents.ingest.daily_mailing_scope_export import export_scopes as _export_daily_mailing_scopes
 from agents.runtime_env import is_production
 
@@ -530,7 +531,12 @@ def access_insight_fresh_signal_job():
     logger.info("신선 신호 크롤 완료: articles=%d matched=%d inserted=%d dup=%d (tier별 %s)",
                 res.get("articles", 0), res.get("matched", 0), res.get("inserted", 0),
                 res.get("duplicate_skipped", 0), res.get("by_tier", {}))
-    return {"counts": {k: res.get(k, 0) for k in ("articles", "matched", "inserted", "duplicate_skipped")}}
+    cand = res.get("candidates") or {}
+    logger.info("암질심 후보 자동 추가: 기사 %s · 추출 %s · 추가 %s %s · skip %s%s",
+                cand.get("amjilsim_articles", 0), cand.get("extracted", 0), len(cand.get("added", [])),
+                [a.get("brand_kr") for a in cand.get("added", [])], len(cand.get("skipped", [])),
+                f" · 오류 {cand['error']}" if cand.get("error") else "")
+    return {"counts": {k: res.get(k, 0) for k in ("articles", "matched", "inserted", "duplicate_skipped", "candidates_added")}}
 
 
 @guarded_job("competitor_trend_promote")
@@ -565,7 +571,8 @@ def _reimb_committee_data_sync() -> dict:
             fallback = f"{type(e).__name__}: {e}"
     else:
         payload = imp.load_payload(None)
-    new_hash = imp.payload_hash(payload)
+    # 해시 게이트 버전 — v2(2026-11-05): verifications·event_removals 도입. 배포 전에 커밋된 JSON 도 배포 후 첫 sync 에서 한 번 적용.
+    new_hash = "v2:" + imp.payload_hash(payload)
 
     hash_file = BASE_DIR / "data" / "reimb" / ".last_applied_hash"
     prev_hash = hash_file.read_text().strip() if hash_file.exists() else ""
@@ -605,19 +612,28 @@ def _reimb_reports_sync() -> dict:
             fallback = f"{type(e).__name__}: {e}"
     else:
         manifest = rr.load_reports_manifest(None)
-    m_hash = _hl.sha256(_j.dumps(manifest, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+    # 해시 게이트 버전 — v2(2026-11-05): 기존 보고서 메타 갱신(sync_reports meta_updated) 도입. 버전이 바뀌면 배포 후 첫 sync 가
+    # 매니페스트가 그대로여도 한 번 다시 돌아 이미 커밋된 메타 교정(예: 결과 리뷰 session_date)을 반영한다.
+    # v3(2026-11-05): 매니페스트에서 빠진 git_sync 보고서 숨김(prune) 도입 — 배포 후 첫 sync 1회 재실행.
+    m_hash = _hl.sha256(("v3:" + _j.dumps(manifest, ensure_ascii=False, sort_keys=True)).encode()).hexdigest()
     if m_hash == prev_rhash:
         logger.info("보고서 sync: 매니페스트 변경 없음 (hash %s) — skip", m_hash[:12])
         return {"counts": {"changed": 0}, "fallback": fallback, "errors": []}
-    rres = rr.sync_reports(manifest)
+    rres = rr.sync_reports(manifest, prune_missing=fallback is None and bool(rsrc))   # 원격 매니페스트일 때만 숨김
     rhash_file.parent.mkdir(parents=True, exist_ok=True)
     rhash_file.write_text(m_hash)
     for w in rres.get("warnings") or []:   # 매니페스트 file_hash ≠ PDF — 적재는 됐고, 매니페스트가 바뀔 때만 재다운로드라 과제 아님(로그)
         logger.warning("보고서 sync 경고 %s: %s", w.get("file"), w.get("warning"))
     logger.info("보고서 sync 완료: 매니페스트 %d · 신규적재 %d · skip %d · 오류 %d · hash %s",
                 rres["reports_in_manifest"], len(rres["ingested"]), rres["skipped"], len(rres["errors"]), m_hash[:12])
+    for f in rres.get("retired") or []:
+        logger.info("보고서 sync: 매니페스트에서 빠진 보고서 숨김 %s", f)
+    for mu in rres.get("meta_updated") or []:
+        logger.info("보고서 sync 메타 갱신 %s: %s", mu.get("file"), mu.get("changes"))
     return {"counts": {"manifest": rres["reports_in_manifest"], "ingested": len(rres["ingested"]),
-                       "skipped": rres["skipped"], "warnings": len(rres.get("warnings") or [])},
+                       "skipped": rres["skipped"], "warnings": len(rres.get("warnings") or []),
+                       "meta_updated": len(rres.get("meta_updated") or []),
+                       "retired": len(rres.get("retired") or [])},
             "fallback": fallback,
             "errors": [(f"{e.get('file') or e.get('url')}: {e.get('error')}" if isinstance(e, dict) else str(e))[:200]
                        for e in rres["errors"]]}
@@ -656,20 +672,47 @@ def reimb_data_sync_job():
     return {"ok": not errors, "counts": counts, "errors": errors}
 
 
+@guarded_job("daily_mailing_scope_export")
 def daily_mailing_scope_export_job():
-    """15분 주기 + 부팅 1회 — Daily Mailing 모니터링 스콥 OUTBOUND export.
+    """15분 주기 — Daily Mailing 모니터링 스콥 OUTBOUND export (sender=hermes 일 때만).
 
     active 구독의 dashboard_scope 를 로컬 스냅샷 + 비공개 repo
     (jeonpapa/AccessRoutineAnalystic `daily_mailing/scopes/`) 에 발행한다 —
-    inbound run-sync 의 대칭 (같은 repo 가 양방향 버스). 서버 훅의 즉시 export 가
-    실패해도 이 잡이 권위 발행 백스톱. 멱등(내용 동일 시 PUT 생략) + prune
+    inbound run-sync 의 대칭 (같은 repo 가 양방향 버스). 멱등(내용 동일 시 PUT 생략) + prune
     (삭제/비활성 구독 원격 제거). 토큰(DAILY_MAILING_SCOPES_TOKEN) 미설정 시 local-only.
+    sender=server 이면 no-op (서버가 DB 스콥으로 직접 생성).
     """
-    try:
-        res = _export_daily_mailing_scopes(publish=True)
+    if not _dm_hermes_sends():
+        return {"ok": True, "counts": {"skipped_sender": 1}}
+    res = _export_daily_mailing_scopes(publish=True)
+    errs = res.get("errors") or []
+    if errs or res.get("published") or res.get("pruned"):
         logger.info("daily mailing scope export: %s", res)
-    except Exception as e:
-        logger.warning("daily mailing scope export 실패: %s", e)
+    return {"ok": not errs,
+            "counts": {"active": _n(res.get("active")), "published": _n(res.get("published")),
+                       "pruned": _n(res.get("pruned"))},
+            "errors": [f"{e.get('name')}: {e.get('error')}"[:300] for e in errs if isinstance(e, dict)]}
+
+
+@guarded_job("daily_mailing_runs_sync")
+def daily_mailing_runs_sync_job():
+    """20분 주기 — 헤르메스 run 번들(`daily_mailing/runs/<날짜>/`) → 칸반·이력·헬스 (sender=hermes 일 때만).
+
+    최근 3일 폴더만 보고 바뀐 blob 만 받는다. 발송 증빙(delivery_status=sent + gmail_message_id)이 있어야
+    sent_at 을 기록한다 — draft 생성·runner 성공은 발송으로 보지 않는다.
+    """
+    if not _dm_hermes_sends():
+        return {"ok": True, "counts": {"skipped_sender": 1}}
+    res = _sync_daily_mailing_runs()
+    errs = list(res.get("errors") or [])
+    if res.get("error"):
+        errs.append({"name": "<source>", "error": res["error"]})
+    if res.get("imported") or errs:
+        logger.info("daily mailing runs sync: %s", {k: v for k, v in res.items() if k != "duplicates"})
+    return {"ok": not errs,
+            "counts": {"imported": _n(res.get("imported")), "skipped": _n(res.get("skipped")),
+                       "sent_recorded": _n(res.get("sent_recorded"))},
+            "errors": [f"{e.get('name')}: {e.get('error')}"[:300] for e in errs if isinstance(e, dict)]}
 
 
 def _n(x) -> int:
@@ -680,6 +723,8 @@ def _n(x) -> int:
 def daily_mailing_dispatch_job():
     """10분 주기 — 발송 시각이 된 구독 브리핑 생성 → 승인 대기/자동 발송 + 실패 재시도 (설계 §6).
     생성 실패 구독(errors)은 과제로 — 하루 1건(ref 에 날짜), 다음 tick 에 성공하면 런북이 닫는다."""
+    if _dm_hermes_sends():   # 2026-10-27 — 헤르메스가 생성·발송. 서버 자체 생성·발송·재시도 안 함(중복 발송 방지)
+        return {"ok": True, "counts": {"skipped_sender": 1}}
     from agents.daily_mailing.dispatch import DispatchDeps, dispatch_due_subscriptions
     res = dispatch_due_subscriptions(DispatchDeps.production())
     if res.get("generated") or res.get("errors") or res.get("expired") or res.get("retried"):
@@ -692,7 +737,9 @@ def daily_mailing_dispatch_job():
 
 @guarded_job("daily_mailing_top_news")
 def daily_mailing_top_news_job():
-    """매일 06:40 — '오늘의 주요 MA 뉴스' 산출·캐시 (06:30 뉴스 수집 직후, 구독 공통)."""
+    """매일 06:40 — '오늘의 주요 MA 뉴스' 산출·캐시 (06:30 뉴스 수집 직후, 구독 공통). sender=hermes 면 no-op."""
+    if _dm_hermes_sends():
+        return {"ok": True, "counts": {"skipped_sender": 1}}
     from agents.daily_mailing.dispatch import DispatchDeps
     from agents.daily_mailing.schedule import KST
     # retry_failed=True — 앞선 10분 tick 이 실패해 음성 캐시가 남아도 06:40 정기 잡은 1회 재시도.
@@ -1033,7 +1080,8 @@ def build_job_specs(sched_cfg: dict) -> list[JobSpec]:
 
     ForeignPrice 주간 백필은 **비활성화**(2026-07-24) — 전체 indications_master 세트를 매주 재스크레이프해
     append 하면서 검색 히스토리 고정 노출·행 무한 누적 문제. 수동 `--price-backfill-now` 만 보존.
-    Daily Mailing 헤르메스 git 버스(runs_sync 07:30 · scope_export 15분)는 retire — 함수/CLI 는 롤백용 보존, 잡 미등록.
+    Daily Mailing 은 두 모드 모두 같은 잡 id 를 등록하고 `agents/daily_mailing/sender.py` 의 sender 가 동작을 고른다
+    (2026-10-27 hermes 복귀): hermes = scope_export·runs_sync 동작 + dispatch·top_news no-op / server = 그 반대.
     placeholder 4개(amjilsim D-2/D+1/월간 트렌드 · HIRA 일정 fetcher)는 P1.5 Task 7 에서 등록 해제 — backend 미구현으로
     매일 거짓 '성공' 만 남겼다. 함수/CLI 보존, 미구현 사실은 signals.KNOWN_DEBTS 가 원장 improvement 과제로 유지한다.
     """
@@ -1072,6 +1120,12 @@ def build_job_specs(sched_cfg: dict) -> list[JobSpec]:
                 misfire_grace_time=INTERVAL_GRACE),
         JobSpec("daily_mailing_top_news", "Daily Mailing 주요 MA 뉴스 매일 06:40", daily_mailing_top_news_job,
                 _cron(hour=6, minute=40)),
+        JobSpec("daily_mailing_scope_export", "Daily Mailing 스콥 → 헤르메스 채널 발행 (15분, sender=hermes)",
+                daily_mailing_scope_export_job, IntervalTrigger(minutes=15, timezone="Asia/Seoul"),
+                misfire_grace_time=INTERVAL_GRACE),
+        JobSpec("daily_mailing_runs_sync", "Daily Mailing 헤르메스 run 번들 → 칸반 동기화 (20분, sender=hermes)",
+                daily_mailing_runs_sync_job, IntervalTrigger(minutes=20, timezone="Asia/Seoul"),
+                misfire_grace_time=INTERVAL_GRACE),
         JobSpec("daily_mailing_health", "Daily Mailing 헬스체크 매일 09:30", daily_mailing_health_job, _cron(hour=9, minute=30)),
         JobSpec("nhis_negotiation_sync", "NHIS 약가협상 공개자료 주간 sync (신규/확대 → 매칭 교체)", nhis_negotiation_sync_job,
                 _cron(day_of_week="mon", hour=2, minute=30), misfire_grace_time=PERIODIC_GRACE),

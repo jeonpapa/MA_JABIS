@@ -226,8 +226,12 @@ def match_and_apply(conn: sqlite3.Connection, rows: list[dict],
     결정한다. 과거 완료 건이 있어도 더 최근에 새 적응증(확대 등)으로 협상 중이면
     그 약제는 '협상 중'(IN_PROGRESS) — 보드에 노출되어야 한다.
     (예: 키트루다 확대 2025-10 완료 + 확대 2026-05 진행중 → 현재 협상중.)"""
+    # 2026-11-05 사용자 결정 — 공단 연동은 암질심 자동 후보에 닿지 않는다: origin='news_auto'(헤르메스 승격 전) 행은
+    # 매칭 대상에서 빠진다(공단 행은 audit 으로). 미매칭 공단 행으로 약제를 만들지 않는 것도 그대로(자동 생성 없음).
+    has_origin = "origin" in {c[1] for c in conn.execute("PRAGMA table_info(amjilsim_drugs)")}
     drugs = conn.execute(
-        "SELECT drug_id, brand_kr, manufacturer FROM amjilsim_drugs").fetchall()
+        "SELECT drug_id, brand_kr, manufacturer FROM amjilsim_drugs"
+        + (" WHERE origin IS NULL OR origin != 'news_auto'" if has_origin else "")).fetchall()
 
     # drug_id → 적용 후보 (최신 등록연월 = 현재 상태)
     apply_map: dict[int, dict] = {}

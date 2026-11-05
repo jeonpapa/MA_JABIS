@@ -197,6 +197,9 @@ def run_fresh_crawl(
     db_path: Optional[PathLike] = None,
     keywords: Optional[Sequence[str]] = None,
     tiers: Sequence[str] = ("A", "B", "D"),
+    discover: bool = True,
+    candidate_extractor=None,
+    permit_lookup=None,
     **fetchers,
 ) -> dict:
     """신선 신호 파이프라인 1회 실행: tier 크롤(1-pass) → 신호 추출·적재.
@@ -221,7 +224,20 @@ def run_fresh_crawl(
         a for a in fetch_articles(keywords, lookback_days, **fetchers)
         if a.tier in wanted
     ]
+    # 암질심 상정 후보 자동 추가(2026-11-05 결정) — 신호 적재 전에 돌려서 새 후보도 같은 실행에서 신호가 붙게 한다.
+    # 실패해도 신호 크롤은 계속(후보 발굴은 부속 단계).
+    discovery: dict = {}
+    if discover:
+        try:
+            from agents.amjilsim_tracker.candidate_discovery import discover_candidates
+            discovery = discover_candidates(articles, db_path=db_path, extractor=candidate_extractor,
+                                            permit_lookup=permit_lookup)
+        except Exception as e:
+            logger.exception("[signal_extractor] 암질심 후보 발굴 실패: %s", e)
+            discovery = {"error": f"{type(e).__name__}: {e}"}
     stats = extract_signals(articles, db_path=db_path)
+    stats["candidates"] = discovery
+    stats["candidates_added"] = len(discovery.get("added", []))
     stats["articles"] = len(articles)
     stats["keywords"] = len(keywords)
     stats["lookback_days"] = lookback_days
