@@ -29,7 +29,7 @@
 | 미국 US | Micromedex RED BOOK | **WAC** (AWP 금지) | WAC × **0.74** | 없음 — 미확정 |
 | 영국 UK | MIMS (NHS List Price) | NHS 정가 | × **0.73** | MIMS 권한 제한 시 NHSBSA dm+d "NHS Indicative Price"(VAT 제외, 출처 라벨 명시). BNF 는 영국 밖 403 |
 | 독일 DE | Rote Liste (DocCheck 로그인) | **AVP (EB)/FB** (포장 가격, VAT 포함). EB/FB 칸이 비어 있는 포장만 **AVP/UVP 대체** — 대시보드·엑셀에 "AVP/UVP 대체" 표시 | 별도 산식 `[(AVP/1.19 − 8.35)/1.03 − 0.7]/1.0315 × 0.93` (부가세 19%, 약국마진 3%+€8.35, 도매마진 3.15%+€0.70, 환급률 공장도가의 7%) — 실효 비율 €100≈0.66, €1,000≈0.73, 고가≈0.735 | EB/FB 미표시 → AVP/UVP(대체 표시). 둘 다 없으면 미확정 |
-| 프랑스 FR | BdM_IT(Assurance Maladie) PFHT — **현재 접속 불가** → **관보(Journal officiel) 가격 공시 PFHT** | **PFHT**(세금 제외 공장도가). 병원 전용(liste en sus)은 관보 L.162-16-6 의 **UCD 별 tarif de responsabilité HT**(= Vidal "Prix et tarif de responsabilité (HT) par UCD") | PFHT × **0.77** | 공적 급여되나 공장도가 미확인: Vidal/BDPM 공중가 × **0.65** (`source_type="vidal"`) |
+| 프랑스 FR | **BdM_IT(Assurance Maladie) PFHT — 서버 수집**(2026-11-10 복구·관보 10건 일치 확인). 안 열리면 **관보(Journal officiel) 가격 공시 PFHT**(브라우저) | **PFHT**(세금 제외 공장도가). 병원 전용(liste en sus)은 관보 L.162-16-6 의 **UCD 별 tarif de responsabilité HT**(= Vidal "Prix et tarif de responsabilité (HT) par UCD") | PFHT × **0.77** | 공적 급여되나 공장도가 미확인: Vidal/BDPM 공중가 × **0.65** (`source_type="vidal"`) |
 | 이탈리아 IT | AIFA TrovaNorme 결정문(DET PRES/UPR 등) | **Prezzo ex-factory (IVA esclusa)** | × **0.93** (공장도가에도 적용) | Classe A 공중가(Prezzo al pubblico)는 쓰지 않는다 — 미확정 |
 | 스위스 CH | BAG Spezialitätenliste(SL) 공개 API | **FAP**(Fabrikabgabepreis, VAT 제외) | FAP × **0.73** | SL 에 약가가 없을 때만 Compendium 판매가 × **0.65** |
 | 일본 JP | 후생노동성 약가기준 목록 | 단가(약국판매가) | × **0.79** | 없음 |
@@ -37,7 +37,8 @@
 
 ### 국가별 실무 메모
 - **DE**: 상세 페이지 하단 `PACKUNGSANGABEN` 표 열은 `포장 | N | PZN | AVP (EB)/FB | AVP/UVP`. 포장별로 행을 만든다(28정·1바이알·2 KIT 등). 기준은 **AVP (EB)/FB**(2026-11-02 사용자 결정 — 10-26 의 AVP/UVP 기준을 뒤집음). AVP/UVP 는 `extra.avp_uvp_reference`로 보존하고, EB/FB 가 없는 포장에서만 가격으로 쓰며 `price_basis_warning`으로 화면에 표시한다. `Preisstand`는 자료 기준일이지 가격 시행일이 아니다(→ `extra.price_as_of`, `effective_date=null`). DocCheck 는 좌석·세션 서비스 — 조회 후 로그아웃. 이 PC 네트워크에서 DocCheck(195.82.66.x)가 막힌 적이 있다(2026-10-19) — 다른 사이트가 정상이면 DE 를 failed 로 사유 기록.
-- **FR**: BdM_IT(`codage.ext.cnamts.fr`)는 2026-10 중순부터 파리 포함 전 세계에서 응답 없음(2026-10-27 외부 점검 13개국, ameli.fr 은 정상, 2026-01 에도 같은 장애). 같은 CEPS 공식 가격이 관보 「Avis relatif aux prix de spécialités pharmaceutiques」에 실린다. Légifrance 는 **브라우저로** 연다(스크립트 요청은 Cloudflare 403, 브라우저는 수 초 후 자동 통과). 검색: `https://www.legifrance.gouv.fr/search/jorf?tab_selection=jorf&searchField=ALL&query=<상표>&sortValue=PUBLI_DATE_DESC` → 가장 최근 "Avis relatif aux prix…". 공시 PPTTC 가 BDPM 현재 공중가와 같으면 그 공시가 현재 유효하다. 시행일은 공시 문구(`à compter du …`, `…jour suivant la publication`, `Date d'effet` 열)로 정한다. BDPM 파일에는 PFHT 가 없다. 공장도가는 고가약에서 공중가의 약 96%(마진 상한제).
+- **FR (2026-11-10 사용자 결정)**: 1순위 **BdM_IT 서버 수집**(`server-collect REQUEST_ID FR`, `agents/foreign_sources/fr_bdm_it.py`). 약국 유통은 CIP 상세의 *Prix Fabricant HT*, 병원 전용은 UCD 상세의 **TAA MCO(liste en sus) Prix HT**(rétrocession 칸의 가격 없는 등록은 쓰지 않는다). **시행일 = Date d'application**(판매가 기준일·관보일은 extra). 검증: 관보 기준값 10건(CIP 9·UCD 1) 일치. 사이트가 안 열리면(서버 수집 오류) 아래 관보 브라우저 절차로 간다.
+- **FR (관보 대체 경로)**: BdM_IT(`codage.ext.cnamts.fr`)는 2026-10 중순부터 파리 포함 전 세계에서 응답 없음(2026-10-27 외부 점검 13개국, ameli.fr 은 정상, 2026-01 에도 같은 장애). 같은 CEPS 공식 가격이 관보 「Avis relatif aux prix de spécialités pharmaceutiques」에 실린다. Légifrance 는 **브라우저로** 연다(스크립트 요청은 Cloudflare 403, 브라우저는 수 초 후 자동 통과). 검색: `https://www.legifrance.gouv.fr/search/jorf?tab_selection=jorf&searchField=ALL&query=<상표>&sortValue=PUBLI_DATE_DESC` → 가장 최근 "Avis relatif aux prix…". 공시 PPTTC 가 BDPM 현재 공중가와 같으면 그 공시가 현재 유효하다. 시행일은 공시 문구(`à compter du …`, `…jour suivant la publication`, `Date d'effet` 열)로 정한다. BDPM 파일에는 PFHT 가 없다. 공장도가는 고가약에서 공중가의 약 96%(마진 상한제).
 - **IT**: TrovaNorme API `tnf-service/ricerca/?determinaTNFSource=true&parola=<상표>` → `determina/tnf/pubblicate/<id>` → `allegato/<id>` PDF. AIC별 최신 유효 결정문. Fly 서버에서 이 호스트 DNS 실패가 있었다(2026-10-26) — 브라우저 fetch 는 정상.
 - **CH**: `GET https://epl.bag.admin.ch/api/sl/public/medicinal-products?search=<상표>&page=1&size=25` (page 는 1부터). 포장 수량은 `packSize`("2 Stk")에서 — 키트루다 100mg/4ml 은 SL 에서 **2바이알 1팩**. `lastPriceChange`가 가격 변경일. Compendium 은 Fly IP 를 간헐 차단.
 - **US**: RED BOOK 은 브라우저 로그인 성공, 좌석 제한 — 로그아웃. `price_tier_original="WAC"`, `source_type="redbook_wac"`.
@@ -99,7 +100,7 @@
 
 | 출처 | 증상 | 대응 |
 |---|---|---|
-| BdM_IT (FR) | 전 세계 80/443 시간초과 (2026-10 중순~) | 관보 PFHT. 복구되면 같은 값인지 대조 |
+| BdM_IT (FR) | 2026-10 중순~11월 초 전 세계 접속 불가(2026-01 에도). 2026-11-10 복구 확인 | 안 열리면 관보 PFHT(브라우저) |
 | Légifrance (FR) | curl·서버 요청 Cloudflare 403 | 브라우저로 연다. 비브라우저 공식 경로: DILA JORF 오픈데이터(일 단위 파일), Légifrance PISTE API(계정 필요) — 미구현 |
 | Rote Liste / DocCheck (DE) | 이 PC 네트워크에서 DocCheck 차단 이력 | 다른 사이트 정상이면 DE failed + 사유 |
 | MIMS (UK) | 계정 권한 "Other related role" — 모노그래프 제한 | dm+d NHS Indicative Price |
@@ -118,6 +119,8 @@
 | 2026-10-26 | 저가약 유통거래폭 10.41% 반영 안 함 |
 | 2026-11-02 | DE 기준을 **AVP (EB)/FB** 로 변경(EB 미표시 시 AVP/UVP 대체 + 화면 표시) |
 | 2026-10-27 | FR: BdM_IT 접속 불가 → 관보 PFHT × 0.77, 공장도가 미확인 시 공중가 × 0.65. 행 생성기·업로드 검증 도입 |
+
+| 2026-11-10 | 서버 수집 국가 = DE·CH·JP·US·CA·FR(BdM_IT, 시행일=적용일, 안 열리면 관보 브라우저). **UK·IT 는 브라우저 유지**(UK dm+d 서버 IP 403, IT TrovaNorme 서버 연결 반복 차단·결정문 PDF 사람 확인 필요). 서버 수집기는 한 번에 하나(US 좌석 제한) |
 
 ## 10. 열린 항목
 

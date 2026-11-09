@@ -9,7 +9,7 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request, send_file
 from io import BytesIO
 from api.auth import require_auth
-from api.price_request_ingest import prepare_a8, prepare_oecd, de_rows_from_scraper_items
+from api.price_request_ingest import prepare_a8, prepare_oecd, de_rows_from_scraper_items, rows_from_scraper_records
 from agents.price_request_catalog import CATALOG
 from agents.price_request_store import PriceRequestStore, Conflict, dump
 
@@ -256,7 +256,64 @@ def build_price_request_blueprint(db_path, foreign_agent):
         except Exception as e:
             job.update(status="error", error=f"{type(e).__name__}: {str(e)[:300]}", finished_at=datetime.utcnow().isoformat() + "Z")
 
-    SERVER_COLLECT = ("DE", "CH")
+    # 2026-11-10 사용자 결정: 서버 수집 = DE·CH·JP·US·CA·FR(BdM_IT). 영국·이탈리아는 브라우저 유지.
+    # 브라우저(Chromium)를 띄우는 수집기는 메모리 1GB 서버에서 한 번에 하나만 돈다(US 는 좌석 제한 — 동시 로그인 방지).
+    import threading as _th
+    _collect_lock = _th.Lock()
+
+    def _brand_inn(r):
+        ident = r.get("identity") or {}
+        q = r["query"]
+        brand = (ident.get("brand") or q.split("/")[0]).strip()
+        inn = (ident.get("inn") or (q.split("/")[1] if "/" in q else "")).strip()
+        return brand, inn
+
+    def _run_scraper_collect(cc, r, job):
+        import asyncio
+        try:
+            import time as _time
+            with _collect_lock:
+                job["phase"] = "running"
+                brand, inn = _brand_inn(r)
+                records, errors = [], []
+                # 수집기는 접속 오류(도메인 조회 실패 등)를 0건으로 돌려주기도 한다 — 0건이면 3번까지 다시 시도하고,
+                # 그래도 0건이면 '가격 없음'이 아니라 '확인 필요'로 넘긴다(워커가 브라우저·판정).
+                for attempt in range(3):
+                    for q in [x for x in (brand, inn) if x]:
+                        try:
+                            records = asyncio.run(foreign_agent._build_scraper(cc).run(q)) or []
+                        except Exception as e:
+                            errors.append(f"{q}: {type(e).__name__}: {str(e)[:120]}")
+                            records = []
+                        if records:
+                            job["searched"] = q
+                            break
+                    if records:
+                        break
+                    _time.sleep(5 * (attempt + 1))
+                job["attempts"] = attempt + 1
+            rows, skipped = rows_from_scraper_records(cc, records, foreign_agent)
+            if not records:
+                skipped.append({"reason": "3회 시도 모두 0건 — 접속 오류일 수 있음. 가격 없음으로 판단하지 말고 브라우저로 확인",
+                                "errors": errors[-3:]})
+            job.update(status="done", rows=rows, skipped=skipped, finished_at=datetime.utcnow().isoformat() + "Z")
+        except Exception as e:
+            job.update(status="error", error=f"{type(e).__name__}: {str(e)[:300]}", finished_at=datetime.utcnow().isoformat() + "Z")
+
+    def _run_fr_collect(r, job):
+        """프랑스 BdM_IT(관보 PFHT·UCD tarif HT, 시행일=적용일). 안 열리면 error → 워커가 브라우저로 관보(Légifrance)."""
+        from agents.foreign_sources import fr_bdm_it
+        try:
+            brand, inn = _brand_inn(r)
+            rows, skipped = fr_bdm_it.rows_for(brand, inn)
+            job.update(status="done", rows=rows, skipped=skipped, finished_at=datetime.utcnow().isoformat() + "Z")
+        except fr_bdm_it.BdmItUnavailable as e:
+            job.update(status="error", error=f"BdM_IT unavailable — use browser Journal officiel: {str(e)[:200]}",
+                       finished_at=datetime.utcnow().isoformat() + "Z")
+        except Exception as e:
+            job.update(status="error", error=f"{type(e).__name__}: {str(e)[:300]}", finished_at=datetime.utcnow().isoformat() + "Z")
+
+    SERVER_COLLECT = ("DE", "CH", "JP", "US", "CA", "FR")
 
     @bp.post("/api/price-agent/requests/<rid>/server-collect/<cc>")
     @require_auth(role="price_agent")
@@ -276,9 +333,16 @@ def build_price_request_blueprint(db_path, foreign_agent):
         job = {"status": "running", "query": r["query"], "started_at": datetime.utcnow().isoformat() + "Z"}
         _collect_jobs[key] = job
         if cc == "DE":
-            threading.Thread(target=_run_de_collect, args=(r["query"], job), daemon=True).start()
-        else:
+            def _de_locked(q, j):
+                with _collect_lock:
+                    _run_de_collect(q, j)
+            threading.Thread(target=_de_locked, args=(r["query"], job), daemon=True).start()
+        elif cc == "CH":
             threading.Thread(target=_run_ch_collect, args=(r, job), daemon=True).start()
+        elif cc == "FR":
+            threading.Thread(target=_run_fr_collect, args=(r, job), daemon=True).start()
+        else:
+            threading.Thread(target=_run_scraper_collect, args=(cc, r, job), daemon=True).start()
         return jsonify(job), 202
 
     @bp.get("/api/price-agent/requests/<rid>/server-collect/<cc>")

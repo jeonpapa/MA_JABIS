@@ -106,10 +106,10 @@ async function main() {
   if (command === 'heartbeat') return http(endpoint + '/heartbeat', 'POST', {}, token, state.lease_token);
   if (command === 'server-collect') {
     // 2026-11-06: 브라우저 DocCheck 가 막힐 때만. 서버 Rote Liste 수집기 결과(저장 안 됨)를 --out 파일에 쓴다 → 확인 후 upload.
-    const cc = pos[1]; if (!['DE', 'CH'].includes(cc)) throw new Error('server-collect supports DE and CH only');
+    const cc = pos[1]; if (!['DE', 'CH', 'JP', 'US', 'CA', 'FR'].includes(cc)) throw new Error('server-collect supports DE, CH, JP, US, CA, FR (UK·IT = browser)');
     const out = flag('--out'); if (!out) throw new Error('--out JSONFILE required');
     await http(endpoint + '/server-collect/' + cc, 'POST', {}, token, state.lease_token);
-    const deadline = Date.now() + 8 * 60 * 1000;
+    const deadline = Date.now() + 12 * 60 * 1000;   // 브라우저 수집기는 서버에서 한 번에 하나 — 대기 포함
     while (Date.now() < deadline) {
       await new Promise(r => setTimeout(r, 15000));
       const job = await http(endpoint + '/server-collect/' + cc, 'GET', undefined, token, state.lease_token);
@@ -119,7 +119,7 @@ async function main() {
       }
       if (job.status === 'error') throw new Error('server collect failed: ' + job.error);
     }
-    throw new Error('server collect still running after 8 minutes — retry later with the same command');
+    throw new Error('server collect still running after 12 minutes — retry later with the same command');
   }
   const file = flag('--file');
   if (!file) throw new Error('--file JSONFILE required');
