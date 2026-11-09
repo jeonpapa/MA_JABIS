@@ -12,7 +12,9 @@ export interface PriceRequest {
   id: string; query: string; scope: PriceScope; countries: string[]; notify_email: string;
   status: 'queued' | 'processing' | 'awaiting_verification' | 'verified' | 'completed' | 'partial_completed' | 'blocked';
   created_at: string; updated_at: string; verified_at: string | null;
-  notification_status: 'pending' | 'sending' | 'sent' | 'uncertain'; notified_at: string | null;
+  notification_status: 'pending' | 'sending' | 'sent' | 'uncertain' | 'not_required'; notified_at: string | null;
+  /** 'monitor:<run_id>' — 모니터링 회차가 자동으로 만든 요청(요청별 메일 없음) */
+  origin?: string | null;
   country_results: CountryProgress[]; dashboard_url: string;
   /** 표시 보조: 가격행이 있는 국가의 출처 링크·대표 가격 (서버 구버전은 없을 수 있다). */
   country_sources?: Record<string, CountrySource>;

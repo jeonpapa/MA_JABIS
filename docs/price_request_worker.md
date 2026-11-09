@@ -58,7 +58,8 @@ node scripts/price_request_client.mjs heartbeat REQUEST_ID --state SESSION_TMP/l
 - 공식 출처 우선, 제품·INN·회사·제형·투여경로·함량·포장을 일치시킨다. IV와 SC를 대체하지 않는다.
 - 공단 추가국가는 스킬의 국가별 출처로 조사. 과거 스킬의 숫자를 재사용하지 않는다.
 - 공개 목록파일/로컬 스크레이퍼를 사용할 수 있으나 **서버에서 기존 live scrape를 호출하지 않는다**. 로컬 결과를 직접 확인하고 증빙을 남긴다.
-- **예외: 독일(DE) 서버 수집 (2026-11-06 사용자 결정)** — 워커 브라우저에서 DocCheck/Rote Liste 가 막히면(로그인 실패·차단·시간초과) 실패로 끝내지 말고 `node scripts/price_request_client.mjs server-collect REQUEST_ID DE --state … --out SESSION_TMP/de.json` 으로 운영 서버의 Rote Liste 수집기를 돌린다(서버는 저장하지 않고 행만 반환, 최대 8분). 받은 행의 가격 단계(AVP (EB)/FB, EB 미표시 포장만 AVP/UVP 대체)·포장 수·PZN 을 확인한 뒤 평소처럼 `upload … DE --file SESSION_TMP/de.json` → readback·화면 확인. 행이 0개면 사유와 함께 unconfirmed. DE 외 국가는 서버 수집 금지.
+- **서버 수집 국가: 독일(DE)·스위스(CH)** — 스위스는 2026-11-10 모니터링 B안(공개 자료 국가 서버 수집, 사용자 결정)으로 추가. `server-collect REQUEST_ID CH --out …` → BAG SL 공개 API 로 FAP 행을 받는다(제형은 SL 표기에서 추정, 확인 후 업로드). 행이 0개면 SL 미등재 여부를 아래 '가격 미확인 검증'으로 판정한다.
+- **예외: 독일(DE) 서버 수집 (2026-11-06 사용자 결정)** — 워커 브라우저에서 DocCheck/Rote Liste 가 막히면(로그인 실패·차단·시간초과) 실패로 끝내지 말고 `node scripts/price_request_client.mjs server-collect REQUEST_ID DE --state … --out SESSION_TMP/de.json` 으로 운영 서버의 Rote Liste 수집기를 돌린다(서버는 저장하지 않고 행만 반환, 최대 8분). 받은 행의 가격 단계(AVP (EB)/FB, EB 미표시 포장만 AVP/UVP 대체)·포장 수·PZN 을 확인한 뒤 평소처럼 `upload … DE --file SESSION_TMP/de.json` → readback·화면 확인. 행이 0개면 사유와 함께 unconfirmed. DE·CH 외 국가는 서버 수집 금지.
 - A8 국가별 표준 원가격(2026-10-27, README §3): US RED BOOK **WAC**, UK MIMS NHS 정가(권한 제한 시 dm+d), DE Rote Liste **AVP (EB)/FB**(EB/FB 미표시 포장만 AVP/UVP 대체 — 화면 표시), FR **관보 PFHT**(병원 전용은 UCD tarif HT; BdM_IT 접속 불가), IT TrovaNorme **Prezzo ex-factory**, CH **BAG SL FAP**, JP MHLW 단가, CA Ontario 단가. DE·FR·CH 행은 `python3 scripts/a8_rows.py de|fr|ch …` 로 만든다(손 JSON 금지). 가격단계를 다른 단계로 대체하지 않는다.
 - Micromedex/DocCheck는 조회 후 로그아웃. MIMS 권한 제한은 Aside나 주거 IP로 해결된다고 가정하지 않는다.
 - JP/CH도 일반 IP에서 차단이 없어지는지 실제로 확인한다. 접속성 보장은 없다.
@@ -138,3 +139,59 @@ KRW·A8 조정가를 업로드해서 덮어쓰지 않는다. 서버는 기존 �
 - 별도 보관 이전의 요청은 정확한 원행 ID만 조회한다. 원행을 잃었으면 누락 경고를 내고 최신 검색값으로 대체하지 않는다.
 - 시트: 안내 / 국가별 결과 / A8 또는 추가국가 가격 상세 / 출처와 증빙. 정적 결과표로 수식·매크로·외부 통합문서 연결은 없다. 금액/환율/가격단계/VAT/포장/관찰·시행일/출처를 구분한다.
 - API: `GET /api/price-requests/<id>/export.xlsx` (요청자 또는 admin), `GET /api/price-history/export.xlsx?scope=a8|oecd&q=...` (로그인 사용자). price_agent 서비스 계정은 파일 다운로드 권한이 없다.
+
+
+## 해외약가 모니터링 (2026-11-10 사용자 결정)
+
+프로젝트 단위로 대상 약제(개수 제한 없음)·국가·주기(주/월/특정일)·수신자(회사 도메인)를 정하면, 서버 진행기(`price_monitor_tick`, 10분)가
+발송 시각보다 **예상 수집시간 + 12시간 먼저**(최소 30시간 전) 약제별 해외약가 요청을 만든다. 요청은 `origin="monitor:<run_id>"` 로 표시된다.
+
+### 모니터링 요청 처리 (평소 요청과 다른 점)
+
+1. 대기열은 사용자가 직접 넣은 요청이 먼저, 모니터링 요청이 뒤다. 처리 절차(수집 → 업로드 → readback → 화면 확인 → verify)는 같다.
+2. **로그인·차단 국가(US RED BOOK·FR 관보·IT TrovaNorme 등)도 매 회차 실제로 조사한다.** 지난 값 재사용 금지.
+3. verify 가 성공하면 서버가 요청을 바로 완료 처리한다(`notification_status=not_required`). **요청별 결과 메일을 보내지 않는다** — 회차 메일 하나로 묶는다.
+4. **가격 미확인 검증 (필수)**: 모니터링 요청에서 `unconfirmed`/`failed` 를 올릴 때는 `verdict` 와 `verdict_sources` 가 없으면 서버가 거부한다.
+   "실제로 가격이 없는지"를 가격 출처 **밖의** 독립 출처로 확인한 결과다.
+
+   | verdict | 뜻 | 최소 출처(서로 다른 사이트) |
+   |---|---|---|
+   | `not_marketed` | 해당국 미허가·미출시 확인 | 2 |
+   | `not_listed` | 허가는 있으나 공식 가격·급여 목록 미등재 | 2 |
+   | `no_public_price` | 판매 확인, 공개 가격 없음(병원 전용·비공개 협상) | 2 |
+   | `access_blocked` | 접속·로그인 차단으로 검증 불가 → **서버가 그 국가만 최대 2회 재요청** | 1 |
+   | `unresolved` | 확인했으나 판단 불가 | 1 |
+
+   업로드 예:
+   ```json
+   {"status":"unconfirmed","reason":"RED BOOK 검색 0건(상표·INN·NDC)","rows":[],
+    "verdict":"not_marketed",
+    "verdict_sources":[{"url":"https://www.micromedexsolutions.com/…","finding":"RED BOOK 상표·INN 검색 0건"},
+                       {"url":"https://dailymed.nlm.nih.gov/dailymed/search.cfm?query=…","finding":"DailyMed·FDA NDC 목록에 미국 제품 없음"}]}
+   ```
+   국가별 독립 확인 출처(예시, README 국가 규칙 우선):
+   - US: FDA NDC Directory / DailyMed(판매 NDC 유무), Drugs@FDA(허가) — RED BOOK 은 가격 출처
+   - FR: BDPM(base-donnees-publique.medicaments.gouv.fr — 시판·급여율·병원 전용 여부), Légifrance 관보 — 병원 전용(liste rétrocession/UCD)이면 UCD 가격 확인 후 판정
+   - IT: AIFA Banca Dati Farmaci(classe H/C, 시판), Gazzetta Ufficiale — Class C(nn)는 `not_listed`
+   - DE: Rote Liste + Lauer-Taxe/ABDA 공개 정보, EMA 허가 / UK: dm+d·BNF, MHRA / JP: MHLW 薬価基準·PMDA / CA: Ontario Formulary·Health Canada DPD / CH: BAG SL·Swissmedic·Compendium
+   - 확인한 URL 에 자격증명·토큰을 넣지 않는다. 판단 근거(finding)는 실제로 본 내용만 쓴다.
+
+### 회차 메일 (서버 Gmail 토큰이 없을 때만 워커가 보낸다)
+
+서버 Gmail 토큰이 유효하면 서버가 직접 보낸다. 2026-11-10 현재 토큰 만료(`invalid_grant`)로 **워커가 보낸다**. 루틴마다 가격 요청보다 **먼저** 확인한다.
+
+```sh
+node scripts/price_request_client.mjs monitor-mails
+node scripts/price_request_client.mjs monitor-mail-claim RUN_ID --state SESSION_TMP/mlease.json
+node scripts/price_request_client.mjs monitor-mail RUN_ID --state SESSION_TMP/mlease.json --out SESSION_TMP/mail_RUN_ID
+```
+1. 받은 제목·수신자·`body.html`·엑셀 첨부를 그대로 쓴다(내용 수정 금지). 수신자는 서버가 회사 도메인으로 검증한 목록이다.
+2. Gmail(결과 통지용 승인 계정) 확인 → Sent 에서 같은 제목 검색 0건 확인 → `monitor-notify … {"phase":"begin"}`.
+3. Composer 에 수신자·제목, 본문은 body.html 을 TrustedTypes 정책으로 1회 삽입(중복 확인), 엑셀 첨부 업로드 확인 → Send 1회 → Sent 실제 메시지 ID.
+4. `{"phase":"sent","receipt":"gmail:실제ID"}` → 서버가 회차를 `sent` 로 바꾸고 텔레그램 완료 보고를 보낸다.
+5. 모호하면 `{"phase":"uncertain"}` 후 중단, 다음 실행에서 Sent 검색으로 정리. 재발송 금지.
+
+### 텔레그램
+
+서버가 전용 봇(`@MAMONSSU4FUEM_bot`)으로 직접 보낸다: 발송 하루 전 안내(진행률·워커 상태), 발송 지연(12시간마다), 완료 보고(변경 요약).
+비밀값 `TELEGRAM_MONITOR_BOT_TOKEN`·`TELEGRAM_MONITOR_CHAT_ID` 는 Fly secrets·`config/.env` 에만 있다.

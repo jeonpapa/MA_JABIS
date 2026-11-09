@@ -51,6 +51,7 @@ JOB_RUNBOOK: dict[str, str | None] = {
     "stakeholder_data_sync": "stakeholder_data_sync",   # 02:20·08:20 — 토큰 부재는 :config 1건, 그 외 재실행(동기 런북)
     "daily_mailing_dispatch": "daily_mailing_dispatch",
     "daily_mailing_top_news": "daily_mailing_top_news",
+    "price_monitor_tick": None,   # 해외약가 모니터링 진행기 — 실패 = DB·코드 문제(사람). 다음 10분 tick 재시도, 지연은 텔레그램으로 알림
     "daily_mailing_scope_export": None,   # sender=hermes 스콥 발행 — 실패 = 토큰/권한 문제(사람). 다음 15분 tick 이 자동 재시도
     "daily_mailing_runs_sync": None,      # sender=hermes 번들 동기화 — 실패 = 토큰/번들 형식 문제(Hermes·사람). 다음 20분 tick 재시도
     "daily_mailing_health": None,

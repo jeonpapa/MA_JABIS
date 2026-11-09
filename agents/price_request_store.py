@@ -30,6 +30,40 @@ class Conflict(ValueError):
     pass
 
 
+# 가격 미확인 판정(2026-11-10, 모니터링): 가격이 안 나온 국가는 '실제로 가격이 없는지' 별도 출처로 확인한 결과를 남긴다.
+VERDICTS = {
+    "not_marketed": "해당국 미허가·미출시 확인",
+    "not_listed": "허가는 있으나 공식 가격·급여 목록 미등재",
+    "no_public_price": "판매 확인, 공개 가격 없음(병원 전용·비공개 협상 등)",
+    "access_blocked": "접속·로그인 차단으로 검증 불가(재시도 대상)",
+    "unresolved": "확인 시도했으나 판단 불가",
+}
+# '가격이 실제로 없다'고 결론 내리는 판정은 독립 출처 2곳 이상이 필요하다(가격 출처 + 허가·출시 출처 등).
+VERDICT_MIN_SOURCES = {"not_marketed": 2, "not_listed": 2, "no_public_price": 2, "access_blocked": 1, "unresolved": 1}
+
+
+def validate_verdict(verdict, sources):
+    if verdict not in VERDICTS:
+        raise ValueError("verdict must be one of " + ", ".join(VERDICTS))
+    if not isinstance(sources, list) or not 1 <= len(sources) <= 10:
+        raise ValueError("verdict_sources must be a list of 1..10 checked sources")
+    clean, hosts = [], set()
+    for x in sources:
+        if not isinstance(x, dict):
+            raise ValueError("verdict source must be an object {url, finding}")
+        url, finding = str(x.get("url") or ""), str(x.get("finding") or "").strip()
+        if not re.fullmatch(r"https?://[^\s@]+", url) or len(url) > 500:
+            raise ValueError("verdict source url must be http(s) without credentials")
+        if not 3 <= len(finding) <= 500:
+            raise ValueError("verdict source finding (what was checked/found) required")
+        hosts.add(re.sub(r"^https?://([^/:]+).*$", r"\1", url).lower())
+        clean.append({"url": url, "finding": finding, "checked_at": str(x.get("checked_at") or now())[:40]})
+    need = VERDICT_MIN_SOURCES[verdict]
+    if len(hosts) < need:
+        raise ValueError(f"verdict '{verdict}' requires {need} independent sources (different sites)")
+    return clean
+
+
 class PriceRequestStore:
     def __init__(self, db_path):
         self.db_path = str(db_path)
@@ -79,6 +113,13 @@ class PriceRequestStore:
             CREATE INDEX IF NOT EXISTS price_req_queue ON price_requests(status,created_at);
             CREATE INDEX IF NOT EXISTS oecd_price_query ON oecd_drug_prices(query_name,country,observed_at);
             """)
+            # 2026-11-10 모니터링: 요청 출처(origin='monitor:<run_id>') · 국가별 미확인 판정. 컬럼 추가만(기존 행 불변).
+            for table, col in (("price_requests", "origin TEXT"), ("price_request_countries", "verdict TEXT"),
+                               ("price_request_countries", "verdict_sources TEXT")):
+                try:
+                    c.execute(f"ALTER TABLE {table} ADD COLUMN {col}")
+                except sqlite3.OperationalError:
+                    pass
 
     @contextmanager
     def connect(self):
@@ -105,9 +146,14 @@ class PriceRequestStore:
         for k in ("countries", "identity"):
             out[k] = json.loads(out[k]) if out[k] else None
         out["country_results"] = []
-        for r in c.execute("SELECT country,status,reason,row_ids,updated_at FROM price_request_countries WHERE request_id=? ORDER BY country", (rid,)):
+        for r in c.execute("SELECT country,status,reason,row_ids,updated_at,verdict,verdict_sources FROM price_request_countries WHERE request_id=? ORDER BY country", (rid,)):
             d = dict(r)
             d["row_ids"] = json.loads(d["row_ids"])
+            vs = d.pop("verdict_sources")
+            if d.get("verdict"):
+                d["verdict_sources"] = json.loads(vs) if vs else []
+            else:
+                d.pop("verdict", None)   # 판정 없는 기존 요청은 키를 만들지 않는다(검증 digest 호환)
             out["country_results"].append(d)
         out["dashboard_url"] = "/international-pricing?" + urlencode({"q": out["query"], "scope": out["scope"], "request": rid})
         # 화면 표시용 요약(출처 링크·대표 가격). country_results 와 분리해 둔다 — verify digest · 동결 스냅샷은
@@ -177,7 +223,7 @@ class PriceRequestStore:
         return {"state": state, "last_seen_at": seen, "stale_after_minutes": self.WORKER_STALE_MINUTES,
                 "open_requests": waiting}
 
-    def create(self, query, scope, countries, email, actor, identity=None):
+    def create(self, query, scope, countries, email, actor, identity=None, origin=None):
         if scope not in CATALOG or scope == "note":
             raise ValueError("invalid scope")
         allowed = {x["code"] for x in CATALOG[scope]}
@@ -194,12 +240,13 @@ class PriceRequestStore:
         with self.connect() as c:
             c.execute("BEGIN IMMEDIATE")
             # Same requester/product/scope/countries already in flight: idempotent UI retry.
-            existing = c.execute("SELECT id FROM price_requests WHERE requester=? AND query=? AND scope=? AND countries=? AND status IN ('queued','processing','awaiting_verification','verified') AND notify_email=? ORDER BY created_at LIMIT 1",
-                                 (actor, query, scope, dump(countries), email)).fetchone()
-            if existing:
-                return self._detail(c, existing["id"])
-            c.execute("INSERT INTO price_requests(id,query,scope,countries,identity,requester,notify_email,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                      (rid, query, scope, dump(countries), dump(identity) if identity else None, actor, email, ts, ts))
+            if not origin:
+                existing = c.execute("SELECT id FROM price_requests WHERE requester=? AND query=? AND scope=? AND countries=? AND status IN ('queued','processing','awaiting_verification','verified') AND notify_email=? AND origin IS NULL ORDER BY created_at LIMIT 1",
+                                     (actor, query, scope, dump(countries), email)).fetchone()
+                if existing:
+                    return self._detail(c, existing["id"])
+            c.execute("INSERT INTO price_requests(id,query,scope,countries,identity,requester,notify_email,created_at,updated_at,origin) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                      (rid, query, scope, dump(countries), dump(identity) if identity else None, actor, email, ts, ts, origin))
             c.executemany("INSERT INTO price_request_countries(request_id,country,updated_at) VALUES(?,?,?)", [(rid, cc, ts) for cc in countries])
             self.event(c, rid, actor, "requested")
             return self._detail(c, rid)
@@ -216,7 +263,8 @@ class PriceRequestStore:
             where.append("(status IN ('queued','awaiting_verification') OR (status='verified' AND notification_status IN ('pending','sending')) OR (status='processing' AND lease_until<?))")
             args.append(now())
         sql = "SELECT id FROM price_requests" + (" WHERE " + " AND ".join(where) if where else "")
-        sql += " ORDER BY created_at " + ("ASC" if queue else "DESC") + " LIMIT 50"
+        # 대기열: 사용자가 직접 넣은 요청을 모니터링 자동 요청보다 먼저(모니터링은 발송일까지 여유를 두고 미리 시작한다)
+        sql += (" ORDER BY (origin IS NOT NULL), created_at ASC" if queue else " ORDER BY created_at DESC") + " LIMIT 50"
         with self.connect() as c:
             return [self._detail(c, x["id"]) for x in c.execute(sql, args).fetchall()]
 
@@ -263,16 +311,22 @@ class PriceRequestStore:
             c.execute("UPDATE price_requests SET lease_until=? WHERE id=?", (until, rid))
         return {"lease_until": until}
 
-    def accept(self, rid, cc, actor, token, status, reason, records, payload_hash):
+    def accept(self, rid, cc, actor, token, status, reason, records, payload_hash, verdict=None, verdict_sources=None):
         if status not in ("priced", "unconfirmed", "failed"):
             raise ValueError("invalid country status")
         if status == "priced" and not records:
             raise ValueError("priced requires nonempty validated records")
         if status != "priced" and (records or not reason):
             raise ValueError("unconfirmed/failed require reason and no price rows")
+        if status == "priced" and verdict:
+            raise ValueError("verdict is only for unconfirmed/failed countries")
+        clean_sources = validate_verdict(verdict, verdict_sources) if verdict else None
         with self.connect() as c:
             c.execute("BEGIN IMMEDIATE")
             r = self.owned(c, rid, actor, token)
+            if status != "priced" and not verdict and (r["origin"] or "").startswith("monitor:"):
+                raise ValueError("monitoring requests require verdict + verdict_sources for unconfirmed/failed countries "
+                                 "(실제로 가격이 없는지 별도 출처로 확인한 결과)")
             cr = c.execute("SELECT * FROM price_request_countries WHERE request_id=? AND country=?", (rid, cc)).fetchone()
             if not cr:
                 raise ValueError("country not requested")
@@ -302,8 +356,8 @@ class PriceRequestStore:
                 c.execute("INSERT INTO price_request_price_snapshots(request_id,country,row_id,payload,captured_at) VALUES(?,?,?,?,?)",
                           (rid, cc, row_id, dump(snapshot), now()))
             ts = now()
-            c.execute("UPDATE price_request_countries SET status=?,reason=?,row_ids=?,payload_hash=?,updated_at=? WHERE request_id=? AND country=?",
-                      (status, reason, dump(ids), payload_hash, ts, rid, cc))
+            c.execute("UPDATE price_request_countries SET status=?,reason=?,row_ids=?,payload_hash=?,updated_at=?,verdict=?,verdict_sources=? WHERE request_id=? AND country=?",
+                      (status, reason, dump(ids), payload_hash, ts, verdict, dump(clean_sources) if clean_sources else None, rid, cc))
             pending = c.execute("SELECT COUNT(*) FROM price_request_countries WHERE request_id=? AND status='pending'", (rid,)).fetchone()[0]
             c.execute("UPDATE price_requests SET status=?,updated_at=?,verified_at=NULL,verification_digest=NULL WHERE id=?",
                       ("processing" if pending else "awaiting_verification", ts, rid))
@@ -378,6 +432,12 @@ class PriceRequestStore:
                 c.execute("INSERT OR IGNORE INTO price_request_export_snapshots(request_id,payload,captured_at) VALUES(?,?,?)",
                           (rid, dump(frozen), now()))
             self.event(c, rid, actor, "dashboard_verified", evidence)
+            if (r["origin"] or "").startswith("monitor:"):
+                # 모니터링 요청은 요청별 결과 메일을 보내지 않는다 — 회차 메일 하나로 묶어 보낸다.
+                partial = c.execute("SELECT COUNT(*) FROM price_request_countries WHERE request_id=? AND status<>'priced'", (rid,)).fetchone()[0]
+                c.execute("UPDATE price_requests SET status=?,notification_status='not_required',updated_at=?,lease_until=NULL,lease_hash=NULL WHERE id=?",
+                          ("partial_completed" if partial else "completed", now(), rid))
+                self.event(c, rid, actor, "monitor_completed", r["origin"])
             return self._detail(c, rid)
 
     def notification(self, rid, actor, token, phase, receipt=None):

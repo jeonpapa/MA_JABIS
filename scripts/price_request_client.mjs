@@ -34,7 +34,8 @@ async function http(endpoint, method = 'GET', body, token, lease) {
   return value;
 }
 async function main() {
-  if (!['queue', 'claim', 'heartbeat', 'upload', 'readback', 'verify', 'notify', 'tasks', 'task-claim', 'task-resolve', 'server-collect'].includes(command)) throw new Error('Commands: queue | claim ID | heartbeat ID | upload ID CC | readback ID | verify ID | notify ID | tasks | task-claim N | task-resolve N --file JSONFILE | server-collect ID DE --out JSONFILE. Mutations require --state TEMPFILE; upload/verify/notify also --file JSONFILE. task-resolve JSON: {"status":"closed|blocked|triaged","resolution":"..."}.');
+  if (!['queue', 'claim', 'heartbeat', 'upload', 'readback', 'verify', 'notify', 'tasks', 'task-claim', 'task-resolve', 'server-collect',
+        'monitor-mails', 'monitor-mail-claim', 'monitor-mail', 'monitor-notify'].includes(command)) throw new Error('Commands: queue | claim ID | heartbeat ID | upload ID CC | readback ID | verify ID | notify ID | tasks | task-claim N | task-resolve N --file JSONFILE | server-collect ID DE|CH --out JSONFILE | monitor-mails | monitor-mail-claim RUN --state TEMPFILE | monitor-mail RUN --state TEMPFILE --out DIR | monitor-notify RUN --state TEMPFILE --file JSONFILE. Mutations require --state TEMPFILE; upload/verify/notify also --file JSONFILE. task-resolve JSON: {"status":"closed|blocked|triaged","resolution":"..."}.');
   const email = get('PRICE_AGENT_EMAIL'), password = get('PRICE_AGENT_PASSWORD');
   if (!email || !password) throw new Error('Setup required: PRICE_AGENT_EMAIL and PRICE_AGENT_PASSWORD in config/.env');
   const login = await http('/api/auth/login', 'POST', {email, password});
@@ -51,6 +52,40 @@ async function main() {
     const tbody = JSON.parse(await fs.readFile(tfile, 'utf8'));
     if (!['closed', 'blocked', 'triaged'].includes(tbody.status)) throw new Error('status must be closed|blocked|triaged');
     return http(`/api/agent/tasks/${tid}/resolve`, 'POST', {status: tbody.status, resolution: String(tbody.resolution || '').slice(0, 2000)}, token);
+  }
+  // ── 해외약가 모니터링 회차 메일 (2026-11-10): 서버 Gmail 토큰이 없을 때 워커가 Gmail 로 보낸다 ──
+  if (command === 'monitor-mails') return http('/api/price-agent/monitor-mails', 'GET', undefined, token);
+  if (command.startsWith('monitor-')) {
+    const run = pos[0];
+    if (!/^[a-f0-9]{32}$/.test(run || '')) throw new Error('Invalid run ID');
+    if (!statePath) throw new Error('--state temporary path is required');
+    const mep = `/api/price-agent/monitor-runs/${run}`;
+    if (command === 'monitor-mail-claim') {
+      const reserved = await fs.open(statePath, 'wx', 0o600); await reserved.close();
+      try {
+        const v = await http(mep + '/mail-claim', 'POST', {}, token);
+        await fs.writeFile(statePath, JSON.stringify({run_id: run, lease_token: v.lease_token, lease_until: v.lease_until}), {mode: 0o600});
+        return {run_id: run, lease_until: v.lease_until};
+      } catch (error) { await fs.unlink(statePath).catch(() => {}); throw error; }
+    }
+    const st = JSON.parse(await fs.readFile(statePath, 'utf8'));
+    if (st.run_id !== run) throw new Error('Lease belongs to a different run');
+    const mhttp = async (ep, method, b) => {
+      const res = await fetch(base + ep, {method, signal: AbortSignal.timeout(120000), headers: {Authorization: `Bearer ${token}`, 'X-Monitor-Lease': st.lease_token,
+        ...(b === undefined ? {} : {'Content-Type': 'application/json'})}, body: b === undefined ? undefined : JSON.stringify(b)});
+      const v = await res.json(); if (!res.ok) throw new Error(`API ${res.status}: ${String(v.error || 'failed').slice(0, 300)}`); return v;
+    };
+    if (command === 'monitor-mail') {
+      const out = flag('--out'); if (!out) throw new Error('--out DIR required (session tmp)');
+      const v = await mhttp(mep + '/mail', 'GET');
+      await fs.mkdir(out, {recursive: true});
+      await fs.writeFile(path.join(out, 'body.html'), v.html, {mode: 0o600});
+      await fs.writeFile(path.join(out, 'body.txt'), v.text, {mode: 0o600});
+      await fs.writeFile(path.join(out, v.attachment_name), Buffer.from(v.attachment_b64, 'base64'), {mode: 0o600});
+      return {subject: v.subject, recipients: v.recipients, attachment: path.join(out, v.attachment_name), html: path.join(out, 'body.html'), dashboard_url: v.dashboard_url};
+    }
+    const mfile = flag('--file'); if (!mfile) throw new Error('--file JSONFILE required');
+    return mhttp(mep + '/mail-notify', 'POST', JSON.parse(await fs.readFile(mfile, 'utf8')));
   }
   const rid = pos[0];
   if (!/^[a-f0-9]{32}$/.test(rid || '')) throw new Error('Invalid request ID');
@@ -71,7 +106,7 @@ async function main() {
   if (command === 'heartbeat') return http(endpoint + '/heartbeat', 'POST', {}, token, state.lease_token);
   if (command === 'server-collect') {
     // 2026-11-06: 브라우저 DocCheck 가 막힐 때만. 서버 Rote Liste 수집기 결과(저장 안 됨)를 --out 파일에 쓴다 → 확인 후 upload.
-    const cc = pos[1]; if (cc !== 'DE') throw new Error('server-collect supports DE only');
+    const cc = pos[1]; if (!['DE', 'CH'].includes(cc)) throw new Error('server-collect supports DE and CH only');
     const out = flag('--out'); if (!out) throw new Error('--out JSONFILE required');
     await http(endpoint + '/server-collect/' + cc, 'POST', {}, token, state.lease_token);
     const deadline = Date.now() + 8 * 60 * 1000;

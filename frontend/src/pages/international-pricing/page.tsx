@@ -17,6 +17,7 @@ import type { ForeignReportFormat } from '@/api/foreign';
 import PriceRequestPanel from './PriceRequestPanel';
 import type { PriceRequestPanelHandle } from './PriceRequestPanel';
 import OecdPrices from './OecdPrices';
+import MonitoringPanel from './MonitoringPanel';
 import ProductStrip from './ProductStrip';
 import PriceHistoryTab from './PriceHistoryTab';
 import RequestHistoryCard from './RequestHistoryCard';
@@ -143,6 +144,8 @@ export default function InternationalPricingPage() {
   const [selected, setSelected] = useState<Selection | null>(() => deepLink.query ? { query: deepLink.query, canonical: '' } : null);
   const [searchDropdown, setSearchDropdown] = useState(false);
   const [scope, setScope] = useState<PriceScope>(deepLink.scope);
+  // 2026-11-10 모니터링 탭 — 메일 링크(?view=monitor&project=…&run=…)로 바로 열린다
+  const [monitorView, setMonitorView] = useState<boolean>(() => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('view') === 'monitor');
   const [resultRevision, setResultRevision] = useState(0);
   const requestPanelRef = useRef<PriceRequestPanelHandle>(null);
   const [deleting, setDeleting] = useState<string | null>(null); // 삭제 진행 중 queryName
@@ -404,11 +407,17 @@ export default function InternationalPricingPage() {
 
       <div className="px-8 py-6 space-y-5">
         <div role="tablist" aria-label="해외약가 국가 범위" className="flex gap-2">
-          {(['a8', 'oecd'] as const).map(value => <button key={value} role="tab" aria-selected={scope === value}
-            onClick={() => { setScope(value); setShowReport(false); }} className={"rounded-lg px-4 py-2 text-sm font-semibold " + (scope === value ? 'bg-teal-600 text-white' : pillBg + ' ' + pillText)}>
+          {(['a8', 'oecd'] as const).map(value => <button key={value} role="tab" aria-selected={!monitorView && scope === value}
+            onClick={() => { setScope(value); setMonitorView(false); setShowReport(false); }} className={"rounded-lg px-4 py-2 text-sm font-semibold " + (!monitorView && scope === value ? 'bg-teal-600 text-white' : pillBg + ' ' + pillText)}>
             {value === 'a8' ? 'A8' : '공단 추가국가 (A8 외 29개국)'}
           </button>)}
+          <button role="tab" aria-selected={monitorView} onClick={() => { setMonitorView(true); setShowReport(false); }}
+            className={"rounded-lg px-4 py-2 text-sm font-semibold " + (monitorView ? 'bg-teal-600 text-white' : pillBg + ' ' + pillText)}>
+            <i className="ri-radar-line mr-1"></i>모니터링
+          </button>
         </div>
+        {monitorView && <MonitoringPanel />}
+        <div hidden={monitorView} className="space-y-5">
         {scope === 'a8' && (
           <ProductStrip items={historyItems} selectedQuery={selected?.query ?? null} onSelect={handleSelectHistory}
             activeQueries={activeQueries} activeRequestCount={activeRequestCount} loading={history.loading}
@@ -891,6 +900,7 @@ export default function InternationalPricingPage() {
           </div>
         )}
         </>}
+        </div>
       </div>
 
       {/* 리포트 다운로드 모달 — 형식 선택 + 국내 신청가 입력 */}

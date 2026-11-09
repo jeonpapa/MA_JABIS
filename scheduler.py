@@ -1031,6 +1031,14 @@ def stakeholder_data_sync_job():
     return {"ok": True, "counts": counts, "errors": [], "error_class": "transient"}
 
 
+@guarded_job("price_monitor_tick")
+def price_monitor_tick_job():
+    """10분 주기 — 해외약가 모니터링 회차 예약·선행 시작·수집 대기·비교·발송·텔레그램 (agents/price_monitor/tick.py)."""
+    from agents.price_monitor.tick import tick
+    res = tick(BASE_DIR / "data" / "db" / "drug_prices.db")
+    return {"ok": True, "counts": {k: len(v) for k, v in res.items()}}
+
+
 @guarded_job("scheduler_heartbeat", record_runs=False)
 def scheduler_heartbeat_job():
     """60초 — 생존 파일 갱신(atomic rename). /api/health 가 mtime 으로 판정(웹 기동 5분 유예 뒤 15분 초과 → 503 → Fly check 실패).
@@ -1117,6 +1125,9 @@ def build_job_specs(sched_cfg: dict) -> list[JobSpec]:
                 stakeholder_data_sync_job, _cron(hour="2,8", minute=20)),
         JobSpec("daily_mailing_dispatch", "Daily Mailing 10분 주기 발송 판정 (생성→승인대기/자동발송·재시도)",
                 daily_mailing_dispatch_job, IntervalTrigger(minutes=10, timezone="Asia/Seoul"),
+                misfire_grace_time=INTERVAL_GRACE),
+        JobSpec("price_monitor_tick", "해외약가 모니터링 10분 진행 (예약·수집 대기·비교·발송·텔레그램)",
+                price_monitor_tick_job, IntervalTrigger(minutes=10, timezone="Asia/Seoul"),
                 misfire_grace_time=INTERVAL_GRACE),
         JobSpec("daily_mailing_top_news", "Daily Mailing 주요 MA 뉴스 매일 06:40", daily_mailing_top_news_job,
                 _cron(hour=6, minute=40)),
