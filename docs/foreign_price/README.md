@@ -33,10 +33,11 @@
 | 이탈리아 IT | AIFA TrovaNorme 결정문(DET PRES/UPR 등) | **Prezzo ex-factory (IVA esclusa)** | × **0.93** (공장도가에도 적용) | Classe A 공중가(Prezzo al pubblico)는 쓰지 않는다 — 미확정 |
 | 스위스 CH | BAG Spezialitätenliste(SL) 공개 API | **FAP**(Fabrikabgabepreis, VAT 제외) | FAP × **0.73** | SL 에 약가가 없을 때만 Compendium 판매가 × **0.65** |
 | 일본 JP | 후생노동성 약가기준 목록 | 단가(약국판매가) | × **0.79** | 없음 |
-| 캐나다 CA | Ontario Drug Benefit Formulary / PMPRB | 단가(공장도가) | × **0.81** | 없음 |
+| 캐나다 CA | Ontario Drug Benefit Formulary·EAP / PMPRB (서버 수집) | 단가(공장도가) | × **0.81** | **온타리오 미등재(병원 투여 항암제 등)일 때만**: 퀘벡 **INESSS 장관 제출 의견서의 제조사 보장 판매가(prix de vente garanti)**, 교차 확인 **CDA-AMC 급여 심사 보고서 제출 가격(public list price)** × 0.81 — 화면·엑셀에 "INESSS·CDA-AMC 제조사 제출 정가 대체" 표시 (2026-11-10 사용자 결정) |
 
 ### 국가별 실무 메모
 - **DE**: 상세 페이지 하단 `PACKUNGSANGABEN` 표 열은 `포장 | N | PZN | AVP (EB)/FB | AVP/UVP`. 포장별로 행을 만든다(28정·1바이알·2 KIT 등). 기준은 **AVP (EB)/FB**(2026-11-02 사용자 결정 — 10-26 의 AVP/UVP 기준을 뒤집음). AVP/UVP 는 `extra.avp_uvp_reference`로 보존하고, EB/FB 가 없는 포장에서만 가격으로 쓰며 `price_basis_warning`으로 화면에 표시한다. `Preisstand`는 자료 기준일이지 가격 시행일이 아니다(→ `extra.price_as_of`, `effective_date=null`). DocCheck 는 좌석·세션 서비스 — 조회 후 로그아웃. 이 PC 네트워크에서 DocCheck(195.82.66.x)가 막힌 적이 있다(2026-10-19) — 다른 사이트가 정상이면 DE 를 failed 로 사유 기록.
+- **CA 대체 출처 (2026-11-10 사용자 결정)**: 온타리오 약가집(ODB)·EAP 에 없을 때(키트루다처럼 병원 투여 항암제는 온타리오 항암제 지원 프로그램 대상이라 가격 비공개) ① 가장 최근 **INESSS 「Avis à la ministre」** PDF(inesss.qc.ca)의 "Justesse du prix" 문단·단가표 — 각주상 *prix de vente garantis soumis par le fabricant* ② **CDA-AMC Reimbursement Review/Recommendation** "Submitted price" 로 같은 값인지 교차 확인 ③ 퀘벡 **RAMQ 「Liste des médicaments – Établissements」**(가격 칸 없음)로 등재·DIN 확인. 업로드: `price_tier=ex_factory`, `price_tier_original="Prix de vente garanti soumis (INESSS Avis YYYY-MM-DD)"`, `source_url`=INESSS 또는 CDA-AMC 문서, `effective_date`=문서 일자, `extra.ontario_checked`(ODB·EAP 검색 결과)·`extra.cda_amc_crosscheck`·`extra.ramq_din`. 서버가 `price_column=submitted_list_price` 와 대체 표시를 붙인다. 협상가(pCPA)·비공개 할인은 반영되지 않는다. 예: 키트루다 100 mg/4 mL 바이알 CAD 4,400 (INESSS 2026-08-27, CDA-AMC 2025-10). **심평원 실무에서 이 제출가를 캐나다 공장도가로 인정하는지는 미확인** — 레드팀 플래그로 남긴다.
 - **FR (2026-11-10 사용자 결정)**: 1순위 **BdM_IT 서버 수집**(`server-collect REQUEST_ID FR`, `agents/foreign_sources/fr_bdm_it.py`). 약국 유통은 CIP 상세의 *Prix Fabricant HT*, 병원 전용은 UCD 상세의 **TAA MCO(liste en sus) Prix HT**(rétrocession 칸의 가격 없는 등록은 쓰지 않는다). **시행일 = Date d'application**(판매가 기준일·관보일은 extra). 검증: 관보 기준값 10건(CIP 9·UCD 1) 일치. 사이트가 안 열리면(서버 수집 오류) 아래 관보 브라우저 절차로 간다.
 - **FR (관보 대체 경로)**: BdM_IT(`codage.ext.cnamts.fr`)는 2026-10 중순부터 파리 포함 전 세계에서 응답 없음(2026-10-27 외부 점검 13개국, ameli.fr 은 정상, 2026-01 에도 같은 장애). 같은 CEPS 공식 가격이 관보 「Avis relatif aux prix de spécialités pharmaceutiques」에 실린다. Légifrance 는 **브라우저로** 연다(스크립트 요청은 Cloudflare 403, 브라우저는 수 초 후 자동 통과). 검색: `https://www.legifrance.gouv.fr/search/jorf?tab_selection=jorf&searchField=ALL&query=<상표>&sortValue=PUBLI_DATE_DESC` → 가장 최근 "Avis relatif aux prix…". 공시 PPTTC 가 BDPM 현재 공중가와 같으면 그 공시가 현재 유효하다. 시행일은 공시 문구(`à compter du …`, `…jour suivant la publication`, `Date d'effet` 열)로 정한다. BDPM 파일에는 PFHT 가 없다. 공장도가는 고가약에서 공중가의 약 96%(마진 상한제).
 - **IT**: TrovaNorme API `tnf-service/ricerca/?determinaTNFSource=true&parola=<상표>` → `determina/tnf/pubblicate/<id>` → `allegato/<id>` PDF. AIC별 최신 유효 결정문. Fly 서버에서 이 호스트 DNS 실패가 있었다(2026-10-26) — 브라우저 fetch 는 정상.
@@ -120,6 +121,7 @@
 | 2026-11-02 | DE 기준을 **AVP (EB)/FB** 로 변경(EB 미표시 시 AVP/UVP 대체 + 화면 표시) |
 | 2026-10-27 | FR: BdM_IT 접속 불가 → 관보 PFHT × 0.77, 공장도가 미확인 시 공중가 × 0.65. 행 생성기·업로드 검증 도입 |
 
+| 2026-11-10 | CA: 온타리오 미등재 시 INESSS 의견서 보장 판매가(교차 CDA-AMC 제출가) × 0.81 대체, '제조사 제출 정가 대체' 표시. RAMQ 병원 목록은 등재 확인용(가격 칸 없음) |
 | 2026-11-10 | 서버 수집 국가 = DE·CH·JP·US·CA·FR(BdM_IT, 시행일=적용일, 안 열리면 관보 브라우저). **UK·IT 는 브라우저 유지**(UK dm+d 서버 IP 403, IT TrovaNorme 서버 연결 반복 차단·결정문 PDF 사람 확인 필요). 서버 수집기는 한 번에 하나(US 좌석 제한) |
 
 ## 10. 열린 항목

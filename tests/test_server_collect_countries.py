@@ -105,3 +105,39 @@ def test_scraper_records_to_rows():
     assert rows[0]["effective_date"] is None                                   # MM/DD/YYYY 는 넣지 않는다
     assert skipped and "포장 수 근거 없음" in skipped[0]["reason"]              # 경구 포장 수 미확인 → 브라우저
     assert common(rows[0], "US")["pack_count"] == 2
+
+
+# ── 캐나다 대체 출처 (2026-11-10 사용자 결정) ─────────────────────────────
+def _ca_row(**kw):
+    row = {"product_name": "KEYTRUDA", "ingredient": "pembrolizumab", "dosage_strength": "100 mg/4 mL", "dosage_form": "Sol. Perf. I.V. 25 mg/mL",
+           "package_unit": "1 vial (25 mg/mL, 4 mL)", "pack_count": 1, "local_price": 4400.0, "currency": "CAD",
+           "price_tier": "ex_factory", "price_tier_original": "Prix de vente garanti soumis (INESSS Avis 2026-08-27)", "vat_status": "unknown",
+           "effective_date": "2026-08-27", "observed_at": "2026-11-01T08:00:00+09:00",
+           "source_url": "https://www.inesss.qc.ca/fileadmin/doc/INESSS/Inscription_medicaments/Avis_au_ministre/Septembre_2026/x.pdf",
+           "source_label": "INESSS Avis à la ministre (prix soumis)", "evidence_ref": "tmp/inesss.pdf p19", "form_type": "injection",
+           "extra": {"ontario_checked": "ODB·EAP 'keytruda'·'pembrolizumab' 0건", "cda_amc_crosscheck": "PC0410 $4,400", "ramq_din": "02456869"}}
+    row.update(kw)
+    return row
+
+
+def test_ca_submitted_price_substitute_validation_and_warning():
+    pytest.importorskip("flask")
+    pytest.importorskip("pandas")
+    from api.price_request_ingest import prepare_a8
+    from agents.foreign_price_agent import price_basis_warning, CA_SUBMITTED_NOTE
+    from tests.test_price_request_routes import FakeAgent as RouteAgent
+    agent = RouteAgent(None)
+    out = prepare_a8(_ca_row(), "CA", "keytruda", "r1", agent)
+    extra = json.loads(out["raw_data"])
+    assert extra["price_column"] == "submitted_list_price" and extra["price_basis_warning"] == CA_SUBMITTED_NOTE
+    assert out["source_type"] is None                                           # 캐나다 단가와 같은 × 0.81
+    assert price_basis_warning("CA", {**out, "extra": extra}) == CA_SUBMITTED_NOTE
+    with pytest.raises(ValueError):                                            # 온타리오 확인 기록 필수
+        prepare_a8(_ca_row(extra={}), "CA", "keytruda", "r1", agent)
+    with pytest.raises(ValueError):                                            # INESSS·CDA-AMC 문서여야 한다
+        prepare_a8(_ca_row(source_url="https://example.com/price.pdf"), "CA", "keytruda", "r1", agent)
+    ontario = _ca_row(price_tier="reimbursement", price_tier_original="Drug Benefit Price (DBP) per unit, Ontario",
+                      source_label="Ontario EAP (Drug Benefit Price)", source_url="https://www.ontario.ca/page/x", extra={})
+    o = prepare_a8(ontario, "CA", "welireg", "r1", agent)
+    assert "price_column" not in json.loads(o["raw_data"])
+    assert price_basis_warning("CA", {**o, "extra": json.loads(o["raw_data"])}) is None

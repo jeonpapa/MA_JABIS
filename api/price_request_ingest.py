@@ -116,6 +116,7 @@ def prepare_a8(raw, cc, query, rid, agent):
     # ── 별첨5 국가별 기준 가격 단계 (docs/foreign_price/README.md, 2026-10-27) ──────────────────────────────
     tier, vat, tier_text = r["price_tier"], r["vat_status"], (r.get("price_tier_original") or "")
     extra_in = raw.get("extra") or {}
+    ca_substitute = False
     if cc == "DE":
         # 2026-11-02 사용자 결정: 기준 = Rote Liste **AVP (EB)/FB**. EB/FB 칸이 비어 있을 때만 AVP/UVP 를 쓰고 대체로 표시한다.
         from agents.foreign_price_agent import de_tier_is_uvp
@@ -147,6 +148,20 @@ def prepare_a8(raw, cc, query, rid, agent):
             source_type = "compendium"         # SL 약가 미확인 대체: Compendium × 0.65 (별첨5 각주2)
         else:
             source_type = "compendium"         # 판매가 + extra.ex_factory_price → 계산기가 FAP × 0.73 사용
+    elif cc == "CA":
+        # 2026-11-10 사용자 결정: 온타리오 약가집에 없을 때만 INESSS 의견서·CDA-AMC 보고서의 제조사 제출 정가 대체.
+        from agents.foreign_price_agent import ca_uses_submitted_price, CA_SUBMITTED_HOSTS, CA_SUBMITTED_NOTE
+        probe = {"extra": extra_in if isinstance(extra_in, dict) else {}, "price_tier_original": tier_text, "source_label": r["source_label"]}
+        if ca_uses_submitted_price(probe):
+            host = (urlsplit(r["source_url"]).hostname or "").lower()
+            if not any(host == h or host.endswith("." + h) for h in CA_SUBMITTED_HOSTS):
+                raise ValueError("CA submitted-price substitute must cite the INESSS or CDA-AMC document (source_url)")
+            if tier != "ex_factory":
+                raise ValueError("CA submitted list price (prix de vente garanti / submitted price) is price_tier=ex_factory")
+            if not isinstance(extra_in, dict) or not extra_in.get("ontario_checked"):
+                raise ValueError("CA substitute requires extra.ontario_checked (온타리오 약가집·EAP 미등재 확인 내용)")
+            source_type = None
+            ca_substitute = True
     if raw.get("form_type") not in ("oral", "injection", "unknown"):
         raise ValueError("form_type required")
     observed = r.pop("observed_at")
@@ -155,6 +170,10 @@ def prepare_a8(raw, cc, query, rid, agent):
     if not isinstance(extra, dict):
         raise ValueError("extra must be an object")
     extra = {**extra, **metadata, "observed_at": observed, "price_request_id": rid, "source_type": source_type}
+    if ca_substitute:
+        from agents.foreign_price_agent import CA_SUBMITTED_NOTE
+        extra["price_column"] = "submitted_list_price"
+        extra["price_basis_warning"] = CA_SUBMITTED_NOTE
     if cc == "DE":
         from agents.foreign_price_agent import de_price_basis_warning
         extra["price_column"] = "AVP/UVP" if uses_uvp else "AVP (EB)/FB"
