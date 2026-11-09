@@ -4,7 +4,7 @@
 // 질문 → 본문에서 표현 찾기 → 분류·인용(원문 검증) → 제품별 근거 표 + 엑셀
 import { useEffect, useRef, useState } from 'react';
 import {
-  startAnalogAiAnalysis, fetchAnalogAiJob, fetchAnalogAiLimits, downloadAnalogAiExcel,
+  startAnalogAiAnalysis, fetchAnalogAiJob, fetchAnalogAiLimits, downloadAnalogAiExcel, fetchAnalogAiHistory, type AnalogAiHistoryItem,
   REVIEW_RESULT_KO, type AnalogAiJob, type AnalogAiLimits, type AnalogAiResult, type AnalogAiStrength,
 } from '../../api/analog';
 
@@ -39,6 +39,8 @@ export default function AiAnalysisPanel({ open, onClose, reportIds, onOpen, onSt
   const [busy, setBusy] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
   const [showWeak, setShowWeak] = useState(false);
+  const [history, setHistory] = useState<AnalogAiHistoryItem[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
   const timer = useRef<number | null>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -60,7 +62,17 @@ export default function AiAnalysisPanel({ open, onClose, reportIds, onOpen, onSt
   useEffect(() => {
     if (!open) return;
     fetchAnalogAiLimits().then(setLimits).catch(() => setLimits(null));
+    fetchAnalogAiHistory().then(r => setHistory(r.items)).catch(() => setHistory([]));
   }, [open, job?.status]);
+
+  // 이전 분석 다시 열기 — 저장된 결과를 그대로 보여 준다(한도 소모 없음)
+  const openPast = (id: string) => {
+    setError(null); setShowHistory(false); setShowTerms(false); setShowWeak(false);
+    const it = history.find(h => h.job_id === id);
+    if (it) setQuestion(it.question);
+    if (it?.status === 'running') { setBusy(true); poll(id); return; }
+    fetchAnalogAiJob(id).then(setJob).catch(e => setError(e instanceof Error ? e.message : String(e)));
+  };
 
   const poll = (id: string) => {
     stop();
@@ -140,6 +152,34 @@ export default function AiAnalysisPanel({ open, onClose, reportIds, onOpen, onSt
             본문에서 질문과 관련된 표현이 든 문단만 골라 AI가 판정합니다(보통 1~3분). 인용은 원문에 실제 있는 문장만 남깁니다.
           </p>
 
+          {history.length > 0 && (
+            <div className="rounded-xl border border-gray-200">
+              <button type="button" onClick={() => setShowHistory(v => !v)} aria-expanded={showHistory}
+                className="w-full flex items-center justify-between px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 rounded-xl">
+                <span><i className="ri-history-line mr-1"></i>내 분석 이력 {history.length}건</span>
+                <i className={showHistory ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'}></i>
+              </button>
+              {showHistory && (
+                <ul className="max-h-64 overflow-auto divide-y divide-gray-100 border-t border-gray-100">
+                  {history.map(h => (
+                    <li key={h.job_id}>
+                      <button type="button" onClick={() => openPast(h.job_id)} disabled={h.status === 'failed'}
+                        className={`w-full text-left px-3 py-2 text-xs hover:bg-teal-50 disabled:opacity-50 ${job?.job_id === h.job_id ? 'bg-teal-50' : ''}`}>
+                        <p className="text-gray-800 truncate">{h.question}</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">
+                          {new Date(h.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          {' · '}범위 {h.scope_count ?? '?'}건
+                          {h.status === 'done' ? ` · 근거 보고서 ${h.hit_reports ?? 0}건` : h.status === 'running' ? ' · 진행 중' : ' · 실패'}
+                          {h.conditions.length > 0 && ` · 조건: ${h.conditions.join(', ')}`}
+                        </p>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
           {error && <p className="text-sm text-red-500 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
 
           {job?.status === 'running' && (
@@ -164,6 +204,17 @@ export default function AiAnalysisPanel({ open, onClose, reportIds, onOpen, onSt
                   · <b className="text-teal-700">근거가 확인된 보고서 {result.hits.length}건</b> (<span title={STRENGTH_HELP}>강 {result.strength_reports.strong} · 중 {result.strength_reports.moderate} · 약 {result.strength_reports.weak}</span>)
                   {result.dropped_unverified > 0 && <span className="text-gray-400"> · 원문 검증에서 버린 인용 {result.dropped_unverified}건</span>}
                 </p>
+                {(result.conditions ?? []).length > 0 && (
+                  <div className="mt-2 text-[11px] text-teal-800 bg-white/70 rounded-lg px-2.5 py-1.5 border border-teal-100">
+                    <b>먼저 적용한 조건</b> (AI 판정 전, DB 표시·본문 문구로 확인):
+                    {(result.conditions ?? []).map(c => (
+                      <span key={c.key} className="block">
+                        · {c.label}: 검색 결과 {result.scope.reports_before_conditions ?? result.scope.reports}건 중 {c.matched}건
+                        {Object.keys(c.bases).length > 0 && ` (${Object.entries(c.bases).map(([b, n]) => `${b} ${n}`).join(', ')})`}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <button type="button" onClick={() => setShowTerms(v => !v)} className="text-[11px] text-gray-500 underline decoration-dotted mt-1">
                   {showTerms ? '찾은 표현 숨기기' : `찾은 표현 ${result.terms.length + (result.stems?.length ?? 0)}개 보기`}
                 </button>

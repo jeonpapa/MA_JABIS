@@ -325,4 +325,7 @@ def build_price_request_blueprint(db_path, foreign_agent):
     # 분석 요청(A안, 2026-11-02) — server.py 를 건드리지 않도록 여기서 중첩 등록한다. URL 은 /api/analysis-requests…
     from api.analysis_request_routes import build_analysis_request_blueprint
     bp.register_blueprint(build_analysis_request_blueprint(db_path))
+    # 등재 아날로그 목록 엑셀·AI 분석 이력(2026-11-09) — 같은 이유로 중첩 등록
+    from api.analog_extra_routes import build_analog_extra_blueprint
+    bp.register_blueprint(build_analog_extra_blueprint())
     return bp

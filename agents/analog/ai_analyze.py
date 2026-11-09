@@ -36,7 +36,7 @@ from agents.analog.store import _connect, ensure_schema
 
 logger = logging.getLogger(__name__)
 
-ANALYSIS_VERSION = 3
+ANALYSIS_VERSION = 4   # v4(2026-11-09): DB 구조 조건(경평면제·위험분담·급여 결과)으로 범위를 먼저 거르고, 남은 질문 내용만 판정
 MODEL = os.environ.get("ANALOG_AI_MODEL", "gpt-4.1")
 # USD / 1M tokens (입력, 출력). OpenAI 공식 가격(2026-10 확인). 모르는 모델은 보수적으로 gpt-4.1 가격을 쓴다.
 # 추론 모델은 '생각 토큰'이 출력으로 과금되므로 실제 비용은 usage.completion_tokens(추론 포함)로 계산한다.
@@ -220,6 +220,93 @@ def _cost(tokens_in: int, tokens_out: int) -> float:
 
 # ── ① plan ─────────────────────────────────────────────────────────────────
 
+# ── ⓪ 구조 조건 (DB 칸으로 확인 가능한 조건은 AI 판정 전에 범위에서 거른다) ─────────────
+# 2026-11-09: "경평면제 약제 중 …" 질문에서 결과 107건 중 76건이 경평면제가 아닌 약제였다(환자 수 문장만 있어도 해당 처리).
+# 질문 속 조건 중 DB 칸으로 판정 가능한 것은 여기서 결정론적으로 걸러 AI가 다시 판단하지 않게 한다.
+# 본문으로 인정하는 것은 '해당한다'는 긍정 서술뿐이다. 규정 인용·'해당 여부' 제목·'보기 어려움' 등은 제외(운영 26건 검토, 2026-11-09).
+_PE_HEAD = re.compile(r"\(\s*경제성\s*평가\s*생략(?:\s*등)?\s*\)\s*신청품은")
+_PE_STMT = re.compile(r"경제성\s*평가\s*자료\s*(?:제출\s*)?생략\s*가능\s*약제(?:에|로)\s*(?:해당함|해당하는\s*것으로|해당하여|해당되어|수용\s*가능)")
+_PE_NEG = re.compile(r"보기\s*어려|해당하지\s*않|인정하기\s*(?:는\s*)?어려|주장하였으?\s*나|아님")
+
+
+def _pe_text_affirmed(text: str) -> bool:
+    text = text or ""
+    if _PE_HEAD.search(text):
+        return True
+    for m in _PE_STMT.finditer(text):
+        if not _PE_NEG.search(text[m.end(): m.end() + 40]):
+            return True
+    return False
+
+STRUCTURED_CONDITIONS = [
+    {"key": "pe_waiver", "label": "경평면제(경제성평가 자료제출 생략)",
+     "pattern": re.compile(r"경평\s*(?:면제|생략)|경제성\s*평가\s*(?:자료\s*)?(?:제출\s*)?(?:면제|생략)|PE\s*waiver", re.I)},
+    {"key": "has_rsa", "label": "위험분담제 적용",
+     "pattern": re.compile(r"위험\s*분담|\bRSA\b", re.I)},
+    {"key": "reimbursed", "label": "급여 결정(평가금액 수용 조건부 포함)",
+     "pattern": re.compile(r"(?<!비)급여\s*(?:된|결정|적정|받은|등재|승인|통과)|(?<!비)급여된")},
+    {"key": "rejected", "label": "비급여·불인정",
+     "pattern": re.compile(r"비급여\s*(?:된|결정|판정)?|급여\s*불인정")},
+]
+_REIMBURSED = {"APPROVED", "CONDITIONAL_PRICE", "CONDITIONAL_APPROVED", "APPROVED_WITH_POSTMARKET"}
+
+
+def structured_conditions(question: str) -> list[dict]:
+    out = []
+    for c in STRUCTURED_CONDITIONS:
+        if c["pattern"].search(question or ""):
+            out.append({"key": c["key"], "label": c["label"]})
+    keys = {c["key"] for c in out}
+    if "reimbursed" in keys and "rejected" in keys:      # 둘 다면 결과 조건은 걸지 않는다(비교 질문)
+        out = [c for c in out if c["key"] not in ("reimbursed", "rejected")]
+    return out
+
+
+def condition_basis(key: str, r: dict) -> str | None:
+    """보고서가 조건을 충족하면 근거('DB 표시' 등), 아니면 None."""
+    if key == "pe_waiver":
+        if (r.get("pe_waiver") or 0) == 1:
+            return "DB 경평면제 표시"
+        if "PE Waiver" in (r.get("reimbursement_track_ko") or ""):
+            return "DB 급여트랙(경제성평가 생략)"
+        if _pe_text_affirmed(r.get("body_text") or ""):
+            return "본문 문구(경제성평가 자료제출 생략)"
+        return None
+    if key == "has_rsa":
+        if (r.get("has_rsa") or 0) == 1 or "위험분담" in (r.get("reimbursement_track_ko") or ""):
+            return "DB 위험분담 표시"
+        return None
+    if key == "reimbursed":
+        return "DB 심의결과" if (r.get("review_result") or "") in _REIMBURSED else None
+    if key == "rejected":
+        return "DB 심의결과" if (r.get("review_result") or "") == "REJECTED" else None
+    return None
+
+
+def apply_conditions(question: str, reports: list[dict]) -> tuple[list[dict], list[dict]]:
+    conds = structured_conditions(question)
+    if not conds:
+        return reports, []
+    kept = []
+    summary = [{"key": c["key"], "label": c["label"], "matched": 0, "bases": {}} for c in conds]
+    for r in reports:
+        ok = True
+        bases = {}
+        for c, sm in zip(conds, summary):
+            b = condition_basis(c["key"], r)
+            if not b:
+                ok = False
+                break
+            bases[c["key"]] = b
+        if ok:
+            r = {**r, "_condition_bases": bases}
+            kept.append(r)
+            for c, sm in zip(conds, summary):
+                sm["matched"] += 1
+                sm["bases"][bases[c["key"]]] = sm["bases"].get(bases[c["key"]], 0) + 1
+    return kept, summary
+
+
 _PLAN_SYSTEM = """너는 한국 약제급여평가위원회(약평위) 평가결과 보고서 분석을 설계한다.
 사용자의 질문을 '보고서 본문(한국어, 영문 병기 포함)에서 문구를 찾아 판정하는 작업'으로 분해하라.
 JSON 으로만 답한다:
@@ -232,8 +319,12 @@ JSON 으로만 답한다:
 - 질문에 없는 가정을 추가하지 마라."""
 
 
-def plan(question: str, llm: LLM) -> tuple[dict, dict]:
-    data, usage = llm(_PLAN_SYSTEM, "질문: " + question, 900)
+def plan(question: str, llm: LLM, applied: list[dict] | None = None) -> tuple[dict, dict]:
+    user = "질문: " + question
+    if applied:
+        user += ("\n[이미 DB로 적용된 조건 — terms·categories 에 넣지 말고, 남은 요구 내용만 찾도록 설계]\n"
+                 + "\n".join("- " + c["label"] for c in applied))
+    data, usage = llm(_PLAN_SYSTEM, user, 900)
     terms = []
     for t in data.get("terms") or []:
         t = str(t).strip()
@@ -266,6 +357,8 @@ _JUDGE_SYSTEM = """너는 약평위 평가결과 보고서 문단을 읽고 질�
 JSON 으로만 답한다: {"items":[{"p":문단번호,"category":"분류 key","strength":"strong|moderate|weak","quote":"문단에서 그대로 복사한 문장","reason":"왜 해당하는지 한 문장(한국어)"}]}
 규칙(엄수):
 - 질문에 **그 문단 자체가** 근거가 되는 경우만 items 에 넣는다. 해당 없는 문단은 넣지 않는다.
+- [이미 적용된 조건]에 적힌 조건은 해당 보고서가 이미 충족했다. 문단은 질문의 **남은 요구 내용**(예: 대상 환자 수)을 직접 다룰 때만 넣는다.
+- 질문이 여러 조건을 함께 요구하면, 그중 한 조건 단어만 나오는 문단(예: 질문은 '경평면제 약제의 환자 수'인데 문단은 일반적인 '환자' 언급뿐)은 넣지 않는다.
 - quote 는 문단 텍스트를 **한 글자도 바꾸지 않고** 복사한 연속 구간이다(8~220자). 요약·재작성·번역 금지.
 - category 는 제공된 key 중 하나만 쓴다. 맞는 것이 없으면 그 문단은 넣지 않는다.
 - 문단에 없는 사실, 외부 지식, 추측으로 판정하지 마라. 신청가·재정영향 같은 비공개 수치를 만들지 마라.
@@ -277,10 +370,12 @@ JSON 으로만 답한다: {"items":[{"p":문단번호,"category":"분류 key","s
   weak 는 사람이 거를 수 있도록 표시하는 것이니 숨기지 말고 items 에 넣되 반드시 weak 로 표시하라."""
 
 
-def _judge_batch(question: str, interp: str, cats: list[dict], batch: list[dict], llm: LLM) -> tuple[list[dict], dict, int]:
+def _judge_batch(question: str, interp: str, cats: list[dict], batch: list[dict], llm: LLM,
+                 applied: list[dict] | None = None) -> tuple[list[dict], dict, int]:
     cat_txt = "\n".join(f"- {c['key']}: {c['label']} — {c['definition']}" for c in cats)
     blocks = "\n\n".join(f"[문단 {i + 1}] (보고서: {b['label']})\n{b['text']}" for i, b in enumerate(batch))
-    user = f"[질문]\n{question}\n[해석]\n{interp}\n[분류]\n{cat_txt}\n\n{blocks}"
+    applied_txt = ("\n[이미 적용된 조건]\n" + "\n".join("- " + c["label"] for c in applied)) if applied else ""
+    user = f"[질문]\n{question}\n[해석]\n{interp}{applied_txt}\n[분류]\n{cat_txt}\n\n{blocks}"
     data, usage = llm(_JUDGE_SYSTEM, user, 2500)
     keys = {c["key"] for c in cats}
     kept, dropped = [], 0
@@ -331,8 +426,13 @@ def run_analysis(question: str, reports: list[dict], llm: LLM = call_llm,
     tok_in = tok_out = 0
     note = progress or (lambda *_: None)
 
+    scope_before = len(reports)
+    reports, applied = apply_conditions(question, reports)
+    if applied and not reports:
+        return _empty_result(question, applied, scope_before)
+
     note("plan", 0, 1)
-    pl, u = plan(question, llm)
+    pl, u = plan(question, llm, applied)
     tok_in += u.get("in", 0); tok_out += u.get("out", 0)
 
     note("candidates", 0, len(reports))
@@ -363,7 +463,7 @@ def run_analysis(question: str, reports: list[dict], llm: LLM = call_llm,
     note("judge", 0, len(batches))
 
     def work(b):
-        return _judge_batch(question, pl["interpretation"], pl["categories"], b, llm)
+        return _judge_batch(question, pl["interpretation"], pl["categories"], b, llm, applied)
 
     if batches:
         with ThreadPoolExecutor(max_workers=4) as ex:
@@ -380,7 +480,8 @@ def run_analysis(question: str, reports: list[dict], llm: LLM = call_llm,
         r = by_id[h["report_id"]]
         g = grouped.setdefault(h["report_id"], {
             "report_id": r["id"], "brand_name": r.get("brand_name"), "session_date": r.get("session_date"),
-            "review_result": r.get("review_result"), "post_url": r.get("post_url"), "file_name": r.get("file_name"), "items": []})
+            "review_result": r.get("review_result"), "post_url": r.get("post_url"), "file_name": r.get("file_name"),
+            "condition_bases": r.get("_condition_bases") or {}, "items": []})
         g["items"].append({"category": h["category"], "strength": h["strength"], "quote": h["quote"], "reason": h["reason"], "pos": h["pos"]})
     rank = {k: i for i, k in enumerate(STRENGTHS)}
     for g in grouped.values():
@@ -400,8 +501,10 @@ def run_analysis(question: str, reports: list[dict], llm: LLM = call_llm,
     return {
         "question": question, "interpretation": pl["interpretation"], "terms": pl["terms"], "stems": pl["stems"],
         "categories": pl["categories"], "model": MODEL, "version": ANALYSIS_VERSION,
-        "scope": {"reports": len(reports), "reports_with_candidates": reports_with, "passages_found": found,
+        "scope": {"reports": len(reports), "reports_before_conditions": scope_before,
+                  "reports_with_candidates": reports_with, "passages_found": found,
                   "passages_judged": len(cands), "truncated": truncated},
+        "conditions": applied,
         "hits": out_hits, "by_category": by_cat, "category_labels": labels,
         "strength_counts": strength_counts, "strength_reports": strength_reports,
         "dropped_unverified": dropped,
@@ -410,7 +513,23 @@ def run_analysis(question: str, reports: list[dict], llm: LLM = call_llm,
             "후보 문단은 위 '찾은 표현'(어근 포함)이 들어간 곳에서만 고릅니다. 전혀 다른 말로 쓴 같은 뜻의 문장은 놓칠 수 있습니다.",
             "AI 판정은 참고용입니다. 인용 문장은 원문에 실제 있는 것만 남겼지만 분류·근거 강도(강/중/약)의 타당성은 사람이 확인해 주세요.",
             "신청가·재정영향 등 비공개 수치는 보고서에 없어 분석하지 않습니다.",
-        ] + (["후보 문단이 많아 일치 표현이 많은 순서로 상위만 판정했습니다."] if truncated else []),
+        ] + (["후보 문단이 많아 일치 표현이 많은 순서로 상위만 판정했습니다."] if truncated else [])
+          + ([f"질문의 조건({', '.join(c['label'] for c in applied)})은 DB 표시·본문 문구로 먼저 걸렀습니다"
+              f"(검색 결과 {scope_before}건 → {len(reports)}건). DB 표시가 틀린 보고서는 빠질 수 있습니다."] if applied else []),
+    }
+
+
+def _empty_result(question: str, applied: list[dict], scope_before: int) -> dict:
+    return {
+        "question": question, "interpretation": question, "terms": [], "stems": [], "categories": [],
+        "model": MODEL, "version": ANALYSIS_VERSION,
+        "scope": {"reports": 0, "reports_before_conditions": scope_before, "reports_with_candidates": 0,
+                  "passages_found": 0, "passages_judged": 0, "truncated": False},
+        "conditions": applied, "hits": [], "by_category": [], "category_labels": {},
+        "strength_counts": {k: 0 for k in STRENGTHS}, "strength_reports": {k: 0 for k in STRENGTHS},
+        "dropped_unverified": 0, "tokens": {"in": 0, "out": 0}, "cost_usd": 0.0,
+        "limitations": [f"현재 검색 결과 {scope_before}건 중 질문 조건({', '.join(c['label'] for c in applied)})을 "
+                        "충족하는 보고서가 없습니다. 필터를 바꾸거나 범위를 넓혀 다시 실행해 주세요."],
     }
 
 
@@ -467,7 +586,8 @@ def _load_reports(ids: list[int]) -> list[dict]:
     with _connect() as c:
         q = ",".join("?" * len(ids))
         rows = c.execute(
-            f"SELECT id, brand_name, brand_name_raw, session_date, review_result, post_url, file_name, file_hash, body_text "
+            f"SELECT id, brand_name, brand_name_raw, session_date, review_result, post_url, file_name, file_hash, body_text, "
+            f"pe_waiver, has_rsa, reimbursement_track_ko "
             f"FROM analog_reports WHERE id IN ({q})", ids).fetchall()
     by = {r["id"]: dict(r) for r in rows}
     return [by[i] for i in ids if i in by]
@@ -591,6 +711,35 @@ RESULT_KO = {"APPROVED": "급여 적정", "CONDITIONAL_PRICE": "조건부 급여
              "APPROVED_WITH_POSTMARKET": "급여 적정(사후관리)", "REJECTED": "급여 불인정"}
 
 
+def list_jobs(owner: str, is_admin: bool = False, limit: int = 30) -> list[dict]:
+    """내 AI 분석 이력(최근순). 결과 본문은 빼고 요약만 — 다시 열면 get_job 으로 전체를 받는다."""
+    ensure_job_schema()
+    with _connect() as c:
+        rows = c.execute(
+            "SELECT id, owner, question, scope_ids, status, error, cost_usd, created_at, finished_at, result "
+            "FROM analog_ai_job WHERE owner=? ORDER BY created_at DESC LIMIT ?", (owner, max(1, min(limit, 100)))).fetchall()
+    out = []
+    for r in rows:
+        hits = reports = None
+        conds = []
+        if r["result"]:
+            try:
+                res = json.loads(r["result"])
+                hits = len(res.get("hits") or [])
+                reports = (res.get("scope") or {}).get("reports_before_conditions") or (res.get("scope") or {}).get("reports")
+                conds = [c.get("label") for c in res.get("conditions") or []]
+            except Exception:
+                pass
+        try:
+            scope_n = len(json.loads(r["scope_ids"] or "[]"))
+        except Exception:
+            scope_n = None
+        out.append({"job_id": r["id"], "question": r["question"], "status": r["status"], "error": r["error"],
+                    "created_at": r["created_at"], "finished_at": r["finished_at"], "scope_count": scope_n,
+                    "hit_reports": hits, "conditions": conds, "cost_usd": r["cost_usd"]})
+    return out
+
+
 def build_xlsx(result: dict) -> bytes:
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -624,6 +773,9 @@ def build_xlsx(result: dict) -> bytes:
             ["분석 범위", f"검색 결과 {s['reports']}건 중 후보 문단이 있는 보고서 {s['reports_with_candidates']}건, 판정한 문단 {s['passages_judged']}개"],
             ["근거가 확인된 보고서", f"{len(result['hits'])}건 (강 {result.get('strength_reports', {}).get('strong', 0)} · 중 {result.get('strength_reports', {}).get('moderate', 0)} · 약 {result.get('strength_reports', {}).get('weak', 0)}, 보고서의 가장 강한 근거 기준)"],
             ["원문 검증에서 버린 인용", f"{result['dropped_unverified']}건"], ["모델", result["model"]]]
+    for c in result.get("conditions") or []:
+        bases = ", ".join(f"{k} {v}건" for k, v in (c.get("bases") or {}).items())
+        rows.insert(5, ["적용한 조건", f"{c['label']}: 검색 결과 {s.get('reports_before_conditions', s['reports'])}건 중 {c['matched']}건 충족 ({bases})"])
     for r in rows:
         ws.append(r)
     ws.append([])
@@ -632,13 +784,14 @@ def build_xlsx(result: dict) -> bytes:
         ws.append([f"{c['label']} — {c['definition']}", f"{c['reports']}건 / {c['quotes']}건"])
     style(ws, [34, 100])
     w2 = wb.create_sheet("근거 표")
-    w2.append(["근거 강도", "분류", "제품", "약평위일", "심의결과", "원문 문장", "판정 이유", "출처 게시물", "보고서 파일"])
+    w2.append(["근거 강도", "분류", "제품", "약평위일", "심의결과", "원문 문장", "판정 이유", "출처 게시물", "보고서 파일", "조건 충족 근거"])
     for h in result["hits"]:
         for it in h["items"]:
             w2.append([STRENGTH_KO.get(it.get("strength"), "약"), labels.get(it["category"], it["category"]), h.get("brand_name"), h.get("session_date"),
                        RESULT_KO.get(h.get("review_result") or "", h.get("review_result")), it["quote"], it["reason"],
-                       h.get("post_url"), h.get("file_name")])
-    style(w2, [9, 18, 24, 12, 22, 90, 40, 46, 44])
+                       h.get("post_url"), h.get("file_name"),
+                       ", ".join(f"{v}" for v in (h.get("condition_bases") or {}).values())])
+    style(w2, [9, 18, 24, 12, 22, 90, 40, 46, 44, 30])
     w2.auto_filter.ref = w2.dimensions
     for row in w2.iter_rows(min_row=2, min_col=8, max_col=8):
         for c in row:

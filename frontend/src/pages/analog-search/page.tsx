@@ -1,8 +1,9 @@
 import AiAnalysisPanel, { type AiStatus } from './AiAnalysisPanel';
+import MultiSelect from './MultiSelect';
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import MiniMarkdown from '@/components/ui/MiniMarkdown';
 import {
-  fetchAnalogFacets, searchAnalog, fetchAnalogDetail, generateAnalogBrief, submitSearchFeedback,
+  fetchAnalogFacets, searchAnalog, fetchAnalogDetail, generateAnalogBrief, submitSearchFeedback, downloadAnalogList,
   FACET_LABELS, REVIEW_RESULT_KO, analogValueLabel, conceptChipLabel, displayBrandName, isIncompleteReport,
   type AnalogFacets, type AnalogReport, type AnalogSearchResult, type AnalogBrief, type EfficacyEndpoint,
 } from '@/api/analog';
@@ -613,8 +614,34 @@ function SortTh({ label, k, sort, onToggle }: { label: string; k: AnalogSortKey;
 
 // ── 메인 페이지 ───────────────────────────────────────────────────────────────
 
+// ── 최근 검색 이력 (브라우저 localStorage) ─────────────────────────────────
+interface SearchHistoryEntry { q: string; filters: Record<string, string[]>; at: string; count: number }
+const HISTORY_KEY = 'analog_search_history_v1';
+const historyKey = (h: Pick<SearchHistoryEntry, 'q' | 'filters'>) =>
+  JSON.stringify([h.q, Object.keys(h.filters).sort().map(k => [k, [...h.filters[k]].sort()])]);
+function loadSearchHistory(): SearchHistoryEntry[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+    return Array.isArray(raw) ? raw.filter(x => x && typeof x.q === 'string' && x.filters && typeof x.filters === 'object') : [];
+  } catch { return []; }
+}
+function saveSearchHistory(e: SearchHistoryEntry): SearchHistoryEntry[] {
+  const key = historyKey(e);
+  const next = [e, ...loadSearchHistory().filter(x => historyKey(x) !== key)].slice(0, 20);
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(next)); } catch { /* 저장 공간 없음 */ }
+  return next;
+}
+function clearSearchHistory(): SearchHistoryEntry[] {
+  try { localStorage.removeItem(HISTORY_KEY); } catch { /* 무시 */ }
+  return [];
+}
+function historyLabel(h: SearchHistoryEntry): string {
+  const parts = [h.q && `"${h.q}"`, ...Object.entries(h.filters).map(([k, v]) => `${FACET_LABELS[k] ?? k}: ${v.map(analogValueLabel).join('·')}`)];
+  return parts.filter(Boolean).join(' / ') || '전체';
+}
+
 export default function AnalogSearchPage() {
-  const [filters, setFilters] = useState<Record<string, string>>({});
+  const [filters, setFilters] = useState<Record<string, string[]>>({});
   const [query, setQuery] = useState('');
   const [data, setData] = useState<AnalogSearchResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -641,15 +668,38 @@ export default function AnalogSearchPage() {
     return () => { alive = false; };
   }, [filters]);
 
-  const runSearch = async () => {
+  // 최근 검색 이력 (2026-11-09) — 이 브라우저에 20건 보관, 누르면 같은 조건으로 다시 검색
+  const [recent, setRecent] = useState<SearchHistoryEntry[]>(() => loadSearchHistory());
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState('');
+
+  const runSearch = async (override?: { filters: Record<string, string[]>; q: string }) => {
+    const f = override?.filters ?? filters;
+    const qv = (override?.q ?? query).trim();
     setLoading(true); setBrief(null);
     try {
       const res = await searchAnalog({
-        filters, q: query.trim() || undefined, limit, sort,
+        filters: f, q: qv || undefined, limit, sort,
       });
       setData(res);
+      if (qv || Object.keys(f).length) setRecent(saveSearchHistory({ q: qv, filters: f, at: new Date().toISOString(), count: res.results?.length ?? 0 }));
     } catch (e) { console.error(e); setData(null); }
     finally { setLoading(false); }
+  };
+  const applyHistory = (h: SearchHistoryEntry) => {
+    setQuery(h.q);
+    setFilters(h.filters);
+    void runSearch({ filters: h.filters, q: h.q });
+  };
+  const downloadVisible = async () => {
+    if (!results.length || downloading) return;
+    setDownloading(true); setDownloadError('');
+    try {
+      const ctx = [query.trim() && `검색어: ${query.trim()}`,
+        ...Object.entries(filters).map(([k, v]) => `${FACET_LABELS[k] ?? k}: ${v.map(analogValueLabel).join(', ')}`)].filter(Boolean).join(' · ');
+      await downloadAnalogList(results.map(r => r.id), ctx);
+    } catch (e) { setDownloadError(e instanceof Error ? e.message : String(e)); }
+    finally { setDownloading(false); }
   };
 
   useEffect(() => { runSearch(); /* eslint-disable-next-line */ }, []);
@@ -668,10 +718,10 @@ export default function AnalogSearchPage() {
   });
 
   // 캐스케이드: 한 단계를 바꾸면 그 뒤(하위) 단계 선택은 모두 해제 — 무효 조합 방지
-  const setFacet = (k: string, v: string) =>
+  const setFacet = (k: string, v: string[]) =>
     setFilters(prev => {
       const n = { ...prev };
-      if (v) n[k] = v; else delete n[k];
+      if (v.length) n[k] = v; else delete n[k];
       const idx = FACET_KEYS.indexOf(k);
       if (idx >= 0) FACET_KEYS.slice(idx + 1).forEach(dk => delete n[dk]);
       return n;
@@ -691,7 +741,7 @@ export default function AnalogSearchPage() {
     if (!results.length) return;
     setBriefLoading(true);
     try {
-      const ctx = [query, ...Object.values(filters)].filter(Boolean).join(' · ');
+      const ctx = [query, ...Object.values(filters).flat()].filter(Boolean).join(' · ');
       setBrief(await generateAnalogBrief(briefIds, ctx));
     } catch (e) { setBrief({ brief: '', cited_ids: [], error: String(e) }); }
     finally { setBriefLoading(false); }
@@ -731,20 +781,8 @@ export default function AnalogSearchPage() {
         <div className="rounded-2xl border border-gray-200 bg-white p-5 space-y-4">
           <div className="grid grid-cols-4 lg:grid-cols-8 gap-2">
             {FACET_KEYS.map(k => (
-              <div key={k}>
-                <label className="text-[10px] font-semibold text-gray-400 uppercase">
-                  {FACET_LABELS[k] ?? k}
-                </label>
-                <select value={filters[k] ?? ''} onChange={e => setFacet(k, e.target.value)}
-                  className="w-full mt-0.5 text-xs border border-gray-200 rounded-lg px-2 py-2 bg-gray-50 focus:outline-none focus:border-teal-300">
-                  <option value="">전체</option>
-                  {(facetData?.[k] ?? []).map(o => (
-                    <option key={o.value} value={o.value}>
-                      {analogValueLabel(o.value)} ({o.count})
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <MultiSelect key={k} label={FACET_LABELS[k] ?? k} options={facetData?.[k] ?? []}
+                selected={filters[k] ?? []} onChange={v => setFacet(k, v)} renderLabel={analogValueLabel} />
             ))}
           </div>
           <div className="flex gap-3">
@@ -760,13 +798,13 @@ export default function AnalogSearchPage() {
               <div className="relative mt-0.5">
                 <i className="ri-search-line absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
                 <input value={query} onChange={e => setQuery(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && runSearch()}
+                  onKeyDown={e => { if (e.key === 'Enter') void runSearch(); }}
                   placeholder="약제명·성분·질환·기전·제형 검색"
                   className="w-full text-sm border border-gray-200 rounded-lg pl-9 pr-3 py-2 bg-gray-50 focus:outline-none focus:border-teal-300" />
               </div>
             </div>
             <div className="flex items-end gap-2">
-              <button onClick={runSearch}
+              <button onClick={() => void runSearch()}
                 className="bg-teal-600 text-white text-sm font-bold px-5 py-2 rounded-lg hover:bg-teal-700 transition-colors whitespace-nowrap">
                 <i className="ri-search-line mr-1"></i>검색
               </button>
@@ -775,6 +813,20 @@ export default function AnalogSearchPage() {
             </div>
           </div>
         </div>
+
+        {recent.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap -mt-2">
+            <span className="text-[11px] text-gray-400"><i className="ri-history-line mr-0.5"></i>최근 검색</span>
+            {recent.slice(0, 10).map(h => (
+              <button key={historyKey(h)} type="button" onClick={() => applyHistory(h)}
+                title={`${new Date(h.at).toLocaleString('ko-KR')} · ${h.count}건`}
+                className="text-[11px] bg-white border border-gray-200 rounded-full px-3 py-1 text-gray-600 hover:border-teal-300 hover:text-teal-700 max-w-[320px] truncate">
+                {historyLabel(h)}
+              </button>
+            ))}
+            <button type="button" onClick={() => setRecent(clearSearchHistory())} className="text-[11px] text-gray-400 hover:text-gray-600 underline">지우기</button>
+          </div>
+        )}
 
         {/* 동의어/조건 인식 칩 — 쿼리가 매핑된 concept(teal) + 도메인 필드(indigo) */}
         {data?.query_debug && data.query_debug.matched_concepts.length > 0 && (
@@ -841,6 +893,14 @@ export default function AnalogSearchPage() {
               </button>
             )}
             {results.length > 0 && (
+              <button onClick={downloadVisible} disabled={downloading}
+                title="지금 화면에 보이는 목록 전체를 엑셀로 내려받습니다(더 보기로 늘린 건 포함)"
+                className="flex items-center gap-1.5 bg-white border border-gray-300 text-gray-700 text-xs font-bold px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-60">
+                <i className={downloading ? 'ri-loader-4-line animate-spin' : 'ri-file-excel-2-line'}></i>
+                {downloading ? '만드는 중…' : `목록 엑셀 (${results.length}건)`}
+              </button>
+            )}
+            {results.length > 0 && (
               <button onClick={() => setAiOpen(o => !o)} title="현재 검색 결과에 질문하고, 본문에서 근거 문장을 찾아 줍니다"
                 className={`relative flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-lg transition-colors border ${aiOpen ? 'bg-teal-600 border-teal-600 text-white' : 'bg-white border-teal-300 text-teal-700 hover:bg-teal-50'}`}>
                 <i className={aiStatus === 'running' ? 'ri-loader-4-line animate-spin' : 'ri-sparkling-2-line'}></i>
@@ -857,6 +917,8 @@ export default function AnalogSearchPage() {
             )}
           </div>
         </div>
+
+        {downloadError && <p role="alert" className="text-xs text-red-500">엑셀 다운로드 실패: {downloadError}</p>}
 
         {/* 브리프 */}
         {brief && (
