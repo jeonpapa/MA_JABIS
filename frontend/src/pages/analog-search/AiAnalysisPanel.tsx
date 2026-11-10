@@ -116,7 +116,7 @@ export default function AiAnalysisPanel({ open, onClose, reportIds, onOpen, onSt
       <div className="sticky top-0 bg-white/95 backdrop-blur border-b border-gray-100 px-6 py-4 flex items-center justify-between z-10">
         <div>
           <h2 className="flex items-center gap-2 text-base font-bold text-teal-700"><i className="ri-sparkling-2-line"></i>AI 분석</h2>
-          <p className="text-[11px] text-gray-500 mt-0.5">현재 검색 결과 {reportIds.length}건에 질문합니다</p>
+          <p className="text-[11px] text-gray-500 mt-0.5">{`현재 검색 결과 ${reportIds.length}건에 질문합니다`}</p>
         </div>
         <button ref={closeRef} type="button" onClick={onClose} tabIndex={open ? 0 : -1}
           className="text-xs bg-gray-100 hover:bg-gray-200 rounded-md px-3 py-1.5">닫기 ×</button>
@@ -256,7 +256,7 @@ export default function AiAnalysisPanel({ open, onClose, reportIds, onOpen, onSt
                       <div className="space-y-2">
                         {h.items.map((it, k) => (
                           <div key={k} className="text-xs">
-                            <span className={`inline-block font-bold rounded px-2 py-0.5 mr-1 ${STRENGTH_STYLE[it.strength]}`} title={STRENGTH_HELP}>근거 {STRENGTH_KO[it.strength]}</span>
+                            <span className={`inline-block font-bold rounded px-2 py-0.5 mr-1 ${STRENGTH_STYLE[it.strength]}`} title={STRENGTH_HELP}>{`근거 ${STRENGTH_KO[it.strength]}`}</span>
                             <span className={`inline-block font-bold rounded px-2 py-0.5 mr-2 ${CAT_COLORS[catIndex(it.category) % CAT_COLORS.length]}`}>{result.category_labels[it.category] ?? it.category}</span>
                             <span className="text-gray-400">{it.reason}</span>
                             <blockquote className="mt-1 border-l-2 border-gray-300 pl-3 text-gray-700 leading-relaxed">“{it.quote}”</blockquote>
