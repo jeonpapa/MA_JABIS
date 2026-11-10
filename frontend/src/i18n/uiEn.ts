@@ -413,6 +413,8 @@ export const UI_EN: Record<string, string> = {
   '먼저 적용한 조건': 'Conditions applied first',
   '근거가 확인된 보고서': 'Reports with evidence',
   // ── 6차 보강(시연 촬영 보정분) ──
+  '조정가 (최소단위당)': 'Adjusted (per unit)',
+  '조정가 (평균 제외 · 참고)': 'Adjusted (excluded from avg · reference)',
   '조사 후 대시보드 검증을 거쳐 이메일로 알립니다. 상태는 30초마다 갱신됩니다. 가격 미확정·수집 실패는 미허가를 뜻하지 않으며, 0은 유효한 가격으로 표시하지 않습니다.': "After collection and dashboard verification you'll get an email. Status refreshes every 30 seconds. Unconfirmed or failed prices don't mean 'not approved', and 0 is never shown as a price.",
   '인식된 조건:': 'Recognized:',
   '· 의미 일치 우선 정렬': '· sorted by meaning match',
@@ -445,6 +447,7 @@ const t = (s: string) => UI_EN[s.trim()] ?? s;
 
 export const UI_EN_PATTERNS: [RegExp, (...m: string[]) => string][] = [
   [/^(\d+)건$/, (_, n) => `${n} items`],
+  [/^근거가 확인된 보고서 (\d+)건$/, (_, n) => `Reports with evidence: ${n}`],
   [/^현재 검색 결과 (\d+)건에 질문합니다$/, (_, n) => `Your question will run on the current ${n} results`],
   [/^(\d+)개국 캐시$/, (_, n) => `${n}-country cache`],
   [/^· 메일 발송됨 (.+)$/, (_, d) => `· mail sent ${translateUi(d)?.trim() ?? d}`],

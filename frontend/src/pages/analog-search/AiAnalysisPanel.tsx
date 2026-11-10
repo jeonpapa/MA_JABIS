@@ -200,8 +200,8 @@ export default function AiAnalysisPanel({ open, onClose, reportIds, onOpen, onSt
               <div className="rounded-xl bg-teal-50/60 border border-teal-100 p-4">
                 <p className="text-sm font-bold text-teal-800">{result.interpretation || result.question}</p>
                 <p className="text-xs text-gray-600 mt-1">
-                  범위 {result.scope.reports}건 중 후보 문단이 있는 보고서 {result.scope.reports_with_candidates}건 · 판정한 문단 {result.scope.passages_judged}개
-                  · <b className="text-teal-700">근거가 확인된 보고서 {result.hits.length}건</b> (<span title={STRENGTH_HELP}>강 {result.strength_reports.strong} · 중 {result.strength_reports.moderate} · 약 {result.strength_reports.weak}</span>)
+                  {`범위 ${result.scope.reports}건 중 후보 문단이 있는 보고서 ${result.scope.reports_with_candidates}건 · 판정한 문단 ${result.scope.passages_judged}개`}
+                  {' · '}<b className="text-teal-700">{`근거가 확인된 보고서 ${result.hits.length}건`}</b>{' '}<span title={STRENGTH_HELP}>{`(강 ${result.strength_reports.strong} · 중 ${result.strength_reports.moderate} · 약 ${result.strength_reports.weak})`}</span>
                   {result.dropped_unverified > 0 && <span className="text-gray-400"> · 원문 검증에서 버린 인용 {result.dropped_unverified}건</span>}
                 </p>
                 {(result.conditions ?? []).length > 0 && (
@@ -226,7 +226,7 @@ export default function AiAnalysisPanel({ open, onClose, reportIds, onOpen, onSt
               <div className="flex flex-wrap items-center gap-2">
                 {result.by_category.map((c, i) => (
                   <span key={c.key} title={c.definition} className={`text-xs font-bold rounded-full px-3 py-1 ${CAT_COLORS[i % CAT_COLORS.length]}`}>
-                    {c.label} · 보고서 {c.reports}건 / 인용 {c.quotes}건
+                    {`${c.label} · 보고서 ${c.reports}건 / 인용 ${c.quotes}건`}
                   </span>
                 ))}
                 {result.strength_counts.weak > 0 && (
