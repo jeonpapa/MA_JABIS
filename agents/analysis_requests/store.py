@@ -297,6 +297,34 @@ class AnalysisRequestStore:
             self._event(c, rid, actor, "file_added", name)
             return {"id": cur.lastrowid, "filename": name, "size": len(content)}
 
+    def add_supplement_file(self, rid, actor, filename, content: bytes, note: str = "") -> dict:
+        """완료된 요청에 관리자가 보완 파일을 덧붙인다(2026-11-09). 상태·결과 요약은 바꾸지 않고 이벤트로 남긴다."""
+        name = Path(str(filename or "")).name
+        ext = Path(name).suffix.lower()
+        if not name or ext not in ALLOWED_EXT or len(name) > 120:
+            raise ValueError(f"allowed file types: {', '.join(sorted(ALLOWED_EXT))}")
+        if not content or len(content) > FILE_MAX_BYTES:
+            raise ValueError(f"file must be 1..{FILE_MAX_BYTES} bytes")
+        note = str(note or "")[:500]
+        with self.connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            r = c.execute("SELECT status FROM analysis_requests WHERE id=?", (rid,)).fetchone()
+            if not r:
+                raise KeyError(rid)
+            if r[0] != "completed":
+                raise Conflict("완료된 요청에만 보완 파일을 추가할 수 있습니다")
+            if c.execute("SELECT COUNT(*) FROM analysis_request_files WHERE request_id=?", (rid,)).fetchone()[0] >= FILES_MAX + 3:
+                raise Conflict("파일 수 상한")
+            digest = hashlib.sha256(content).hexdigest()
+            rel = f"{rid}/{digest[:16]}{ext}"
+            dest = self.files_root / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(content)
+            cur = c.execute("INSERT INTO analysis_request_files(request_id,filename,content_type,size,sha256,stored_path,created_at) "
+                            "VALUES(?,?,?,?,?,?,?)", (rid, name, ALLOWED_EXT[ext], len(content), digest, rel, now()))
+            self._event(c, rid, actor, "supplement_added", (name + (" — " + note if note else ""))[:600])
+            return {"id": cur.lastrowid, "filename": name, "size": len(content)}
+
     def complete(self, rid, actor, token, payload: dict) -> dict:
         summary = _text(payload.get("summary"), "summary", 20, 20000)
         method = _text(payload.get("method"), "method", 10, 8000)

@@ -13,6 +13,7 @@ import {
 } from '@/utils/authUsers';
 import { getTabVisibility, setTabVisibility, isTabVisible } from '@/utils/tabVisibility';
 import { fetchOutboxCount } from '@/api/serviceRequests';
+import { getUiLang, setUiLang, UI_LANG_EVENT, type UiLang } from '@/i18n/uiTranslate';
 import { fetchPendingProposalCount, SV_PROPOSALS_CHANGED_EVENT } from '@/api/stakeholder';
 
 export interface NavItem {
@@ -69,6 +70,30 @@ function groupItems(items: NavItem[]): [string, NavItem[]][] {
 }
 
 type SettingsTab = 'account' | 'users' | 'tabs';
+
+function LangToggle() {
+  const [lang, setLang] = useState<UiLang>(getUiLang());
+  useEffect(() => {
+    const on = (e: Event) => setLang((e as CustomEvent).detail as UiLang);
+    window.addEventListener(UI_LANG_EVENT, on);
+    return () => window.removeEventListener(UI_LANG_EVENT, on);
+  }, []);
+  return (
+    <button
+      type="button"
+      data-no-translate
+      onClick={() => setUiLang(lang === 'en' ? 'ko' : 'en')}
+      title={lang === 'en' ? '한국어 화면으로' : 'Switch menus & filters to English'}
+      aria-label={lang === 'en' ? '한국어 화면으로' : 'Switch to English'}
+      className="h-6 px-1.5 flex items-center gap-0.5 rounded-md text-[10px] font-bold cursor-pointer hover:bg-black/5 transition-colors"
+      style={{ border: '1px solid var(--separator)' }}
+    >
+      <span className={lang === 'ko' ? 'text-[#00E5CC]' : 'text-[#8B9BB4]'}>KO</span>
+      <span className="text-[#8B9BB4]">/</span>
+      <span className={lang === 'en' ? 'text-[#00E5CC]' : 'text-[#8B9BB4]'}>EN</span>
+    </button>
+  );
+}
 
 export default function Sidebar() {
   const navigate = useNavigate();
@@ -352,6 +377,8 @@ export default function Sidebar() {
             </p>
             <p className="text-[#8B9BB4] text-xs truncate">{displayEmail}</p>
           </div>
+          {/* UI 언어 토글 — 메뉴·필터·입력창만 영어로 (2026-11-10, 리더십 발표용) */}
+          <LangToggle />
           {/* 설정 아이콘 — admin 전용 */}
           {adminMode && (
             <button

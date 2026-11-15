@@ -125,3 +125,17 @@ def test_run_applies_verifications_and_removals_from_payload(tmp_path, monkeypat
     res = imp.run(payload)
     assert res["verified_applied"] == 1 and res["events_removed"] == 1
     assert res["verified_unmatched"] == [] and res["event_removals_unmatched"] == []
+
+
+def test_committee_json_does_not_override_nhis_official_status(tmp_path):
+    c = _conn(_db(tmp_path))
+    c.execute("ALTER TABLE amjilsim_drugs ADD COLUMN placeholder INTEGER")
+    c.execute("UPDATE amjilsim_drugs SET negotiation_status='AGREED', negotiation_date_source='nhis_official', "
+              "negotiation_complete_date='2026-09' WHERE drug_id=3")
+    did = imp._upsert_drug(c, {"brand_kr": "키스칼리정", "ingredient_inn": "ribociclib", "negotiation_status": "IN_PROGRESS",
+                               "indication": "HR+ 조기 유방암"})
+    row = c.execute("SELECT negotiation_status, indication FROM amjilsim_drugs WHERE drug_id=?", (did,)).fetchone()
+    assert did == 3 and tuple(row) == ("AGREED", "HR+ 조기 유방암")
+    # 공단 공식 출처가 아니면 기존처럼 JSON 값을 따른다
+    imp._upsert_drug(c, {"brand_kr": "웰리렉", "ingredient_inn": "belzutifan", "negotiation_status": "IN_PROGRESS"})
+    assert c.execute("SELECT negotiation_status FROM amjilsim_drugs WHERE drug_id=1").fetchone()[0] == "IN_PROGRESS"

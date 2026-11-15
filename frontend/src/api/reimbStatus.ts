@@ -431,6 +431,11 @@ export async function fetchReports(): Promise<IntelligenceReport[]> {
  * PDF 다운로드/열기 — Bearer 토큰이 필요하므로 plain <a href> 가 아니라
  * fetch blob → objectURL 로 새 탭에서 연다.
  */
+/** 관리자 — 보고서 삭제(행 삭제 + git sync 재적재 차단) */
+export async function deleteReport(reportId: number): Promise<void> {
+  await api.delete<{ deleted: number }>(`/api/admin/reimbursement/reports/${reportId}`);
+}
+
 export async function openReportPdf(reportId: number): Promise<void> {
   const token = getToken();
   const headers: Record<string, string> = {};

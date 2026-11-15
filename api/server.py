@@ -6825,7 +6825,8 @@ def analog_facets():
             "disease_category", "disease_category_detail", "cancer_type", "line_of_therapy",
             "review_result", "reimbursement_track_ko", "coverage_gap_type", "approval_driver",
         ]
-        filters = {k: request.args.get(k) for k in cascade_keys if request.args.get(k)}
+        # 2026-11-09: 같은 칸 복수 선택 — 반복 파라미터(?k=a&k=b)
+        filters = {k: [v for v in request.args.getlist(k) if v] for k in cascade_keys if request.args.get(k)}
         return jsonify(_analog.facet_values(filters))
     except Exception as e:
         logger.error("analog facets 실패: %s", e, exc_info=True)
@@ -6843,7 +6844,7 @@ def analog_search():
             "medical_necessity", "approval_driver",
             "has_rsa", "pe_waiver", "has_postmarket_condition",
         ]
-        filters = {k: request.args.get(k) for k in facet_keys if request.args.get(k)}
+        filters = {k: [v for v in request.args.getlist(k) if v] for k in facet_keys if request.args.get(k)}
         # 통합 검색어: q 우선, 하위호환으로 fts/semantic 도 수용
         q = (request.args.get("q") or request.args.get("fts")
              or request.args.get("semantic") or "").strip() or None
@@ -7501,6 +7502,15 @@ def reimb_reports_list():
     except Exception as e:
         logger.error("reimb reports list 실패: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+@app.delete("/api/admin/reimbursement/reports/<int:report_id>")
+@require_auth(role="admin")
+def reimb_report_delete(report_id: int):
+    try:
+        return jsonify(_reimb_reports.delete_report(report_id, actor=request.user.get("sub")))  # type: ignore[attr-defined]
+    except LookupError as e:
+        return jsonify({"error": str(e)}), 404
 
 
 @app.get("/api/reimbursement/reports/<int:report_id>/pdf")

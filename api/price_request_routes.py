@@ -9,7 +9,7 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request, send_file
 from io import BytesIO
 from api.auth import require_auth
-from api.price_request_ingest import prepare_a8, prepare_oecd, de_rows_from_scraper_items
+from api.price_request_ingest import prepare_a8, prepare_oecd, de_rows_from_scraper_items, rows_from_scraper_records
 from agents.price_request_catalog import CATALOG
 from agents.price_request_store import PriceRequestStore, Conflict, dump
 
@@ -229,14 +229,100 @@ def build_price_request_blueprint(db_path, foreign_agent):
         except Exception as e:  # 자격증명·네트워크·파싱 실패는 사유만 남긴다(비밀값 미포함)
             job.update(status="error", error=f"{type(e).__name__}: {str(e)[:300]}", finished_at=datetime.utcnow().isoformat() + "Z")
 
+    def _run_ch_collect(r, job):
+        """스위스 BAG SL 공개 API(로그인 없음) — 2026-11-10 모니터링 B안(공개 자료 국가 서버 수집)."""
+        import argparse
+        import importlib.util
+        from pathlib import Path as _P
+        try:
+            spec = importlib.util.spec_from_file_location("a8_rows", _P(__file__).resolve().parent.parent / "scripts" / "a8_rows.py")
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            ident = r.get("identity") or {}
+            q = r["query"]
+            brand = (ident.get("brand") or q.split("/")[0]).strip()
+            inn = (ident.get("inn") or (q.split("/")[1] if "/" in q else q)).strip()
+            ns = argparse.Namespace(trademark=brand, ingredient=inn, form="unknown", dosage_form="", strength="",
+                                    observed_at=None, evidence=f"server-api:bag_sl:{brand}", json=None)
+            rows, skipped = mod.build_ch(ns)
+            import re as _re
+            for row in rows:   # 제형은 SL 표기에서 — 주사(바이알) vs 경구(정·캡슐). 모르면 unknown 그대로(워커 확인)
+                txt = f"{row.get('product_name') or ''} {row.get('package_unit') or ''}"
+                if _re.search(r"Inj|Infus|Durchstf|Fertigspr|Amp|Pen\b|Trockensub|Lösung zur", txt, _re.I):
+                    row["form_type"] = "injection"
+                elif _re.search(r"Tabl|Kaps|Filmtabl|Dragée|Granul|Sirup|Susp zum Einnehmen", txt, _re.I):
+                    row["form_type"] = "oral"
+            job.update(status="done", rows=rows, skipped=skipped, finished_at=datetime.utcnow().isoformat() + "Z")
+        except Exception as e:
+            job.update(status="error", error=f"{type(e).__name__}: {str(e)[:300]}", finished_at=datetime.utcnow().isoformat() + "Z")
+
+    # 2026-11-10 사용자 결정: 서버 수집 = DE·CH·JP·US·CA·FR(BdM_IT). 영국·이탈리아는 브라우저 유지.
+    # 브라우저(Chromium)를 띄우는 수집기는 메모리 1GB 서버에서 한 번에 하나만 돈다(US 는 좌석 제한 — 동시 로그인 방지).
+    import threading as _th
+    _collect_lock = _th.Lock()
+
+    def _brand_inn(r):
+        ident = r.get("identity") or {}
+        q = r["query"]
+        brand = (ident.get("brand") or q.split("/")[0]).strip()
+        inn = (ident.get("inn") or (q.split("/")[1] if "/" in q else "")).strip()
+        return brand, inn
+
+    def _run_scraper_collect(cc, r, job):
+        import asyncio
+        try:
+            import time as _time
+            with _collect_lock:
+                job["phase"] = "running"
+                brand, inn = _brand_inn(r)
+                records, errors = [], []
+                # 수집기는 접속 오류(도메인 조회 실패 등)를 0건으로 돌려주기도 한다 — 0건이면 3번까지 다시 시도하고,
+                # 그래도 0건이면 '가격 없음'이 아니라 '확인 필요'로 넘긴다(워커가 브라우저·판정).
+                for attempt in range(3):
+                    for q in [x for x in (brand, inn) if x]:
+                        try:
+                            records = asyncio.run(foreign_agent._build_scraper(cc).run(q)) or []
+                        except Exception as e:
+                            errors.append(f"{q}: {type(e).__name__}: {str(e)[:120]}")
+                            records = []
+                        if records:
+                            job["searched"] = q
+                            break
+                    if records:
+                        break
+                    _time.sleep(5 * (attempt + 1))
+                job["attempts"] = attempt + 1
+            rows, skipped = rows_from_scraper_records(cc, records, foreign_agent)
+            if not records:
+                skipped.append({"reason": "3회 시도 모두 0건 — 접속 오류일 수 있음. 가격 없음으로 판단하지 말고 브라우저로 확인",
+                                "errors": errors[-3:]})
+            job.update(status="done", rows=rows, skipped=skipped, finished_at=datetime.utcnow().isoformat() + "Z")
+        except Exception as e:
+            job.update(status="error", error=f"{type(e).__name__}: {str(e)[:300]}", finished_at=datetime.utcnow().isoformat() + "Z")
+
+    def _run_fr_collect(r, job):
+        """프랑스 BdM_IT(관보 PFHT·UCD tarif HT, 시행일=적용일). 안 열리면 error → 워커가 브라우저로 관보(Légifrance)."""
+        from agents.foreign_sources import fr_bdm_it
+        try:
+            brand, inn = _brand_inn(r)
+            rows, skipped = fr_bdm_it.rows_for(brand, inn)
+            job.update(status="done", rows=rows, skipped=skipped, finished_at=datetime.utcnow().isoformat() + "Z")
+        except fr_bdm_it.BdmItUnavailable as e:
+            job.update(status="error", error=f"BdM_IT unavailable — use browser Journal officiel: {str(e)[:200]}",
+                       finished_at=datetime.utcnow().isoformat() + "Z")
+        except Exception as e:
+            job.update(status="error", error=f"{type(e).__name__}: {str(e)[:300]}", finished_at=datetime.utcnow().isoformat() + "Z")
+
+    SERVER_COLLECT = ("DE", "CH", "JP", "US", "CA", "FR")
+
     @bp.post("/api/price-agent/requests/<rid>/server-collect/<cc>")
     @require_auth(role="price_agent")
     @guarded
     def server_collect_start(rid, cc):
         import threading
         r = worker_detail(rid)
-        if cc != "DE":
-            raise ValueError("server collection is allowed for DE only")
+        if cc not in SERVER_COLLECT:
+            raise ValueError("server collection is allowed for " + ", ".join(SERVER_COLLECT) + " only")
         if cc not in r["countries"]:
             raise ValueError("country not requested")
         store.touch_worker(actor(), "server-collect")
@@ -246,7 +332,17 @@ def build_price_request_blueprint(db_path, foreign_agent):
             return jsonify(job), 202
         job = {"status": "running", "query": r["query"], "started_at": datetime.utcnow().isoformat() + "Z"}
         _collect_jobs[key] = job
-        threading.Thread(target=_run_de_collect, args=(r["query"], job), daemon=True).start()
+        if cc == "DE":
+            def _de_locked(q, j):
+                with _collect_lock:
+                    _run_de_collect(q, j)
+            threading.Thread(target=_de_locked, args=(r["query"], job), daemon=True).start()
+        elif cc == "CH":
+            threading.Thread(target=_run_ch_collect, args=(r, job), daemon=True).start()
+        elif cc == "FR":
+            threading.Thread(target=_run_fr_collect, args=(r, job), daemon=True).start()
+        else:
+            threading.Thread(target=_run_scraper_collect, args=(cc, r, job), daemon=True).start()
         return jsonify(job), 202
 
     @bp.get("/api/price-agent/requests/<rid>/server-collect/<cc>")
@@ -290,7 +386,8 @@ def build_price_request_blueprint(db_path, foreign_agent):
                 # Retrieval session and actual source observation remain distinct.
                 item["_session_at"] = stamp
             prepared.append(item)
-        out = store.accept(rid, cc, actor(), lease(), status, reason, prepared, payload_hash)
+        out = store.accept(rid, cc, actor(), lease(), status, reason, prepared, payload_hash,
+                           b.get("verdict"), b.get("verdict_sources"))
         return jsonify(request=out)
 
     @bp.post("/api/price-agent/requests/<rid>/verify")
@@ -325,4 +422,10 @@ def build_price_request_blueprint(db_path, foreign_agent):
     # 분석 요청(A안, 2026-11-02) — server.py 를 건드리지 않도록 여기서 중첩 등록한다. URL 은 /api/analysis-requests…
     from api.analysis_request_routes import build_analysis_request_blueprint
     bp.register_blueprint(build_analysis_request_blueprint(db_path))
+    # 등재 아날로그 목록 엑셀·AI 분석 이력(2026-11-09) — 같은 이유로 중첩 등록
+    from api.analog_extra_routes import build_analog_extra_blueprint
+    bp.register_blueprint(build_analog_extra_blueprint())
+    # 해외약가 모니터링(2026-11-10)
+    from api.price_monitor_routes import build_price_monitor_blueprint
+    bp.register_blueprint(build_price_monitor_blueprint(db_path))
     return bp

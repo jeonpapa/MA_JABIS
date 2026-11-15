@@ -764,6 +764,11 @@ def _upsert_drug(conn: sqlite3.Connection, d: dict) -> int:
     if existing:
         drug_id = existing["drug_id"]
         set_cols = [c for c in cols if c != "brand_kr"]
+        # 2026-11-14: 공단 공식(nhis_official)으로 확정된 협상 상태는 위원회 JSON 이 덮지 않는다 — 헤르메스 JSON 의
+        # negotiation_status(대개 IN_PROGRESS)가 매 커밋마다 공단 '협상 완료' 34건을 진행 중으로 되돌렸다(보드 59→87장).
+        src = conn.execute("SELECT negotiation_date_source FROM amjilsim_drugs WHERE drug_id = ?", (drug_id,)).fetchone()
+        if src and src[0] == "nhis_official":
+            set_cols = [c for c in set_cols if c != "negotiation_status"]
         conn.execute(
             f"UPDATE amjilsim_drugs SET {', '.join(f'{c}=?' for c in set_cols)} "
             f"WHERE drug_id = ?",

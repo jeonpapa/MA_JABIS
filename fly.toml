@@ -41,6 +41,6 @@ primary_region = "nrt"   # Tokyo — 한국 최저 레이턴시 리전
   destination = "/app/data"
 
 [[vm]]
-  memory = "1gb"               # Playwright chromium 구동 여유
+  memory = "2gb"               # Playwright chromium 구동 여유 + 무거운 동기화 잡(2026-11-15 OOM 추정 장애 후 상향)
   cpu_kind = "shared"
   cpus = 1

@@ -418,3 +418,20 @@ def test_cli_source_dir_and_dry_run(tmp_path, capsys):
 def test_cli_requires_mode(tmp_path, capsys):
     with pytest.raises(SystemExit):
         sync.main(["--root", str(tmp_path / "r"), "--db", str(tmp_path / "s.db")])
+
+
+def test_contents_api_mismatch_falls_back_to_blob_api(tmp_path, monkeypatch):
+    """2026-11-14 candidate_07.html — Contents API raw 가 tree 와 다른 바이트를 주면 sha 주소 blob API 로 대체."""
+    good = (FIX / "source_manifest.json").read_bytes()
+    tree = {"sha": "T", "tree": [{"path": "source_manifest.json", "type": "blob", "sha": _blob_sha(good),
+                                  "size": len(good)}]}
+    monkeypatch.setattr(sync, "fetch_blob_github", lambda *a: good + b" stale")
+    seen = []
+    monkeypatch.setattr(sync, "fetch_blob_by_sha_github", lambda repo, sha, token: seen.append(sha) or good)
+    res = sync.sync(tmp_path / "root", tmp_path / "s.db", repo="o/r", token="t", today=TODAY, fetch_tree=lambda *a: tree)
+    assert seen == [_blob_sha(good)] and res["counts"]["fetch_failed"] == 0 and res["counts"]["downloaded"] == 1
+    assert (tmp_path / "root" / "source_manifest.json").read_bytes() == good
+    # 대체 경로도 틀리면 기존처럼 쓰지 않는다
+    monkeypatch.setattr(sync, "fetch_blob_by_sha_github", lambda *a: b"bad")
+    res2 = sync.sync(tmp_path / "root2", tmp_path / "s2.db", repo="o/r", token="t", today=TODAY, fetch_tree=lambda *a: tree)
+    assert res2["counts"]["fetch_failed"] == 1 and not (tmp_path / "root2" / "source_manifest.json").exists()

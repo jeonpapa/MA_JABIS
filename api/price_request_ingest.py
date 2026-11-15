@@ -116,6 +116,7 @@ def prepare_a8(raw, cc, query, rid, agent):
     # ── 별첨5 국가별 기준 가격 단계 (docs/foreign_price/README.md, 2026-10-27) ──────────────────────────────
     tier, vat, tier_text = r["price_tier"], r["vat_status"], (r.get("price_tier_original") or "")
     extra_in = raw.get("extra") or {}
+    ca_substitute = False
     if cc == "DE":
         # 2026-11-02 사용자 결정: 기준 = Rote Liste **AVP (EB)/FB**. EB/FB 칸이 비어 있을 때만 AVP/UVP 를 쓰고 대체로 표시한다.
         from agents.foreign_price_agent import de_tier_is_uvp
@@ -147,6 +148,20 @@ def prepare_a8(raw, cc, query, rid, agent):
             source_type = "compendium"         # SL 약가 미확인 대체: Compendium × 0.65 (별첨5 각주2)
         else:
             source_type = "compendium"         # 판매가 + extra.ex_factory_price → 계산기가 FAP × 0.73 사용
+    elif cc == "CA":
+        # 2026-11-10 사용자 결정: 온타리오 약가집에 없을 때만 INESSS 의견서·CDA-AMC 보고서의 제조사 제출 정가 대체.
+        from agents.foreign_price_agent import ca_uses_submitted_price, CA_SUBMITTED_HOSTS, CA_SUBMITTED_NOTE
+        probe = {"extra": extra_in if isinstance(extra_in, dict) else {}, "price_tier_original": tier_text, "source_label": r["source_label"]}
+        if ca_uses_submitted_price(probe):
+            host = (urlsplit(r["source_url"]).hostname or "").lower()
+            if not any(host == h or host.endswith("." + h) for h in CA_SUBMITTED_HOSTS):
+                raise ValueError("CA submitted-price substitute must cite the INESSS or CDA-AMC document (source_url)")
+            if tier != "ex_factory":
+                raise ValueError("CA submitted list price (prix de vente garanti / submitted price) is price_tier=ex_factory")
+            if not isinstance(extra_in, dict) or not extra_in.get("ontario_checked"):
+                raise ValueError("CA substitute requires extra.ontario_checked (온타리오 약가집·EAP 미등재 확인 내용)")
+            source_type = None
+            ca_substitute = True
     if raw.get("form_type") not in ("oral", "injection", "unknown"):
         raise ValueError("form_type required")
     observed = r.pop("observed_at")
@@ -155,6 +170,10 @@ def prepare_a8(raw, cc, query, rid, agent):
     if not isinstance(extra, dict):
         raise ValueError("extra must be an object")
     extra = {**extra, **metadata, "observed_at": observed, "price_request_id": rid, "source_type": source_type}
+    if ca_substitute:
+        from agents.foreign_price_agent import CA_SUBMITTED_NOTE
+        extra["price_column"] = "submitted_list_price"
+        extra["price_basis_warning"] = CA_SUBMITTED_NOTE
     if cc == "DE":
         from agents.foreign_price_agent import de_price_basis_warning
         extra["price_column"] = "AVP/UVP" if uses_uvp else "AVP (EB)/FB"
@@ -235,5 +254,66 @@ def de_rows_from_scraper_items(items):
             "price_tier_original": ex.get("price_tier_original") or "", "price_tier": ex.get("price_tier") or "pharmacy_retail",
             "vat_status": ex.get("vat_status") or "included", "currency": "EUR", "local_price": price,
             "pack_count": int(pc), "observed_at": observed, "effective_date": None, "extra": extra,
+        })
+    return rows, skipped
+
+
+# ── 서버 수집기 결과 → 업로드 행 (2026-11-10 사용자 결정: JP·US·CA 서버 수집) ─────────────────────────────
+# 수집기 run() 레코드를 워커 upload 형식으로 바꾼다. 같은 prepare_a8 검증을 거친다(저장은 워커 업로드 때).
+# 포장 수는 ForeignPriceAgent._resolve_pack_count(per_unit·label·parsed)로 정하고, 근거 없는 경구·미상 행은 넣지 않는다.
+SERVER_TIERS = {
+    "JP": ("pharmacy_retail", "薬価 (1単位, 厚生労働省 薬価基準)", "unknown", None),
+    "CA": ("reimbursement", "Drug Benefit Price (DBP) per unit, Ontario", "unknown", None),
+    "US": ("ex_factory", "WAC", "unknown", "redbook_wac"),
+}
+
+
+def rows_from_scraper_records(cc, records, agent):
+    import json as _json
+    from datetime import timezone as _tz
+    tier, tier_text, vat, stype = SERVER_TIERS[cc]
+    observed = datetime.now(_tz.utc).isoformat()
+    rows, skipped = [], []
+    for rec in records or []:
+        price = rec.get("local_price")
+        if not price or price <= 0:
+            skipped.append({"product_name": rec.get("product_name"), "reason": "가격 없음"})
+            continue
+        try:
+            extra = _json.loads(rec.get("raw_data") or "{}") if isinstance(rec.get("raw_data"), str) else (rec.get("raw_data") or {})
+        except ValueError:
+            extra = {}
+        item = dict(rec)
+        item.pop("pack_count", None)
+        item.pop("id", None)
+        pc = agent._resolve_pack_count(cc, item, {})
+        src = item.get("pack_count_source")
+        form = (rec.get("form_type") or "unknown").lower()
+        if src == "default" and form != "injection":
+            skipped.append({"product_name": rec.get("product_name"), "package_unit": rec.get("package_unit"),
+                            "reason": "포장 수 근거 없음(경구·미상) — 브라우저 확인"})
+            continue
+        if cc == "US" and stype and (rec.get("source_type") or extra.get("source_type") or stype) != stype:
+            skipped.append({"product_name": rec.get("product_name"), "reason": "WAC 아님"})
+            continue
+        unit_note = {"per_unit": "1 unit (단가 체계)", "label": "라벨 확인 포장", "parsed": "", "default": "1 vial (주사 단일 바이알 가정)"}.get(src, "")
+        url = rec.get("source_url") or ""
+        if not url.startswith(("http://", "https://")):
+            url = {"JP": "https://www.mhlw.go.jp/topics/2024/04/tp20240401-01.html", "CA": "https://www.formulary.health.gov.on.ca/formulary/",
+                   "US": "https://www.micromedexsolutions.com/"}[cc]
+        rows.append({
+            "product_name": rec.get("product_name") or "-", "ingredient": rec.get("ingredient") or rec.get("product_name") or "-",
+            "dosage_strength": rec.get("dosage_strength") or "-", "dosage_form": rec.get("dosage_form") or "-",
+            "package_unit": rec.get("package_unit") or unit_note or "-", "pack_count": int(pc),
+            "local_price": float(price), "currency": rec.get("currency") or CURRENCIES[cc],
+            "price_tier": tier, "price_tier_original": tier_text, "vat_status": vat,
+            "effective_date": extra.get("effective_date") if isinstance(extra.get("effective_date"), str)
+                              and __import__("re").fullmatch(r"\d{4}-\d{2}-\d{2}", extra.get("effective_date"))
+                              and extra.get("effective_date") <= observed[:10] else None,
+            "observed_at": observed, "source_url": url, "source_label": rec.get("source_label") or cc,
+            "evidence_ref": f"server-scrape:{cc}:{rec.get('source_label') or ''}"[:300], "form_type": form if form in ("oral", "injection") else "unknown",
+            **({"source_type": stype} if stype else {}),
+            "extra": {**{k: v for k, v in extra.items() if k not in ("price_tier", "price_tier_original", "vat_status", "evidence_ref")},
+                      "pack_count_source": src, "server_collected": True},
         })
     return rows, skipped

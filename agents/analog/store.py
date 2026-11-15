@@ -400,18 +400,16 @@ def _base_filter_where(filters: dict) -> tuple[list[str], list]:
     clauses: list[str] = []
     params: list = []
     for col in _FILTER_COLS:
-        val = filters.get(col)
-        if val is None:
+        vals = _filter_values(filters.get(col))
+        if not vals:
             continue
         if col in ("has_rsa", "pe_waiver", "has_postmarket_condition"):
             try:
-                clauses.append(f"a.{col} = ?")
-                params.append(int(val))
+                vals = [int(v) for v in vals]
             except (ValueError, TypeError):
-                pass
-        else:
-            clauses.append(f"a.{col} = ?")
-            params.append(val)
+                continue
+        clauses.append(f"a.{col} IN ({','.join('?' * len(vals))})")
+        params.extend(vals)
     clauses.append("a.file_name LIKE '%.pdf'")
     if "pdf_extractable" not in filters:
         clauses.append("(a.pdf_extractable IS NULL OR a.pdf_extractable = 1)")
@@ -651,6 +649,22 @@ _CASCADE_ORDER = [
 ]
 
 
+def _filter_values(v) -> list:
+    """필터 값 정규화 — 단일 값·리스트 모두 받아 빈 값 제거한 리스트로."""
+    if v is None:
+        return []
+    items = v if isinstance(v, (list, tuple, set)) else [v]
+    out = []
+    for x in items:
+        if x is None:
+            continue
+        x = str(x).strip() if not isinstance(x, (int, float)) else x
+        if x == "" or x in out:
+            continue
+        out.append(x)
+    return out
+
+
 def facet_values(filters: dict = None) -> dict:
     """패싯 드롭다운 옵션 + 카운트 (cascade).
 
@@ -669,10 +683,10 @@ def facet_values(filters: dict = None) -> dict:
             preceding = (_CASCADE_ORDER[:_CASCADE_ORDER.index(col)]
                          if col in _CASCADE_ORDER else _CASCADE_ORDER)
             for pcol in preceding:
-                v = filters.get(pcol)
-                if v not in (None, ""):
-                    clauses.append(f"{pcol} = ?")
-                    params.append(v)
+                vals = _filter_values(filters.get(pcol))
+                if vals:
+                    clauses.append(f"{pcol} IN ({','.join('?' * len(vals))})")
+                    params.extend(vals)
             rows = conn.execute(
                 f"SELECT {col} v, COUNT(*) n FROM analog_reports "
                 f"WHERE {' AND '.join(clauses)} GROUP BY {col} ORDER BY n DESC",
@@ -837,18 +851,20 @@ def search(filters: dict = None, q: str = None, fts: str = None,
 
     # ② 패싯 필터
     for col in _FILTER_COLS:
-        val = filters.get(col)
-        if val is None:
+        vals = _filter_values(filters.get(col))
+        if not vals:
             continue
         if col in ("has_rsa", "pe_waiver", "has_postmarket_condition"):
             try:
-                where_clauses.append(f"a.{col} = ?")
-                params.append(int(val))
+                ivals = [int(v) for v in vals]
             except (ValueError, TypeError):
-                pass
+                continue
+            where_clauses.append(f"a.{col} IN ({','.join('?' * len(ivals))})")
+            params.extend(ivals)
         else:
-            where_clauses.append(f"a.{col} = ?")
-            params.append(val)
+            # 2026-11-09: 같은 칸에서 여러 값 선택 = OR(IN), 다른 칸끼리는 AND
+            where_clauses.append(f"a.{col} IN ({','.join('?' * len(vals))})")
+            params.extend(vals)
 
     # v1 레거시 .md 제외 — v2 PDF 소스만
     where_clauses.append("a.file_name LIKE '%.pdf'")

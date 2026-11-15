@@ -138,6 +138,18 @@ def build_analysis_request_blueprint(db_path, files_root=None) -> Blueprint:
             raise ValueError("content_b64 must be base64")
         return jsonify(store.add_file(rid, who()[0], lease(), d.get("filename"), content))
 
+    @bp.post("/api/admin/analysis-requests/<rid>/files")
+    @require_auth(role="admin")
+    @guarded
+    def admin_supplement_file(rid):
+        """완료된 요청에 보완 파일 추가(관리자). 요청자·팀 공개 범위는 원래 요청 설정을 따른다."""
+        d = body(limit=FILE_MAX_BYTES * 2)
+        try:
+            content = base64.b64decode(d.get("content_b64") or "", validate=True)
+        except (binascii.Error, ValueError):
+            raise ValueError("content_b64 must be base64")
+        return jsonify(store.add_supplement_file(rid, who()[0], d.get("filename"), content, d.get("note") or ""))
+
     @bp.post("/api/analysis-agent/requests/<rid>/complete")
     @require_auth(role="price_agent")
     @guarded

@@ -202,6 +202,32 @@ def de_price_basis_warning(row: dict) -> Optional[str]:
     return DE_UVP_FALLBACK_NOTE if de_tier_is_uvp(ex.get("price_tier_original") or row.get("price_tier_original")) else None
 
 
+# 캐나다 대체 출처 (2026-11-10 사용자 결정): 온타리오 약가집(ODB/EAP)에 없는 약(병원 투여 항암제 등)은
+# 퀘벡 INESSS 장관 제출 의견서의 제조사 보장 판매가(prix de vente garanti) / CDA-AMC 급여 심사 보고서의 제출 가격(public list price).
+# 협상가(pCPA)는 비공개라 반영되지 않는다. 산식은 캐나다 단가와 같이 × 0.81 — 화면·엑셀에 대체 출처임을 표시한다.
+CA_SUBMITTED_NOTE = "INESSS·CDA-AMC 제조사 제출 정가 대체 (온타리오 약가집 미등재, 협상가 미반영)"
+CA_SUBMITTED_HOSTS = ("inesss.qc.ca", "cda-amc.ca", "cadth.ca", "ncbi.nlm.nih.gov")
+
+
+def ca_uses_submitted_price(row: dict) -> bool:
+    ex = _item_extra(row)
+    if str(ex.get("price_column") or "") == "submitted_list_price":
+        return True
+    text = " ".join(str(x or "") for x in (ex.get("price_tier_original"), row.get("price_tier_original"), row.get("source_label")))
+    return bool(re.search(r"INESSS|CDA-AMC|CADTH|prix de vente garanti|submitted price", text, re.I))
+
+
+def price_basis_warning(country: str, row: dict) -> Optional[str]:
+    """화면·엑셀의 '가격 기준 주의' 문구. DE AVP/UVP 대체, CA 제출 정가 대체."""
+    if row.get("local_price") is None:
+        return None
+    if country == "DE":
+        return de_price_basis_warning(row)
+    if country == "CA" and ca_uses_submitted_price(row):
+        return CA_SUBMITTED_NOTE
+    return None
+
+
 def de_tier_is_uvp(tier_text) -> bool:
     """price_tier_original 이 AVP/UVP 가격을 가리키는지. 대체 표기('AVP/UVP … AVP (EB)/FB 미표시 — 대체')는 EB 글자를
     포함하므로 'AVP/UVP' 로 시작하거나 '대체' 가 있으면 UVP, 그 외 EB/FB 가 있으면 EB, UVP 만 있으면 UVP."""
@@ -1345,8 +1371,8 @@ class ForeignPriceAgent:
                 row["dosing_schedule_label"] = dosing["schedule_label"] if dosing else None
             # A8 집계 안전망 — 팩가가 per-unit 으로 저장된 미확인 행(pack_count_source=default) 은 평균에서 뺀다
             row["a8_aggregate_eligible"], row["a8_exclude_reason"] = a8_aggregate_eligibility(country, row)
-            # 가격 기준 경고(화면·엑셀 표시) — DE AVP/UVP 대체
-            row["price_basis_warning"] = de_price_basis_warning(row) if country == "DE" and row.get("local_price") is not None else None
+            # 가격 기준 경고(화면·엑셀 표시) — DE AVP/UVP 대체, CA INESSS·CDA-AMC 제출 정가 대체
+            row["price_basis_warning"] = price_basis_warning(country, row)
 
             by_country.setdefault(country, []).append(row)
 

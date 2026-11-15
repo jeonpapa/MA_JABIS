@@ -49,7 +49,8 @@ export default function RequestHistoryCard({ request: r, catalog, highlighted, d
         <div className="min-w-0">
           <p className="text-[14px] font-semibold truncate" style={{ color: 'var(--label)' }}>{r.query}</p>
           <p className="mt-0.5" style={{ color: 'var(--label-2)' }}>
-            {total}개국 요청 · {date(r.created_at)}{r.notification_status === 'sent' && r.notified_at ? ` · ${NOTIFY_LABEL.sent} ${date(r.notified_at)}` : ` · ${NOTIFY_LABEL[r.notification_status] || r.notification_status}`}
+            {r.origin?.startsWith('monitor:') && <span className="mr-1 rounded bg-teal-50 px-1.5 text-teal-700">모니터링</span>}
+            {total}개국 요청 · {date(r.created_at)}{r.origin?.startsWith('monitor:') ? ' · 회차 메일로 묶어 발송' : r.notification_status === 'sent' && r.notified_at ? ` · ${NOTIFY_LABEL.sent} ${date(r.notified_at)}` : ` · ${NOTIFY_LABEL[r.notification_status] || r.notification_status}`}
           </p>
         </div>
         <span className="ui-pill">{REQUEST_LABEL[r.status] || r.status}</span>

@@ -148,9 +148,9 @@ def generate_xlsx(data):
     for row in data.get("rows", []):
         m = _meta(row)
         m["country_name"] = LABELS.get(m.get("country"), m.get("country"))
-        if m.get("country") == "DE" and not m.get("price_basis_warning") and m.get("local_price") is not None:
-            from agents.foreign_price_agent import de_price_basis_warning
-            m["price_basis_warning"] = de_price_basis_warning(m)
+        if m.get("country") in ("DE", "CA") and not m.get("price_basis_warning") and m.get("local_price") is not None:
+            from agents.foreign_price_agent import price_basis_warning
+            m["price_basis_warning"] = price_basis_warning(m["country"], m)
         tier = m.get("price_tier")
         m["tier_label"] = TIERS.get(tier, tier)
         m["vat_label"] = VAT.get(m.get("vat_status"), m.get("vat_status"))

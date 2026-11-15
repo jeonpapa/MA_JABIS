@@ -193,11 +193,18 @@ export const REVIEW_RESULT_KO: Record<string, string> = {
   UNKNOWN: '미확인',
 };
 
-export function fetchAnalogFacets(filters?: Record<string, string>): Promise<AnalogFacets> {
-  const qs = new URLSearchParams();
+/** 패싯 필터 — 같은 칸 여러 값(OR), 칸끼리 AND. 반복 파라미터로 보낸다(2026-11-09). */
+export type AnalogFilters = Record<string, string[] | string | number>;
+function appendFilters(qs: URLSearchParams, filters?: AnalogFilters) {
   Object.entries(filters ?? {}).forEach(([k, v]) => {
-    if (v !== undefined && v !== null && v !== '') qs.set(k, String(v));
+    const arr = Array.isArray(v) ? v : [v];
+    arr.forEach(x => { if (x !== undefined && x !== null && x !== '') qs.append(k, String(x)); });
   });
+}
+
+export function fetchAnalogFacets(filters?: AnalogFilters): Promise<AnalogFacets> {
+  const qs = new URLSearchParams();
+  appendFilters(qs, filters);
   const suffix = qs.toString();
   return api.get<AnalogFacets>(`/api/analog/facets${suffix ? `?${suffix}` : ''}`);
 }
@@ -206,15 +213,13 @@ export type AnalogSortKey = 'session_date' | 'mfds_permit_date' | 'first_reimbur
 export interface AnalogSort { key: AnalogSortKey; order: 'asc' | 'desc' }
 
 export function searchAnalog(params: {
-  filters?: Record<string, string | number>;
+  filters?: AnalogFilters;
   q?: string;
   limit?: number;
   sort?: AnalogSort | null;
 }): Promise<AnalogSearchResult> {
   const qs = new URLSearchParams();
-  Object.entries(params.filters ?? {}).forEach(([k, v]) => {
-    if (v !== undefined && v !== null && v !== '') qs.set(k, String(v));
-  });
+  appendFilters(qs, params.filters);
   if (params.q) qs.set('q', params.q);
   qs.set('limit', String(params.limit ?? 50));
   if (params.sort) { qs.set('sort', params.sort.key); qs.set('order', params.sort.order); }
@@ -232,7 +237,7 @@ export function generateAnalogBrief(reportIds: number[], query: string): Promise
 // 검색어 피드백: 결과가 의도와 다를 때 사용자가 실제 찾던 약제를 남김
 export interface SearchFeedbackInput {
   query: string;                       // 입력했던 검색어
-  filters: Record<string, string>;     // 검색 당시 드롭다운 필터
+  filters: AnalogFilters;              // 검색 당시 드롭다운 필터
   returned_ids: number[];              // 노출됐던 상위 결과 id
   returned_top?: string;               // 상위 결과 브랜드명 요약
   intended_text: string;               // 실제 찾고자 했던 약제/내용
@@ -288,10 +293,12 @@ export interface AnalogAiItem { category: string; strength: AnalogAiStrength; qu
 export interface AnalogAiHit {
   report_id: number; brand_name: string | null; session_date: string | null; review_result: string | null;
   post_url: string | null; file_name: string | null; top_strength: AnalogAiStrength; items: AnalogAiItem[];
+  condition_bases?: Record<string, string>;
 }
 export interface AnalogAiResult {
   question: string; interpretation: string; terms: string[]; stems?: string[]; model: string;
-  scope: { reports: number; reports_with_candidates: number; passages_found: number; passages_judged: number; truncated: boolean };
+  scope: { reports: number; reports_before_conditions?: number; reports_with_candidates: number; passages_found: number; passages_judged: number; truncated: boolean };
+  conditions?: { key: string; label: string; matched: number; bases: Record<string, number> }[];
   hits: AnalogAiHit[]; by_category: AnalogAiCategory[]; category_labels: Record<string, string>;
   strength_counts: Record<AnalogAiStrength, number>; strength_reports: Record<AnalogAiStrength, number>;
   dropped_unverified: number; limitations: string[];
@@ -327,3 +334,39 @@ export async function downloadAnalogAiExcel(id: string): Promise<void> {
   try { a.href = url; a.download = 'analog-ai-' + id + '.xlsx'; document.body.appendChild(a); a.click(); }
   finally { a.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
 }
+
+
+// ── 목록 엑셀 · AI 분석 이력 (2026-11-09) ─────────────────────────────────────
+async function downloadBlob(path: string, init: RequestInit, fallbackName: string): Promise<void> {
+  const token = getToken();
+  const res = await fetch(path, { ...init, headers: { ...(init.headers || {}), ...(token ? { Authorization: 'Bearer ' + token } : {}) } });
+  if (res.status === 401) clearAuth();
+  if (!res.ok) {
+    let msg = res.status === 401 ? '로그인이 만료되었습니다. 다시 로그인해 주세요.' : '다운로드 실패 (HTTP ' + res.status + ')';
+    try { const d = await res.json(); if (typeof d?.error === 'string') msg = d.error; } catch { /* 본문 없음 */ }
+    throw new ApiError(msg, res.status);
+  }
+  const blob = await res.blob();
+  const cd = res.headers.get('Content-Disposition') || '';
+  const m = cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+  const name = m ? decodeURIComponent(m[1]) : fallbackName;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  try { a.href = url; a.download = name; document.body.appendChild(a); a.click(); }
+  finally { a.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
+}
+
+/** 화면에 보이는 검색 결과 전체를 엑셀로 (ids 순서 유지, 최대 1000건) */
+export function downloadAnalogList(ids: number[], context: string): Promise<void> {
+  return downloadBlob('/api/analog/export.xlsx', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, context }),
+  }, 'analog-search.xlsx');
+}
+
+export interface AnalogAiHistoryItem {
+  job_id: string; question: string; status: 'running' | 'done' | 'failed'; error: string | null;
+  created_at: string; finished_at: string | null; scope_count: number | null; hit_reports: number | null;
+  conditions: string[]; cost_usd: number | null;
+}
+export const fetchAnalogAiHistory = (limit = 30) =>
+  api.get<{ items: AnalogAiHistoryItem[] }>('/api/analog/ai-analyze/history?limit=' + limit);

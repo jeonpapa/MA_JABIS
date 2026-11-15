@@ -729,6 +729,33 @@ def ingest_from_url(url: str, meta: dict) -> dict:
 _SYNCED_META_COLS = ("session_date", "committee", "committee_scope", "report_type", "year", "cycle")
 
 
+_TOMBSTONE_DDL = ("CREATE TABLE IF NOT EXISTS reimb_report_tombstones (file_hash TEXT PRIMARY KEY, file_name TEXT, "
+                  "title TEXT, deleted_at TEXT DEFAULT (datetime('now')), deleted_by TEXT)")
+
+
+def delete_report(report_id: int, actor: str | None = None) -> dict:
+    """관리자 삭제(2026-11-15) — 행(PDF blob 포함)을 지우고 file_hash 를 묘비(tombstone)에 남겨 git sync 가 다시 적재하지 않게 한다.
+    매니페스트에 그대로 남아 있어도 되살아나지 않는다. 볼륨의 PDF 파일은 두지만 화면·API 에서는 사라진다."""
+    with _connect() as conn:
+        conn.execute(_TOMBSTONE_DDL)
+        row = conn.execute("SELECT id, file_hash, file_name, title FROM reimb_reports WHERE id = ?", (report_id,)).fetchone()
+        if not row:
+            raise LookupError(f"리포트 없음: {report_id}")
+        if row["file_hash"]:
+            conn.execute("INSERT OR REPLACE INTO reimb_report_tombstones (file_hash, file_name, title, deleted_by) VALUES (?,?,?,?)",
+                         (row["file_hash"], row["file_name"], row["title"], actor))
+        conn.execute("DELETE FROM reimb_reports WHERE id = ?", (report_id,))
+        conn.commit()
+    logger.info("[reimb_reports] 삭제 id=%s %s by %s", report_id, row["file_name"], actor)
+    return {"deleted": report_id, "file_name": row["file_name"]}
+
+
+def _tombstoned() -> set:
+    with _connect() as conn:
+        conn.execute(_TOMBSTONE_DDL)
+        return {r[0] for r in conn.execute("SELECT file_hash FROM reimb_report_tombstones")}
+
+
 def sync_reports(source: "str | Path | dict | None" = None, *, prune_missing: bool = False) -> dict:
     """매니페스트 기반 보고서 git-sync. 각 항목 file_hash 가 DB 에 없으면 download+ingest.
 
@@ -747,11 +774,15 @@ def sync_reports(source: "str | Path | dict | None" = None, *, prune_missing: bo
             f"SELECT file_hash, {', '.join(_SYNCED_META_COLS)} FROM reimb_reports").fetchall()}
 
     ingested, skipped, errors, warnings, meta_updated = [], 0, [], [], []
+    deleted = _tombstoned()
     for e in entries:
         if not isinstance(e, dict):
             errors.append({"file": None, "url": None, "error": f"항목이 객체가 아님: {e!r}"[:200]})
             continue
         fh = e.get("file_hash")
+        if fh and fh in deleted:   # 관리자가 지운 보고서 — 매니페스트에 남아 있어도 다시 적재하지 않는다
+            skipped += 1
+            continue
         if fh and fh in existing:
             # 이미 적재된 PDF — 매니페스트 메타(회차일·위원회·유형·연도·차수)만 바뀐 경우 반영한다(2026-11-05: 결과 리뷰
             # session_date 를 회차일로 교정해도 file_hash skip 때문에 DB 가 영영 안 바뀌던 문제). 재다운로드·LLM 없음.
