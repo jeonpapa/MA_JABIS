@@ -7504,6 +7504,15 @@ def reimb_reports_list():
         return jsonify({"error": str(e)}), 500
 
 
+@app.delete("/api/admin/reimbursement/reports/<int:report_id>")
+@require_auth(role="admin")
+def reimb_report_delete(report_id: int):
+    try:
+        return jsonify(_reimb_reports.delete_report(report_id, actor=request.user.get("sub")))  # type: ignore[attr-defined]
+    except LookupError as e:
+        return jsonify({"error": str(e)}), 404
+
+
 @app.get("/api/reimbursement/reports/<int:report_id>/pdf")
 @require_auth()
 def reimb_report_pdf(report_id: int):

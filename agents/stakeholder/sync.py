@@ -151,6 +151,16 @@ def fetch_blob_github(repo: str, path: str, branch: str, token: str | None) -> b
         return resp.read()
 
 
+def fetch_blob_by_sha_github(repo: str, sha: str, token: str | None) -> bytes:
+    """Git blob API — GET /repos/{repo}/git/blobs/{sha} (Accept: application/vnd.github.raw). sha 로 주소가 정해져
+    목록(tree)과 같은 바이트가 보장된다. 2026-11-14: Contents API raw 가 tree 와 다른 바이트(187,477 vs 173,638)를
+    돌려준 사례(monitoring-runs/2026-10-30/raw/candidate_07.html) — 불일치 시 대체 경로로 쓴다."""
+    url = f"{GITHUB_API}/repos/{repo}/git/blobs/{urllib.parse.quote(sha, safe='')}"
+    with urllib.request.urlopen(_request(url, token, "application/vnd.github.raw"),
+                                timeout=HTTP_TIMEOUT_SECONDS) as resp:
+        return resp.read()
+
+
 def _classify(exc: BaseException) -> str:
     """401/404 와 (레이트리밋이 아닌) 403 은 토큰·repo 설정 문제 → config. 그 외 네트워크·5xx → transient."""
     if isinstance(exc, urllib.error.HTTPError):
@@ -409,6 +419,14 @@ def _sync_locked(root: Path, db_path: Path, *, source_dir, repo, branch, token, 
             counts["deferred"] += 1
             continue
         got = git_blob_sha(data)
+        if got != e["sha"] and "src" not in e and fetch_blob is None:   # 원격 기본 경로만 — 주입 fetcher(테스트)는 그대로 검증
+            try:
+                alt = fetch_blob_by_sha_github(repo, e["sha"], token)
+                if git_blob_sha(alt) == e["sha"]:
+                    logger.warning("stakeholder sync: %s Contents API 바이트 불일치(%s) → blob API 로 대체", e["path"], got[:12])
+                    data, got = alt, e["sha"]
+            except Exception as exc:  # noqa: BLE001 — 대체 실패는 아래 불일치 오류로 남긴다
+                logger.warning("stakeholder sync: %s blob API 대체 실패: %s", e["path"], exc)
         if got != e["sha"]:
             counts["fetch_failed"] += 1
             errors.append(f"{e['path']}: blob sha 불일치(목록 {e['sha'][:12]} ≠ 받은 바이트 {got[:12]}) — 쓰지 않음")

@@ -345,3 +345,17 @@ def test_retire_and_unretire_with_safety_ratio(rdb, stubs, monkeypatch):
     assert res["retired"] == [entries[4]["file_name"]] and len(rr.list_reports()) == 4
     res = rr.sync_reports({"schema_version": 1, "reports": full}, prune_missing=True)   # 다시 넣으면 복귀
     assert res["retired"] == [] and len(rr.list_reports()) == 5
+
+
+def test_admin_delete_report_is_not_resurrected_by_sync(rdb, stubs):
+    """2026-11-15: 관리자 삭제 — 행 삭제 + 묘비. 매니페스트에 남아 있어도 다음 sync 가 다시 적재하지 않는다."""
+    rr.sync_reports({"schema_version": 1, "reports": [EVAL_ONLY]})
+    with rr._connect() as conn:
+        rid, fh = conn.execute("SELECT id, file_hash FROM reimb_reports").fetchone()
+    assert rr.delete_report(rid, actor="admin@x")["deleted"] == rid
+    assert rr.list_reports() == []
+    res = rr.sync_reports({"schema_version": 1, "reports": [{**EVAL_ONLY, "file_hash": fh}]})
+    assert res["ingested"] == [] and res["skipped"] == 1 and rr.list_reports() == []
+    import pytest as _p
+    with _p.raises(LookupError):
+        rr.delete_report(rid)

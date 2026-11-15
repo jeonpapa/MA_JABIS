@@ -1,8 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { fetchMe } from '@/utils/authUsers';
 import { useApi } from '@/hooks/useApi';
 import {
   fetchReports,
   openReportPdf,
+  deleteReport,
   IntelligenceReport,
   REPORT_CATEGORY_LABELS,
 } from '@/api/reimbStatus';
@@ -32,7 +34,8 @@ function CategoryBadge({ category, isDark }: { category: IntelligenceReport['cat
   );
 }
 
-function ReportCard({ report, isDark }: { report: IntelligenceReport; isDark: boolean }) {
+function ReportCard({ report, isDark, isAdmin = false, onDeleted }: { report: IntelligenceReport; isDark: boolean; isAdmin?: boolean; onDeleted?: () => void }) {
+  const [deleting, setDeleting] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
@@ -137,6 +140,26 @@ function ReportCard({ report, isDark }: { report: IntelligenceReport; isDark: bo
       </div>
 
       <div className="flex items-center justify-end gap-2">
+        {isAdmin && (
+          <button
+            type="button"
+            title="보고서 삭제 (관리자)"
+            disabled={deleting}
+            onClick={async (ev) => {
+              ev.stopPropagation();
+              if (!window.confirm(`'${report.title}' 보고서를 삭제할까요?\n삭제하면 목록과 회차 연결에서 사라지고, 자동 동기화로도 다시 들어오지 않습니다.`)) return;
+              setDeleting(true);
+              try { await deleteReport(report.id); onDeleted?.(); }
+              catch (e) { setDownloadError(e instanceof Error ? e.message : '삭제 실패'); }
+              finally { setDeleting(false); }
+            }}
+            className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-2 rounded-lg border transition-all ${
+              isDark ? 'border-red-400/30 text-red-300 hover:bg-red-400/10' : 'border-red-200 text-red-600 hover:bg-red-50'
+            }`}
+          >
+            <i className={deleting ? 'ri-loader-4-line animate-spin text-sm' : 'ri-delete-bin-line text-sm'}></i>삭제
+          </button>
+        )}
         {downloadError && (
           <span className="text-[11px] text-red-400">{downloadError}</span>
         )}
@@ -157,6 +180,12 @@ export default function IntelligenceReports({ isDark }: { isDark: boolean }) {
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   const { data, loading, error, reload } = useApi(fetchReports);
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fetchMe().then(me => { if (alive) setIsAdmin(me?.role === 'admin'); }).catch(() => { if (alive) setIsAdmin(false); });
+    return () => { alive = false; };
+  }, []);
   const intelligenceReports = useMemo(() => data ?? [], [data]);
 
   const availableYears = useMemo(() => {
@@ -309,7 +338,7 @@ export default function IntelligenceReports({ isDark }: { isDark: boolean }) {
         <>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {displayedReports.map(report => (
-              <ReportCard key={report.id} report={report} isDark={isDark} />
+              <ReportCard key={report.id} report={report} isDark={isDark} isAdmin={isAdmin} onDeleted={reload} />
             ))}
           </div>
 
